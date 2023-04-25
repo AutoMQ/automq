@@ -23,12 +23,14 @@ import java.nio.file.{Files, NoSuchFileException}
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 import kafka.common.LogSegmentOffsetOverflowException
+import kafka.log.es.ElasticLogManager
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
 import kafka.utils._
-import org.apache.kafka.common.InvalidRecordException
+import org.apache.kafka.common.{InvalidRecordException, TopicPartition}
 import org.apache.kafka.common.errors.CorruptRecordException
+import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.record.FileRecords.{LogOffsetPosition, TimestampAndOffset}
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.utils.{BufferSupplier, Time}
@@ -668,6 +670,11 @@ object LogSegment {
 
   def open(dir: File, baseOffset: Long, config: LogConfig, time: Time, fileAlreadyExists: Boolean = false,
            initFileSize: Int = 0, preallocate: Boolean = false, fileSuffix: String = ""): LogSegment = {
+    if (!isClusterMetaLogSegment(dir)) {
+      return ElasticLogManager.newSegment(dir2TopicPartition(dir),
+        baseOffset,
+        time)
+    }
     val maxIndexSize = config.maxIndexSize
     new LogSegment(
       FileRecords.open(UnifiedLog.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate),
@@ -685,6 +692,16 @@ object LogSegment {
     UnifiedLog.deleteFileIfExists(UnifiedLog.timeIndexFile(dir, baseOffset, fileSuffix))
     UnifiedLog.deleteFileIfExists(UnifiedLog.transactionIndexFile(dir, baseOffset, fileSuffix))
     UnifiedLog.deleteFileIfExists(UnifiedLog.logFile(dir, baseOffset, fileSuffix))
+  }
+
+  def isClusterMetaLogSegment(dir: File): Boolean = {
+    // FIXME: check file path topic part
+    dir.getAbsolutePath.contains(Topic.CLUSTER_METADATA_TOPIC_NAME);
+  }
+
+  def dir2TopicPartition(dir: File): TopicPartition = {
+    // TODO: impl, reuse LocalLog#parseTopicPartitionName
+    null
   }
 }
 

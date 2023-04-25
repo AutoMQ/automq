@@ -903,7 +903,13 @@ project(':core') {
     // ZooKeeperMain depends on commons-cli but declares the dependency as `provided`
     implementation libs.commonsCli
 
+    //    implementation libs.elasticstream
+    implementation('sdk.elastic.stream:client-java:0.0.1-SNAPSHOT')
+
     compileOnly libs.log4j
+
+    implementation('org.slf4j:slf4j-log4j12:2.0.7')
+
 
     testImplementation project(':clients').sourceSets.test.output
     testImplementation project(':group-coordinator').sourceSets.test.output

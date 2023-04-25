@@ -126,7 +126,8 @@ versions += [
   swaggerJaxrs2: "2.2.0",
   zinc: "1.7.2",
   zookeeper: "3.6.3",
-  zstd: "1.5.2-1"
+  zstd: "1.5.2-1",
+  elasticstream: "0.0.1-SNAPSHOT"
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -216,5 +217,6 @@ libs += [
   jfreechart: "jfreechart:jfreechart:$versions.jfreechart",
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
-  httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient"
+  httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
+  elasticstream: "sdk.elastic.stream:client-java:$versions.elasticstream"
 ]

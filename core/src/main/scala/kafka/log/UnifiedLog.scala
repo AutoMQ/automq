@@ -25,6 +25,7 @@ import java.util.Optional
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
+import kafka.log.es.ElasticLogManager
 import kafka.message.{BrokerCompressionCodec, CompressionCodec, NoCompressionCodec}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
@@ -32,6 +33,7 @@ import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogDirFailureChannel, LogOffsetMetadata, OffsetAndEpoch, PartitionMetadataFile, RequestLocal}
 import kafka.utils._
 import org.apache.kafka.common.errors._
+import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.{DescribeProducersResponseData, FetchResponseData}
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record._
@@ -1837,6 +1839,20 @@ object UnifiedLog extends Logging {
       s"[UnifiedLog partition=$topicPartition, dir=${dir.getParent}] ")
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
+    // elastic stream inject start
+    if (!isClusterMetaLogSegment(dir)) {
+      val localLog = ElasticLogManager.getLog(dir, config, recoveryPoint, scheduler, time, topicPartition, logDirFailureChannel)
+      // extends UnifiedLog in future when require modify its implement.
+      return new UnifiedLog(localLog.logStartOffset(),
+        localLog,
+        brokerTopicStats,
+        producerIdExpirationCheckIntervalMs,
+        leaderEpochCache,
+        producerStateManager,
+        topicId,
+        keepPartitionMetadataFile)
+    }
+    // elastic stream inject end
     val offsets = new LogLoader(
       dir,
       topicPartition,
@@ -2141,6 +2157,11 @@ object UnifiedLog extends Logging {
 
   private[log] def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
     LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset)
+  }
+
+  def isClusterMetaLogSegment(dir: File): Boolean = {
+    // FIXME: check file path topic part
+    dir.getAbsolutePath.contains(Topic.CLUSTER_METADATA_TOPIC_NAME);
   }
 }
 

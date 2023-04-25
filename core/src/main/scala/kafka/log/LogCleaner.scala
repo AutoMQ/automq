@@ -356,6 +356,7 @@ class LogCleaner(initialConfig: CleanerConfig,
     private def cleanFilthiestLog(): Boolean = {
       val preCleanStats = new PreCleanStats()
       val ltc = cleanerManager.grabFilthiestCompactedLog(time, preCleanStats)
+      // TODO: implement topic compaction in ES, for now just disable it.
       val cleaned = ltc match {
         case None =>
           false
@@ -388,6 +389,9 @@ class LogCleaner(initialConfig: CleanerConfig,
     }
 
     private def cleanLog(cleanable: LogToClean): Unit = {
+      if (true) {
+        return
+      }
       val startOffset = cleanable.firstDirtyOffset
       var endOffset = startOffset
       try {
