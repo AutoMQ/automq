@@ -25,7 +25,7 @@ public class ElasticLogMeta {
     }
 
     public static ElasticLogMeta decode(ByteBuffer buf) {
-        String metaStr = StandardCharsets.ISO_8859_1.decode(buf).toString();
+        String metaStr = StandardCharsets.UTF_8.decode(buf).toString();
         ObjectMapper om = new ObjectMapper();
         try {
             return om.readValue(metaStr, ElasticLogMeta.class);
