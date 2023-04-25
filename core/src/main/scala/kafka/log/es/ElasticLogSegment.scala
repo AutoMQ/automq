@@ -14,7 +14,7 @@ class ElasticLogSegment(
                          val dataStreamSegment: ElasticStreamSegment,
                          val timeStreamSegment: ElasticStreamSegment,
                          val txnStreamSegment: ElasticStreamSegment,
-                         val nextOffset: Long,
+                         val endOffset: Long,
                          baseOffset: Long,
                          indexIntervalBytes: Int,
                          rollJitterMs: Long,

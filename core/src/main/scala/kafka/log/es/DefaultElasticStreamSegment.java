@@ -13,7 +13,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class DefaultElasticStreamSegment implements ElasticStreamSegment {
+    /**
+     * logical base offset of this segment.
+     */
     private final long segmentBaseOffset;
+    /**
+     * the real start offset of this segment in the stream.
+     */
     private final long startOffsetInStream;
     private final Stream stream;
 

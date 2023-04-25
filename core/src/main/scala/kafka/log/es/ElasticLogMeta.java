@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
 
+// TODO: save meta to stream periodically. save meta when broker shutdown.
 public class ElasticLogMeta {
     private List<ElasticStreamSegmentMeta> segments;
     private Long dataStreamId;
@@ -24,7 +25,7 @@ public class ElasticLogMeta {
     }
 
     public static ElasticLogMeta decode(ByteBuffer buf) {
-        String metaStr = StandardCharsets.UTF_8.decode(buf).toString();
+        String metaStr = StandardCharsets.ISO_8859_1.decode(buf).toString();
         ObjectMapper om = new ObjectMapper();
         try {
             return om.readValue(metaStr, ElasticLogMeta.class);
