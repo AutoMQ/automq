@@ -25,7 +25,7 @@ import java.util.Optional
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
-import kafka.log.es.ElasticLogManager
+import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.message.{BrokerCompressionCodec, CompressionCodec, NoCompressionCodec}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
@@ -1843,7 +1843,7 @@ object UnifiedLog extends Logging {
     if (!isClusterMetaLogSegment(dir)) {
       val localLog = ElasticLogManager.getLog(dir, config, recoveryPoint, scheduler, time, topicPartition, logDirFailureChannel)
       // extends UnifiedLog in future when require modify its implement.
-      return new UnifiedLog(localLog.logStartOffset(),
+      return new ElasticUnifiedLog(localLog.logStartOffset(),
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,

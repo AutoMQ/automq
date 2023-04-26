@@ -97,11 +97,11 @@ class LogSegment private[log] (val log: FileRecords,
   private var created = time.milliseconds
 
   /* the number of bytes since we last added an entry in the offset index */
-  private var bytesSinceLastIndexEntry = 0
+  protected var bytesSinceLastIndexEntry = 0
 
   // The timestamp we used for time based log rolling and for ensuring max compaction delay
   // volatile for LogCleaner to see the update
-  @volatile private var rollingBasedTimestamp: Option[Long] = None
+  @volatile protected var rollingBasedTimestamp: Option[Long] = None
 
   /* The maximum timestamp and offset we see so far */
   @volatile private var _maxTimestampAndOffsetSoFar: TimestampOffset = TimestampOffset.Unknown
@@ -175,7 +175,7 @@ class LogSegment private[log] (val log: FileRecords,
     }
   }
 
-  private def ensureOffsetInRange(offset: Long): Unit = {
+  protected def ensureOffsetInRange(offset: Long): Unit = {
     if (!canConvertToRelativeOffset(offset))
       throw new LogSegmentOffsetOverflowException(this, offset)
   }
@@ -521,7 +521,7 @@ class LogSegment private[log] (val log: FileRecords,
     * If not previously loaded,
     * load the timestamp of the first message into memory.
     */
-  private def loadFirstBatchTimestamp(): Unit = {
+  protected def loadFirstBatchTimestamp(): Unit = {
     if (rollingBasedTimestamp.isEmpty) {
       val iter = log.batches.iterator()
       if (iter.hasNext)

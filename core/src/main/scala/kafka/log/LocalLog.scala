@@ -502,7 +502,8 @@ class LocalLog(@volatile private var _dir: File,
           warn(s"Trying to roll a new log segment with start offset $newOffset " +
             s"=max(provided offset = $expectedNextOffset, LEO = $logEndOffset) while it already " +
             s"exists and is active with size 0. Size of time index: ${activeSegment.timeIndex.entries}," +
-            s" size of offset index: ${activeSegment.offsetIndex.entries}.")
+            s" size of offset index: ${activeSegment.offsetIndex.entries}."
+          )
           val newSegment = createAndDeleteSegment(newOffset, activeSegment, asyncDelete = true, LogRoll(this))
           updateLogEndOffset(nextOffsetMetadata.messageOffset)
           info(s"Rolled new log segment at offset $newOffset in ${time.hiResClockMs() - start} ms.")
