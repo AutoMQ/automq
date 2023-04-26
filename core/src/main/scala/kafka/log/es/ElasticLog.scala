@@ -56,7 +56,7 @@ class ElasticLog(val metaStream: api.Stream,
     val dataStreamSegment = new DefaultElasticStreamSegment(baseOffset, dataStream, dataStream.nextOffset())
     val timeStreamSegment = new DefaultElasticStreamSegment(baseOffset, timeStream, timeStream.nextOffset())
     val txnStreamSegment = new DefaultElasticStreamSegment(baseOffset, txnStream, txnStream.nextOffset())
-    val segment: ElasticLogSegment = new ElasticLogSegment(topicPartition, dataStreamSegment, timeStreamSegment, txnStreamSegment, endOffset = baseOffset,
+    val segment: ElasticLogSegment = new ElasticLogSegment(topicPartition, dataStreamSegment, timeStreamSegment, new ElasticTransactionIndex(baseOffset, txnStreamSegment), endOffset = baseOffset,
       baseOffset, config.indexInterval, config.segmentJitterMs, time);
     //TODO: modify log meta and save, set last active segment end offset and add new segment
     saveElasticLogMeta(metaStream, logMeta)
@@ -131,16 +131,17 @@ object ElasticLog {
 
     val segments = new LogSegments(topicPartition)
     for (segmentMeta <- logMeta.getSegments.asScala) {
-      val dataStreamSegment = new DefaultElasticStreamSegment(segmentMeta.getSegmentBaseOffset, dataStream, segmentMeta.getDataStreamStartOffset)
-      val timeStreamSegment = new DefaultElasticStreamSegment(segmentMeta.getSegmentBaseOffset, timeStream, segmentMeta.getTimeStreamStartOffset)
-      val txnStreamSegment = new DefaultElasticStreamSegment(segmentMeta.getSegmentBaseOffset, txnStream, segmentMeta.getTxnStreamStartOffset)
+      val baseOffset = segmentMeta.getSegmentBaseOffset
+      val dataStreamSegment = new DefaultElasticStreamSegment(baseOffset, dataStream, segmentMeta.getDataStreamStartOffset)
+      val timeStreamSegment = new DefaultElasticStreamSegment(baseOffset, timeStream, segmentMeta.getTimeStreamStartOffset)
+      val txnStreamSegment = new DefaultElasticStreamSegment(baseOffset, txnStream, segmentMeta.getTxnStreamStartOffset)
       val endOffset = if (segmentMeta.getSegmentEndOffset == -1L) {
         segmentMeta.getSegmentBaseOffset + dataStream.nextOffset() - segmentMeta.getDataStreamStartOffset
       } else {
         segmentMeta.getSegmentEndOffset
       }
       val elasticLogSegment = new ElasticLogSegment(topicPartition,
-        dataStreamSegment, timeStreamSegment, txnStreamSegment, endOffset, segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
+        dataStreamSegment, timeStreamSegment, new ElasticTransactionIndex(baseOffset, txnStreamSegment), endOffset, segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
       segments.add(elasticLogSegment)
     }
     //FIXME: offset
