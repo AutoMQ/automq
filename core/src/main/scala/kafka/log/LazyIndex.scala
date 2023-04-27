@@ -46,7 +46,7 @@ import org.apache.kafka.common.utils.Utils
   *                  `AbstractIndex` instance.
   */
 @threadsafe
-class LazyIndex[T <: AbstractIndex] private (@volatile private var indexWrapper: IndexWrapper, loadIndex: File => T) {
+class LazyIndex[T <: Index] private (@volatile private var indexWrapper: IndexWrapper, loadIndex: File => T) {
 
   private val lock = new ReentrantLock()
 
@@ -103,10 +103,10 @@ class LazyIndex[T <: AbstractIndex] private (@volatile private var indexWrapper:
 object LazyIndex {
 
   def forOffset(file: File, baseOffset: Long, maxIndexSize: Int = -1, writable: Boolean = true): LazyIndex[OffsetIndex] =
-    new LazyIndex(new IndexFile(file), file => new OffsetIndex(file, baseOffset, maxIndexSize, writable))
+    new LazyIndex(new IndexFile(file), file => OffsetIndex(file, baseOffset, maxIndexSize, writable))
 
   def forTime(file: File, baseOffset: Long, maxIndexSize: Int = -1, writable: Boolean = true): LazyIndex[TimeIndex] =
-    new LazyIndex(new IndexFile(file), file => new TimeIndex(file, baseOffset, maxIndexSize, writable))
+    new LazyIndex(new IndexFile(file), file => TimeIndex(file, baseOffset, maxIndexSize, writable))
 
   private sealed trait IndexWrapper {
 
@@ -146,7 +146,7 @@ object LazyIndex {
 
   }
 
-  private class IndexValue[T <: AbstractIndex](val index: T) extends IndexWrapper {
+  private class IndexValue[T <: Index](val index: T) extends IndexWrapper {
 
     def file: File = index.file
 

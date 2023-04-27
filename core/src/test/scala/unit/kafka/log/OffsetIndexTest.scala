@@ -40,7 +40,7 @@ class OffsetIndexTest {
   
   @BeforeEach
   def setup(): Unit = {
-    this.idx = new OffsetIndex(nonExistentTempFile(), baseOffset, maxIndexSize = 30 * 8)
+    this.idx = OffsetIndex(nonExistentTempFile(), baseOffset, maxIndexSize = 30 * 8)
   }
   
   @AfterEach
@@ -149,7 +149,7 @@ class OffsetIndexTest {
     idx.append(first.offset, first.position)
     idx.append(sec.offset, sec.position)
     idx.close()
-    val idxRo = new OffsetIndex(idx.file, baseOffset = idx.baseOffset)
+    val idxRo = OffsetIndex(idx.file, baseOffset = idx.baseOffset)
     assertEquals(first, idxRo.lookup(first.offset))
     assertEquals(sec, idxRo.lookup(sec.offset))
     assertEquals(sec.offset, idxRo.lastOffset)
@@ -159,7 +159,7 @@ class OffsetIndexTest {
   
   @Test
   def truncate(): Unit = {
-	val idx = new OffsetIndex(nonExistentTempFile(), baseOffset = 0L, maxIndexSize = 10 * 8)
+	val idx = OffsetIndex(nonExistentTempFile(), baseOffset = 0L, maxIndexSize = 10 * 8)
 	idx.truncate()
     for(i <- 1 until 10)
       idx.append(i, i)
@@ -200,7 +200,7 @@ class OffsetIndexTest {
 
   @Test
   def forceUnmapTest(): Unit = {
-    val idx = new OffsetIndex(nonExistentTempFile(), baseOffset = 0L, maxIndexSize = 10 * 8)
+    val idx = OffsetIndex(nonExistentTempFile(), baseOffset = 0L, maxIndexSize = 10 * 8)
     idx.forceUnmap()
     // mmap should be null after unmap causing lookup to throw a NPE
     assertThrows(classOf[NullPointerException], () => idx.lookup(1))
@@ -210,7 +210,7 @@ class OffsetIndexTest {
   def testSanityLastOffsetEqualToBaseOffset(): Unit = {
     // Test index sanity for the case where the last offset appended to the index is equal to the base offset
     val baseOffset = 20L
-    val idx = new OffsetIndex(nonExistentTempFile(), baseOffset = baseOffset, maxIndexSize = 10 * 8)
+    val idx = OffsetIndex(nonExistentTempFile(), baseOffset = baseOffset, maxIndexSize = 10 * 8)
     idx.append(baseOffset, 0)
     idx.sanityCheck()
   }

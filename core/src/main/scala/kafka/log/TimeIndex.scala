@@ -17,41 +17,29 @@
 
 package kafka.log
 
-import java.io.File
-import java.nio.ByteBuffer
-
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.record.RecordBatch
 
-/**
- * An index that maps from the timestamp to the logical offsets of the messages in a segment. This index might be
- * sparse, i.e. it may not hold an entry for all the messages in the segment.
- *
- * The index is stored in a file that is preallocated to hold a fixed maximum amount of 12-byte time index entries.
- * The file format is a series of time index entries. The physical format is a 8 bytes timestamp and a 4 bytes "relative"
- * offset used in the [[OffsetIndex]]. A time index entry (TIMESTAMP, OFFSET) means that the biggest timestamp seen
- * before OFFSET is TIMESTAMP. i.e. Any message whose timestamp is greater than TIMESTAMP must come after OFFSET.
- *
- * All external APIs translate from relative offsets to full offsets, so users of this class do not interact with the internal
- * storage format.
- *
- * The timestamps in the same time index file are guaranteed to be monotonically increasing.
- *
- * The index supports timestamp lookup for a memory map of this file. The lookup is done using a binary search to find
- * the offset of the message whose indexed timestamp is closest but smaller or equals to the target timestamp.
- *
- * Time index files can be opened in two ways: either as an empty, mutable index that allows appending or
- * an immutable read-only index file that has previously been populated. The makeReadOnly method will turn a mutable file into an
- * immutable one and truncate off any extra bytes. This is done when the index file is rolled over.
- *
- * No attempt is made to checksum the contents of this file, in the event of a crash it is rebuilt.
- *
- */
+import java.io.File
+import java.nio.ByteBuffer
+
+trait TimeIndex extends Index {
+  def isFull: Boolean
+  def lastEntry: TimestampOffset
+  def entry(n: Int): TimestampOffset
+  def maybeAppend(timestamp: Long, offset: Long, skipFullCheck: Boolean = false): Unit
+  def lookup(targetTimestamp: Long): TimestampOffset
+  def truncate(): Unit
+  def truncateTo(offset: Long): Unit
+  def resize(newSize: Int): Boolean
+  def sanityCheck(): Unit
+}
+
 // Avoid shadowing mutable file in AbstractIndex
-class TimeIndex(_file: File, baseOffset: Long, maxIndexSize: Int = -1, writable: Boolean = true)
-    extends AbstractIndex(_file, baseOffset, maxIndexSize, writable) {
+class TimeIndexKafka(_file: File, baseOffset: Long, maxIndexSize: Int = -1, writable: Boolean = true)
+    extends AbstractIndex(_file, baseOffset, maxIndexSize, writable) with TimeIndex {
   import TimeIndex._
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
@@ -226,4 +214,8 @@ class TimeIndex(_file: File, baseOffset: Long, maxIndexSize: Int = -1, writable:
 
 object TimeIndex extends Logging {
   override val loggerName: String = classOf[TimeIndex].getName
+
+  def apply(_file: File, baseOffset: Long, maxIndexSize: Int = -1, writable: Boolean = true): TimeIndex = {
+    new TimeIndexKafka(_file, baseOffset, maxIndexSize, writable)
+  }
 }

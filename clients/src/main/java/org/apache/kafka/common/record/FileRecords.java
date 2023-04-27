@@ -41,13 +41,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class FileRecords extends AbstractRecords implements Closeable {
     private final boolean isSlice;
-    private final int start;
-    private final int end;
+    protected final int start;
+    protected final int end;
 
-    private final Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
+    protected final Iterable<FileLogInputStream.FileChannelRecordBatch> batches;
 
     // mutable state
-    private final AtomicInteger size;
+    protected final AtomicInteger size;
     private final FileChannel channel;
     private volatile File file;
 
@@ -83,6 +83,18 @@ public class FileRecords extends AbstractRecords implements Closeable {
             channel.position(limit);
         }
 
+        batches = batchesFrom(start);
+    }
+
+    // only for es inherent
+    public FileRecords(int start,
+                       int end,
+                       boolean isSlice) {
+        this.start = start;
+        this.end = end;
+        this.isSlice = isSlice;
+        this.size = new AtomicInteger();
+        channel = null;
         batches = batchesFrom(start);
     }
 
@@ -410,7 +422,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return batchIterator(start);
     }
 
-    private AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
+    protected AbstractIterator<FileChannelRecordBatch> batchIterator(int start) {
         final int end;
         if (isSlice)
             end = this.end;

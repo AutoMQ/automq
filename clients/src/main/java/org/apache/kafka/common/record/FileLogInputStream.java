@@ -119,6 +119,15 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             this.batchSize = batchSize;
         }
 
+        // only for es use
+        public FileChannelRecordBatch() {
+            this.offset = -1;
+            this.magic = -1;
+            this.fileRecords = null;
+            this.position = -1;
+            this.batchSize = -1;
+        }
+
         @Override
         public CompressionType compressionType() {
             return loadBatchHeader().compressionType();

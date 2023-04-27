@@ -58,6 +58,12 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
     }
 
     @Override
+    public long nextOffset() {
+        // TODO: use stream segment to represent file, there is no need keep segmentBaseOffset
+        return streamOffset2segmentOffset(stream.nextOffset());
+    }
+
+    @Override
     public void destroy() {
         // TODO: update ElasticLogMeta and persist meta
     }
