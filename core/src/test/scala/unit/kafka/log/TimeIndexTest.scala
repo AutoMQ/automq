@@ -34,7 +34,7 @@ class TimeIndexTest {
 
   @BeforeEach
   def setup(): Unit = {
-    this.idx = new TimeIndex(nonExistantTempFile(), baseOffset = baseOffset, maxIndexSize = maxEntries * 12)
+    this.idx = TimeIndex(nonExistantTempFile(), baseOffset = baseOffset, maxIndexSize = maxEntries * 12)
   }
 
   @AfterEach
@@ -114,7 +114,7 @@ class TimeIndexTest {
     var shouldCorruptOffset = false
     var shouldCorruptTimestamp = false
     var shouldCorruptLength = false
-    idx = new TimeIndex(idx.file, baseOffset = baseOffset, maxIndexSize = maxEntries * 12) {
+    idx = new TimeIndexKafka(idx.file, baseOffset = baseOffset, maxIndexSize = maxEntries * 12) {
       override def lastEntry = {
         val superLastEntry = super.lastEntry
         val offset = if (shouldCorruptOffset) baseOffset - 1 else superLastEntry.offset

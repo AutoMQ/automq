@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Elastic stream segment, represent stream sub part.
+ * support read from in-flight write buffer
  */
 public interface ElasticStreamSegment {
 
@@ -44,6 +45,11 @@ public interface ElasticStreamSegment {
      * @return {@link FetchResult}
      */
     CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint);
+
+    /**
+     * Get segment next offset.
+     */
+    long nextOffset();
 
     /**
      * Destroy segment.

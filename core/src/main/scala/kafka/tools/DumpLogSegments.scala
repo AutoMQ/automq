@@ -128,7 +128,7 @@ object DumpLogSegments {
     val startOffset = file.getName.split("\\.")(0).toLong
     val logFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.LogFileSuffix)
     val fileRecords = FileRecords.open(logFile, false)
-    val index = new OffsetIndex(file, baseOffset = startOffset, writable = false)
+    val index = OffsetIndex(file, baseOffset = startOffset, writable = false)
 
     if (index.entries == 0) {
       println(s"$file is empty.")
@@ -170,8 +170,8 @@ object DumpLogSegments {
     val logFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.LogFileSuffix)
     val fileRecords = FileRecords.open(logFile, false)
     val indexFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.IndexFileSuffix)
-    val index = new OffsetIndex(indexFile, baseOffset = startOffset, writable = false)
-    val timeIndex = new TimeIndex(file, baseOffset = startOffset, writable = false)
+    val index = OffsetIndex(indexFile, baseOffset = startOffset, writable = false)
+    val timeIndex = TimeIndex(file, baseOffset = startOffset, writable = false)
 
     try {
       //Check that index passes sanityCheck, this is the check that determines if indexes will be rebuilt on startup or not.

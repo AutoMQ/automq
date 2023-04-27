@@ -1072,7 +1072,7 @@ class LogLoaderTest {
     val indexFiles = logDir.listFiles.filter(file => file.getName.contains(".index"))
     assertEquals(2, indexFiles.length)
     for (file <- indexFiles) {
-      val offsetIndex = new OffsetIndex(file, file.getName.replace(".index","").toLong)
+      val offsetIndex = OffsetIndex(file, file.getName.replace(".index","").toLong)
       assertTrue(offsetIndex.lastOffset >= 0)
       offsetIndex.close()
     }
@@ -1135,7 +1135,7 @@ class LogLoaderTest {
     val indexFiles = logDir.listFiles.filter(file => file.getName.contains(".index"))
     assertEquals(2, indexFiles.length)
     for (file <- indexFiles) {
-      val offsetIndex = new OffsetIndex(file, file.getName.replace(".index","").toLong)
+      val offsetIndex = OffsetIndex(file, file.getName.replace(".index","").toLong)
       assertTrue(offsetIndex.lastOffset >= 0)
       offsetIndex.close()
     }
@@ -1176,7 +1176,7 @@ class LogLoaderTest {
     val indexFiles = logDir.listFiles.filter(file => file.getName.contains(".index"))
     assertEquals(3, indexFiles.length)
     for (file <- indexFiles) {
-      val offsetIndex = new OffsetIndex(file, file.getName.replace(".index","").toLong)
+      val offsetIndex = OffsetIndex(file, file.getName.replace(".index","").toLong)
       assertTrue(offsetIndex.lastOffset >= 0)
       offsetIndex.close()
     }
