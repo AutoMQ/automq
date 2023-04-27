@@ -25,7 +25,6 @@ import org.apache.kafka.common.record.RecordBatch
 
 import java.nio.ByteBuffer
 
-// TODO: extract common code to abstract StreamIndex
 class ElasticTimeIndex(streamSegment: ElasticStreamSegment, baseOffset: Long, maxIndexSize: Int = -1)
   extends AbstractStreamIndex(streamSegment, baseOffset, maxIndexSize) with TimeIndex {
 

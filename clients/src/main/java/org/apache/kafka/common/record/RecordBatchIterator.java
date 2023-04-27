@@ -23,11 +23,11 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import java.io.EOFException;
 import java.io.IOException;
 
-class RecordBatchIterator<T extends RecordBatch> extends AbstractIterator<T> {
+public class RecordBatchIterator<T extends RecordBatch> extends AbstractIterator<T> {
 
     private final LogInputStream<T> logInputStream;
 
-    RecordBatchIterator(LogInputStream<T> logInputStream) {
+    public RecordBatchIterator(LogInputStream<T> logInputStream) {
         this.logInputStream = logInputStream;
     }
 
