@@ -20,7 +20,8 @@ package kafka.log.es;
 public class ElasticStreamSegmentMeta {
     private long segmentBaseOffset;
     private long segmentEndOffset = -1L;
-    private long dataStreamStartOffset;
+    private long logStreamStartOffset;
+    private long offsetStreamStartOffset;
     private long timeStreamStartOffset;
     private long txnStreamStartOffset;
 
@@ -35,12 +36,12 @@ public class ElasticStreamSegmentMeta {
         this.segmentBaseOffset = segmentBaseOffset;
     }
 
-    public long getDataStreamStartOffset() {
-        return dataStreamStartOffset;
+    public long getLogStreamStartOffset() {
+        return logStreamStartOffset;
     }
 
-    public void setDataStreamStartOffset(long dataStreamStartOffset) {
-        this.dataStreamStartOffset = dataStreamStartOffset;
+    public void setLogStreamStartOffset(long logStreamStartOffset) {
+        this.logStreamStartOffset = logStreamStartOffset;
     }
 
     public long getTimeStreamStartOffset() {
@@ -65,5 +66,13 @@ public class ElasticStreamSegmentMeta {
 
     public void setSegmentEndOffset(long segmentEndOffset) {
         this.segmentEndOffset = segmentEndOffset;
+    }
+
+    public long getOffsetStreamStartOffset() {
+        return offsetStreamStartOffset;
+    }
+
+    public void setOffsetStreamStartOffset(long offsetStreamStartOffset) {
+        this.offsetStreamStartOffset = offsetStreamStartOffset;
     }
 }

@@ -48,7 +48,7 @@ object LogTestUtils {
     val timeIdx = LazyIndex.forTime(UnifiedLog.timeIndexFile(logDir, offset), offset, maxIndexSize = 1500)
     val txnIndex = new TransactionIndex(offset, UnifiedLog.transactionIndexFile(logDir, offset))
 
-    new LogSegment(ms, idx, timeIdx, txnIndex, offset, indexIntervalBytes, 0, time)
+    new LogSegmentKafka(ms, idx, timeIdx, txnIndex, offset, indexIntervalBytes, 0, time)
   }
 
   def createLogConfig(segmentMs: Long = Defaults.SegmentMs,

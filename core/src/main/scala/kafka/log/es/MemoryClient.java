@@ -126,7 +126,7 @@ public class MemoryClient implements Client {
 
         @Override
         public CompletableFuture<Void> putKV(List<KeyValue> list) {
-            list.forEach(kv -> store.put(kv.key(), kv.value().slice()));
+            list.forEach(kv -> store.put(kv.key(), kv.value().duplicate()));
             return CompletableFuture.completedFuture(null);
         }
 

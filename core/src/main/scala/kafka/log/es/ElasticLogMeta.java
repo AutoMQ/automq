@@ -28,13 +28,15 @@ import java.util.List;
 // TODO: save meta to stream periodically. save meta when broker shutdown.
 public class ElasticLogMeta {
     private List<ElasticStreamSegmentMeta> segments;
-    private Long dataStreamId;
+    private Long logStreamId;
+    private Long offsetStreamId;
     private Long timeStreamId;
     private Long txnStreamId;
 
-    public static ElasticLogMeta of(long dataStreamId, long timeStreamId, long txnStreamId) {
+    public static ElasticLogMeta of(long dataStreamId, long offsetStreamId, long timeStreamId, long txnStreamId) {
         ElasticLogMeta logMeta = new ElasticLogMeta();
-        logMeta.dataStreamId = dataStreamId;
+        logMeta.logStreamId = dataStreamId;
+        logMeta.offsetStreamId = offsetStreamId;
         logMeta.timeStreamId = timeStreamId;
         logMeta.txnStreamId = txnStreamId;
         logMeta.segments = new LinkedList<>();
@@ -60,12 +62,12 @@ public class ElasticLogMeta {
         this.segments = segments;
     }
 
-    public Long getDataStreamId() {
-        return dataStreamId;
+    public Long getLogStreamId() {
+        return logStreamId;
     }
 
-    public void setDataStreamId(Long dataStreamId) {
-        this.dataStreamId = dataStreamId;
+    public void setLogStreamId(Long logStreamId) {
+        this.logStreamId = logStreamId;
     }
 
     public Long getTimeStreamId() {
@@ -82,5 +84,13 @@ public class ElasticLogMeta {
 
     public void setTxnStreamId(Long txnStreamId) {
         this.txnStreamId = txnStreamId;
+    }
+
+    public Long getOffsetStreamId() {
+        return offsetStreamId;
+    }
+
+    public void setOffsetStreamId(Long offsetStreamId) {
+        this.offsetStreamId = offsetStreamId;
     }
 }

@@ -18,6 +18,8 @@
 
 package kafka.log.es;
 
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -47,10 +49,12 @@ import java.util.Queue;
 
 public class ElasticLogFileRecords extends FileRecords {
     private final ElasticStreamSegment streamSegment;
+    private long lastModifiedTimeMs = System.currentTimeMillis();
 
     public ElasticLogFileRecords(ElasticStreamSegment streamSegment) {
-        super(0, (int) (streamSegment.nextOffset()), true);
+        super(0, Integer.MAX_VALUE, false);
         this.streamSegment = streamSegment;
+        size.set((int) streamSegment.nextOffset());
     }
 
     @Override
@@ -76,6 +80,19 @@ public class ElasticLogFileRecords extends FileRecords {
         throw new UnsupportedOperationException();
     }
 
+    public Records read(int position, int maxSizeHint) throws IOException {
+        try {
+            FetchResult rst = streamSegment.fetch(position, maxSizeHint).get();
+            CompositeByteBuf composited = Unpooled.compositeBuffer();
+            rst.recordBatchList().forEach(r -> {
+                composited.addComponent(true, Unpooled.wrappedBuffer(r.rawPayload()));
+            });
+            return MemoryRecords.readableRecords(composited.nioBuffer());
+        } catch (Throwable e) {
+            throw new IOException(e);
+        }
+    }
+
     @Override
     public UnalignedFileRecords sliceUnaligned(int position, int size) {
         // don't expect to be called
@@ -90,6 +107,7 @@ public class ElasticLogFileRecords extends FileRecords {
         int appendSize = records.sizeInBytes();
         streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
         size.getAndAdd(appendSize);
+        lastModifiedTimeMs = System.currentTimeMillis();
         return appendSize;
     }
 
@@ -144,8 +162,12 @@ public class ElasticLogFileRecords extends FileRecords {
         throw new UnsupportedOperationException();
     }
 
+    public long getLastModifiedTimeMs() {
+        return lastModifiedTimeMs;
+    }
+
     protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start) {
-        LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, end);
+        LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, sizeInBytes());
         return new RecordBatchIterator<>(inputStream);
     }
 
@@ -169,12 +191,13 @@ public class ElasticLogFileRecords extends FileRecords {
                 if (recordBatch != null) {
                     return recordBatch;
                 }
+                // TODO: end 有点问题
                 if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
                     return null;
                 try {
                     FetchResult rst = elasticLogFileRecords.streamSegment.fetch(position, 1).get();
                     rst.recordBatchList().forEach(streamRecord -> {
-                        for (RecordBatch r: MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
+                        for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
                             remaining.offer(new FileChannelRecordBatchWrapper(r, position));
                             position += r.sizeInBytes();
                         }

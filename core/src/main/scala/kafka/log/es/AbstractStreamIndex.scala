@@ -6,7 +6,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,18 +27,21 @@ import java.util.concurrent.locks.{Lock, ReentrantLock}
 
 /**
  * Implementation ref. AbstractIndex
+ *
  * @param stream
  * @param baseOffset
  * @param maxIndexSize
  */
-abstract class AbstractStreamIndex(val stream: ElasticStreamSegment,val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
+abstract class AbstractStreamIndex(val stream: ElasticStreamSegment, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
   protected def entrySize: Int
+
   protected def _warmEntries: Int = 8192 / entrySize
+
   protected val lock = new ReentrantLock
   protected val adjustedMaxIndexSize = roundDownToExactMultiple(maxIndexSize, entrySize)
 
   @volatile
-  protected var _maxEntries: Int = (stream.nextOffset() / entrySize).toInt
+  protected var _maxEntries: Int = (adjustedMaxIndexSize / entrySize)
 
   @volatile
   protected var _entries: Int = (stream.nextOffset() / entrySize).toInt
@@ -60,7 +63,7 @@ abstract class AbstractStreamIndex(val stream: ElasticStreamSegment,val baseOffs
   // TODO:
   def updateParentDir(parentDir: File): Unit = {}
 
-  def resize(newSize: Int): Boolean =  {
+  def resize(newSize: Int): Boolean = {
     // noop implementation
     true
   }

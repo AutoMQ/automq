@@ -31,49 +31,39 @@ import java.util.stream.Collectors;
 
 public class DefaultElasticStreamSegment implements ElasticStreamSegment {
     /**
-     * logical base offset of this segment.
-     */
-    private final long segmentBaseOffset;
-    /**
      * the real start offset of this segment in the stream.
      */
     private final long startOffsetInStream;
+    private long nextOffset;
     private final Stream stream;
 
-    public DefaultElasticStreamSegment(long segmentBaseOffset, Stream stream, long startOffsetInStream) {
-        this.segmentBaseOffset = segmentBaseOffset;
+    public DefaultElasticStreamSegment(Stream stream, long startOffsetInStream) {
         this.stream = stream;
+        // TODO: init nextOffset from argument
+        nextOffset = stream.nextOffset();
         this.startOffsetInStream = startOffsetInStream;
-        System.out.println("new segment: " + segmentBaseOffset + ", " + startOffsetInStream + " in stream " + stream.streamId());
+        System.out.println("new segment: " + startOffsetInStream + " in stream " + stream.streamId());
     }
 
     @Override
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        nextOffset += recordBatch.count();
         return stream.append(recordBatch).thenApply(AppendResultWrapper::new);
     }
 
     @Override
     public CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint) {
-        return stream.fetch(segmentOffset2streamOffset(startOffset), maxBytesHint);
+        return stream.fetch(startOffsetInStream + startOffset, maxBytesHint).thenApply(FetchResultWrapper::new);
     }
 
     @Override
     public long nextOffset() {
-        // TODO: use stream segment to represent file, there is no need keep segmentBaseOffset
-        return streamOffset2segmentOffset(stream.nextOffset());
+        return nextOffset;
     }
 
     @Override
     public void destroy() {
         // TODO: update ElasticLogMeta and persist meta
-    }
-
-    private long segmentOffset2streamOffset(long offset) {
-        return offset - segmentBaseOffset + startOffsetInStream;
-    }
-
-    private long streamOffset2segmentOffset(long offset) {
-        return offset - startOffsetInStream + segmentBaseOffset;
     }
 
     class AppendResultWrapper implements AppendResult {
@@ -85,7 +75,7 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
 
         @Override
         public long baseOffset() {
-            return streamOffset2segmentOffset(inner.baseOffset());
+            return inner.baseOffset() - startOffsetInStream;
         }
     }
 
@@ -111,12 +101,12 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
 
         @Override
         public long baseOffset() {
-            return streamOffset2segmentOffset(inner.baseOffset());
+            return inner.baseOffset() - startOffsetInStream;
         }
 
         @Override
         public long lastOffset() {
-            return streamOffset2segmentOffset(inner.lastOffset());
+            return inner.lastOffset() - startOffsetInStream;
         }
 
         @Override

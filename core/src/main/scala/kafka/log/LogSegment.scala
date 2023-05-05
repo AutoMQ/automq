@@ -19,7 +19,7 @@ package kafka.log
 import com.yammer.metrics.core.Timer
 
 import java.io.{File, IOException}
-import java.nio.file.{Files, NoSuchFileException}
+import java.nio.file.{Files, NoSuchFileException, Path}
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 import kafka.common.LogSegmentOffsetOverflowException
@@ -37,6 +37,68 @@ import org.apache.kafka.common.utils.{BufferSupplier, Time}
 
 import scala.jdk.CollectionConverters._
 import scala.math._
+
+trait LogSegment extends Logging {
+  def baseOffset: Long
+  def rollJitterMs: Long
+  def indexIntervalBytes: Int
+  def log: FileRecords
+  def lazyOffsetIndex: LazyIndex[OffsetIndex]
+  def lazyTimeIndex: LazyIndex[TimeIndex]
+  def offsetIndex: OffsetIndex
+  def timeIndex: TimeIndex
+  def txnIndex: TransactionIndex
+  def shouldRoll(rollParams: RollParams): Boolean
+  def resizeIndexes(size: Int): Unit
+  def sanityCheck(timeIndexFileNewlyCreated: Boolean): Unit
+  def maxTimestampAndOffsetSoFar_=(timestampOffset: TimestampOffset): Unit
+  def maxTimestampAndOffsetSoFar: TimestampOffset
+  def maxTimestampSoFar: Long
+  def offsetOfMaxTimestampSoFar: Long
+  def size: Int
+  def canConvertToRelativeOffset(offset: Long): Boolean
+
+  @nonthreadsafe
+  def append(largestOffset: Long,
+             largestTimestamp: Long,
+             shallowOffsetOfMaxTimestamp: Long,
+             records: MemoryRecords): Unit
+  def appendFromFile(records: FileRecords, start: Int): Int
+  @nonthreadsafe
+  def updateTxnIndex(completedTxn: CompletedTxn, lastStableOffset: Long): Unit
+  private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): LogOffsetPosition
+  @threadsafe
+  def read(startOffset: Long,
+           maxSize: Int,
+           maxPosition: Long = size,
+           minOneMessage: Boolean = false): FetchDataInfo
+  def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long]
+  @nonthreadsafe
+  def recover(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int
+  def hasOverflow: Boolean
+  def collectAbortedTxns(fetchOffset: Long, upperBoundOffset: Long): TxnIndexSearchResult
+  @nonthreadsafe
+  def truncateTo(offset: Long): Int
+  @threadsafe
+  def readNextOffset: Long
+  @threadsafe
+  def flush(): Unit
+  def updateParentDir(dir: File): Unit
+  def changeFileSuffixes(oldSuffix: String, newSuffix: String): Unit
+  def hasSuffix(suffix: String): Boolean
+  def onBecomeInactiveSegment(): Unit
+  def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long
+  def getFirstBatchTimestamp(): Long
+  def findOffsetByTimestamp(timestamp: Long, startingOffset: Long = 0): Option[TimestampAndOffset]
+  def close(): Unit
+  def closeHandlers(): Unit
+  def deleteIfExists(): Unit
+  def deleted(): Boolean
+  def lastModified: Long
+  def largestRecordTimestamp: Option[Long]
+  def largestTimestamp : Long
+  def lastModified_=(ms: Long): Path
+}
 
 /**
  * A segment of the log. Each segment has two components: a log and an index. The log is a FileRecords containing
@@ -56,14 +118,14 @@ import scala.math._
  * @param time The time instance
  */
 @nonthreadsafe
-class LogSegment private[log] (val log: FileRecords,
+class LogSegmentKafka private[log] (val log: FileRecords,
                                val lazyOffsetIndex: LazyIndex[OffsetIndex],
                                val lazyTimeIndex: LazyIndex[TimeIndex],
                                val txnIndex: TransactionIndex,
                                val baseOffset: Long,
                                val indexIntervalBytes: Int,
                                val rollJitterMs: Long,
-                               val time: Time) extends Logging {
+                               val time: Time) extends Logging with LogSegment {
 
   def offsetIndex: OffsetIndex = lazyOffsetIndex.get
 
@@ -676,7 +738,7 @@ object LogSegment {
         time)
     }
     val maxIndexSize = config.maxIndexSize
-    new LogSegment(
+    new LogSegmentKafka(
       FileRecords.open(UnifiedLog.logFile(dir, baseOffset, fileSuffix), fileAlreadyExists, initFileSize, preallocate),
       LazyIndex.forOffset(UnifiedLog.offsetIndexFile(dir, baseOffset, fileSuffix), baseOffset = baseOffset, maxIndexSize = maxIndexSize),
       LazyIndex.forTime(UnifiedLog.timeIndexFile(dir, baseOffset, fileSuffix), baseOffset = baseOffset, maxIndexSize = maxIndexSize),
@@ -701,7 +763,7 @@ object LogSegment {
 
   def dir2TopicPartition(dir: File): TopicPartition = {
     // TODO: impl, reuse LocalLog#parseTopicPartitionName
-    null
+    LocalLog.parseTopicPartitionName(dir)
   }
 }
 

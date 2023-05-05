@@ -337,7 +337,7 @@ class LogLoaderTest {
       // Intercept all segment read calls
       val interceptedLogSegments = new LogSegments(topicPartition) {
         override def add(segment: LogSegment): LogSegment = {
-          val wrapper = new LogSegment(segment.log, segment.lazyOffsetIndex, segment.lazyTimeIndex, segment.txnIndex, segment.baseOffset,
+          val wrapper = new LogSegmentKafka(segment.log, segment.lazyOffsetIndex, segment.lazyTimeIndex, segment.txnIndex, segment.baseOffset,
             segment.indexIntervalBytes, segment.rollJitterMs, mockTime) {
 
             override def read(startOffset: Long, maxSize: Int, maxPosition: Long, minOneMessage: Boolean): FetchDataInfo = {
