@@ -38,6 +38,7 @@ class ElasticLog(val metaStream: api.Stream,
                  val timeStream: api.Stream,
                  val txnStream: api.Stream,
                  val logMeta: ElasticLogMeta,
+                 val partitionMeta: ElasticPartitionMeta,
                  _dir: File,
                  c: LogConfig,
                  segments: LogSegments,
@@ -49,13 +50,13 @@ class ElasticLog(val metaStream: api.Stream,
                  logDirFailureChannel: LogDirFailureChannel)
   extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
 
-  def logStartOffset: Long = logMeta.getStartOffset
+  def logStartOffset: Long = partitionMeta.getStartOffset
 
-  def setLogStartOffset(startOffset: Long): Unit = logMeta.setStartOffset(startOffset)
+  def setLogStartOffset(startOffset: Long): Unit = partitionMeta.setStartOffset(startOffset)
 
-  def cleanerOffsetCheckpoint: Long = logMeta.getCleanerOffsetCheckPoint
+  def cleanerOffsetCheckpoint: Long = partitionMeta.getCleanerOffset
 
-  def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = logMeta.setCleanerOffsetCheckPoint(offsetCheckpoint)
+  def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setCleanerOffset(offsetCheckpoint)
 
   def newSegment(baseOffset: Long, time: Time): ElasticLogSegment = {
     val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, logStream.nextOffset()))
@@ -95,9 +96,9 @@ object ElasticLog extends Logging {
     var metaStream: api.Stream = null
     // partition dimension meta
     var logMeta: ElasticLogMeta = null
+    var partitionMeta: ElasticPartitionMeta = null
     // TODO: load other partition dimension meta
     //    var producerSnaphot = null
-    //    var partitionMeta = null
 
     var logStream: api.Stream = null
     var offsetStream: api.Stream = null
@@ -122,7 +123,9 @@ object ElasticLog extends Logging {
       txnStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
 
       logMeta = ElasticLogMeta.of(logStream.streamId(), offsetStream.streamId(), timeStream.streamId(), txnStream.streamId())
+      partitionMeta = new ElasticPartitionMeta(0, 0)
       saveElasticLogMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
+      saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
     } else {
       // get partition meta stream id from PM
       val keyValue = kvList.get(0)
@@ -144,13 +147,21 @@ object ElasticLog extends Logging {
         logMeta = ElasticLogMeta.of(logStream.streamId(), offsetStream.streamId(), timeStream.streamId(), txnStream.streamId())
         saveElasticLogMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
       } else {
+        logMeta = logMetaOpt.get
         logStream = client.streamClient().openStream(logMeta.getLogStreamId, OpenStreamOptions.newBuilder().build()).get()
         offsetStream = client.streamClient().openStream(logMeta.getOffsetStreamId, OpenStreamOptions.newBuilder().build()).get()
         timeStream = client.streamClient().openStream(logMeta.getTimeStreamId, OpenStreamOptions.newBuilder().build()).get()
         txnStream = client.streamClient().openStream(logMeta.getTxnStreamId, OpenStreamOptions.newBuilder().build()).get()
       }
-    }
 
+      val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
+        if (partitionMetaOpt.isEmpty) {
+            partitionMeta = new ElasticPartitionMeta(0, 0)
+            saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+        } else {
+            partitionMeta = partitionMetaOpt.get
+        }
+    }
 
     val segments = new LogSegments(topicPartition)
     for (segmentMeta <- logMeta.getSegments.asScala) {
@@ -183,7 +194,7 @@ object ElasticLog extends Logging {
 
 
     val initRecoveryPoint = nextOffsetMetadata.messageOffset
-    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, logMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
+    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, logMeta, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
       scheduler, time, topicPartition, logDirFailureChannel)
     if (segments.isEmpty) {
       val elasticStreamSegment = elasticLog.newSegment(0L, time)

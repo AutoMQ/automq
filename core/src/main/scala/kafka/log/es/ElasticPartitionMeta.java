@@ -11,10 +11,23 @@ import java.nio.charset.StandardCharsets;
  * Partition dimension metadata, record the recover checkpoint, clean offset...
  */
 public class ElasticPartitionMeta {
-    @JsonProperty("r")
-    private Long recoverOffset;
+    /**
+     * The start offset of this topicPartition.
+     * It may be altered after log cleaning.
+     */
+    @JsonProperty("s")
+    private Long startOffset;
+
+    /**
+     * The offset of the last cleaned record.
+     */
     @JsonProperty("c")
     private Long cleanerOffset;
+
+    ElasticPartitionMeta(Long startOffset, Long cleanerOffset) {
+        this.startOffset = startOffset;
+        this.cleanerOffset = cleanerOffset;
+    }
 
     public static ByteBuffer encode(ElasticPartitionMeta meta) {
         ObjectMapper om = new ObjectMapper();
@@ -36,12 +49,12 @@ public class ElasticPartitionMeta {
         }
     }
 
-    public Long getRecoverOffset() {
-        return recoverOffset;
+    public Long getStartOffset() {
+        return startOffset;
     }
 
-    public void setRecoverOffset(Long recoverOffset) {
-        this.recoverOffset = recoverOffset;
+    public void setStartOffset(Long startOffset) {
+        this.startOffset = startOffset;
     }
 
     public Long getCleanerOffset() {

@@ -36,29 +36,14 @@ public class ElasticLogMeta {
     private Long offsetStreamId;
     private Long timeStreamId;
     private Long txnStreamId;
-    /**
-     * The start offset of this topicPartition.
-     * It may be altered after log cleaning.
-     */
-    private Long startOffset = 0L;
-    /**
-     * The offset of the last cleaned record.
-     */
-    private Long cleanerOffsetCheckPoint = 0L;
 
     public static ElasticLogMeta of(long dataStreamId, long offsetStreamId, long timeStreamId, long txnStreamId) {
-        return of(dataStreamId, offsetStreamId, timeStreamId, txnStreamId, 0L, 0L);
-    }
-
-    public static ElasticLogMeta of(long dataStreamId, long offsetStreamId, long timeStreamId, long txnStreamId, long startOffset, long cleanerOffsetCheckPoint) {
         ElasticLogMeta logMeta = new ElasticLogMeta();
         logMeta.logStreamId = dataStreamId;
         logMeta.offsetStreamId = offsetStreamId;
         logMeta.timeStreamId = timeStreamId;
         logMeta.txnStreamId = txnStreamId;
         logMeta.segments = new LinkedList<>();
-        logMeta.startOffset = startOffset;
-        logMeta.cleanerOffsetCheckPoint = cleanerOffsetCheckPoint;
         return logMeta;
     }
 
@@ -113,22 +98,6 @@ public class ElasticLogMeta {
 
     public void setTxnStreamId(Long txnStreamId) {
         this.txnStreamId = txnStreamId;
-    }
-
-    public Long getStartOffset() {
-        return startOffset;
-    }
-
-    public void setStartOffset(Long startOffset) {
-        this.startOffset = startOffset;
-    }
-
-    public Long getCleanerOffsetCheckPoint() {
-        return cleanerOffsetCheckPoint;
-    }
-
-    public void setCleanerOffsetCheckPoint(Long cleanerOffsetCheckPoint) {
-        this.cleanerOffsetCheckPoint = cleanerOffsetCheckPoint;
     }
 
     public Long getOffsetStreamId() {
