@@ -1841,9 +1841,9 @@ object UnifiedLog extends Logging {
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
     // elastic stream inject start
     if (!isClusterMetaLogSegment(dir)) {
-      val localLog = ElasticLogManager.getLog(dir, config, recoveryPoint, scheduler, time, topicPartition, logDirFailureChannel)
+      val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel)
       // extends UnifiedLog in future when require modify its implement.
-      return new ElasticUnifiedLog(localLog.logStartOffset(),
+      return new ElasticUnifiedLog(localLog.logStartOffset,
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,

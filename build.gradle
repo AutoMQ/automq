@@ -908,7 +908,7 @@ project(':core') {
 
     compileOnly libs.log4j
 
-    implementation('org.slf4j:slf4j-log4j12:2.0.7')
+    implementation('org.slf4j:slf4j-reload4j:2.0.7')
 
 
     testImplementation project(':clients').sourceSets.test.output

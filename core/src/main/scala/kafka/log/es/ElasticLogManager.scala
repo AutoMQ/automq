@@ -26,19 +26,19 @@ import sdk.elastic.stream.api.Client
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) {
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
 
   def getLog(dir: File,
              config: LogConfig,
-             recoveryPoint: Long,
              scheduler: Scheduler,
              time: Time,
              topicPartition: TopicPartition,
              logDirFailureChannel: LogDirFailureChannel): ElasticLog = {
     // TODO: add log close hook, remove closed elastic log
-    val elasticLog = ElasticLog(client, dir, config, recoveryPoint, scheduler, time, topicPartition, logDirFailureChannel)
+    val elasticLog = ElasticLog(client, dir, config, scheduler, time, topicPartition, logDirFailureChannel)
     elasticLogs.put(topicPartition, elasticLog)
     elasticLog
   }
@@ -59,14 +59,17 @@ class ElasticLogManager(val client: Client) {
 object ElasticLogManager {
   val Default = new ElasticLogManager(new MemoryClient())
 
+  def getElasticLog(topicPartition: TopicPartition): ElasticLog = Default.elasticLogs.get(topicPartition)
+
+  def getAllElasticLogs: Iterable[ElasticLog] = Default.elasticLogs.asScala.values
+
   def getLog(dir: File,
              config: LogConfig,
-             recoveryPoint: Long,
              scheduler: Scheduler,
              time: Time,
              topicPartition: TopicPartition,
              logDirFailureChannel: LogDirFailureChannel): ElasticLog = {
-    Default.getLog(dir, config, recoveryPoint, scheduler, time, topicPartition, logDirFailureChannel)
+    Default.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel)
   }
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time): ElasticLogSegment = {

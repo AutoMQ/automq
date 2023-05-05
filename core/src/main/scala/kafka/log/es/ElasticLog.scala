@@ -41,17 +41,17 @@ class ElasticLog(val metaStream: api.Stream,
                  c: LogConfig,
                  segments: LogSegments,
                  recoveryPoint: Long,
-                 nextOffsetMetadata: LogOffsetMetadata,
+                 @volatile private[log] var nextOffsetMetadata: LogOffsetMetadata,
                  scheduler: Scheduler,
                  time: Time,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel)
   extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
 
-  def logStartOffset(): Long = {
-    // FIXME
-    0L
-  }
+  def logStartOffset: Long = logMeta.getStartOffset
+  def setLogStartOffset(startOffset: Long): Unit = logMeta.setStartOffset(startOffset)
+  def cleanerOffsetCheckpoint: Long = logMeta.getCleanerOffsetCheckPoint
+  def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = logMeta.setCleanerOffsetCheckPoint(offsetCheckpoint)
 
   def newSegment(baseOffset: Long, time: Time): ElasticLogSegment = {
     val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, logStream.nextOffset()))
@@ -78,7 +78,6 @@ object ElasticLog {
 
   def apply(client: Client, dir: File,
             config: LogConfig,
-            recoveryPoint: Long,
             scheduler: Scheduler,
             time: Time,
             topicPartition: TopicPartition,
@@ -152,9 +151,20 @@ object ElasticLog {
         new ElasticTransactionIndex(baseOffset, txnStreamSegment), segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
       segments.add(elasticLogSegment)
     }
-    //FIXME: offset
-    val nextOffsetMetadata = LogOffsetMetadata(0L, 0, 0)
-    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, logMeta, dir, config, segments, recoveryPoint, nextOffsetMetadata,
+
+    val nextOffsetMetadata = segments.lastSegment match {
+      case Some(lastSegment) =>
+        //FIXME: get the last writable offset with the client
+        val lastOffset = 0L
+        //FIXME: get the physical position
+        LogOffsetMetadata(lastOffset, lastSegment.baseOffset, 0)
+        case None =>
+            LogOffsetMetadata(0L, 0L, 0)
+    }
+
+
+    val initRecoveryPoint = nextOffsetMetadata.messageOffset
+    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, logMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
       scheduler, time, topicPartition, logDirFailureChannel)
     if (segments.isEmpty) {
       val elasticStreamSegment = elasticLog.newSegment(0L, time)
