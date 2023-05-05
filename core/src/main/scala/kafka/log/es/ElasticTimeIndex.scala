@@ -25,7 +25,7 @@ import org.apache.kafka.common.record.RecordBatch
 
 import java.nio.ByteBuffer
 
-class ElasticTimeIndex(streamSegment: ElasticStreamSegment, baseOffset: Long, maxIndexSize: Int = -1)
+class ElasticTimeIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long, maxIndexSize: Int = -1)
   extends AbstractStreamIndex(streamSegment, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
@@ -122,5 +122,9 @@ class ElasticTimeIndex(streamSegment: ElasticStreamSegment, baseOffset: Long, ma
 
   override def flush(): Unit = {
     // TODO: wait all in-flight append complete
+  }
+
+  def seal(): Unit = {
+
   }
 }

@@ -52,8 +52,26 @@ public interface ElasticStreamSegment {
     long nextOffset();
 
     /**
+     * Get segment start offset in stream.
+     * @return segment start offset in stream.
+     */
+    long startOffsetInStream();
+
+    /**
+     * Get segment end offset in stream.
+     * @return segment end offset in stream.
+     */
+    default long endOffsetInStream() {
+        return startOffsetInStream() + nextOffset();
+    }
+
+    /**
      * Destroy segment.
      */
     void destroy();
 
+    /**
+     * Seal segment, forbid future append.
+     */
+    void seal();
 }

@@ -17,13 +17,28 @@
 
 package kafka.log.es;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class ElasticStreamSegmentMeta {
+    private static final long NOOP_OFFSET = -1L;
+    @JsonProperty("sbo")
     private long segmentBaseOffset;
-    private long segmentEndOffset = -1L;
+    @JsonProperty("lso")
     private long logStreamStartOffset;
+    @JsonProperty("leo")
+    private long logStreamEndOffset = NOOP_OFFSET;
+    @JsonProperty("oso")
     private long offsetStreamStartOffset;
+    @JsonProperty("oeo")
+    private long offsetStreamEndOffset = NOOP_OFFSET;
+    @JsonProperty("tso")
     private long timeStreamStartOffset;
+    @JsonProperty("teo")
+    private long timeStreamEndOffset = NOOP_OFFSET;
+    @JsonProperty("txnso")
     private long txnStreamStartOffset;
+    @JsonProperty("txneo")
+    private long txnStreamEndOffset = NOOP_OFFSET;
 
     public ElasticStreamSegmentMeta() {
     }
@@ -60,19 +75,43 @@ public class ElasticStreamSegmentMeta {
         this.txnStreamStartOffset = txnStreamStartOffset;
     }
 
-    public long getSegmentEndOffset() {
-        return segmentEndOffset;
-    }
-
-    public void setSegmentEndOffset(long segmentEndOffset) {
-        this.segmentEndOffset = segmentEndOffset;
-    }
-
     public long getOffsetStreamStartOffset() {
         return offsetStreamStartOffset;
     }
 
     public void setOffsetStreamStartOffset(long offsetStreamStartOffset) {
         this.offsetStreamStartOffset = offsetStreamStartOffset;
+    }
+
+    public long getLogStreamEndOffset() {
+        return logStreamEndOffset;
+    }
+
+    public void setLogStreamEndOffset(long logStreamEndOffset) {
+        this.logStreamEndOffset = logStreamEndOffset;
+    }
+
+    public long getOffsetStreamEndOffset() {
+        return offsetStreamEndOffset;
+    }
+
+    public void setOffsetStreamEndOffset(long offsetStreamEndOffset) {
+        this.offsetStreamEndOffset = offsetStreamEndOffset;
+    }
+
+    public long getTimeStreamEndOffset() {
+        return timeStreamEndOffset;
+    }
+
+    public void setTimeStreamEndOffset(long timeStreamEndOffset) {
+        this.timeStreamEndOffset = timeStreamEndOffset;
+    }
+
+    public long getTxnStreamEndOffset() {
+        return txnStreamEndOffset;
+    }
+
+    public void setTxnStreamEndOffset(long txnStreamEndOffset) {
+        this.txnStreamEndOffset = txnStreamEndOffset;
     }
 }

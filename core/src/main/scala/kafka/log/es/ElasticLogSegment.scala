@@ -28,10 +28,11 @@ import java.io.File
 import scala.math._
 
 
-class ElasticLogSegment(log: ElasticLogFileRecords,
-                        val offsetIdx: OffsetIndex,
-                        val timeIdx: TimeIndex,
-                        txnIndex: TransactionIndex,
+class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
+                        log: ElasticLogFileRecords,
+                        val offsetIdx: ElasticOffsetIndex,
+                        val timeIdx: ElasticTimeIndex,
+                        txnIndex: ElasticTransactionIndex,
                         baseOffset: Long,
                         indexIntervalBytes: Int,
                         rollJitterMs: Long,
@@ -105,6 +106,20 @@ class ElasticLogSegment(log: ElasticLogFileRecords,
     // TODO: check
     false
   }
+
+  override def onBecomeInactiveSegment(): Unit = {
+    timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
+    log.seal()
+    _meta.setLogStreamEndOffset(log.streamSegment.endOffsetInStream)
+    offsetIdx.seal()
+    _meta.setOffsetStreamEndOffset(offsetIdx.streamSegment.endOffsetInStream)
+    timeIdx.seal()
+    _meta.setTimeStreamEndOffset(timeIdx.streamSegment.endOffsetInStream)
+    txnIndex.seal()
+    _meta.setTxnStreamEndOffset(txnIndex.streamSegment.endOffsetInStream)
+  }
+
+  def meta: ElasticStreamSegmentMeta = _meta
 
   /**
    * Close this log segment

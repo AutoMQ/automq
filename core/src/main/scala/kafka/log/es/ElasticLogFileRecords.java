@@ -166,6 +166,14 @@ public class ElasticLogFileRecords extends FileRecords {
         return lastModifiedTimeMs;
     }
 
+    public void seal() {
+
+    }
+
+    public ElasticStreamSegment streamSegment() {
+        return streamSegment;
+    }
+
     protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start) {
         LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, sizeInBytes());
         return new RecordBatchIterator<>(inputStream);

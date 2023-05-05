@@ -37,7 +37,6 @@ class ElasticLog(val metaStream: api.Stream,
                  val offsetStream: api.Stream,
                  val timeStream: api.Stream,
                  val txnStream: api.Stream,
-                 val logMeta: ElasticLogMeta,
                  val partitionMeta: ElasticPartitionMeta,
                  _dir: File,
                  c: LogConfig,
@@ -59,16 +58,34 @@ class ElasticLog(val metaStream: api.Stream,
   def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setCleanerOffset(offsetCheckpoint)
 
   def newSegment(baseOffset: Long, time: Time): ElasticLogSegment = {
+    // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
     val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, logStream.nextOffset()))
     val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(offsetStream, offsetStream.nextOffset()), baseOffset, config.maxIndexSize)
     val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(timeStream, timeStream.nextOffset()), baseOffset, config.maxIndexSize)
-    val txnStreamSegment = new DefaultElasticStreamSegment(txnStream, txnStream.nextOffset())
-    val segment: ElasticLogSegment = new ElasticLogSegment(log, offsetIndex, timeIndex, new ElasticTransactionIndex(baseOffset, txnStreamSegment),
-      baseOffset, config.indexInterval, config.segmentJitterMs, time);
-    //TODO: modify log meta and save, set last active segment end offset and add new segment
-    saveElasticLogMeta(metaStream, MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
+    val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(txnStream, txnStream.nextOffset()))
+
+    val meta = new ElasticStreamSegmentMeta()
+    meta.setSegmentBaseOffset(baseOffset)
+    meta.setLogStreamEndOffset(log.streamSegment.startOffsetInStream)
+    meta.setOffsetStreamStartOffset(offsetIndex.streamSegment.startOffsetInStream)
+    meta.setTimeStreamStartOffset(txnIndex.streamSegment.startOffsetInStream)
+
+    val segment: ElasticLogSegment = new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex,
+      baseOffset, config.indexInterval, config.segmentJitterMs, time)
+    saveElasticLogMeta(metaStream, MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(logMeta())))
     segment
   }
+
+  def logMeta(): ElasticLogMeta = {
+    val elasticLogMeta = new ElasticLogMeta()
+    elasticLogMeta.setLogStreamId(logStream.streamId())
+    elasticLogMeta.setOffsetStreamId(offsetStream.streamId())
+    elasticLogMeta.setTimeStreamId(timeStream.streamId())
+    elasticLogMeta.setTxnStreamId(txnStream.streamId())
+    elasticLogMeta.setSegments(segments.values.map(s => (s.asInstanceOf[ElasticLogSegment]).meta).toList.asJava)
+    elasticLogMeta
+  }
+
 
   /**
    * Closes the segments of the log.
@@ -155,30 +172,30 @@ object ElasticLog extends Logging {
       }
 
       val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
-        if (partitionMetaOpt.isEmpty) {
-            partitionMeta = new ElasticPartitionMeta(0, 0)
-            saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
-        } else {
-            partitionMeta = partitionMetaOpt.get
-        }
+      if (partitionMetaOpt.isEmpty) {
+        partitionMeta = new ElasticPartitionMeta(0, 0)
+        saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+      } else {
+        partitionMeta = partitionMetaOpt.get
+      }
     }
 
     val segments = new LogSegments(topicPartition)
     for (segmentMeta <- logMeta.getSegments.asScala) {
       val baseOffset = segmentMeta.getSegmentBaseOffset
 
-      val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, segmentMeta.getLogStreamStartOffset))
-      val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(offsetStream, segmentMeta.getOffsetStreamStartOffset), baseOffset, config.maxIndexSize)
-      val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(timeStream, segmentMeta.getTimeStreamStartOffset), baseOffset, config.maxIndexSize)
-      val txnStreamSegment = new DefaultElasticStreamSegment(txnStream, segmentMeta.getTxnStreamStartOffset)
-      //      val endOffset = if (segmentMeta.getSegmentEndOffset == -1L) {
-      //        segmentMeta.getSegmentBaseOffset + logStream.nextOffset() - segmentMeta.getLogStreamStartOffset
-      //      } else {
-      //        segmentMeta.getSegmentEndOffset
-      //      }
-      // TODO: set endOffset, to avoid segment get overflow
-      val elasticLogSegment = new ElasticLogSegment(log, offsetIndex, timeIndex,
-        new ElasticTransactionIndex(baseOffset, txnStreamSegment), segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
+      val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, segmentMeta.getLogStreamStartOffset, segmentMeta.getLogStreamEndOffset))
+      val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(offsetStream, segmentMeta.getOffsetStreamStartOffset, segmentMeta.getOffsetStreamEndOffset), baseOffset, config.maxIndexSize)
+      val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(timeStream, segmentMeta.getTimeStreamStartOffset, segmentMeta.getTimeStreamEndOffset), baseOffset, config.maxIndexSize)
+      val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(txnStream, segmentMeta.getTxnStreamStartOffset, segmentMeta.getTxnStreamEndOffset))
+
+      val meta = new ElasticStreamSegmentMeta()
+      meta.setSegmentBaseOffset(baseOffset)
+      meta.setLogStreamEndOffset(log.streamSegment.startOffsetInStream)
+      meta.setOffsetStreamStartOffset(offsetIndex.streamSegment.startOffsetInStream)
+      meta.setTimeStreamStartOffset(txnIndex.streamSegment.startOffsetInStream)
+
+      val elasticLogSegment = new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
       segments.add(elasticLogSegment)
     }
 
@@ -194,7 +211,7 @@ object ElasticLog extends Logging {
 
 
     val initRecoveryPoint = nextOffsetMetadata.messageOffset
-    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, logMeta, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
+    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
       scheduler, time, topicPartition, logDirFailureChannel)
     if (segments.isEmpty) {
       val elasticStreamSegment = elasticLog.newSegment(0L, time)

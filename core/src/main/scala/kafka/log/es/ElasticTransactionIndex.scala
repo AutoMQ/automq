@@ -22,7 +22,11 @@ import kafka.log.TransactionIndex
 import java.io.File
 
 
-class ElasticTransactionIndex(startOffset: Long, streamSegment: ElasticStreamSegment)
+class ElasticTransactionIndex(startOffset: Long, val streamSegment: ElasticStreamSegment)
   extends TransactionIndex(startOffset, _file = new File("empty")) {
   //TODO: impl based on ElasticStreamSegment
+
+  def seal(): Unit = {
+
+  }
 }
