@@ -62,6 +62,16 @@ public class ElasticLogMeta {
         return logMeta;
     }
 
+    public static ByteBuffer encode(ElasticLogMeta meta) {
+        ObjectMapper om = new ObjectMapper();
+        try {
+            String str = om.writeValueAsString(meta);
+            return ByteBuffer.wrap(str.getBytes(StandardCharsets.UTF_8));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
     public static ElasticLogMeta decode(ByteBuffer buf) {
         String metaStr = StandardCharsets.UTF_8.decode(buf).toString();
         ObjectMapper om = new ObjectMapper();
