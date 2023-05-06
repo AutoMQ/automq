@@ -35,6 +35,7 @@ import java.util.Map;
 public class ElasticLogMeta {
     private Map<String, Long> streams = new HashMap<>();
     private List<ElasticStreamSegmentMeta> segments = new LinkedList<>();
+    private List<ElasticStreamSegmentMeta> cleanedSegments = new LinkedList<>();
 
     public static ByteBuffer encode(ElasticLogMeta meta) {
         ObjectMapper om = new ObjectMapper();
@@ -75,6 +76,14 @@ public class ElasticLogMeta {
 
     public void putStream(String name, long streamId) {
         streams.put(name, streamId);
+    }
+
+    public List<ElasticStreamSegmentMeta> getCleanedSegments() {
+        return cleanedSegments;
+    }
+
+    public void setCleanedSegments(List<ElasticStreamSegmentMeta> cleanedSegments) {
+        this.cleanedSegments = cleanedSegments;
     }
 
     @Override

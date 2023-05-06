@@ -46,12 +46,12 @@ class ElasticLogManager(val client: Client) {
   /**
    * New elastic log segment.
    */
-  def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time): ElasticLogSegment = {
+  def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, suffix: String): ElasticLogSegment = {
     val elasticLog = elasticLogs.get(topicPartition)
     if (elasticLog == null) {
       throw new IllegalStateException(s"Cannot find elastic log for $topicPartition")
     }
-    elasticLog.newSegment(baseOffset, time)
+    elasticLog.newSegment(baseOffset, time, suffix)
   }
 
 }
@@ -72,7 +72,7 @@ object ElasticLogManager {
     Default.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel)
   }
 
-  def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time): ElasticLogSegment = {
-    Default.newSegment(topicPartition, baseOffset, time)
+  def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {
+    Default.newSegment(topicPartition, baseOffset, time, fileSuffix)
   }
 }

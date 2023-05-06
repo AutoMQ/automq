@@ -46,6 +46,8 @@ class ElasticLog(val metaStream: api.Stream,
                  logDirFailureChannel: LogDirFailureChannel)
   extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
 
+  private var cleanedSegments: List[ElasticLogSegment] = List()
+
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
     if (event == LazyStream.Event.CREATE) {
@@ -66,6 +68,9 @@ class ElasticLog(val metaStream: api.Stream,
   def setReCoverOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setRecoverOffset(offsetCheckpoint)
 
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
+    if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
+      throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
+    }
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
     val meta = new ElasticStreamSegmentMeta()
     meta.setSegmentBaseOffset(baseOffset)
@@ -76,6 +81,10 @@ class ElasticLog(val metaStream: api.Stream,
     meta.setTxnStreamStartOffset(streamManager.getStream("txn" + suffix).nextOffset())
 
     val segment: ElasticLogSegment = ElasticLogSegment(meta, streamManager, config, time)
+    if (suffix.equals(LocalLog.CleanedFileSuffix)) {
+      // remove cleanedSegments when replace
+      cleanedSegments = cleanedSegments :+ segment
+    }
     persistLogMeta()
     segment
   }
@@ -86,6 +95,7 @@ class ElasticLog(val metaStream: api.Stream,
       elasticLogMeta.putStream(name, stream.streamId())
     })
     elasticLogMeta.setSegments(segments.values.map(s => (s.asInstanceOf[ElasticLogSegment]).meta).toList.asJava)
+    elasticLogMeta.setCleanedSegments(cleanedSegments.map(s => s.meta).asJava)
     elasticLogMeta
   }
 
@@ -95,7 +105,30 @@ class ElasticLog(val metaStream: api.Stream,
     info(s"save log meta: $elasticLogMeta")
   }
 
+
   /**
+   * ref. LocalLog#replcaseSegments
+   */
+  private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
+    val existingSegments = segments
+    val sortedNewSegments = newSegments.sortBy(_.baseOffset)
+    // Some old segments may have been removed from index and scheduled for async deletion after the caller reads segments
+    // but before this method is executed. We want to filter out those segments to avoid calling deleteSegmentFiles()
+    // multiple times for the same segment.
+    val sortedOldSegments = oldSegments.filter(seg => existingSegments.contains(seg.baseOffset)).sortBy(_.baseOffset)
+
+    // add new segments
+    sortedNewSegments.reverse.foreach(existingSegments.add)
+    // delete old segments
+    sortedOldSegments.foreach(seg => {
+      if (seg.baseOffset != sortedNewSegments.head.baseOffset)
+        existingSegments.remove(seg.baseOffset)
+      seg.close()
+    })
+    persistLogMeta()
+  }
+
+    /**
    * Closes the segments of the log.
    */
   override private[log] def close(): Unit = {

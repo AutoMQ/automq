@@ -17,20 +17,22 @@
 
 package kafka.log.es
 
-import kafka.log.{LocalLog, ProducerStateManager, UnifiedLog}
+import kafka.log.{LogSegment, ProducerStateManager, UnifiedLog}
 import kafka.server.BrokerTopicStats
 import kafka.server.epoch.LeaderEpochFileCache
 import org.apache.kafka.common.Uuid
 
 class ElasticUnifiedLog(logStartOffset: Long,
-                        localLog: LocalLog,
+                        elasticLog: ElasticLog,
                         brokerTopicStats: BrokerTopicStats,
                         producerIdExpirationCheckIntervalMs: Int,
                         leaderEpochCache: Option[LeaderEpochFileCache],
                         producerStateManager: ProducerStateManager,
                         _topicId: Option[Uuid],
                         keepPartitionMetadataFile: Boolean)
-  extends UnifiedLog(logStartOffset, localLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
+  extends UnifiedLog(logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
     leaderEpochCache, producerStateManager, _topicId, keepPartitionMetadataFile) {
-
+  override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
+    elasticLog.replaceSegments(newSegments, oldSegments)
+  }
 }
