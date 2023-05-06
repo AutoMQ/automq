@@ -22,12 +22,23 @@ import sdk.elastic.stream.api.StreamClient;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Elastic log dimension stream manager.
+ */
 public class ElasticLogStreamManager {
     private final Map<String, LazyStream> streamMap = new ConcurrentHashMap<>();
     private final StreamClient streamClient;
-
+    /**
+     * inner listener for created LazyStream
+     */
+    private final LazyStreamEventListener innerListener = new LazyStreamEventListener();
+    /**
+     * outer register listener
+     */
+    private LazyStream.EventListener outerListener;
 
     public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient) {
         this.streamClient = streamClient;
@@ -44,7 +55,9 @@ public class ElasticLogStreamManager {
     public LazyStream getStream(String name) {
         return streamMap.computeIfAbsent(name, key -> {
             try {
-                return new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient);
+                LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient);
+                lazyStream.setListener(innerListener);
+                return lazyStream;
             } catch (Exception e) {
                 // TODO: handle exception
                 return null;
@@ -54,5 +67,16 @@ public class ElasticLogStreamManager {
 
     public Map<String, Stream> streams() {
         return Collections.unmodifiableMap(streamMap);
+    }
+
+    public void setListener(LazyStream.EventListener listener) {
+        this.outerListener = listener;
+    }
+
+    class LazyStreamEventListener implements LazyStream.EventListener {
+        @Override
+        public void onEvent(long streamId, LazyStream.Event event) {
+            Optional.ofNullable(outerListener).ifPresent(listener -> listener.onEvent(streamId, event));
+        }
     }
 }

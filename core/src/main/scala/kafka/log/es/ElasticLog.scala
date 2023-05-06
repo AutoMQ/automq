@@ -19,7 +19,7 @@ package kafka.log.es
 
 import io.netty.buffer.Unpooled
 import kafka.log._
-import kafka.log.es.ElasticLog.saveElasticLogMeta
+import kafka.log.es.ElasticLog.{LOG_META_KEY, persistMeta}
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
@@ -46,6 +46,13 @@ class ElasticLog(val metaStream: api.Stream,
                  logDirFailureChannel: LogDirFailureChannel)
   extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
 
+  // persist log meta when lazy stream real create
+  streamManager.setListener((_, event) => {
+    if (event == LazyStream.Event.CREATE) {
+      persistLogMeta()
+    }
+  })
+
   def logStartOffset: Long = partitionMeta.getStartOffset
 
   def setLogStartOffset(startOffset: Long): Unit = partitionMeta.setStartOffset(startOffset)
@@ -65,13 +72,11 @@ class ElasticLog(val metaStream: api.Stream,
     meta.setTxnStreamStartOffset(streamManager.getStream("txn" + suffix).nextOffset())
 
     val segment: ElasticLogSegment = ElasticLogSegment(meta, streamManager, config, time)
-    val elasticLogMeta = logMeta()
-    saveElasticLogMeta(metaStream, MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
-    info(s"save log meta: $elasticLogMeta")
+    persistLogMeta()
     segment
   }
 
-  def logMeta(): ElasticLogMeta = {
+  private def logMeta(): ElasticLogMeta = {
     val elasticLogMeta = new ElasticLogMeta()
     streamManager.streams().forEach((name, stream) => {
       elasticLogMeta.putStream(name, stream.streamId())
@@ -80,6 +85,11 @@ class ElasticLog(val metaStream: api.Stream,
     elasticLogMeta
   }
 
+  private def persistLogMeta(): Unit = {
+    val elasticLogMeta = logMeta()
+    persistMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
+    info(s"save log meta: $elasticLogMeta")
+  }
 
   /**
    * Closes the segments of the log.
@@ -131,7 +141,7 @@ object ElasticLog extends Logging {
     val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
     if (partitionMetaOpt.isEmpty) {
       partitionMeta = new ElasticPartitionMeta(0, 0)
-      saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+      persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
     } else {
       partitionMeta = partitionMetaOpt.get
     }
@@ -168,10 +178,9 @@ object ElasticLog extends Logging {
     metaStream
   }
 
-  def saveElasticLogMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
+  def persistMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
     metaStream.append(new SingleRecordBatch(MetaKeyValue.encode(metaKeyValue))).get()
   }
-
 
   def getMetas(metaStream: api.Stream): mutable.Map[Short, Any] = {
     val startOffset = metaStream.startOffset()
