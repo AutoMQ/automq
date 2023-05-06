@@ -41,9 +41,13 @@ public class ElasticPartitionMeta {
     @JsonProperty("c")
     private Long cleanerOffset;
 
-    ElasticPartitionMeta(Long startOffset, Long cleanerOffset) {
+    @JsonProperty("r")
+    private Long recoverOffset;
+
+    ElasticPartitionMeta(Long startOffset, Long cleanerOffset, Long recoverOffset) {
         this.startOffset = startOffset;
         this.cleanerOffset = cleanerOffset;
+        this.recoverOffset = recoverOffset;
     }
 
     public static ByteBuffer encode(ElasticPartitionMeta meta) {
@@ -80,5 +84,13 @@ public class ElasticPartitionMeta {
 
     public void setCleanerOffset(Long cleanerOffset) {
         this.cleanerOffset = cleanerOffset;
+    }
+
+    public Long getRecoverOffset() {
+        return recoverOffset;
+    }
+
+    public void setRecoverOffset(Long recoverOffset) {
+        this.recoverOffset = recoverOffset;
     }
 }

@@ -61,6 +61,10 @@ class ElasticLog(val metaStream: api.Stream,
 
   def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setCleanerOffset(offsetCheckpoint)
 
+  def recoveryPointCheckpoint: Long = partitionMeta.getRecoverOffset
+
+  def setReCoverOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setRecoverOffset(offsetCheckpoint)
+
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
     val meta = new ElasticStreamSegmentMeta()
@@ -140,7 +144,7 @@ object ElasticLog extends Logging {
 
     val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
     if (partitionMetaOpt.isEmpty) {
-      partitionMeta = new ElasticPartitionMeta(0, 0)
+      partitionMeta = new ElasticPartitionMeta(0, 0, 0)
       persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
     } else {
       partitionMeta = partitionMetaOpt.get

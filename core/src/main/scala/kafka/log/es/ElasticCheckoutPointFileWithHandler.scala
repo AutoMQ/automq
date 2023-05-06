@@ -27,8 +27,9 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
         write0(entries, (elasticLog, checkpoint) => elasticLog.setLogStartOffset(checkpoint))
       case CleanerOffsetCheckpoint =>
         write0(entries, (elasticLog, checkpoint) => elasticLog.setCleanerOffsetCheckpoint(checkpoint))
-      // do nothing when writing RecoveryPointCheckpoint or ReplicationOffsetCheckpoint
       case RecoveryPointCheckpoint =>
+        write0(entries, (elasticLog, checkpoint) => elasticLog.setReCoverOffsetCheckpoint(checkpoint))
+      // do nothing when writing ReplicationOffsetCheckpoint
       case ReplicationOffsetCheckpoint =>
       case _ =>
         throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for writing")
@@ -50,7 +51,7 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
       case CleanerOffsetCheckpoint =>
         read0(elasticLog => (elasticLog.topicPartition, elasticLog.cleanerOffsetCheckpoint))
       case RecoveryPointCheckpoint =>
-        read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPoint))
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPointCheckpoint))
       case ReplicationOffsetCheckpoint =>
         read0(elasticLog => (elasticLog.topicPartition, elasticLog.nextOffsetMetadata.messageOffset))
       case _ =>
