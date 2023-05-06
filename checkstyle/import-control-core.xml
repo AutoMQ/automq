@@ -39,6 +39,7 @@
 
   <allow pkg="sdk.elastic.stream" />
   <allow pkg="com.fasterxml.jackson" />
+  <allow pkg="io.netty.buffer" />
 
   <!-- see KIP-544 for why KafkaYammerMetrics should be used instead of the global default yammer metrics registry
        https://cwiki.apache.org/confluence/display/KAFKA/KIP-544%3A+Make+metrics+exposed+via+JMX+configurable -->

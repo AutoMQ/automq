@@ -66,9 +66,10 @@ class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Lo
   }
 
   def parseEntry(n: Int): OffsetPosition = {
-    val rst = stream.fetch(n * entrySize, entrySize).get()
+    val startOffset = n.toLong * entrySize
+    val rst = stream.fetch(startOffset, entrySize).get()
     if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream ${streamSegment} at offset ${n * entrySize}")
+      throw new IllegalStateException(s"fetch empty from stream $streamSegment at offset $startOffset")
     }
     val buffer = rst.recordBatchList().get(0).rawPayload()
     OffsetPosition(baseOffset + buffer.getInt(0), buffer.getInt(4))

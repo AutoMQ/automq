@@ -56,9 +56,10 @@ class ElasticTimeIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long
 
   def parseEntry(n: Int): TimestampOffset = {
     // TODO: handle exception, or always success?
-    val rst = streamSegment.fetch(n * entrySize, entrySize).get()
+    val startOffset = n.toLong * entrySize
+    val rst = streamSegment.fetch(startOffset, entrySize).get()
     if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream ${streamSegment} at offset ${n * entrySize}")
+      throw new IllegalStateException(s"fetch empty from stream $streamSegment at offset $startOffset")
     }
     val buffer = rst.recordBatchList().get(0).rawPayload()
     new TimestampOffset(buffer.getLong(0), baseOffset + buffer.getInt(8))
