@@ -24,7 +24,7 @@ import org.apache.kafka.common.errors.InvalidOffsetException
 
 import java.nio.ByteBuffer
 
-class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long, maxIndexSize: Int = -1) extends AbstractStreamIndex(streamSegment, baseOffset, maxIndexSize) with OffsetIndex {
+class ElasticOffsetIndex(streamSegmentSupplier: StreamSegmentSupplier, baseOffset: Long, maxIndexSize: Int = -1) extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with OffsetIndex {
 
   override def entrySize: Int = 8
 
@@ -32,7 +32,7 @@ class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Lo
   private[this] var _lastOffset = lastEntry.offset
 
   debug(s"Loaded index file ${file.getAbsolutePath} with maxEntries = $maxEntries, " +
-    s"maxIndexSize = $maxIndexSize, entries = ${_entries}, lastOffset = ${_lastOffset}, file position = ${streamSegment.nextOffset()}")
+    s"maxIndexSize = $maxIndexSize, entries = ${_entries}, lastOffset = ${_lastOffset}, file position = ${stream.nextOffset()}")
 
   private def lastEntry: OffsetPosition = {
     inLock(lock) {
@@ -69,7 +69,7 @@ class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Lo
     val startOffset = n.toLong * entrySize
     val rst = stream.fetch(startOffset, entrySize).get()
     if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream $streamSegment at offset $startOffset")
+      throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
     }
     val buffer = rst.recordBatchList().get(0).rawPayload()
     OffsetPosition(baseOffset + buffer.getInt(0), buffer.getInt(4))
@@ -94,7 +94,7 @@ class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Lo
         buffer.putInt(relativeOffset(offset))
         buffer.putInt(position)
         buffer.flip()
-        streamSegment.append(RawPayloadRecordBatch.of(buffer))
+        stream.append(RawPayloadRecordBatch.of(buffer))
 
         _entries += 1
         _lastOffset = offset
@@ -122,8 +122,7 @@ class ElasticOffsetIndex(val streamSegment: ElasticStreamSegment, baseOffset: Lo
   }
 
   def seal(): Unit = {
-
+    stream.seal()
   }
 
-  def steamSegment(): ElasticStreamSegment = streamSegment
 }

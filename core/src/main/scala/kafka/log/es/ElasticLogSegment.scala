@@ -112,9 +112,9 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     log.seal()
     _meta.setLogStreamEndOffset(log.streamSegment.endOffsetInStream)
     offsetIdx.seal()
-    _meta.setOffsetStreamEndOffset(offsetIdx.streamSegment.endOffsetInStream)
+    _meta.setOffsetStreamEndOffset(offsetIdx.streamSegment().endOffsetInStream)
     timeIdx.seal()
-    _meta.setTimeStreamEndOffset(timeIdx.streamSegment.endOffsetInStream)
+    _meta.setTimeStreamEndOffset(timeIdx.streamSegment().endOffsetInStream)
     txnIndex.seal()
     _meta.setTxnStreamEndOffset(txnIndex.streamSegment.endOffsetInStream)
   }
@@ -150,13 +150,14 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 }
 
 object ElasticLogSegment {
-  def apply(meta: ElasticStreamSegmentMeta, streamManager: ElasticLogStreamManager, logConfig: LogConfig,
+  def apply(meta: ElasticStreamSegmentMeta, sm: ElasticStreamSegmentManager, logConfig: LogConfig,
             time: Time): ElasticLogSegment = {
     val baseOffset = meta.getSegmentBaseOffset
-    val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(streamManager.getStream("log" + meta.getStreamSuffix), meta.getLogStreamStartOffset, meta.getLogStreamEndOffset))
-    val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(streamManager.getStream("idx" + meta.getStreamSuffix), meta.getOffsetStreamStartOffset, meta.getOffsetStreamEndOffset), baseOffset, logConfig.maxIndexSize)
-    val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(streamManager.getStream("tim" + meta.getStreamSuffix), meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset, logConfig.maxIndexSize)
-    val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(streamManager.getStream("txn" + meta.getStreamSuffix), meta.getTxnStreamStartOffset, meta.getTxnStreamEndOffset))
+    val suffix = meta.getStreamSuffix
+    val log = new ElasticLogFileRecords(sm.loadOrCreateSegment("log" + suffix, meta.getLogStreamStartOffset, meta.getLogStreamEndOffset))
+    val offsetIndex = new ElasticOffsetIndex(new StreamSegmentSupplier(sm, "idx" + suffix, meta.getOffsetStreamEndOffset, meta.getOffsetStreamEndOffset), baseOffset, logConfig.maxIndexSize)
+    val timeIndex = new ElasticTimeIndex(new StreamSegmentSupplier(sm, "tim" + suffix, meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset, logConfig.maxIndexSize)
+    val txnIndex = new ElasticTransactionIndex(baseOffset, sm.loadOrCreateSegment("txn" + meta.getStreamSuffix, meta.getTxnStreamStartOffset, meta.getTxnStreamEndOffset))
 
     new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time)
   }

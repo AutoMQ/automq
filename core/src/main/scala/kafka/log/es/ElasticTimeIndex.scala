@@ -25,8 +25,8 @@ import org.apache.kafka.common.record.RecordBatch
 
 import java.nio.ByteBuffer
 
-class ElasticTimeIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long, maxIndexSize: Int = -1)
-  extends AbstractStreamIndex(streamSegment, baseOffset, maxIndexSize) with TimeIndex {
+class ElasticTimeIndex(streamSegmentSupplier: StreamSegmentSupplier, baseOffset: Long, maxIndexSize: Int = -1)
+  extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
 
@@ -57,9 +57,9 @@ class ElasticTimeIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long
   def parseEntry(n: Int): TimestampOffset = {
     // TODO: handle exception, or always success?
     val startOffset = n.toLong * entrySize
-    val rst = streamSegment.fetch(startOffset, entrySize).get()
+    val rst = stream.fetch(startOffset, entrySize).get()
     if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream $streamSegment at offset $startOffset")
+      throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
     }
     val buffer = rst.recordBatchList().get(0).rawPayload()
     new TimestampOffset(buffer.getLong(0), baseOffset + buffer.getInt(8))
@@ -91,7 +91,7 @@ class ElasticTimeIndex(val streamSegment: ElasticStreamSegment, baseOffset: Long
         buffer.putLong(timestamp)
         buffer.putInt(relativeOffset(offset))
         buffer.flip()
-        streamSegment.append(RawPayloadRecordBatch.of(buffer))
+        stream.append(RawPayloadRecordBatch.of(buffer))
 
         _entries += 1
         _lastEntry = TimestampOffset(timestamp, offset)

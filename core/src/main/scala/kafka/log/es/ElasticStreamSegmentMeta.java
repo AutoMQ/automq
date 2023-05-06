@@ -25,21 +25,21 @@ public class ElasticStreamSegmentMeta {
     @JsonProperty("sp")
     private String streamSuffix;
     @JsonProperty("lso")
-    private long logStreamStartOffset;
+    private long logStreamStartOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("leo")
-    private long logStreamEndOffset;
+    private long logStreamEndOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("oso")
-    private long offsetStreamStartOffset;
+    private long offsetStreamStartOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("oeo")
-    private long offsetStreamEndOffset;
+    private long offsetStreamEndOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("tso")
-    private long timeStreamStartOffset;
+    private long timeStreamStartOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("teo")
-    private long timeStreamEndOffset;
+    private long timeStreamEndOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("txnso")
-    private long txnStreamStartOffset;
+    private long txnStreamStartOffset = Offsets.NOOP_OFFSET;
     @JsonProperty("txneo")
-    private long txnStreamEndOffset;
+    private long txnStreamEndOffset = Offsets.NOOP_OFFSET;
 
     public ElasticStreamSegmentMeta() {
     }

@@ -39,15 +39,15 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
     private long nextOffset;
     private boolean sealed = false;
 
-    public DefaultElasticStreamSegment(Stream stream, long startOffsetInStream) {
-        this(stream, startOffsetInStream, 0);
-    }
-
     public DefaultElasticStreamSegment(Stream stream, long startOffsetInStream, long endOffsetInStream) {
         this.stream = stream;
-        this.nextOffset = endOffsetInStream - startOffsetInStream;
         this.startOffsetInStream = startOffsetInStream;
-        System.out.println("new segment: " + startOffsetInStream + " in stream " + stream.streamId());
+        if (endOffsetInStream != -1L) {
+            this.nextOffset = endOffsetInStream - startOffsetInStream;
+            this.sealed = true;
+        } else {
+            this.nextOffset = startOffsetInStream;
+        }
     }
 
     @Override
