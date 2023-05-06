@@ -20,25 +20,26 @@ package kafka.log.es;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class ElasticStreamSegmentMeta {
-    private static final long NOOP_OFFSET = -1L;
     @JsonProperty("sbo")
     private long segmentBaseOffset;
+    @JsonProperty("sp")
+    private String streamSuffix;
     @JsonProperty("lso")
     private long logStreamStartOffset;
     @JsonProperty("leo")
-    private long logStreamEndOffset = NOOP_OFFSET;
+    private long logStreamEndOffset;
     @JsonProperty("oso")
     private long offsetStreamStartOffset;
     @JsonProperty("oeo")
-    private long offsetStreamEndOffset = NOOP_OFFSET;
+    private long offsetStreamEndOffset;
     @JsonProperty("tso")
     private long timeStreamStartOffset;
     @JsonProperty("teo")
-    private long timeStreamEndOffset = NOOP_OFFSET;
+    private long timeStreamEndOffset;
     @JsonProperty("txnso")
     private long txnStreamStartOffset;
     @JsonProperty("txneo")
-    private long txnStreamEndOffset = NOOP_OFFSET;
+    private long txnStreamEndOffset;
 
     public ElasticStreamSegmentMeta() {
     }
@@ -113,5 +114,29 @@ public class ElasticStreamSegmentMeta {
 
     public void setTxnStreamEndOffset(long txnStreamEndOffset) {
         this.txnStreamEndOffset = txnStreamEndOffset;
+    }
+
+    public String getStreamSuffix() {
+        return streamSuffix;
+    }
+
+    public void setStreamSuffix(String streamSuffix) {
+        this.streamSuffix = streamSuffix;
+    }
+
+    @Override
+    public String toString() {
+        return "ElasticStreamSegmentMeta{" +
+                "segmentBaseOffset=" + segmentBaseOffset +
+                ", streamSuffix='" + streamSuffix + '\'' +
+                ", logStreamStartOffset=" + logStreamStartOffset +
+                ", logStreamEndOffset=" + logStreamEndOffset +
+                ", offsetStreamStartOffset=" + offsetStreamStartOffset +
+                ", offsetStreamEndOffset=" + offsetStreamEndOffset +
+                ", timeStreamStartOffset=" + timeStreamStartOffset +
+                ", timeStreamEndOffset=" + timeStreamEndOffset +
+                ", txnStreamStartOffset=" + txnStreamStartOffset +
+                ", txnStreamEndOffset=" + txnStreamEndOffset +
+                '}';
     }
 }

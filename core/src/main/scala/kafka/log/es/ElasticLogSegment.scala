@@ -148,3 +148,16 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     null
   }
 }
+
+object ElasticLogSegment {
+  def apply(meta: ElasticStreamSegmentMeta, streamManager: ElasticLogStreamManager, logConfig: LogConfig,
+            time: Time): ElasticLogSegment = {
+    val baseOffset = meta.getSegmentBaseOffset
+    val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(streamManager.getStream("log" + meta.getStreamSuffix), meta.getLogStreamStartOffset, meta.getLogStreamEndOffset))
+    val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(streamManager.getStream("idx" + meta.getStreamSuffix), meta.getOffsetStreamStartOffset, meta.getOffsetStreamEndOffset), baseOffset, logConfig.maxIndexSize)
+    val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(streamManager.getStream("tim" + meta.getStreamSuffix), meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset, logConfig.maxIndexSize)
+    val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(streamManager.getStream("txn" + meta.getStreamSuffix), meta.getTxnStreamStartOffset, meta.getTxnStreamEndOffset))
+
+    new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time)
+  }
+}

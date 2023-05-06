@@ -33,10 +33,7 @@ import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
 class ElasticLog(val metaStream: api.Stream,
-                 val logStream: api.Stream,
-                 val offsetStream: api.Stream,
-                 val timeStream: api.Stream,
-                 val txnStream: api.Stream,
+                 val streamManager: ElasticLogStreamManager,
                  val partitionMeta: ElasticPartitionMeta,
                  _dir: File,
                  c: LogConfig,
@@ -57,31 +54,28 @@ class ElasticLog(val metaStream: api.Stream,
 
   def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setCleanerOffset(offsetCheckpoint)
 
-  def newSegment(baseOffset: Long, time: Time): ElasticLogSegment = {
+  def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
-    val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, logStream.nextOffset()))
-    val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(offsetStream, offsetStream.nextOffset()), baseOffset, config.maxIndexSize)
-    val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(timeStream, timeStream.nextOffset()), baseOffset, config.maxIndexSize)
-    val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(txnStream, txnStream.nextOffset()))
-
     val meta = new ElasticStreamSegmentMeta()
     meta.setSegmentBaseOffset(baseOffset)
-    meta.setLogStreamEndOffset(log.streamSegment.startOffsetInStream)
-    meta.setOffsetStreamStartOffset(offsetIndex.streamSegment.startOffsetInStream)
-    meta.setTimeStreamStartOffset(txnIndex.streamSegment.startOffsetInStream)
+    meta.setStreamSuffix(suffix)
+    meta.setLogStreamStartOffset(streamManager.getStream("log" + suffix).nextOffset())
+    meta.setOffsetStreamStartOffset(streamManager.getStream("idx" + suffix).nextOffset())
+    meta.setTimeStreamStartOffset(streamManager.getStream("tim" + suffix).nextOffset())
+    meta.setTxnStreamStartOffset(streamManager.getStream("txn" + suffix).nextOffset())
 
-    val segment: ElasticLogSegment = new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex,
-      baseOffset, config.indexInterval, config.segmentJitterMs, time)
-    saveElasticLogMeta(metaStream, MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(logMeta())))
+    val segment: ElasticLogSegment = ElasticLogSegment(meta, streamManager, config, time)
+    val elasticLogMeta = logMeta()
+    saveElasticLogMeta(metaStream, MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
+    info(s"save log meta: $elasticLogMeta")
     segment
   }
 
   def logMeta(): ElasticLogMeta = {
     val elasticLogMeta = new ElasticLogMeta()
-    elasticLogMeta.setLogStreamId(logStream.streamId())
-    elasticLogMeta.setOffsetStreamId(offsetStream.streamId())
-    elasticLogMeta.setTimeStreamId(timeStream.streamId())
-    elasticLogMeta.setTxnStreamId(txnStream.streamId())
+    streamManager.streams().forEach((name, stream) => {
+      elasticLogMeta.putStream(name, stream.streamId())
+    })
     elasticLogMeta.setSegments(segments.values.map(s => (s.asInstanceOf[ElasticLogSegment]).meta).toList.asJava)
     elasticLogMeta
   }
@@ -110,93 +104,36 @@ object ElasticLog extends Logging {
     val key = "/kafka/pm/" + topicPartition.topic() + "-" + topicPartition.partition();
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get();
 
-    var metaStream: api.Stream = null
-    // partition dimension meta
-    var logMeta: ElasticLogMeta = null
     var partitionMeta: ElasticPartitionMeta = null
-    // TODO: load other partition dimension meta
-    //    var producerSnaphot = null
 
-    var logStream: api.Stream = null
-    var offsetStream: api.Stream = null
-    var timeStream: api.Stream = null
-    var txnStream: api.Stream = null
-
-    if (kvList.get(0).value() == null) {
-      // create stream
-      //TODO: replica count
-      metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-
-      // save partition meta stream id relation to PM
-      val streamId = metaStream.streamId()
-      val valueBuf = ByteBuffer.allocate(8);
-      valueBuf.putLong(streamId)
-      client.kvClient().putKV(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
-
-      // TODO: concurrent create
-      logStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-      offsetStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-      timeStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-      txnStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-
-      logMeta = ElasticLogMeta.of(logStream.streamId(), offsetStream.streamId(), timeStream.streamId(), txnStream.streamId())
-      partitionMeta = new ElasticPartitionMeta(0, 0)
-      saveElasticLogMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
-      saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+    // open meta stream
+    val metaNotExists = kvList.get(0).value() == null
+    val metaStream = if (metaNotExists) {
+      createMetaStream(client, key)
     } else {
-      // get partition meta stream id from PM
       val keyValue = kvList.get(0)
       val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong();
       // open partition meta stream
-      metaStream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().build()).get()
-
-      val metaMap = getMetas(metaStream)
-
-      val logMetaOpt = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta])
-
-      // TODO: refactor log apply
-      if (logMetaOpt.isEmpty) {
-        logStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-        offsetStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-        timeStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-        txnStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
-
-        logMeta = ElasticLogMeta.of(logStream.streamId(), offsetStream.streamId(), timeStream.streamId(), txnStream.streamId())
-        saveElasticLogMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
-      } else {
-        logMeta = logMetaOpt.get
-        logStream = client.streamClient().openStream(logMeta.getLogStreamId, OpenStreamOptions.newBuilder().build()).get()
-        offsetStream = client.streamClient().openStream(logMeta.getOffsetStreamId, OpenStreamOptions.newBuilder().build()).get()
-        timeStream = client.streamClient().openStream(logMeta.getTimeStreamId, OpenStreamOptions.newBuilder().build()).get()
-        txnStream = client.streamClient().openStream(logMeta.getTxnStreamId, OpenStreamOptions.newBuilder().build()).get()
-      }
-
-      val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
-      if (partitionMetaOpt.isEmpty) {
-        partitionMeta = new ElasticPartitionMeta(0, 0)
-        saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
-      } else {
-        partitionMeta = partitionMetaOpt.get
-      }
+      client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().build()).get()
     }
 
+    // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
+    val metaMap = getMetas(metaStream)
+
+    // load LogSegments
+    val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
+    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreams, client.streamClient())
     val segments = new LogSegments(topicPartition)
     for (segmentMeta <- logMeta.getSegments.asScala) {
-      val baseOffset = segmentMeta.getSegmentBaseOffset
+      segments.add(ElasticLogSegment(segmentMeta, logStreamManager, config, time))
+    }
 
-      val log = new ElasticLogFileRecords(new DefaultElasticStreamSegment(logStream, segmentMeta.getLogStreamStartOffset, segmentMeta.getLogStreamEndOffset))
-      val offsetIndex = new ElasticOffsetIndex(new DefaultElasticStreamSegment(offsetStream, segmentMeta.getOffsetStreamStartOffset, segmentMeta.getOffsetStreamEndOffset), baseOffset, config.maxIndexSize)
-      val timeIndex = new ElasticTimeIndex(new DefaultElasticStreamSegment(timeStream, segmentMeta.getTimeStreamStartOffset, segmentMeta.getTimeStreamEndOffset), baseOffset, config.maxIndexSize)
-      val txnIndex = new ElasticTransactionIndex(baseOffset, new DefaultElasticStreamSegment(txnStream, segmentMeta.getTxnStreamStartOffset, segmentMeta.getTxnStreamEndOffset))
-
-      val meta = new ElasticStreamSegmentMeta()
-      meta.setSegmentBaseOffset(baseOffset)
-      meta.setLogStreamEndOffset(log.streamSegment.startOffsetInStream)
-      meta.setOffsetStreamStartOffset(offsetIndex.streamSegment.startOffsetInStream)
-      meta.setTimeStreamStartOffset(txnIndex.streamSegment.startOffsetInStream)
-
-      val elasticLogSegment = new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, segmentMeta.getSegmentBaseOffset, config.indexInterval, config.segmentJitterMs, time)
-      segments.add(elasticLogSegment)
+    val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
+    if (partitionMetaOpt.isEmpty) {
+      partitionMeta = new ElasticPartitionMeta(0, 0)
+      saveElasticLogMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+    } else {
+      partitionMeta = partitionMetaOpt.get
     }
 
     val nextOffsetMetadata = segments.lastSegment match {
@@ -209,9 +146,8 @@ object ElasticLog extends Logging {
         LogOffsetMetadata(0L, 0L, 0)
     }
 
-
     val initRecoveryPoint = nextOffsetMetadata.messageOffset
-    val elasticLog = new ElasticLog(metaStream, logStream, offsetStream, timeStream, txnStream, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
+    val elasticLog = new ElasticLog(metaStream, logStreamManager, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
       scheduler, time, topicPartition, logDirFailureChannel)
     if (segments.isEmpty) {
       val elasticStreamSegment = elasticLog.newSegment(0L, time)
@@ -220,9 +156,22 @@ object ElasticLog extends Logging {
     elasticLog
   }
 
+  def createMetaStream(client: Client, key: String): api.Stream = {
+    //TODO: replica count
+    val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get()
+
+    // save partition meta stream id relation to PM
+    val streamId = metaStream.streamId()
+    val valueBuf = ByteBuffer.allocate(8);
+    valueBuf.putLong(streamId)
+    client.kvClient().putKV(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
+    metaStream
+  }
+
   def saveElasticLogMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
     metaStream.append(new SingleRecordBatch(MetaKeyValue.encode(metaKeyValue))).get()
   }
+
 
   def getMetas(metaStream: api.Stream): mutable.Map[Short, Any] = {
     val startOffset = metaStream.startOffset()

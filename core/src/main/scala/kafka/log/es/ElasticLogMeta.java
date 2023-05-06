@@ -22,8 +22,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 // TODO: save meta to stream periodically. save meta when broker shutdown.
 
@@ -31,21 +33,8 @@ import java.util.List;
  * logical meta data for a Kafka topicPartition.
  */
 public class ElasticLogMeta {
-    private List<ElasticStreamSegmentMeta> segments;
-    private Long logStreamId;
-    private Long offsetStreamId;
-    private Long timeStreamId;
-    private Long txnStreamId;
-
-    public static ElasticLogMeta of(long dataStreamId, long offsetStreamId, long timeStreamId, long txnStreamId) {
-        ElasticLogMeta logMeta = new ElasticLogMeta();
-        logMeta.logStreamId = dataStreamId;
-        logMeta.offsetStreamId = offsetStreamId;
-        logMeta.timeStreamId = timeStreamId;
-        logMeta.txnStreamId = txnStreamId;
-        logMeta.segments = new LinkedList<>();
-        return logMeta;
-    }
+    private Map<String, Long> streams = new HashMap<>();
+    private List<ElasticStreamSegmentMeta> segments = new LinkedList<>();
 
     public static ByteBuffer encode(ElasticLogMeta meta) {
         ObjectMapper om = new ObjectMapper();
@@ -76,35 +65,23 @@ public class ElasticLogMeta {
         this.segments = segments;
     }
 
-    public Long getLogStreamId() {
-        return logStreamId;
+    public Map<String, Long> getStreams() {
+        return streams;
     }
 
-    public void setLogStreamId(Long logStreamId) {
-        this.logStreamId = logStreamId;
+    public void setStreams(Map<String, Long> streams) {
+        this.streams = streams;
     }
 
-    public Long getTimeStreamId() {
-        return timeStreamId;
+    public void putStream(String name, long streamId) {
+        streams.put(name, streamId);
     }
 
-    public void setTimeStreamId(Long timeStreamId) {
-        this.timeStreamId = timeStreamId;
-    }
-
-    public Long getTxnStreamId() {
-        return txnStreamId;
-    }
-
-    public void setTxnStreamId(Long txnStreamId) {
-        this.txnStreamId = txnStreamId;
-    }
-
-    public Long getOffsetStreamId() {
-        return offsetStreamId;
-    }
-
-    public void setOffsetStreamId(Long offsetStreamId) {
-        this.offsetStreamId = offsetStreamId;
+    @Override
+    public String toString() {
+        return "ElasticLogMeta{" +
+                "streams=" + streams +
+                ", segments=" + segments +
+                '}';
     }
 }

@@ -53,12 +53,14 @@ public interface ElasticStreamSegment {
 
     /**
      * Get segment start offset in stream.
+     *
      * @return segment start offset in stream.
      */
     long startOffsetInStream();
 
     /**
      * Get segment end offset in stream.
+     *
      * @return segment end offset in stream.
      */
     default long endOffsetInStream() {

@@ -21,44 +21,44 @@ import org.apache.kafka.common.TopicPartition
 
 class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
 
-    def write(entries: Iterable[(TopicPartition, Long)]): Unit = {
-        rawKafkaMeta match {
-            case LogStartOffsetCheckpoint =>
-                write0(entries, (elasticLog, checkpoint) => elasticLog.setLogStartOffset(checkpoint))
-            case CleanerOffsetCheckpoint =>
-                write0(entries, (elasticLog, checkpoint) => elasticLog.setCleanerOffsetCheckpoint(checkpoint))
-            // do nothing when writing RecoveryPointCheckpoint or ReplicationOffsetCheckpoint
-            case RecoveryPointCheckpoint =>
-            case ReplicationOffsetCheckpoint =>
-            case _ =>
-                throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for writing")
-        }
+  def write(entries: Iterable[(TopicPartition, Long)]): Unit = {
+    rawKafkaMeta match {
+      case LogStartOffsetCheckpoint =>
+        write0(entries, (elasticLog, checkpoint) => elasticLog.setLogStartOffset(checkpoint))
+      case CleanerOffsetCheckpoint =>
+        write0(entries, (elasticLog, checkpoint) => elasticLog.setCleanerOffsetCheckpoint(checkpoint))
+      // do nothing when writing RecoveryPointCheckpoint or ReplicationOffsetCheckpoint
+      case RecoveryPointCheckpoint =>
+      case ReplicationOffsetCheckpoint =>
+      case _ =>
+        throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for writing")
     }
+  }
 
-    private def write0(entries: Iterable[(TopicPartition, Long)], f: (ElasticLog, Long) => Unit): Unit = {
-        for (elem <- entries) {
-            val (topicPartition, checkpoint) = elem
-            val elasticLog = ElasticLogManager.getElasticLog(topicPartition)
-            f(elasticLog, checkpoint)
-        }
+  private def write0(entries: Iterable[(TopicPartition, Long)], f: (ElasticLog, Long) => Unit): Unit = {
+    for (elem <- entries) {
+      val (topicPartition, checkpoint) = elem
+      val elasticLog = ElasticLogManager.getElasticLog(topicPartition)
+      f(elasticLog, checkpoint)
     }
+  }
 
-    def read(): Seq[(TopicPartition, Long)] = {
-        rawKafkaMeta match {
-            case LogStartOffsetCheckpoint =>
-                read0(elasticLog => (elasticLog.topicPartition, elasticLog.logStartOffset))
-            case CleanerOffsetCheckpoint =>
-                read0(elasticLog => (elasticLog.topicPartition, elasticLog.cleanerOffsetCheckpoint))
-            case RecoveryPointCheckpoint =>
-                read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPoint))
-            case ReplicationOffsetCheckpoint =>
-                read0(elasticLog => (elasticLog.topicPartition, elasticLog.nextOffsetMetadata.messageOffset))
-            case _ =>
-                throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for reading")
-        }
+  def read(): Seq[(TopicPartition, Long)] = {
+    rawKafkaMeta match {
+      case LogStartOffsetCheckpoint =>
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.logStartOffset))
+      case CleanerOffsetCheckpoint =>
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.cleanerOffsetCheckpoint))
+      case RecoveryPointCheckpoint =>
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPoint))
+      case ReplicationOffsetCheckpoint =>
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.nextOffsetMetadata.messageOffset))
+      case _ =>
+        throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for reading")
     }
+  }
 
-    private def read0(f: ElasticLog => (TopicPartition, Long)): Seq[(TopicPartition, Long)] = {
-        ElasticLogManager.getAllElasticLogs.map(f).toSeq
-    }
+  private def read0(f: ElasticLog => (TopicPartition, Long)): Seq[(TopicPartition, Long)] = {
+    ElasticLogManager.getAllElasticLogs.map(f).toSeq
+  }
 }

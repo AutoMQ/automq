@@ -18,7 +18,11 @@
 package kafka.log.es
 
 sealed trait RawKafkaMeta
+
 case object CleanerOffsetCheckpoint extends RawKafkaMeta
+
 case object LogStartOffsetCheckpoint extends RawKafkaMeta
+
 case object RecoveryPointCheckpoint extends RawKafkaMeta
+
 case object ReplicationOffsetCheckpoint extends RawKafkaMeta
