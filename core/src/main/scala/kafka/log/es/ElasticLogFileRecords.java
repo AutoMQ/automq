@@ -80,6 +80,9 @@ public class ElasticLogFileRecords extends FileRecords {
     }
 
     public Records read(int position, int maxSizeHint) throws IOException {
+        // TODO: rebuildProducerState 的时候会直接读取到文件末尾 => 优化，内部 maxSizeHint 上限，支持内部分段拉取，避免 OOM
+        // TODO: maxSizeHint 语义，是否真满足 maxSize
+        // TODO: 使用 batches 来实现 read？
         try {
             FetchResult rst = streamSegment.fetch(position, maxSizeHint).get();
             CompositeByteBuf composited = Unpooled.compositeBuffer();

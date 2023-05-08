@@ -25,7 +25,7 @@ import org.apache.kafka.common.utils.Time
 import sdk.elastic.stream.api.Client
 
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) {
@@ -36,9 +36,11 @@ class ElasticLogManager(val client: Client) {
              scheduler: Scheduler,
              time: Time,
              topicPartition: TopicPartition,
-             logDirFailureChannel: LogDirFailureChannel): ElasticLog = {
+             logDirFailureChannel: LogDirFailureChannel,
+             producerStateManager: ProducerStateManager,
+             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): ElasticLog = {
     // TODO: add log close hook, remove closed elastic log
-    val elasticLog = ElasticLog(client, dir, config, scheduler, time, topicPartition, logDirFailureChannel)
+    val elasticLog = ElasticLog(client, dir, config, scheduler, time, topicPartition, logDirFailureChannel, producerStateManager, numRemainingSegments)
     elasticLogs.put(topicPartition, elasticLog)
     elasticLog
   }
@@ -68,8 +70,10 @@ object ElasticLogManager {
              scheduler: Scheduler,
              time: Time,
              topicPartition: TopicPartition,
-             logDirFailureChannel: LogDirFailureChannel): ElasticLog = {
-    Default.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel)
+             logDirFailureChannel: LogDirFailureChannel,
+             producerStateManager: ProducerStateManager,
+             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): ElasticLog = {
+    Default.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, producerStateManager, numRemainingSegments)
   }
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {

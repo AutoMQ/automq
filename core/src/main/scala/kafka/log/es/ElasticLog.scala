@@ -29,6 +29,7 @@ import sdk.elastic.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStream
 
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -143,7 +144,9 @@ object ElasticLog extends Logging {
             scheduler: Scheduler,
             time: Time,
             topicPartition: TopicPartition,
-            logDirFailureChannel: LogDirFailureChannel): ElasticLog = {
+            logDirFailureChannel: LogDirFailureChannel,
+            producerStateManager: ProducerStateManager,
+            numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): ElasticLog = {
     val key = "/kafka/pm/" + topicPartition.topic() + "-" + topicPartition.partition();
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get();
 
@@ -163,14 +166,6 @@ object ElasticLog extends Logging {
     // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
     val metaMap = getMetas(metaStream)
 
-    // load LogSegments
-    val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreams, client.streamClient())
-    val streamSegmentManager = new ElasticStreamSegmentManager(logStreamManager)
-    val segments = new LogSegments(topicPartition)
-    for (segmentMeta <- logMeta.getSegments.asScala) {
-      segments.add(ElasticLogSegment(segmentMeta, streamSegmentManager, config, time))
-    }
 
     val partitionMetaOpt = metaMap.get(PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
     if (partitionMetaOpt.isEmpty) {
@@ -180,23 +175,28 @@ object ElasticLog extends Logging {
       partitionMeta = partitionMetaOpt.get
     }
 
-    val nextOffsetMetadata = segments.lastSegment match {
-      case Some(lastSegment) =>
-        //FIXME: get the last writable offset with the client
-        val lastOffset = 0L
-        //FIXME: get the physical position
-        LogOffsetMetadata(lastOffset, lastSegment.baseOffset, 0)
-      case None =>
-        LogOffsetMetadata(0L, 0L, 0)
-    }
+    // load LogSegments and recover log
+    val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
+    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreams, client.streamClient())
+    val streamSegmentManager = new ElasticStreamSegmentManager(logStreamManager)
+    val segments = new LogSegments(topicPartition)
+    val offsets = new ElasticLogLoader(
+      logMeta,
+      segments,
+      streamSegmentManager,
+      dir,
+      topicPartition,
+      config,
+      time,
+      hadCleanShutdown = false, // TODO: fetch from partition meta?
+      logStartOffsetCheckpoint = partitionMeta.getStartOffset,
+      partitionMeta.getRecoverOffset,
+      leaderEpochCache = None,
+      producerStateManager = producerStateManager,
+      numRemainingSegments = numRemainingSegments).load()
 
-    val initRecoveryPoint = nextOffsetMetadata.messageOffset
-    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSegmentManager, partitionMeta, dir, config, segments, initRecoveryPoint, nextOffsetMetadata,
-      scheduler, time, topicPartition, logDirFailureChannel)
-    if (segments.isEmpty) {
-      val elasticStreamSegment = elasticLog.newSegment(0L, time)
-      segments.add(elasticStreamSegment)
-    }
+    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSegmentManager, partitionMeta, dir, config,
+      segments, offsets.recoveryPoint, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     elasticLog
   }
 

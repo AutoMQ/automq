@@ -307,7 +307,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
     }
   }
 
-  private def updateProducerState(producerStateManager: ProducerStateManager, batch: RecordBatch): Unit = {
+  protected def updateProducerState(producerStateManager: ProducerStateManager, batch: RecordBatch): Unit = {
     if (batch.hasProducerId) {
       val producerId = batch.producerId
       val appendInfo = producerStateManager.prepareUpdate(producerId, origin = AppendOrigin.Replication)

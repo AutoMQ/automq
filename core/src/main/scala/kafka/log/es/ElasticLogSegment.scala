@@ -18,7 +18,6 @@
 package kafka.log.es
 
 import kafka.log._
-import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
 import kafka.utils.{nonthreadsafe, threadsafe}
 import org.apache.kafka.common.record.MemoryRecords
@@ -80,13 +79,6 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     FetchDataInfo(offsetMetadata, log.read(startPosition, fetchSize),
       firstEntryIncomplete = adjustedMaxSize < startOffsetAndSize.size)
   }
-
-  @nonthreadsafe
-  override def recover(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
-    // TODO: check LogLoader logic
-    -1
-  }
-
 
   @nonthreadsafe
   override def truncateTo(offset: Long): Int = {
