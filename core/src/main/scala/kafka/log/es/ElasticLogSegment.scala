@@ -108,7 +108,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     timeIdx.seal()
     _meta.setTimeStreamEndOffset(timeIdx.streamSegment().endOffsetInStream)
     txnIndex.seal()
-    _meta.setTxnStreamEndOffset(txnIndex.streamSegment.endOffsetInStream)
+    _meta.setTxnStreamEndOffset(txnIndex.streamSegment().endOffsetInStream)
   }
 
   def meta: ElasticStreamSegmentMeta = _meta
@@ -149,7 +149,7 @@ object ElasticLogSegment {
     val log = new ElasticLogFileRecords(sm.loadOrCreateSegment("log" + suffix, meta.getLogStreamStartOffset, meta.getLogStreamEndOffset))
     val offsetIndex = new ElasticOffsetIndex(new StreamSegmentSupplier(sm, "idx" + suffix, meta.getOffsetStreamEndOffset, meta.getOffsetStreamEndOffset), baseOffset, logConfig.maxIndexSize)
     val timeIndex = new ElasticTimeIndex(new StreamSegmentSupplier(sm, "tim" + suffix, meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset, logConfig.maxIndexSize)
-    val txnIndex = new ElasticTransactionIndex(baseOffset, sm.loadOrCreateSegment("txn" + meta.getStreamSuffix, meta.getTxnStreamStartOffset, meta.getTxnStreamEndOffset))
+    val txnIndex = new ElasticTransactionIndex(new StreamSegmentSupplier(sm, "txn" + suffix, meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset)
 
     new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time)
   }

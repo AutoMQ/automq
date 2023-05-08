@@ -45,7 +45,7 @@ class TransactionIndex(val startOffset: Long, @volatile private var _file: File)
 
   // note that the file is not created until we need it
   @volatile private var maybeChannel: Option[FileChannel] = None
-  private var lastOffset: Option[Long] = None
+  protected var lastOffset: Option[Long] = None
 
   if (_file.exists)
     openChannel()
@@ -126,7 +126,7 @@ class TransactionIndex(val startOffset: Long, @volatile private var _file: File)
     }
   }
 
-  private def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {
+  protected def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {
     maybeChannel match {
       case None => Iterator.empty
       case Some(channel) =>
