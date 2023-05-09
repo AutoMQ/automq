@@ -48,6 +48,12 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // TODO: check LogLoader logic
   }
 
+
+  override def append(largestOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
+    super.append(largestOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records)
+    meta.lastModifiedTimestamp(System.currentTimeMillis())
+  }
+
   @threadsafe
   override def read(startOffset: Long,
                     maxSize: Int,
@@ -102,16 +108,22 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   override def onBecomeInactiveSegment(): Unit = {
     timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
     log.seal()
-    _meta.setLogStreamEndOffset(log.streamSegment.endOffsetInStream)
+    _meta.log(log.streamSegment.sliceRange)
     offsetIdx.seal()
-    _meta.setOffsetStreamEndOffset(offsetIdx.streamSegment().endOffsetInStream)
+    _meta.offset(offsetIdx.stream.sliceRange)
     timeIdx.seal()
-    _meta.setTimeStreamEndOffset(timeIdx.streamSegment().endOffsetInStream)
+    _meta.time(timeIdx.stream.sliceRange)
     txnIndex.seal()
-    _meta.setTxnStreamEndOffset(txnIndex.streamSegment().endOffsetInStream)
+    _meta.txn(txnIndex.stream.sliceRange)
   }
 
-  def meta: ElasticStreamSegmentMeta = _meta
+  def meta: ElasticStreamSegmentMeta = {
+    _meta.log(log.streamSegment.sliceRange)
+    _meta.offset(offsetIdx.stream.sliceRange)
+    _meta.time(timeIdx.stream.sliceRange)
+    _meta.txn(txnIndex.stream.sliceRange)
+    _meta
+  }
 
   /**
    * Close this log segment
@@ -133,23 +145,23 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     false
   }
 
-  override def lastModified = log.getLastModifiedTimeMs
+  override def lastModified = meta.lastModifiedTimestamp
 
   override def lastModified_=(ms: Long) = {
-    // TODO: check
+    meta.lastModifiedTimestamp(ms)
     null
   }
 }
 
 object ElasticLogSegment {
-  def apply(meta: ElasticStreamSegmentMeta, sm: ElasticStreamSegmentManager, logConfig: LogConfig,
+  def apply(meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
             time: Time): ElasticLogSegment = {
-    val baseOffset = meta.getSegmentBaseOffset
-    val suffix = meta.getStreamSuffix
-    val log = new ElasticLogFileRecords(sm.loadOrCreateSegment("log" + suffix, meta.getLogStreamStartOffset, meta.getLogStreamEndOffset))
-    val offsetIndex = new ElasticOffsetIndex(new StreamSegmentSupplier(sm, "idx" + suffix, meta.getOffsetStreamEndOffset, meta.getOffsetStreamEndOffset), baseOffset, logConfig.maxIndexSize)
-    val timeIndex = new ElasticTimeIndex(new StreamSegmentSupplier(sm, "tim" + suffix, meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset, logConfig.maxIndexSize)
-    val txnIndex = new ElasticTransactionIndex(new StreamSegmentSupplier(sm, "txn" + suffix, meta.getTimeStreamStartOffset, meta.getTimeStreamEndOffset), baseOffset)
+    val baseOffset = meta.baseOffset
+    val suffix = meta.streamSuffix
+    val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log))
+    val offsetIndex = new ElasticOffsetIndex(new StreamSliceSupplier(sm, "idx" + suffix, meta.offset), baseOffset, logConfig.maxIndexSize)
+    val timeIndex = new ElasticTimeIndex(new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize)
+    val txnIndex = new ElasticTransactionIndex(new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 
     new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time)
   }

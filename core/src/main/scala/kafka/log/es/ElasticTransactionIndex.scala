@@ -26,10 +26,10 @@ import java.nio.ByteBuffer
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(streamSegmentSupplier: StreamSegmentSupplier, startOffset: Long)
+class ElasticTransactionIndex(streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
   extends TransactionIndex(startOffset, _file = new File("empty")) {
 
-  var stream: ElasticStreamSegment = streamSegmentSupplier.get()
+  var stream: ElasticStreamSlice = streamSliceSupplier.get()
 
   override def append(abortedTxn: AbortedTxn): Unit = {
     lastOffset.foreach { offset =>
@@ -59,7 +59,7 @@ class ElasticTransactionIndex(streamSegmentSupplier: StreamSegmentSupplier, star
   }
 
   override def reset(): Unit = {
-    stream = streamSegmentSupplier.reset()
+    stream = streamSliceSupplier.reset()
   }
 
   override def close(): Unit = {
@@ -121,9 +121,5 @@ class ElasticTransactionIndex(streamSegmentSupplier: StreamSegmentSupplier, star
 
   def seal(): Unit = {
     stream.seal()
-  }
-
-  def streamSegment(): ElasticStreamSegment = {
-    stream
   }
 }

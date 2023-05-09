@@ -35,7 +35,7 @@ import scala.jdk.CollectionConverters.CollectionHasAsScala
  */
 class ElasticLogLoader(logMeta: ElasticLogMeta,
                        segments: LogSegments,
-                       streamSegmentManager: ElasticStreamSegmentManager,
+                       streamSegmentManager: ElasticStreamSliceManager,
                        dir: File,
                        topicPartition: TopicPartition,
                        config: LogConfig,
@@ -90,7 +90,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def removeTempFiles(): Unit = {
     logMeta.getCleanedSegments.forEach(m => {
-      info(s"Deleting cleaned segment ${m.getSegmentBaseOffset}")
+      info(s"Deleting cleaned segment ${m.baseOffset}")
     })
     logMeta.setCleanedSegments(util.Collections.emptyList())
 
@@ -202,7 +202,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
     if (segments.isEmpty) {
       // no existing segments, create a new mutable segment beginning at logStartOffset
       val meta = new ElasticStreamSegmentMeta()
-      meta.setSegmentBaseOffset(logStartOffsetCheckpoint)
+      meta.baseOffset(logStartOffsetCheckpoint)
       segments.add(ElasticLogSegment(meta, streamSegmentManager, config, time))
     }
 

@@ -20,123 +20,102 @@ package kafka.log.es;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class ElasticStreamSegmentMeta {
-    @JsonProperty("sbo")
-    private long segmentBaseOffset;
-    @JsonProperty("sp")
-    private String streamSuffix;
-    @JsonProperty("lso")
-    private long logStreamStartOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("leo")
-    private long logStreamEndOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("oso")
-    private long offsetStreamStartOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("oeo")
-    private long offsetStreamEndOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("tso")
-    private long timeStreamStartOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("teo")
-    private long timeStreamEndOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("txnso")
-    private long txnStreamStartOffset = Offsets.NOOP_OFFSET;
-    @JsonProperty("txneo")
-    private long txnStreamEndOffset = Offsets.NOOP_OFFSET;
+    @JsonProperty("bo")
+    private long baseOffset;
+    @JsonProperty("ct")
+    private long createTimestamp;
+    @JsonProperty("lmt")
+    private long lastModifiedTimestamp;
+    @JsonProperty("s")
+    private String streamSuffix = "";
+    @JsonProperty("ls")
+    private SliceRange log = new SliceRange();
+    @JsonProperty("os")
+    private SliceRange offset = new SliceRange();
+    @JsonProperty("ts")
+    private SliceRange time = new SliceRange();
+    @JsonProperty("txs")
+    private SliceRange txn = new SliceRange();
 
     public ElasticStreamSegmentMeta() {
     }
 
-    public long getSegmentBaseOffset() {
-        return segmentBaseOffset;
+    public long baseOffset() {
+        return baseOffset;
     }
 
-    public void setSegmentBaseOffset(long segmentBaseOffset) {
-        this.segmentBaseOffset = segmentBaseOffset;
+    public void baseOffset(long baseOffset) {
+        this.baseOffset = baseOffset;
     }
 
-    public long getLogStreamStartOffset() {
-        return logStreamStartOffset;
-    }
-
-    public void setLogStreamStartOffset(long logStreamStartOffset) {
-        this.logStreamStartOffset = logStreamStartOffset;
-    }
-
-    public long getTimeStreamStartOffset() {
-        return timeStreamStartOffset;
-    }
-
-    public void setTimeStreamStartOffset(long timeStreamStartOffset) {
-        this.timeStreamStartOffset = timeStreamStartOffset;
-    }
-
-    public long getTxnStreamStartOffset() {
-        return txnStreamStartOffset;
-    }
-
-    public void setTxnStreamStartOffset(long txnStreamStartOffset) {
-        this.txnStreamStartOffset = txnStreamStartOffset;
-    }
-
-    public long getOffsetStreamStartOffset() {
-        return offsetStreamStartOffset;
-    }
-
-    public void setOffsetStreamStartOffset(long offsetStreamStartOffset) {
-        this.offsetStreamStartOffset = offsetStreamStartOffset;
-    }
-
-    public long getLogStreamEndOffset() {
-        return logStreamEndOffset;
-    }
-
-    public void setLogStreamEndOffset(long logStreamEndOffset) {
-        this.logStreamEndOffset = logStreamEndOffset;
-    }
-
-    public long getOffsetStreamEndOffset() {
-        return offsetStreamEndOffset;
-    }
-
-    public void setOffsetStreamEndOffset(long offsetStreamEndOffset) {
-        this.offsetStreamEndOffset = offsetStreamEndOffset;
-    }
-
-    public long getTimeStreamEndOffset() {
-        return timeStreamEndOffset;
-    }
-
-    public void setTimeStreamEndOffset(long timeStreamEndOffset) {
-        this.timeStreamEndOffset = timeStreamEndOffset;
-    }
-
-    public long getTxnStreamEndOffset() {
-        return txnStreamEndOffset;
-    }
-
-    public void setTxnStreamEndOffset(long txnStreamEndOffset) {
-        this.txnStreamEndOffset = txnStreamEndOffset;
-    }
-
-    public String getStreamSuffix() {
+    public String streamSuffix() {
         return streamSuffix;
     }
 
-    public void setStreamSuffix(String streamSuffix) {
+    public void streamSuffix(String streamSuffix) {
         this.streamSuffix = streamSuffix;
+    }
+
+    public long createTimestamp() {
+        return createTimestamp;
+    }
+
+    public void createTimestamp(long createTimestamp) {
+        this.createTimestamp = createTimestamp;
+    }
+
+    public long lastModifiedTimestamp() {
+        return lastModifiedTimestamp;
+    }
+
+    public void lastModifiedTimestamp(long lastModifiedTimestamp) {
+        this.lastModifiedTimestamp = lastModifiedTimestamp;
+    }
+
+    public SliceRange log() {
+        return log;
+    }
+
+    public void log(SliceRange log) {
+        this.log = log;
+    }
+
+    public SliceRange offset() {
+        return offset;
+    }
+
+    public void offset(SliceRange offset) {
+        this.offset = offset;
+    }
+
+    public SliceRange time() {
+        return time;
+    }
+
+    public void time(SliceRange time) {
+        this.time = time;
+    }
+
+    public SliceRange txn() {
+        return txn;
+    }
+
+    public void txn(SliceRange txn) {
+        this.txn = txn;
     }
 
     @Override
     public String toString() {
-        return "ElasticStreamSegmentMeta{" +
-                "segmentBaseOffset=" + segmentBaseOffset +
+        return "ElasticStreamSliceMeta{" +
+                "segmentBaseOffset=" + baseOffset +
+                ", createTimestamp=" + createTimestamp +
+                ", lastModifiedTimestamp=" + lastModifiedTimestamp +
                 ", streamSuffix='" + streamSuffix + '\'' +
-                ", logStreamStartOffset=" + logStreamStartOffset +
-                ", logStreamEndOffset=" + logStreamEndOffset +
-                ", offsetStreamStartOffset=" + offsetStreamStartOffset +
-                ", offsetStreamEndOffset=" + offsetStreamEndOffset +
-                ", timeStreamStartOffset=" + timeStreamStartOffset +
-                ", timeStreamEndOffset=" + timeStreamEndOffset +
-                ", txnStreamStartOffset=" + txnStreamStartOffset +
-                ", txnStreamEndOffset=" + txnStreamEndOffset +
+                ", log=" + log +
+                ", offset=" + offset +
+                ", time=" + time +
+                ", txn=" + txn +
                 '}';
     }
+
 }

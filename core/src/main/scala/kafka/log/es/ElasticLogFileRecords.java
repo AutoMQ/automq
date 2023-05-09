@@ -47,10 +47,10 @@ import java.util.OptionalLong;
 import java.util.Queue;
 
 public class ElasticLogFileRecords extends FileRecords {
-    private final ElasticStreamSegment streamSegment;
+    private final ElasticStreamSlice streamSegment;
     private long lastModifiedTimeMs = System.currentTimeMillis();
 
-    public ElasticLogFileRecords(ElasticStreamSegment streamSegment) {
+    public ElasticLogFileRecords(ElasticStreamSlice streamSegment) {
         super(0, Integer.MAX_VALUE, false);
         this.streamSegment = streamSegment;
         size.set((int) streamSegment.nextOffset());
@@ -172,7 +172,7 @@ public class ElasticLogFileRecords extends FileRecords {
 
     }
 
-    public ElasticStreamSegment streamSegment() {
+    public ElasticStreamSlice streamSegment() {
         return streamSegment;
     }
 

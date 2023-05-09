@@ -17,25 +17,23 @@
 
 package kafka.log.es;
 
-public class StreamSegmentSupplier {
-    private final ElasticStreamSegmentManager segmentManager;
+public class StreamSliceSupplier {
+    private final ElasticStreamSliceManager streamSliceManager;
     private final String streamName;
-    private final long startOffset;
-    private final long endOffset;
+    private final SliceRange sliceRange;
 
-    public StreamSegmentSupplier(ElasticStreamSegmentManager segmentManager, String streamName, long startOffset, long endOffset) {
-        this.segmentManager = segmentManager;
+    public StreamSliceSupplier(ElasticStreamSliceManager streamSliceManager, String streamName, SliceRange sliceRange) {
+        this.streamSliceManager = streamSliceManager;
         this.streamName = streamName;
-        this.startOffset = startOffset;
-        this.endOffset = endOffset;
+        this.sliceRange = sliceRange;
     }
 
-    public ElasticStreamSegment get() {
-        return segmentManager.loadOrCreateSegment(streamName, startOffset, endOffset);
+    public ElasticStreamSlice get() {
+        return streamSliceManager.loadOrCreateSlice(streamName, sliceRange);
     }
 
-    public ElasticStreamSegment reset() {
-        return segmentManager.newSegment(streamName);
+    public ElasticStreamSlice reset() {
+        return streamSliceManager.newSlice(streamName);
     }
 
 }

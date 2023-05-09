@@ -25,7 +25,7 @@ import org.apache.kafka.common.record.RecordBatch
 
 import java.nio.ByteBuffer
 
-class ElasticTimeIndex(streamSegmentSupplier: StreamSegmentSupplier, baseOffset: Long, maxIndexSize: Int = -1)
+class ElasticTimeIndex(streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
   extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile

@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-public class DefaultElasticStreamSegment implements ElasticStreamSegment {
+public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     /**
      * the real start offset of this segment in the stream.
      */
@@ -39,14 +39,23 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
     private long nextOffset;
     private boolean sealed = false;
 
-    public DefaultElasticStreamSegment(Stream stream, long startOffsetInStream, long endOffsetInStream) {
+    public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange) {
         this.stream = stream;
-        this.startOffsetInStream = startOffsetInStream;
-        if (endOffsetInStream != -1L) {
-            this.nextOffset = endOffsetInStream - startOffsetInStream;
-            this.sealed = true;
+        long streamNextOffset = stream.nextOffset();
+        if (sliceRange.start() == Offsets.NOOP_OFFSET) {
+            // new stream slice
+            this.startOffsetInStream = streamNextOffset;
+            sliceRange.start(startOffsetInStream);
+            this.nextOffset = 0L;
+        } else if (sliceRange.end() == -1L) {
+            // unsealed stream slice
+            this.startOffsetInStream = sliceRange.start();
+            this.nextOffset = streamNextOffset - startOffsetInStream;
         } else {
-            this.nextOffset = stream.nextOffset() - startOffsetInStream;
+            // sealed stream slice
+            this.startOffsetInStream = sliceRange.start();
+            this.nextOffset = sliceRange.end() - startOffsetInStream;
+            this.sealed = true;
         }
     }
 
@@ -72,6 +81,15 @@ public class DefaultElasticStreamSegment implements ElasticStreamSegment {
     @Override
     public long startOffsetInStream() {
         return startOffsetInStream;
+    }
+
+    @Override
+    public SliceRange sliceRange() {
+        if (sealed) {
+            return SliceRange.of(startOffsetInStream, startOffsetInStream + nextOffset);
+        } else {
+            return SliceRange.of(startOffsetInStream, Offsets.NOOP_OFFSET);
+        }
     }
 
     @Override

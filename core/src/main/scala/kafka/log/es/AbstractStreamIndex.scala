@@ -32,9 +32,9 @@ import java.util.concurrent.locks.{Lock, ReentrantLock}
  * @param baseOffset
  * @param maxIndexSize
  */
-abstract class AbstractStreamIndex(val streamSegmentSupplier: StreamSegmentSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
+abstract class AbstractStreamIndex(val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
 
-  protected var stream: ElasticStreamSegment = streamSegmentSupplier.get()
+  var stream: ElasticStreamSlice = streamSliceSupplier.get()
 
   protected def entrySize: Int
 
@@ -96,7 +96,7 @@ abstract class AbstractStreamIndex(val streamSegmentSupplier: StreamSegmentSuppl
 
   // TODO
   def reset(): Unit = {
-    stream = streamSegmentSupplier.reset()
+    stream = streamSliceSupplier.reset()
   }
 
   def relativeOffset(offset: Long): Int = {
@@ -182,6 +182,4 @@ abstract class AbstractStreamIndex(val streamSegmentSupplier: StreamSegmentSuppl
   def roundDownToExactMultiple(number: Int, factor: Int) = factor * (number / factor)
 
   protected[log] def forceUnmap(): Unit = {}
-
-  def streamSegment(): ElasticStreamSegment = stream
 }

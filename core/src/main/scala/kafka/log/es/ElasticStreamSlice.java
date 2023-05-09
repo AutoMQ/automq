@@ -24,13 +24,13 @@ import sdk.elastic.stream.api.RecordBatch;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Elastic stream segment, represent stream sub part.
+ * Elastic stream slice.
  * support read from in-flight write buffer
  */
-public interface ElasticStreamSegment {
+public interface ElasticStreamSlice {
 
     /**
-     * Append record batch to segment.
+     * Append record batch to stream slice.
      *
      * @param recordBatch {@link RecordBatch}
      * @return {@link AppendResult}
@@ -38,7 +38,7 @@ public interface ElasticStreamSegment {
     CompletableFuture<AppendResult> append(RecordBatch recordBatch);
 
     /**
-     * Fetch record batch from segment.
+     * Fetch record batch from stream slice.
      *
      * @param startOffset  start offset.
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
@@ -47,33 +47,26 @@ public interface ElasticStreamSegment {
     CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint);
 
     /**
-     * Get segment next offset.
+     * Get stream slice next offset.
      */
     long nextOffset();
 
     /**
-     * Get segment start offset in stream.
+     * Get slice start offset in under stream.
      *
      * @return segment start offset in stream.
      */
     long startOffsetInStream();
 
-    /**
-     * Get segment end offset in stream.
-     *
-     * @return segment end offset in stream.
-     */
-    default long endOffsetInStream() {
-        return startOffsetInStream() + nextOffset();
-    }
+    SliceRange sliceRange();
 
     /**
-     * Destroy segment.
+     * Destroy stream slice.
      */
     void destroy();
 
     /**
-     * Seal segment, forbid future append.
+     * Seal slice, forbid future append.
      */
     void seal();
 }

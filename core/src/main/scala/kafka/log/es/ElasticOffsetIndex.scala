@@ -24,7 +24,7 @@ import org.apache.kafka.common.errors.InvalidOffsetException
 
 import java.nio.ByteBuffer
 
-class ElasticOffsetIndex(streamSegmentSupplier: StreamSegmentSupplier, baseOffset: Long, maxIndexSize: Int = -1) extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with OffsetIndex {
+class ElasticOffsetIndex(streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1) extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with OffsetIndex {
 
   override def entrySize: Int = 8
 

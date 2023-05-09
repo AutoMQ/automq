@@ -42,6 +42,12 @@ class ElasticUnifiedLog(logStartOffset: Long,
     elasticLog.replaceSegments(newSegments, oldSegments)
   }
 
+  override private[log] def splitOverflowedSegment(segment: LogSegment) = {
+    // normally, there should be no overflowed segment
+    throw new UnsupportedOperationException()
+  }
+
+
 }
 
 object ElasticUnifiedLog extends Logging {

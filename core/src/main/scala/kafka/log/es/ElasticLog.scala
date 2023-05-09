@@ -34,7 +34,7 @@ import scala.jdk.CollectionConverters._
 
 class ElasticLog(val metaStream: api.Stream,
                  val streamManager: ElasticLogStreamManager,
-                 val streamSegmentManager: ElasticStreamSegmentManager,
+                 val streamSliceManager: ElasticStreamSliceManager,
                  val producerStateManager: ProducerStateManager,
                  val partitionMeta: ElasticPartitionMeta,
                  _dir: File,
@@ -47,6 +47,7 @@ class ElasticLog(val metaStream: api.Stream,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel)
   extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
+
   import kafka.log.es.ElasticLog._
 
   private var cleanedSegments: List[ElasticLogSegment] = List()
@@ -76,9 +77,9 @@ class ElasticLog(val metaStream: api.Stream,
     }
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
     val meta = new ElasticStreamSegmentMeta()
-    meta.setSegmentBaseOffset(baseOffset)
-    meta.setStreamSuffix(suffix)
-    val segment: ElasticLogSegment = ElasticLogSegment(meta, streamSegmentManager, config, time)
+    meta.baseOffset(baseOffset)
+    meta.streamSuffix(suffix)
+    val segment: ElasticLogSegment = ElasticLogSegment(meta, streamSliceManager, config, time)
     if (suffix.equals(LocalLog.CleanedFileSuffix)) {
       // remove cleanedSegments when replace
       cleanedSegments = cleanedSegments :+ segment
@@ -179,8 +180,8 @@ object ElasticLog extends Logging {
     }
 
     def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
-        metaMap.filter(kv => kv._1.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX))
-          .map(kv => (kv._1.stripPrefix(PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
+      metaMap.filter(kv => kv._1.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX))
+        .map(kv => (kv._1.stripPrefix(PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
     }
 
     //load producer snapshot meta info for this partition
@@ -216,12 +217,12 @@ object ElasticLog extends Logging {
     // load LogSegments and recover log
     val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
     val logStreamManager = new ElasticLogStreamManager(logMeta.getStreams, client.streamClient())
-    val streamSegmentManager = new ElasticStreamSegmentManager(logStreamManager)
+    val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
     val segments = new LogSegments(topicPartition)
     val offsets = new ElasticLogLoader(
       logMeta,
       segments,
-      streamSegmentManager,
+      streamSliceManager,
       dir,
       topicPartition,
       config,
@@ -233,7 +234,7 @@ object ElasticLog extends Logging {
       producerStateManager = producerStateManager,
       numRemainingSegments = numRemainingSegments).load()
 
-    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSegmentManager, producerStateManager, partitionMeta, dir, config,
+    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, dir, config,
       segments, offsets.recoveryPoint, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     elasticLog
   }
