@@ -18,11 +18,11 @@
 package kafka.log
 
 import kafka.log.LogConfig.MessageFormatVersion
+
 import java.io._
 import java.nio.file.Files
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
-
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.OffsetCheckpointFile
 import kafka.server.metadata.ConfigRepository
@@ -37,8 +37,9 @@ import scala.collection._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.{Failure, Success, Try}
 import kafka.utils.Implicits._
-import java.util.Properties
+import org.apache.kafka.common.internals.Topic
 
+import java.util.Properties
 import org.apache.kafka.server.common.MetadataVersion
 
 import scala.annotation.nowarn
@@ -388,8 +389,12 @@ class LogManager(logDirs: Seq[File],
               s"$logDirAbsolutePath, resetting to the base offset of the first segment", e)
         }
 
-        val logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
+        var logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
           logDir.isDirectory && UnifiedLog.parseTopicPartitionName(logDir).topic != KafkaRaftServer.MetadataTopic)
+        logsToLoad.foreach(logDir => {
+          warn(s"Unexpected partition directory $logDir, expect there is no normal partition in the log directory.")
+        })
+        logsToLoad = Array()
         numTotalLogs += logsToLoad.length
         numRemainingLogs.put(dir.getAbsolutePath, logsToLoad.length)
 
@@ -935,12 +940,16 @@ class LogManager(logDirs: Seq[File],
             UnifiedLog.logDirName(topicPartition)
         }
 
-        val logDir = logDirs
-          .iterator // to prevent actually mapping the whole list, lazy map
-          .map(createLogDirectory(_, logDirName))
-          .find(_.isSuccess)
-          .getOrElse(Failure(new KafkaStorageException("No log directories available. Tried " + logDirs.map(_.getAbsolutePath).mkString(", "))))
-          .get // If Failure, will throw
+        val logDir = if (!isClusterMetaPath(logDirName)) {
+          new File(logDirs.head.getAbsolutePath, logDirName)
+        } else {
+          logDirs
+            .iterator // to prevent actually mapping the whole list, lazy map
+            .map(createLogDirectory(_, logDirName))
+            .find(_.isSuccess)
+            .getOrElse(Failure(new KafkaStorageException("No log directories available. Tried " + logDirs.map(_.getAbsolutePath).mkString(", "))))
+            .get // If Failure, will throw
+        }
 
         val config = fetchLogConfig(topicPartition.topic)
         val log = UnifiedLog(
@@ -1383,6 +1392,11 @@ object LogManager {
       time = time,
       keepPartitionMetadataFile = keepPartitionMetadataFile,
       interBrokerProtocolVersion = config.interBrokerProtocolVersion)
+  }
+
+  def isClusterMetaPath(dirName: String): Boolean = {
+    // FIXME: check file path topic part
+    dirName.contains(Topic.CLUSTER_METADATA_TOPIC_NAME)
   }
 
 }

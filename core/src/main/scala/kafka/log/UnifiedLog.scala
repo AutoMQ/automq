@@ -578,7 +578,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def recordVersion: RecordVersion = config.recordVersion
 
-  private def initializePartitionMetadata(): Unit = lock synchronized {
+  protected def initializePartitionMetadata(): Unit = lock synchronized {
     val partitionMetadata = PartitionMetadataFile.newFile(dir)
     partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
   }
@@ -1828,15 +1828,8 @@ object UnifiedLog extends Logging {
             keepPartitionMetadataFile: Boolean,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): UnifiedLog = {
     // create the log directory if it doesn't exist
-    Files.createDirectories(dir.toPath)
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
     val segments = new LogSegments(topicPartition)
-    val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(
-      dir,
-      topicPartition,
-      logDirFailureChannel,
-      config.recordVersion,
-      s"[UnifiedLog partition=$topicPartition, dir=${dir.getParent}] ")
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
     // elastic stream inject start
@@ -1847,12 +1840,18 @@ object UnifiedLog extends Logging {
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,
-        leaderEpochCache,
+        leaderEpochCache = None,
         localLog.producerStateManager,
-        topicId,
-        keepPartitionMetadataFile)
+        topicId)
     }
     // elastic stream inject end
+    Files.createDirectories(dir.toPath)
+    val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(
+      dir,
+      topicPartition,
+      logDirFailureChannel,
+      config.recordVersion,
+      s"[UnifiedLog partition=$topicPartition, dir=${dir.getParent}] ")
     val offsets = new LogLoader(
       dir,
       topicPartition,

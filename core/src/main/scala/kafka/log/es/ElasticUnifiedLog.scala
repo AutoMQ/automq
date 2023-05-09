@@ -34,10 +34,9 @@ class ElasticUnifiedLog(logStartOffset: Long,
                         producerIdExpirationCheckIntervalMs: Int,
                         leaderEpochCache: Option[LeaderEpochFileCache],
                         producerStateManager: ProducerStateManager,
-                        _topicId: Option[Uuid],
-                        keepPartitionMetadataFile: Boolean)
+                        _topicId: Option[Uuid])
   extends UnifiedLog(logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
-    leaderEpochCache, producerStateManager, _topicId, keepPartitionMetadataFile) {
+    leaderEpochCache, producerStateManager, _topicId, false) {
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
     elasticLog.replaceSegments(newSegments, oldSegments)
   }
@@ -47,7 +46,9 @@ class ElasticUnifiedLog(logStartOffset: Long,
     throw new UnsupportedOperationException()
   }
 
-
+  override def initializeTopicId(): Unit = {
+    // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
+  }
 }
 
 object ElasticUnifiedLog extends Logging {
