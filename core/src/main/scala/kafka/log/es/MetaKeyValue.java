@@ -21,19 +21,20 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 public class MetaKeyValue {
     public static final byte MAGIC_V0 = 0;
 
-    private final short key;
+    private final String key;
     private final ByteBuffer value;
 
-    private MetaKeyValue(short key, ByteBuffer value) {
+    private MetaKeyValue(String key, ByteBuffer value) {
         this.key = key;
         this.value = value;
     }
 
-    public static MetaKeyValue of(short key, ByteBuffer value) {
+    public static MetaKeyValue of(String key, ByteBuffer value) {
         return new MetaKeyValue(key, value);
     }
 
@@ -44,28 +45,34 @@ public class MetaKeyValue {
             throw new IllegalArgumentException("unsupported magic: " + magic);
         }
         // key, short
-        short key = buf.getShort();
+        int keyLength = buf.getInt();
+        byte[] keyBytes = new byte[keyLength];
+        buf.get(keyBytes);
+        String key = new String(keyBytes, StandardCharsets.ISO_8859_1);
         // value
         ByteBuffer value = buf.slice();
         return MetaKeyValue.of(key, value);
     }
 
     public static ByteBuffer encode(MetaKeyValue kv) {
+        byte[] keyBytes = kv.key.getBytes(StandardCharsets.ISO_8859_1);
         // MetaKeyValue encoded format =>
         //  magic => 1 byte
-        //  key => 2 bytes
+        // keyLength => 4 bytes
         //  value => bytes
         int length = 1 // magic length
-                + 2 // key length
+                + 4 // key length
+                + keyBytes.length // key
                 + kv.value.remaining(); // value length
         ByteBuf buf = Unpooled.buffer(length);
         buf.writeByte(MAGIC_V0);
-        buf.writeShort(kv.key);
+        buf.writeInt(keyBytes.length);
+        buf.writeBytes(keyBytes);
         buf.writeBytes(kv.value);
         return buf.nioBuffer();
     }
 
-    public short getKey() {
+    public String getKey() {
         return key;
     }
 

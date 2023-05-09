@@ -380,9 +380,8 @@ object ProducerStateManager {
     new Field(CrcField, Type.UNSIGNED_INT32, "CRC of the snapshot data"),
     new Field(ProducerEntriesField, new ArrayOf(ProducerSnapshotEntrySchema), "The entries in the producer table"))
 
-  def readSnapshot(file: File): Iterable[ProducerStateEntry] = {
+  def readSnapshotFromBuffer(buffer: Array[Byte]): Iterable[ProducerStateEntry] = {
     try {
-      val buffer = Files.readAllBytes(file.toPath)
       val struct = PidSnapshotMapSchema.read(ByteBuffer.wrap(buffer))
 
       val version = struct.getShort(VersionField)
@@ -414,12 +413,23 @@ object ProducerStateManager {
         newEntry
       }
     } catch {
+      case e: KafkaException =>
+        throw e
+    }
+  }
+
+
+  def readSnapshot(file: File): Iterable[ProducerStateEntry] = {
+    try {
+      val buffer = Files.readAllBytes(file.toPath)
+      readSnapshotFromBuffer(buffer)
+    } catch {
       case e: SchemaException =>
         throw new CorruptSnapshotException(s"Snapshot failed schema validation: ${e.getMessage}")
     }
   }
 
-  private def writeSnapshot(file: File, entries: mutable.Map[Long, ProducerStateEntry]): Unit = {
+  def writeSnapshotToBuffer(entries: mutable.Map[Long, ProducerStateEntry]): ByteBuffer = {
     val struct = new Struct(PidSnapshotMapSchema)
     struct.set(VersionField, ProducerSnapshotVersion)
     struct.set(CrcField, 0L) // we'll fill this after writing the entries
@@ -445,6 +455,11 @@ object ProducerStateManager {
     // now fill in the CRC
     val crc = Crc32C.compute(buffer, ProducerEntriesOffset, buffer.limit() - ProducerEntriesOffset)
     ByteUtils.writeUnsignedInt(buffer, CrcOffset, crc)
+    buffer
+  }
+
+  private def writeSnapshot(file: File, entries: mutable.Map[Long, ProducerStateEntry]): Unit = {
+    val buffer = writeSnapshotToBuffer(entries)
 
     val fileChannel = FileChannel.open(file.toPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
     try {
@@ -496,13 +511,13 @@ class ProducerStateManager(
 
   this.logIdent = s"[ProducerStateManager partition=$topicPartition] "
 
-  private var snapshots: ConcurrentSkipListMap[java.lang.Long, SnapshotFile] = locally {
+  protected var snapshots: ConcurrentSkipListMap[java.lang.Long, SnapshotFile] = locally {
     loadSnapshots()
   }
 
-  private val producers = mutable.Map.empty[Long, ProducerStateEntry]
-  private var lastMapOffset = 0L
-  private var lastSnapOffset = 0L
+  protected val producers = mutable.Map.empty[Long, ProducerStateEntry]
+  protected var lastMapOffset = 0L
+  protected var lastSnapOffset = 0L
 
   // Keep track of the last timestamp from the oldest transaction. This is used
   // to detect (approximately) when a transaction has been left hanging on a partition.
@@ -524,7 +539,7 @@ class ProducerStateManager(
   /**
    * Load producer state snapshots by scanning the _logDir.
    */
-  private def loadSnapshots(): ConcurrentSkipListMap[java.lang.Long, SnapshotFile] = {
+  protected def loadSnapshots(): ConcurrentSkipListMap[java.lang.Long, SnapshotFile] = {
     val tm = new ConcurrentSkipListMap[java.lang.Long, SnapshotFile]()
     for (f <- listSnapshotFiles(_logDir)) {
       tm.put(f.offset, f)
@@ -619,7 +634,7 @@ class ProducerStateManager(
 
   def isEmpty: Boolean = producers.isEmpty && unreplicatedTxns.isEmpty
 
-  private def loadFromSnapshot(logStartOffset: Long, currentTime: Long): Unit = {
+  protected def loadFromSnapshot(logStartOffset: Long, currentTime: Long): Unit = {
     while (true) {
       latestSnapshotFile match {
         case Some(snapshot) =>
@@ -653,7 +668,7 @@ class ProducerStateManager(
     }
   }
 
-  private def isProducerExpired(currentTimeMs: Long, producerState: ProducerStateEntry): Boolean =
+  protected def isProducerExpired(currentTimeMs: Long, producerState: ProducerStateEntry): Boolean =
     producerState.currentTxnFirstOffset.isEmpty && currentTimeMs - producerState.lastTimestamp >= producerStateManagerConfig.producerIdExpirationMs
 
   /**
@@ -723,7 +738,7 @@ class ProducerStateManager(
     updateOldestTxnTimestamp()
   }
 
-  private def updateOldestTxnTimestamp(): Unit = {
+  protected def updateOldestTxnTimestamp(): Unit = {
     val firstEntry = ongoingTxns.firstEntry()
     if (firstEntry == null) {
       oldestTxnLastTimestamp = -1
@@ -861,7 +876,7 @@ class ProducerStateManager(
     Option(snapshots.firstEntry()).map(_.getValue)
   }
 
-  private def latestSnapshotFile: Option[SnapshotFile] = {
+  protected def latestSnapshotFile: Option[SnapshotFile] = {
     Option(snapshots.lastEntry()).map(_.getValue)
   }
 
@@ -869,7 +884,7 @@ class ProducerStateManager(
    * Removes the producer state snapshot file metadata corresponding to the provided offset if it exists from this
    * ProducerStateManager, and deletes the backing snapshot file.
    */
-  private def removeAndDeleteSnapshot(snapshotOffset: Long): Unit = {
+  protected def removeAndDeleteSnapshot(snapshotOffset: Long): Unit = {
     Option(snapshots.remove(snapshotOffset)).foreach(_.deleteIfExists())
   }
 
