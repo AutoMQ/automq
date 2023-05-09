@@ -39,7 +39,7 @@ public class RecordsUtil {
      * only load records into the heap when down converting), but it's not for the producer. However, down converting
      * in the producer is very uncommon and the extra complexity to handle that case is not worth it.
      */
-    protected static ConvertedRecords<MemoryRecords> downConvert(Iterable<? extends RecordBatch> batches, byte toMagic,
+    public static ConvertedRecords<MemoryRecords> downConvert(Iterable<? extends RecordBatch> batches, byte toMagic,
                                                                  long firstOffset, Time time) {
         // maintain the batch along with the decompressed records to avoid the need to decompress again
         List<RecordBatchAndRecords> recordBatchAndRecordsList = new ArrayList<>();

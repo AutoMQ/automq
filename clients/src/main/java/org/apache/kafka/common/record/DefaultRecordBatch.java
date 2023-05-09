@@ -243,6 +243,10 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
         outputStream.write(this.buffer.duplicate());
     }
 
+    public ByteBuffer buffer() {
+        return this.buffer.duplicate();
+    }
+
     @Override
     public boolean isTransactional() {
         return (attributes() & TRANSACTIONAL_FLAG_MASK) > 0;
