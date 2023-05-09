@@ -98,6 +98,7 @@ import org.slf4j.Logger;
 
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -1664,6 +1665,16 @@ public class ReplicationControlManager {
             // target ISR will be the same as the old one).
             builder.setTargetIsr(Replicas.toList(
                 Replicas.copyWithout(partition.isr, brokerToRemove)));
+            // TODO: change builder args set and build func logic
+            // TODO: change all #build
+            if (brokerToAdd != -1) {
+                // FIXME: just test code
+                // brokerToAdd take the leader of non-leader partition
+                builder.setTargetIsr(Arrays.asList(brokerToAdd));
+                builder.setTargetReplicas(Arrays.asList(brokerToAdd));
+                builder.setTargetLeaderRecoveryState(LeaderRecoveryState.RECOVERED);
+                // whether add replicaToRemove to clear old broker partition
+            }
 
             builder.build().ifPresent(records::add);
         }
