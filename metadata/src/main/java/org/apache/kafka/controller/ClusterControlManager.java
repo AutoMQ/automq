@@ -577,6 +577,12 @@ public class ClusterControlManager {
         return !registration.inControlledShutdown() && !registration.fenced();
     }
 
+    public List<BrokerRegistration> getActiveBrokers() {
+        return brokerRegistrations.values().stream()
+            .filter(broker -> isActive(broker.id()))
+            .collect(Collectors.toList());
+    }
+
     BrokerHeartbeatManager heartbeatManager() {
         if (heartbeatManager == null) {
             throw new RuntimeException("ClusterControlManager is not active.");

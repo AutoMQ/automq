@@ -49,6 +49,11 @@ class ElasticUnifiedLog(logStartOffset: Long,
   override def initializeTopicId(): Unit = {
     // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
   }
+
+  override private[log] def delete(): Unit = {
+    // TODO: close instead of delete, cause of when replica is not on current node, the log will be deleted
+    // TODO: real delete invoke
+  }
 }
 
 object ElasticUnifiedLog extends Logging {

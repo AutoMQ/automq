@@ -75,6 +75,8 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.es.PartitionLeaderSelector;
+import org.apache.kafka.controller.es.RandomPartitionLeaderSelector;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
@@ -962,7 +964,15 @@ public class ReplicationControlManager {
                 if (configurationControl.uncleanLeaderElectionEnabledForTopic(topic.name())) {
                     builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
                 }
-                builder.setTargetIsr(partitionData.newIsr());
+
+                // elastic stream inject start
+                List<Integer> newIsr = partitionData.newIsr();
+                if (newIsr.size() != 1) {
+                    throw new InvalidReplicaAssignmentException("elastic stream not support isr = 1");
+                }
+                builder.setTargetNode(newIsr.get(0));
+                // elastic stream inject end
+
                 builder.setTargetLeaderRecoveryState(
                     LeaderRecoveryState.of(partitionData.leaderRecoveryState()));
                 Optional<ApiMessageAndVersion> record = builder.build();
@@ -1640,6 +1650,8 @@ public class ReplicationControlManager {
         IntPredicate isAcceptableLeader =
             r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
 
+        PartitionLeaderSelector partitionLeaderSelector = null;
+
         while (iterator.hasNext()) {
             TopicIdPartition topicIdPart = iterator.next();
             TopicControlInfo topic = topics.get(topicIdPart.topicId());
@@ -1661,20 +1673,26 @@ public class ReplicationControlManager {
                 builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
             }
 
+
             // Note: if brokerToRemove was passed as NO_LEADER, this is a no-op (the new
             // target ISR will be the same as the old one).
-            builder.setTargetIsr(Replicas.toList(
-                Replicas.copyWithout(partition.isr, brokerToRemove)));
-            // TODO: change builder args set and build func logic
-            // TODO: change all #build
+            // builder.setTargetIsr(Replicas.toList(
+            //    Replicas.copyWithout(partition.isr, brokerToRemove)));
+
+            // elastic stream inject start
+            // TODO: change builder args set and build func logic => 目前逻辑符合预期，需要添加单测确保后续也一致
             if (brokerToAdd != -1) {
-                // FIXME: just test code
-                // brokerToAdd take the leader of non-leader partition
-                builder.setTargetIsr(Arrays.asList(brokerToAdd));
-                builder.setTargetReplicas(Arrays.asList(brokerToAdd));
-                builder.setTargetLeaderRecoveryState(LeaderRecoveryState.RECOVERED);
-                // whether add replicaToRemove to clear old broker partition
+                // new broker is unfenced(available), then the broker take no leader partition
+                builder.setTargetNode(brokerToAdd);
+            } else {
+                if (partitionLeaderSelector == null) {
+                    partitionLeaderSelector = new RandomPartitionLeaderSelector(clusterControl.getActiveBrokers());
+                }
+                partitionLeaderSelector
+                        .select(partition, br -> br.id() != brokerToRemove)
+                        .ifPresent(broker -> builder.setTargetNode(broker.id()));
             }
+            // elastic stream inject end
 
             builder.build().ifPresent(records::add);
         }
@@ -1787,6 +1805,24 @@ public class ReplicationControlManager {
         return builder.build();
     }
 
+    // elastic stream inject start
+    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
+                                                               PartitionRegistration part,
+                                                               ReassignablePartition target) {
+
+        if (target.replicas().size() != 1) {
+            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" +tp+ "] replicas[" + target.replicas() + "]");
+        }
+        PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
+                tp.topicId(),
+                tp.partitionId(),
+                clusterControl::isActive,
+                featureControl.metadataVersion().isLeaderRecoverySupported());
+        builder.setTargetNode(target.replicas().get(0));
+        return builder.build();
+    }
+    // elastic stream inject end
+
     /**
      * Apply a given partition reassignment. In general a partition reassignment goes
      * through several stages:
@@ -1815,7 +1851,7 @@ public class ReplicationControlManager {
      * @return                  The ChangePartitionRecord for the new partition assignment,
      *                          or empty if no change is needed.
      */
-    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
+    Optional<ApiMessageAndVersion> changePartitionReassignment0(TopicIdPartition tp,
                                                                PartitionRegistration part,
                                                                ReassignablePartition target) {
         // Check that the requested partition assignment is valid.

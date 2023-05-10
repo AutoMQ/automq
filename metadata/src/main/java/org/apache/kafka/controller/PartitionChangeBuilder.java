@@ -106,6 +106,15 @@ public class PartitionChangeBuilder {
         return this;
     }
 
+    // elastic stream inject start
+    public PartitionChangeBuilder setTargetNode(int brokerId) {
+        setTargetIsr(Collections.singletonList(brokerId));
+        setTargetReplicas(Collections.singletonList(brokerId));
+        setTargetLeaderRecoveryState(LeaderRecoveryState.RECOVERED);
+        return this;
+    }
+    // elastic stream inject end
+
     public PartitionChangeBuilder setElection(Election election) {
         this.election = election;
         return this;
@@ -294,6 +303,7 @@ public class PartitionChangeBuilder {
     }
 
     public Optional<ApiMessageAndVersion> build() {
+        // TODO: 强制校验 + 外层逻辑适配，禁止多 ISR，多 REPLICA
         PartitionChangeRecord record = new PartitionChangeRecord().
             setTopicId(topicId).
             setPartitionId(partitionId);

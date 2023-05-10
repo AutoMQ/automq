@@ -23,6 +23,7 @@ import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
+import kafka.log.es.ElasticUnifiedLog
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
@@ -538,6 +539,11 @@ class Partition(val topicPartition: TopicPartition,
    */
   def delete(): Unit = {
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
+    // elastic stream inject start
+    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
+      log.get.close()
+    }
+    // elastic stream inject end
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
       assignmentState = SimpleAssignmentState(Seq.empty)
