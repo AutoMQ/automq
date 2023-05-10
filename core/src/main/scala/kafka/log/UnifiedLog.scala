@@ -25,7 +25,7 @@ import java.util.Optional
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
-import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
+import kafka.log.es.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
 import kafka.message.{BrokerCompressionCodec, CompressionCodec, NoCompressionCodec}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
@@ -1835,12 +1835,13 @@ object UnifiedLog extends Logging {
     // elastic stream inject start
     if (!isClusterMetaLogSegment(dir)) {
       val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig)
+      val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
       // extends UnifiedLog in future when require modify its implement.
       return new ElasticUnifiedLog(localLog.logStartOffset,
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,
-        leaderEpochCache = None,
+        leaderEpochCache = Option(leaderEpochFileCache),
         localLog.producerStateManager,
         topicId)
     }

@@ -19,6 +19,8 @@ package kafka.log.es
 
 import io.netty.buffer.Unpooled
 import kafka.log._
+import kafka.server.checkpoints.LeaderEpochCheckpointFile
+import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
@@ -37,6 +39,7 @@ class ElasticLog(val metaStream: api.Stream,
                  val streamSliceManager: ElasticStreamSliceManager,
                  val producerStateManager: ProducerStateManager,
                  val partitionMeta: ElasticPartitionMeta,
+                 val leaderEpochCheckpointMeta: ElasticLeaderEpochCheckpointMeta,
                  _dir: File,
                  c: LogConfig,
                  segments: LogSegments,
@@ -70,6 +73,10 @@ class ElasticLog(val metaStream: api.Stream,
   def recoveryPointCheckpoint: Long = partitionMeta.getRecoverOffset
 
   def setReCoverOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setRecoverOffset(offsetCheckpoint)
+
+  def saveLeaderEpochCheckpoint(meta: ElasticLeaderEpochCheckpointMeta): Unit = {
+    persistMeta(metaStream, MetaKeyValue.of(LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(meta.encode())))
+  }
 
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
@@ -139,6 +146,7 @@ object ElasticLog extends Logging {
   val PRODUCER_SNAPSHOTS_META_KEY: String = "PRODUCER_SNAPSHOTS"
   val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
   val PARTITION_META_KEY: String = "PARTITION"
+  val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
 
   def apply(client: Client, dir: File,
             config: LogConfig,
@@ -227,7 +235,17 @@ object ElasticLog extends Logging {
       producerStateManager = producerStateManager,
       numRemainingSegments = numRemainingSegments).load()
 
-    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, dir, config,
+    val leaderEpochCheckpointMetadataOpt = metaMap.get(LEADER_EPOCH_CHECKPOINT_KEY).map(m => m.asInstanceOf[ElasticLeaderEpochCheckpointMeta])
+    val leaderEpochCheckpointMetadata = if (leaderEpochCheckpointMetadataOpt.isEmpty) {
+      val newMeta = new ElasticLeaderEpochCheckpointMeta(LeaderEpochCheckpointFile.CurrentVersion, List.empty[EpochEntry].asJava)
+      // save right now.
+      persistMeta(metaStream, MetaKeyValue.of(LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(newMeta.encode())))
+      newMeta
+    } else {
+        leaderEpochCheckpointMetadataOpt.get
+    }
+
+    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, leaderEpochCheckpointMetadata, dir, config,
       segments, offsets.recoveryPoint, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     elasticLog
   }
