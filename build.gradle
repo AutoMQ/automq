@@ -905,6 +905,7 @@ project(':core') {
 
     //    implementation libs.elasticstream
     implementation('sdk.elastic.stream:client-java:0.0.1-SNAPSHOT')
+    implementation 'redis.clients:jedis:4.3.1'
 
     compileOnly libs.log4j
 

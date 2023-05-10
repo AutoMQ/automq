@@ -146,6 +146,9 @@ public class ElasticLogFileRecords extends FileRecords {
 
     @Override
     public int truncateTo(int targetSize) throws IOException {
+        if (targetSize == size.get()) {
+            return 0;
+        }
         throw new UnsupportedOperationException();
     }
 

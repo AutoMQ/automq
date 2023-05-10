@@ -48,22 +48,22 @@ public class MetaKeyValue {
         int keyLength = buf.getInt();
         byte[] keyBytes = new byte[keyLength];
         buf.get(keyBytes);
-        String key = new String(keyBytes, StandardCharsets.ISO_8859_1);
+        String key = new String(keyBytes, StandardCharsets.UTF_8);
         // value
         ByteBuffer value = buf.slice();
         return MetaKeyValue.of(key, value);
     }
 
     public static ByteBuffer encode(MetaKeyValue kv) {
-        byte[] keyBytes = kv.key.getBytes(StandardCharsets.ISO_8859_1);
+        byte[] keyBytes = kv.key.getBytes(StandardCharsets.UTF_8);
         // MetaKeyValue encoded format =>
         //  magic => 1 byte
         // keyLength => 4 bytes
         //  value => bytes
         int length = 1 // magic length
                 + 4 // key length
-                + keyBytes.length // key
-                + kv.value.remaining(); // value length
+                + keyBytes.length // key payload
+                + kv.value.remaining(); // value payload
         ByteBuf buf = Unpooled.buffer(length);
         buf.writeByte(MAGIC_V0);
         buf.writeInt(keyBytes.length);

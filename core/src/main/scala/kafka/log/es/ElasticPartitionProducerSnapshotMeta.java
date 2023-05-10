@@ -34,7 +34,7 @@ public class ElasticPartitionProducerSnapshotMeta {
      */
     private long offset;
 
-    ElasticPartitionProducerSnapshotMeta(long offset, byte[] snapshot) {
+    public ElasticPartitionProducerSnapshotMeta(long offset, byte[] snapshot) {
         this.offset = offset;
         this.rawSnapshotData = snapshot;
     }

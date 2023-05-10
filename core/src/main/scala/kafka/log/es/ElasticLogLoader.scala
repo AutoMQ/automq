@@ -97,7 +97,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
   }
 
   private def loadSegments(): Unit = {
-    val segments = new LogSegments(topicPartition)
     for (segmentMeta <- logMeta.getSegments.asScala) {
       segments.add(ElasticLogSegment(segmentMeta, streamSegmentManager, config, time))
     }
@@ -111,12 +110,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
    * @throws LogSegmentOffsetOverflowException if the segment contains messages that cause index offset overflow
    */
   private def recoverSegment(segment: LogSegment): Int = {
-    val producerStateManager = new ProducerStateManager(
-      topicPartition,
-      dir,
-      this.producerStateManager.maxTransactionTimeoutMs,
-      this.producerStateManager.producerStateManagerConfig,
-      time)
     ElasticUnifiedLog.rebuildProducerState(
       producerStateManager,
       segments,

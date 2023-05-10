@@ -60,7 +60,7 @@ class ElasticLogManager(val client: Client) {
 }
 
 object ElasticLogManager {
-  val Default = new ElasticLogManager(new MemoryClient())
+  val Default = new ElasticLogManager(new ElasticRedisClient())
 
   def getElasticLog(topicPartition: TopicPartition): ElasticLog = Default.elasticLogs.get(topicPartition)
 

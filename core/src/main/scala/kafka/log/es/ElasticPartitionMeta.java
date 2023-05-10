@@ -44,7 +44,9 @@ public class ElasticPartitionMeta {
     @JsonProperty("r")
     private Long recoverOffset;
 
-    ElasticPartitionMeta(Long startOffset, Long cleanerOffset, Long recoverOffset) {
+    public ElasticPartitionMeta() {}
+
+    public ElasticPartitionMeta(Long startOffset, Long cleanerOffset, Long recoverOffset) {
         this.startOffset = startOffset;
         this.cleanerOffset = cleanerOffset;
         this.recoverOffset = recoverOffset;

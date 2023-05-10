@@ -153,7 +153,6 @@ object ElasticLog extends Logging {
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get();
 
     var partitionMeta: ElasticPartitionMeta = null
-    var producerSnapshotMeta: ElasticPartitionProducerSnapshotsMeta = null
 
     // open meta stream
     val metaNotExists = kvList.get(0).value() == null
@@ -184,19 +183,13 @@ object ElasticLog extends Logging {
         .map(kv => (kv._1.stripPrefix(PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
     }
 
-    //load producer snapshot meta info for this partition
+    //load producer snapshots for this partition
     val producerSnapshotsMetaOpt = metaMap.get(PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta])
-    if (producerSnapshotsMetaOpt.isEmpty) {
+    val (producerSnapshotMeta, snapshotsMap) = if (producerSnapshotsMetaOpt.isEmpty) {
       // No need to persist if not exists
-      producerSnapshotMeta = ElasticPartitionProducerSnapshotsMeta.EMPTY
+      (ElasticPartitionProducerSnapshotsMeta.EMPTY, new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
     } else {
-      producerSnapshotMeta = producerSnapshotsMetaOpt.get
-    }
-
-    val snapshotsMap = if (!producerSnapshotMeta.isEmpty) {
-      loadAllValidSnapshots()
-    } else {
-      new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]()
+      (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
     }
 
     def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
@@ -245,14 +238,16 @@ object ElasticLog extends Logging {
 
     // save partition meta stream id relation to PM
     val streamId = metaStream.streamId()
+    info(s"created meta stream for $key, streamId: $streamId")
     val valueBuf = ByteBuffer.allocate(8);
     valueBuf.putLong(streamId)
+    valueBuf.flip()
     client.kvClient().putKV(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
     metaStream
   }
 
   def persistMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
-    metaStream.append(new SingleRecordBatch(MetaKeyValue.encode(metaKeyValue))).get()
+    metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(metaKeyValue))).get()
   }
 
   def getMetas(metaStream: api.Stream): mutable.Map[String, Any] = {

@@ -37,6 +37,8 @@ public class ElasticLogMeta {
     private List<ElasticStreamSegmentMeta> segments = new LinkedList<>();
     private List<ElasticStreamSegmentMeta> cleanedSegments = new LinkedList<>();
 
+    public ElasticLogMeta() {}
+
     public static ByteBuffer encode(ElasticLogMeta meta) {
         ObjectMapper om = new ObjectMapper();
         try {

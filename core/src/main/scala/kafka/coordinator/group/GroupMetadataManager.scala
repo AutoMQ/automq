@@ -24,7 +24,6 @@ import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
-
 import com.yammer.metrics.core.Gauge
 import kafka.common.OffsetAndMetadata
 import kafka.internals.generated.{GroupMetadataValue, OffsetCommitKey, OffsetCommitValue, GroupMetadataKey => GroupMetadataKeyData}
@@ -623,6 +622,8 @@ class GroupMetadataManager(brokerId: Int,
 
               fileRecords.readInto(buffer, 0)
               MemoryRecords.readableRecords(buffer)
+            case records: Records =>
+              records
           }
 
           memRecords.batches.forEach { batch =>

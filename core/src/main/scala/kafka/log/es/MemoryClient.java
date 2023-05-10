@@ -182,5 +182,20 @@ public class MemoryClient implements Client {
         public ByteBuffer rawPayload() {
             return recordBatch.rawPayload().slice();
         }
+
+        // TODO: encoding should be based on the actual implementation in 'RecordBatch'.
+        public byte[] encode() {
+            ByteBuffer buffer = ByteBuffer.allocate(8 + recordBatch.rawPayload().remaining())
+                .putLong(baseOffset)
+                .put(recordBatch.rawPayload().duplicate())
+                .flip();
+            return buffer.array();
+        }
+
+        // TODO: the problem is the same with 'encode()'. Temporarily, we only use 'RawPayloadRecordBatch' to decode.
+        public static RecordBatchWithContextWrapper decode(ByteBuffer buffer) {
+            long baseOffset = buffer.getLong();
+            return new RecordBatchWithContextWrapper(RawPayloadRecordBatch.of(buffer), baseOffset);
+        }
     }
 }
