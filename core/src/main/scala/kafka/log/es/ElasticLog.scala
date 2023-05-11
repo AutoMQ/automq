@@ -212,7 +212,7 @@ object ElasticLog extends Logging {
       persistMeta(metaStream, MetaKeyValue.of(PRODUCER_SNAPSHOTS_META_KEY, producerSnapshotMeta.encode()))
     }
 
-    val producerStateManager = new ElasticProducerStateManager(topicPartition, dir,
+    val producerStateManager = ElasticProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
 
     // load LogSegments and recover log

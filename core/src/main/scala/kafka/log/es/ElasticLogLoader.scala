@@ -44,7 +44,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        logStartOffsetCheckpoint: Long,
                        recoveryPointCheckpoint: Long,
                        leaderEpochCache: Option[LeaderEpochFileCache],
-                       producerStateManager: ProducerStateManager,
+                       producerStateManager: ElasticProducerStateManager,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]
                       ) extends Logging {
   logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}] "
@@ -76,9 +76,11 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
     // Any segment loading or recovery code must not use producerStateManager, so that we can build the full state here
     // from scratch.
-    if (!producerStateManager.isEmpty)
+    if (!producerStateManager.isEmpty) {
       throw new IllegalStateException("Producer state must be empty during log initialization")
+    }
 
+    producerStateManager.removeStraySnapshots(segments.baseOffsets.toSeq)
     ElasticUnifiedLog.rebuildProducerState(producerStateManager, segments, newLogStartOffset, nextOffset, time, reloadFromCleanShutdown = false, logIdent)
     val activeSegment = segments.lastSegment.get
     LoadedLogOffsets(
@@ -110,6 +112,14 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
    * @throws LogSegmentOffsetOverflowException if the segment contains messages that cause index offset overflow
    */
   private def recoverSegment(segment: LogSegment): Int = {
+    val producerStateManager = ElasticProducerStateManager(
+      topicPartition,
+      dir,
+      this.producerStateManager.maxTransactionTimeoutMs,
+      this.producerStateManager.producerStateManagerConfig,
+      time,
+      this.producerStateManager.snapshotsMap,
+      this.producerStateManager.persistFun)
     ElasticUnifiedLog.rebuildProducerState(
       producerStateManager,
       segments,

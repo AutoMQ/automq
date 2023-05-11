@@ -77,8 +77,7 @@ object ElasticUnifiedLog extends Logging {
     info(s"Reloading from producer snapshot and rebuilding producer state from offset $lastOffset")
     val isEmptyBeforeTruncation = producerStateManager.isEmpty && producerStateManager.mapEndOffset >= lastOffset
     val producerStateLoadStart = time.milliseconds()
-    // TODO: load producer status from meta
-    //    producerStateManager.truncateAndReload(logStartOffset, lastOffset, time.milliseconds())
+    producerStateManager.truncateAndReload(logStartOffset, lastOffset, time.milliseconds())
     val segmentRecoveryStart = time.milliseconds()
 
     if (lastOffset > producerStateManager.mapEndOffset && !isEmptyBeforeTruncation) {
