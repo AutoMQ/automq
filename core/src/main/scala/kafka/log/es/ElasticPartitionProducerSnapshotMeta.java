@@ -25,6 +25,7 @@ import java.util.Arrays;
  */
 public class ElasticPartitionProducerSnapshotMeta {
     public static final ElasticPartitionProducerSnapshotMeta EMPTY = new ElasticPartitionProducerSnapshotMeta(-1, null);
+    // TODO: lazy load
     /**
      * raw data of the snapshot
      */

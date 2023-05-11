@@ -100,7 +100,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def loadSegments(): Unit = {
     for (segmentMeta <- logMeta.getSegments.asScala) {
-      segments.add(ElasticLogSegment(segmentMeta, streamSegmentManager, config, time))
+      segments.add(ElasticLogSegment(dir, segmentMeta, streamSegmentManager, config, time))
     }
   }
 
@@ -206,7 +206,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
       // no existing segments, create a new mutable segment beginning at logStartOffset
       val meta = new ElasticStreamSegmentMeta()
       meta.baseOffset(logStartOffsetCheckpoint)
-      segments.add(ElasticLogSegment(meta, streamSegmentManager, config, time))
+      segments.add(ElasticLogSegment(dir, meta, streamSegmentManager, config, time))
     }
 
     // Update the recovery point if there was a clean shutdown and did not perform any changes to

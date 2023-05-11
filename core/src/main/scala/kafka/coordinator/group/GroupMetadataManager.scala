@@ -622,6 +622,7 @@ class GroupMetadataManager(brokerId: Int,
 
               fileRecords.readInto(buffer, 0)
               MemoryRecords.readableRecords(buffer)
+            // match other cases, like BatchIteratorRecordsAdaptor
             case records: Records =>
               records
           }

@@ -461,6 +461,9 @@ class TransactionStateManager(brokerId: Int,
                 buffer.clear()
                 fileRecords.readInto(buffer, 0)
                 MemoryRecords.readableRecords(buffer)
+              // match other cases, like BatchIteratorRecordsAdaptor
+              case _ =>
+                fetchDataInfo.records
             }
 
             memRecords.batches.forEach { batch =>

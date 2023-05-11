@@ -64,7 +64,7 @@ public class ElasticRedisClient implements Client {
             long nextOffset = Optional.ofNullable(this.jedis.get(offsetKey)).map(Long::parseLong).orElse(0L);
             this.nextOffsetAlloc = new AtomicLong(nextOffset);
             this.jedis.hgetAll(recordMapKey.getBytes(StandardCharsets.UTF_8)).forEach((k, v) -> {
-                MemoryClient.RecordBatchWithContextWrapper batchWithContextWrapper = MemoryClient.RecordBatchWithContextWrapper.decode(ByteBuffer.wrap(v));
+                RecordBatchWithContextWrapper batchWithContextWrapper = RecordBatchWithContextWrapper.decode(ByteBuffer.wrap(v));
                 recordMap.put(batchWithContextWrapper.baseOffset(), batchWithContextWrapper);
             });
         }
@@ -87,7 +87,7 @@ public class ElasticRedisClient implements Client {
         @Override
         public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             long baseOffset = nextOffsetAlloc.getAndAdd(recordBatch.count());
-            MemoryClient.RecordBatchWithContextWrapper wrapper = new MemoryClient.RecordBatchWithContextWrapper(recordBatch, baseOffset);
+            RecordBatchWithContextWrapper wrapper = new RecordBatchWithContextWrapper(recordBatch, baseOffset);
             recordMap.put(baseOffset, wrapper);
             this.jedis.hset(recordMapKey.getBytes(StandardCharsets.UTF_8), String.valueOf(baseOffset).getBytes(StandardCharsets.UTF_8), wrapper.encode());
             this.jedis.set(offsetKey, String.valueOf(nextOffsetAlloc.get()));

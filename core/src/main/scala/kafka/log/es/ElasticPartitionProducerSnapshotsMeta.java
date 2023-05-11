@@ -38,7 +38,7 @@ public class ElasticPartitionProducerSnapshotsMeta {
         return buffer;
     }
 
-    public ElasticPartitionProducerSnapshotsMeta decode(ByteBuffer buffer) {
+    public static ElasticPartitionProducerSnapshotsMeta decode(ByteBuffer buffer) {
         Set<Long> snapshots = new HashSet<>();
         while (buffer.hasRemaining()) {
             snapshots.add(buffer.getLong());

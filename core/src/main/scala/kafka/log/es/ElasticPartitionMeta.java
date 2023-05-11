@@ -95,4 +95,13 @@ public class ElasticPartitionMeta {
     public void setRecoverOffset(Long recoverOffset) {
         this.recoverOffset = recoverOffset;
     }
+
+    @Override
+    public String toString() {
+        return "ElasticPartitionMeta{" +
+                "startOffset=" + startOffset +
+                ", cleanerOffset=" + cleanerOffset +
+                ", recoverOffset=" + recoverOffset +
+                '}';
+    }
 }
