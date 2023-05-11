@@ -32,7 +32,7 @@ import java.util.concurrent.locks.{Lock, ReentrantLock}
  * @param baseOffset
  * @param maxIndexSize
  */
-abstract class AbstractStreamIndex(val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
+abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
 
@@ -55,7 +55,7 @@ abstract class AbstractStreamIndex(val streamSliceSupplier: StreamSliceSupplier,
   def isFull: Boolean = _entries >= _maxEntries
 
   // TODO: check
-  def file: File = new File("mock")
+  def file: File = _file
 
   def maxEntries: Int = _maxEntries
 

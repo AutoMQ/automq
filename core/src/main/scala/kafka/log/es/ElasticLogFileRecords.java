@@ -52,22 +52,27 @@ import java.util.Queue;
 
 public class ElasticLogFileRecords extends FileRecords {
     private final ElasticStreamSlice streamSegment;
+    private final File file;
 
-    public ElasticLogFileRecords(ElasticStreamSlice streamSegment) {
+    public ElasticLogFileRecords(File file, ElasticStreamSlice streamSegment) {
         super(0, Integer.MAX_VALUE, false);
+        this.file = file;
         this.streamSegment = streamSegment;
         size.set((int) streamSegment.nextOffset());
     }
 
     @Override
     public File file() {
-        // TODO:
-        return new File("mock");
+        return file;
     }
 
     public FileChannel channel() {
-        // TODO: remove direct reference
-        return null;
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public long fileSize() {
+        return sizeInBytes();
     }
 
     @Override
@@ -178,62 +183,6 @@ public class ElasticLogFileRecords extends FileRecords {
     protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start, int fetchSize) {
         LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, Math.min(start + fetchSize, sizeInBytes()));
         return new RecordBatchIterator<>(inputStream);
-    }
-
-    class BatchIteratorRecordsAdaptor extends AbstractRecords {
-        private final int position;
-        private final int fetchSize;
-        private int sizeInBytes = -1;
-        private MemoryRecords memoryRecords;
-
-        public BatchIteratorRecordsAdaptor(int position, int fetchSize) {
-            this.position = position;
-            this.fetchSize = fetchSize;
-        }
-
-
-        @Override
-        public int sizeInBytes() {
-            ensureAllLoaded();
-            return sizeInBytes;
-        }
-
-        @Override
-        public Iterable<? extends RecordBatch> batches() {
-            Iterator<FileLogInputStream.FileChannelRecordBatch> iterator = ElasticLogFileRecords.this.batchIterator(position, fetchSize);
-            return (Iterable<FileLogInputStream.FileChannelRecordBatch>) () -> iterator;
-        }
-
-        @Override
-        public AbstractIterator<? extends RecordBatch> batchIterator() {
-            return ElasticLogFileRecords.this.batchIterator(position, fetchSize);
-        }
-
-        @Override
-        public ConvertedRecords<? extends Records> downConvert(byte toMagic, long firstOffset, Time time) {
-            return RecordsUtil.downConvert(batches(), toMagic, firstOffset, time);
-        }
-
-        @Override
-        public long writeTo(TransferableChannel channel, long position, int length) throws IOException {
-            // only use in RecordsSend which send Records to network. usually the size won't be large.
-            ensureAllLoaded();
-            return memoryRecords.writeTo(channel, position, length);
-        }
-
-        private void ensureAllLoaded() {
-            if (sizeInBytes != -1) {
-                return;
-            }
-            sizeInBytes = 0;
-            CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
-            for (RecordBatch batch : batches()) {
-                sizeInBytes += batch.sizeInBytes();
-                ByteBuffer buffer = ((FileChannelRecordBatchWrapper) batch).buffer();
-                allRecordsBuf.addComponent(true, Unpooled.wrappedBuffer(buffer));
-            }
-            memoryRecords = MemoryRecords.readableRecords(allRecordsBuf.nioBuffer());
-        }
     }
 
     static class StreamSegmentInputStream implements LogInputStream<FileLogInputStream.FileChannelRecordBatch> {
@@ -434,6 +383,62 @@ public class ElasticLogFileRecords extends FileRecords {
                 inner.writeTo(buf);
                 return buf;
             }
+        }
+    }
+
+    class BatchIteratorRecordsAdaptor extends AbstractRecords {
+        private final int position;
+        private final int fetchSize;
+        private int sizeInBytes = -1;
+        private MemoryRecords memoryRecords;
+
+        public BatchIteratorRecordsAdaptor(int position, int fetchSize) {
+            this.position = position;
+            this.fetchSize = fetchSize;
+        }
+
+
+        @Override
+        public int sizeInBytes() {
+            ensureAllLoaded();
+            return sizeInBytes;
+        }
+
+        @Override
+        public Iterable<? extends RecordBatch> batches() {
+            Iterator<FileLogInputStream.FileChannelRecordBatch> iterator = ElasticLogFileRecords.this.batchIterator(position, fetchSize);
+            return (Iterable<FileLogInputStream.FileChannelRecordBatch>) () -> iterator;
+        }
+
+        @Override
+        public AbstractIterator<? extends RecordBatch> batchIterator() {
+            return ElasticLogFileRecords.this.batchIterator(position, fetchSize);
+        }
+
+        @Override
+        public ConvertedRecords<? extends Records> downConvert(byte toMagic, long firstOffset, Time time) {
+            return RecordsUtil.downConvert(batches(), toMagic, firstOffset, time);
+        }
+
+        @Override
+        public long writeTo(TransferableChannel channel, long position, int length) throws IOException {
+            // only use in RecordsSend which send Records to network. usually the size won't be large.
+            ensureAllLoaded();
+            return memoryRecords.writeTo(channel, position, length);
+        }
+
+        private void ensureAllLoaded() {
+            if (sizeInBytes != -1) {
+                return;
+            }
+            sizeInBytes = 0;
+            CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
+            for (RecordBatch batch : batches()) {
+                sizeInBytes += batch.sizeInBytes();
+                ByteBuffer buffer = ((FileChannelRecordBatchWrapper) batch).buffer();
+                allRecordsBuf.addComponent(true, Unpooled.wrappedBuffer(buffer));
+            }
+            memoryRecords = MemoryRecords.readableRecords(allRecordsBuf.nioBuffer());
         }
     }
 

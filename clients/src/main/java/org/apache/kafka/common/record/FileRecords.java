@@ -119,6 +119,10 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return channel;
     }
 
+    public long fileSize() throws IOException {
+        return channel.size();
+    }
+
     /**
      * Read log batches into the given buffer until there are no bytes remaining in the buffer or the end of the file
      * is reached.

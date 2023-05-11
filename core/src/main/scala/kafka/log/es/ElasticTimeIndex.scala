@@ -23,10 +23,11 @@ import kafka.utils.CoreUtils.inLock
 import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.record.RecordBatch
 
+import java.io.File
 import java.nio.ByteBuffer
 
-class ElasticTimeIndex(streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
-  extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
+class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
+  extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
 

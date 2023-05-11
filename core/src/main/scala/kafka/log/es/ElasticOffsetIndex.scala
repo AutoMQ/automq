@@ -22,9 +22,11 @@ import kafka.log.{IndexSearchType, OffsetIndex, OffsetPosition}
 import kafka.utils.CoreUtils.inLock
 import org.apache.kafka.common.errors.InvalidOffsetException
 
+import java.io.File
 import java.nio.ByteBuffer
 
-class ElasticOffsetIndex(streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1) extends AbstractStreamIndex(streamSegmentSupplier, baseOffset, maxIndexSize) with OffsetIndex {
+class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
+  extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with OffsetIndex {
 
   override def entrySize: Int = 8
 

@@ -26,8 +26,8 @@ import java.nio.ByteBuffer
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
-  extends TransactionIndex(startOffset, _file = new File("empty")) {
+class ElasticTransactionIndex(_file: File,streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
+  extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
 

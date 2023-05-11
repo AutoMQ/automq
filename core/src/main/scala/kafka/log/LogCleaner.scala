@@ -773,7 +773,9 @@ private[log] class Cleaner(val id: Int,
         throw new IllegalStateException(s"Invalid batch size $nextBatchSize for $logDesc")
       if (nextBatchSize <= readBuffer.capacity)
         throw new IllegalStateException(s"Batch size $nextBatchSize < buffer size ${readBuffer.capacity}, but not processed for $logDesc")
-      val bytesLeft = sourceRecords.channel.size - position
+      // elastic stream inject start
+      val bytesLeft = sourceRecords.fileSize() - position
+      // elastic stream inject start
       if (nextBatchSize > bytesLeft)
         throw new CorruptRecordException(s"Log segment may be corrupt, batch size $nextBatchSize > $bytesLeft bytes left in segment for $logDesc")
       nextBatchSize.intValue
