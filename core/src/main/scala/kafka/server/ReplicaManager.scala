@@ -459,9 +459,12 @@ class ReplicaManager(val config: KafkaConfig,
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               maybeRemoveTopicMetrics(topicPartition.topic)
-              // Logs are not deleted here. They are deleted in a single batch later on.
-              // This is done to avoid having to checkpoint for every deletions.
-              hostedPartition.partition.delete()
+              // elastic stream inject start
+              // In case of elastic stream, partition leader alter is triggered by set isr/replicas,
+              // when broker is not response for the partition, we need close the partition
+              // instead of delete the partition.
+              hostedPartition.partition.close()
+              // elastic stream inject end
             }
 
           case _ =>
@@ -477,7 +480,9 @@ class ReplicaManager(val config: KafkaConfig,
     val errorMap = new mutable.HashMap[TopicPartition, Throwable]()
     if (partitionsToDelete.nonEmpty) {
       // Delete the logs and checkpoint.
-      logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
+      // elastic stream inject start
+//      logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
+      // elastic stream inject end
     }
     errorMap
   }

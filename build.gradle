@@ -1193,6 +1193,7 @@ project(':metadata') {
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
     implementation libs.metrics
+    implementation libs.nettyCommon
     compileOnly libs.log4j
     testImplementation libs.junitJupiter
     testImplementation libs.jqwik

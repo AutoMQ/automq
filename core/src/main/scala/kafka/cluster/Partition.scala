@@ -533,17 +533,33 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
+  def close(): Unit = {
+    // elastic stream inject start
+    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
+      log.get.close()
+    }
+    // elastic stream inject end
+    // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
+    inWriteLock(leaderIsrUpdateLock) {
+      remoteReplicasMap.clear()
+      assignmentState = SimpleAssignmentState(Seq.empty)
+      log = None
+      futureLog = None
+      partitionState = CommittedPartitionState(Set.empty, LeaderRecoveryState.RECOVERED)
+      leaderReplicaIdOpt = None
+      leaderEpochStartOffsetOpt = None
+      Partition.removeMetrics(topicPartition)
+    }
+    // trigger leader re-election
+    alterIsrManager.tryElectLeader(topicPartition)
+  }
+
   /**
    * Delete the partition. Note that deleting the partition does not delete the underlying logs.
    * The logs are deleted by the ReplicaManager after having deleted the partition.
    */
   def delete(): Unit = {
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
-    // elastic stream inject start
-    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
-      log.get.close()
-    }
-    // elastic stream inject end
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
       assignmentState = SimpleAssignmentState(Seq.empty)
@@ -703,28 +719,33 @@ class Partition(val topicPartition: TopicPartition,
         LeaderRecoveryState.of(partitionState.leaderRecoveryState)
       )
 
-      try {
-        createLogIfNotExists(partitionState.isNew, isFutureReplica = false, highWatermarkCheckpoints, topicId)
-      } catch {
-        case e: ZooKeeperClientException =>
-          stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
-            s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
-          return false
-      }
-
-      val followerLog = localLogOrException
+      // elastic stream inject start
+      // only create log when partition is leader
+//      try {
+//        createLogIfNotExists(partitionState.isNew, isFutureReplica = false, highWatermarkCheckpoints, topicId)
+//      } catch {
+//        case e: ZooKeeperClientException =>
+//          stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
+//            s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
+//          return false
+//      }
+//
+//      val followerLog = localLogOrException
+      // elastic stream inject end
       val isNewLeaderEpoch = partitionState.leaderEpoch > leaderEpoch
 
-      if (isNewLeaderEpoch) {
-        val leaderEpochEndOffset = followerLog.logEndOffset
-        stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
-          s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
-          s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
-          s"Previous leader epoch was $leaderEpoch.")
-      } else {
-        stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
-          s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
-      }
+      // elastic stream inject start
+//      if (isNewLeaderEpoch) {
+//        val leaderEpochEndOffset = followerLog.logEndOffset
+//        stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
+//          s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
+//          s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
+//          s"Previous leader epoch was $leaderEpoch.")
+//      } else {
+//        stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
+//          s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
+//      }
+      // elastic stream inject end
 
       leaderReplicaIdOpt = Option(partitionState.leader)
       leaderEpoch = partitionState.leaderEpoch

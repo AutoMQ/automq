@@ -689,7 +689,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
    */
   def close(): Unit = {
-    debug("Closing log")
+    info("Closing log")
     lock synchronized {
       maybeFlushMetadataFile()
       localLog.checkIfMemoryMappedBufferClosed()

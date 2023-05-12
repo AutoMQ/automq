@@ -18,21 +18,18 @@ package kafka.server
 
 import java.util
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, TimeUnit}
+import java.util.concurrent.{BlockingQueue, CompletableFuture, ConcurrentHashMap, LinkedBlockingQueue, TimeUnit}
 import kafka.api.LeaderAndIsr
 import kafka.metrics.KafkaMetricsGroup
 import kafka.utils.{KafkaScheduler, Logging, Scheduler}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.clients.ClientResponse
-import org.apache.kafka.common.TopicIdPartition
-import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.{ElectionType, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.errors.OperationNotAttemptedException
 import org.apache.kafka.common.message.AlterPartitionRequestData
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.requests.RequestHeader
-import org.apache.kafka.common.requests.{AlterPartitionRequest, AlterPartitionResponse}
+import org.apache.kafka.common.requests.{AlterPartitionRequest, AlterPartitionResponse, ElectLeadersRequest, RequestHeader}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
@@ -60,6 +57,8 @@ trait AlterPartitionManager {
     leaderAndIsr: LeaderAndIsr,
     controllerEpoch: Int
   ): CompletableFuture[LeaderAndIsr]
+
+  def tryElectLeader(topicPartition: TopicPartition): Unit = {}
 }
 
 case class AlterPartitionItem(
@@ -143,6 +142,11 @@ class DefaultAlterPartitionManager(
   // Used to allow only one in-flight request at a time
   private val inflightRequest: AtomicBoolean = new AtomicBoolean(false)
 
+  // elastic stream inject start
+  private[server] val unsentElectLeaders: BlockingQueue[TopicPartition] = new LinkedBlockingQueue[TopicPartition]()
+  private val inflightElectLeadersRequest: AtomicBoolean = new AtomicBoolean(false)
+  // elastic stream inject end
+
   override def start(): Unit = {
     controllerChannelManager.start()
   }
@@ -184,10 +188,11 @@ class DefaultAlterPartitionManager(
     }
   }
 
+
   private def sendRequest(inflightAlterPartitionItems: Seq[AlterPartitionItem]): Unit = {
     val brokerEpoch = brokerEpochSupplier()
     val (request, topicNamesByIds) = buildRequest(inflightAlterPartitionItems, brokerEpoch)
-    debug(s"Sending AlterPartition to controller $request")
+    debug(s"sending alterpartition to controller $request")
 
     // We will not timeout AlterPartition request, instead letting it retry indefinitely
     // until a response is received, or a new LeaderAndIsr overwrites the existing isrState
@@ -377,4 +382,44 @@ class DefaultAlterPartitionManager(
 
     Errors.forCode(data.errorCode)
   }
+
+  // elastic stream inject start
+  override def tryElectLeader(topicPartition: TopicPartition): Unit = {
+    if (topicPartition != null) {
+      unsentElectLeaders.add(topicPartition)
+    }
+    // Send all pending items if there is not already a request in-flight.
+    if (!unsentElectLeaders.isEmpty && inflightRequest.compareAndSet(false, true)) {
+      // Copy current unsent ISRs but don't remove from the map, they get cleared in the response handler
+      val inflight = new util.LinkedList[TopicPartition]()
+      unsentElectLeaders.drainTo(inflight)
+      sendElectLeadersRequest(inflight)
+    }
+  }
+
+  private def sendElectLeadersRequest(topicPartitions: util.List[TopicPartition]): Unit = {
+    if (topicPartitions.isEmpty) {
+      inflightRequest.set(false)
+      return
+    }
+    val request = new ElectLeadersRequest.Builder(ElectionType.PREFERRED, topicPartitions, 1000)
+    debug(s"sending elect leader to controller $request")
+    controllerChannelManager.sendRequest(request, new ControllerRequestCompletionHandler {
+      override def onTimeout(): Unit = {
+        inflightElectLeadersRequest.set(false)
+        tryElectLeader(null)
+        throw new IllegalStateException("Encountered unexpected timeout when sending AlterPartition to the controller")
+      }
+
+      override def onComplete(response: ClientResponse): Unit = {
+        debug(s"Received elect leader response $response")
+        // no need retry, controller have backup logic to elect leader when timeout
+        // In the normal case, check for pending updates to send immediately
+        inflightElectLeadersRequest.set(false)
+        tryElectLeader(null)
+      }
+    })
+  }
+  // elastic stream inject start
+
 }

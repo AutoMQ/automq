@@ -17,10 +17,14 @@
 
 package org.apache.kafka.controller;
 
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.Timer;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.common.ElectionType;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
@@ -100,7 +104,6 @@ import org.slf4j.Logger;
 
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -112,7 +115,10 @@ import java.util.Map.Entry;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntPredicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -153,6 +159,7 @@ public class ReplicationControlManager {
         private ClusterControlManager clusterControl = null;
         private Optional<CreateTopicPolicy> createTopicPolicy = Optional.empty();
         private FeatureControlManager featureControl = null;
+        private Controller quorumController = null;
 
         Builder setSnapshotRegistry(SnapshotRegistry snapshotRegistry) {
             this.snapshotRegistry = snapshotRegistry;
@@ -199,6 +206,11 @@ public class ReplicationControlManager {
             return this;
         }
 
+        public Builder setQuorumController(Controller quorumController) {
+            this.quorumController = quorumController;
+            return this;
+        }
+
         ReplicationControlManager build() {
             if (configurationControl == null) {
                 throw new IllegalStateException("Configuration control must be set before building");
@@ -225,7 +237,9 @@ public class ReplicationControlManager {
                 configurationControl,
                 clusterControl,
                 createTopicPolicy,
-                featureControl);
+                featureControl,
+                quorumController
+            );
         }
     }
 
@@ -310,6 +324,11 @@ public class ReplicationControlManager {
     private final FeatureControlManager featureControl;
 
     /**
+     * The quorum controller
+     */
+    private final Controller quorumController;
+
+    /**
      * Maps topic names to topic UUIDs.
      */
     private final TimelineHashMap<String, Uuid> topicsByName;
@@ -356,6 +375,19 @@ public class ReplicationControlManager {
      */
     final KRaftClusterDescriber clusterDescriber = new KRaftClusterDescriber();
 
+
+    // elastic stream inject start
+    private static final int PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS = 10;
+    /**
+     * Partition reassignment elect timeout for each partition.
+     */
+    private final Map<TopicPartition, Timeout> partitionReElectTimeouts = new ConcurrentHashMap<>();
+    /**
+     * Timer for partition reassignment elect timeout.
+     */
+    private final Timer timer = new HashedWheelTimer(1, TimeUnit.SECONDS);
+    // elastic stream inject end
+
     private ReplicationControlManager(
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
@@ -365,7 +397,8 @@ public class ReplicationControlManager {
         ConfigurationControlManager configurationControl,
         ClusterControlManager clusterControl,
         Optional<CreateTopicPolicy> createTopicPolicy,
-        FeatureControlManager featureControl
+        FeatureControlManager featureControl,
+        Controller quorumController
     ) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(ReplicationControlManager.class);
@@ -382,6 +415,7 @@ public class ReplicationControlManager {
         this.brokersToIsrs = new BrokersToIsrs(snapshotRegistry);
         this.reassigningTopics = new TimelineHashMap<>(snapshotRegistry, 0);
         this.imbalancedPartitions = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.quorumController = quorumController;
     }
 
     public void replay(TopicRecord record) {
@@ -1316,6 +1350,11 @@ public class ReplicationControlManager {
 
     ApiError electLeader(String topic, int partitionId, ElectionType electionType,
                          List<ApiMessageAndVersion> records) {
+        // elastic stream inject start
+        // cancel partition replica reassign leader elect timeout.
+        Optional.ofNullable(partitionReElectTimeouts.remove(new TopicPartition(topic, partitionId))).ifPresent(Timeout::cancel);
+        // elastic stream inject end
+
         Uuid topicId = topicsByName.get(topic);
         if (topicId == null) {
             return new ApiError(UNKNOWN_TOPIC_OR_PARTITION,
@@ -1355,6 +1394,8 @@ public class ReplicationControlManager {
             }
         }
         records.add(record.get());
+
+
         return ApiError.NONE;
     }
 
@@ -1813,13 +1854,47 @@ public class ReplicationControlManager {
         if (target.replicas().size() != 1) {
             throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" +tp+ "] replicas[" + target.replicas() + "]");
         }
+        // TODO: is replica is the same as origin then do nothing.
         PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
                 tp.topicId(),
                 tp.partitionId(),
-                clusterControl::isActive,
+                // no leader election
+                // clusterControl::isActive,
+                brokerId -> false,
                 featureControl.metadataVersion().isLeaderRecoverySupported());
         builder.setTargetNode(target.replicas().get(0));
+        TopicControlInfo topicControlInfo = topics.get(tp.topicId());
+        if (topicControlInfo == null) {
+            log.warn("unknown topicId[{}]", tp.topicId());
+        } else {
+            TopicPartition topicPartition = new TopicPartition(topicControlInfo.name, tp.partitionId());
+            Timeout timeout =  timer.newTimeout(t -> {
+                partitionReElectTimeouts.remove(topicPartition);
+                if (quorumController != null) {
+                    tryElectLeader(topicPartition);
+                }
+            }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
+            partitionReElectTimeouts.put(topicPartition, timeout);
+        }
         return builder.build();
+    }
+
+    private void tryElectLeader(TopicPartition topicPartition) {
+        // only use deadlineNs, so it's ok to use null for other params
+        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
+        ElectLeadersRequestData data = new ElectLeadersRequestData();
+        TopicPartitions topicPartitions = new TopicPartitions();
+        topicPartitions.setTopic(topicPartition.topic());
+        topicPartitions.partitions().add(topicPartition.partition());
+        data.setTopicPartitions(new ElectLeadersRequestData.TopicPartitionsCollection(Collections.singletonList(topicPartitions).listIterator()));
+        quorumController.electLeaders(context,data).whenComplete((resp, ex) -> {
+            if (ex != null) {
+                log.warn("force elect partition[{}] leader fail", topicPartition, ex);
+            } else {
+                log.info("force elect partition[{}] leader done, response[{}]", topicPartition, resp);
+            }
+        });
+        log.info("partition[{}] reassignment re-elect leader timeout, force async elect leader again", topicPartition);
     }
     // elastic stream inject end
 
