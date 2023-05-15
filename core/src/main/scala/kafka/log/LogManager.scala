@@ -1160,6 +1160,12 @@ class LogManager(logDirs: Seq[File],
     removedLog
   }
 
+  // elastic stream inject start
+  def remove(topicPartition: TopicPartition): Unit = {
+    currentLogs.remove(topicPartition)
+  }
+  // elastic stream inject end
+
   /**
    * Rename the directories of the given topic-partitions and add them in the queue for
    * deletion. Checkpoints are updated once all the directories have been renamed.

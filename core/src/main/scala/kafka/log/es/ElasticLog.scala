@@ -134,6 +134,7 @@ class ElasticLog(val metaStream: api.Stream,
   }
 
   private def persistPartitionMeta(): Unit = {
+    info(s"save partition meta $partitionMeta")
     persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
   }
 
@@ -167,11 +168,21 @@ class ElasticLog(val metaStream: api.Stream,
     persistLogMeta()
   }
 
+
   /**
    * Closes the segments of the log.
    */
   override private[log] def close(): Unit = {
-    super.close()
+    // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
+    partitionMeta.setCleanedShutdown(true)
+    partitionMeta.setRecoverOffset(recoveryPoint)
+    persistPartitionMeta()
+
+    maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
+      checkIfMemoryMappedBufferClosed()
+      segments.close()
+      streamManager.close();
+    }
   }
 }
 
@@ -271,7 +282,7 @@ object ElasticLog extends Logging {
       topicPartition,
       config,
       time,
-      hadCleanShutdown = false, // TODO: fetch from partition meta?
+      hadCleanShutdown = partitionMeta.getCleanedShutdown,
       logStartOffsetCheckpoint = partitionMeta.getStartOffset,
       partitionMeta.getRecoverOffset,
       leaderEpochCache = None,
@@ -297,6 +308,11 @@ object ElasticLog extends Logging {
 
     val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, leaderEpochCheckpointMeta, dir, config,
       segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+    if (partitionMeta.getCleanedShutdown) {
+      // set cleanedShutdown=false before append, the mark will be set to true when gracefully close.
+      partitionMeta.setCleanedShutdown(false)
+      elasticLog.persistPartitionMeta()
+    }
     elasticLog
   }
 

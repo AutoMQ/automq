@@ -43,6 +43,8 @@ public class ElasticPartitionMeta {
 
     @JsonProperty("r")
     private Long recoverOffset;
+    @JsonProperty("cs")
+    private boolean cleanedShutdown;
 
     public ElasticPartitionMeta() {}
 
@@ -96,12 +98,21 @@ public class ElasticPartitionMeta {
         this.recoverOffset = recoverOffset;
     }
 
+    public boolean getCleanedShutdown() {
+        return this.cleanedShutdown;
+    }
+
+    public void setCleanedShutdown(boolean cleanedShutdown) {
+        this.cleanedShutdown = cleanedShutdown;
+    }
+
     @Override
     public String toString() {
         return "ElasticPartitionMeta{" +
                 "startOffset=" + startOffset +
                 ", cleanerOffset=" + cleanerOffset +
                 ", recoverOffset=" + recoverOffset +
+                ", cleanedShutdown=" + cleanedShutdown +
                 '}';
     }
 }

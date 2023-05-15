@@ -302,6 +302,8 @@ class Partition(val topicPartition: TopicPartition,
   newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
 
+  private var closed: Boolean = false
+
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
 
   def isUnderReplicated: Boolean = isLeader && (assignmentState.replicationFactor - partitionState.isr.size) > 0
@@ -533,12 +535,17 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
+  // elastic stream inject start
   def close(): Unit = {
-    // elastic stream inject start
-    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
-      log.get.close()
+    logManager.remove(topicPartition)
+    // use the same lock as append set closed mark to forbid future append
+    inWriteLock(leaderIsrUpdateLock) {
+      closed = true
     }
-    // elastic stream inject end
+    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
+      val elasticLog = log.get
+      elasticLog.close()
+    }
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
@@ -553,6 +560,7 @@ class Partition(val topicPartition: TopicPartition,
     // trigger leader re-election
     alterIsrManager.tryElectLeader(topicPartition)
   }
+  // elastic stream inject end
 
   /**
    * Delete the partition. Note that deleting the partition does not delete the underlying logs.
@@ -1179,6 +1187,10 @@ class Partition(val topicPartition: TopicPartition,
   def appendRecordsToLeader(records: MemoryRecords, origin: AppendOrigin, requiredAcks: Int,
                             requestLocal: RequestLocal): LogAppendInfo = {
     val (info, leaderHWIncremented) = inReadLock(leaderIsrUpdateLock) {
+      if (closed) {
+        throw new NotLeaderOrFollowerException("Leader %d for partition %s on broker %d is already closed"
+          .format(localBrokerId, topicPartition, localBrokerId))
+      }
       leaderLogIfLocal match {
         case Some(leaderLog) =>
           val minIsr = leaderLog.config.minInSyncReplicas

@@ -703,6 +703,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // (the clean shutdown file is written after the logs are all closed).
         producerStateManager.takeSnapshot()
       }
+      // flush all inflight data/index
+      flush(true)
       localLog.close()
     }
   }

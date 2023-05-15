@@ -96,7 +96,7 @@ class LocalLog(@volatile private var _dir: File,
 
   private[log] def isFuture: Boolean = dir.getName.endsWith(LocalLog.FutureDirSuffix)
 
-  private def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+  protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, parentDir, msg) {
       fun
     }
