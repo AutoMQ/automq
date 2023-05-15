@@ -24,11 +24,11 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
   def write(entries: Iterable[(TopicPartition, Long)]): Unit = {
     rawKafkaMeta match {
       case LogStartOffsetCheckpoint =>
-        write0(entries, (elasticLog, checkpoint) => elasticLog.setLogStartOffset(checkpoint))
+        write0(entries, (elasticLog, _) => elasticLog.persistLogStartOffset())
       case CleanerOffsetCheckpoint =>
-        write0(entries, (elasticLog, checkpoint) => elasticLog.setCleanerOffsetCheckpoint(checkpoint))
+        write0(entries, (elasticLog, checkpoint) => elasticLog.persistCleanerOffsetCheckpoint(checkpoint))
       case RecoveryPointCheckpoint =>
-        write0(entries, (elasticLog, checkpoint) => elasticLog.setReCoverOffsetCheckpoint(checkpoint))
+        write0(entries, (elasticLog, _) => elasticLog.persistRecoverOffsetCheckpoint())
       // do nothing when writing ReplicationOffsetCheckpoint
       case ReplicationOffsetCheckpoint =>
       case _ =>
@@ -49,9 +49,9 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
       case LogStartOffsetCheckpoint =>
         read0(elasticLog => (elasticLog.topicPartition, elasticLog.logStartOffset))
       case CleanerOffsetCheckpoint =>
-        read0(elasticLog => (elasticLog.topicPartition, elasticLog.cleanerOffsetCheckpoint))
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.getCleanerOffsetCheckpointFromMeta))
       case RecoveryPointCheckpoint =>
-        read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPointCheckpoint))
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPoint))
       case ReplicationOffsetCheckpoint =>
         read0(elasticLog => (elasticLog.topicPartition, elasticLog.nextOffsetMetadata.messageOffset))
       case _ =>

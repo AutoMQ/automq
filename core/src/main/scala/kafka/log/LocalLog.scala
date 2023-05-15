@@ -68,7 +68,9 @@ class LocalLog(@volatile private var _dir: File,
                private[log] val scheduler: Scheduler,
                private[log] val time: Time,
                private[log] val topicPartition: TopicPartition,
-               private[log] val logDirFailureChannel: LogDirFailureChannel) extends Logging with KafkaMetricsGroup {
+               private[log] val logDirFailureChannel: LogDirFailureChannel,
+               @volatile private[log] var logStartOffset: Long = 0 // only used by elastic stream. It should always be equal to "logStartOffset" of UnifiedLog.
+) extends Logging with KafkaMetricsGroup {
 
   import kafka.log.LocalLog._
 
@@ -98,6 +100,10 @@ class LocalLog(@volatile private var _dir: File,
     LocalLog.maybeHandleIOException(logDirFailureChannel, parentDir, msg) {
       fun
     }
+  }
+
+  private[log] def updateLogStartOffset(offset: Long): Unit = {
+    logStartOffset = offset
   }
 
   /**

@@ -626,6 +626,9 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def updateLogStartOffset(offset: Long): Unit = {
     logStartOffset = offset
+    // elastic stream inject start
+    localLog.updateLogStartOffset(offset)
+    // elastic stream inject end
 
     if (highWatermark < offset) {
       updateHighWatermark(offset)
@@ -1837,7 +1840,7 @@ object UnifiedLog extends Logging {
       val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig)
       val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
       // extends UnifiedLog in future when require modify its implement.
-      return new ElasticUnifiedLog(localLog.logStartOffset,
+      return new ElasticUnifiedLog(localLog.getLogStartOffsetFromMeta,
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,

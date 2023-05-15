@@ -43,13 +43,12 @@ class ElasticLog(val metaStream: api.Stream,
                  _dir: File,
                  c: LogConfig,
                  segments: LogSegments,
-                 recoveryPoint: Long,
                  @volatile private[log] var nextOffsetMetadata: LogOffsetMetadata,
                  scheduler: Scheduler,
                  time: Time,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel)
-  extends LocalLog(_dir, c, segments, recoveryPoint, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
+  extends LocalLog(_dir, c, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, partitionMeta.getStartOffset) {
 
   import kafka.log.es.ElasticLog._
 
@@ -64,17 +63,37 @@ class ElasticLog(val metaStream: api.Stream,
     }
   })
 
-  def logStartOffset: Long = partitionMeta.getStartOffset
+  def getLogStartOffsetFromMeta: Long = partitionMeta.getStartOffset
 
-  def setLogStartOffset(startOffset: Long): Unit = partitionMeta.setStartOffset(startOffset)
+  def persistLogStartOffset(): Unit = {
+    if (getLogStartOffsetFromMeta == logStartOffset) {
+      return
+    }
+    partitionMeta.setStartOffset(logStartOffset)
+    persistPartitionMeta()
+    info(s"saved logStartOffset: $logStartOffset")
+  }
 
-  def cleanerOffsetCheckpoint: Long = partitionMeta.getCleanerOffset
+  // support reading from offsetCheckpointFile
+  def getCleanerOffsetCheckpointFromMeta: Long = partitionMeta.getCleanerOffset
 
-  def setCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setCleanerOffset(offsetCheckpoint)
+  def persistCleanerOffsetCheckpoint(offsetCheckpoint: Long): Unit = {
+    if (getCleanerOffsetCheckpointFromMeta == offsetCheckpoint) {
+      return
+    }
+    partitionMeta.setCleanerOffset(offsetCheckpoint)
+    persistPartitionMeta()
+    info(s"saved cleanerOffsetCheckpoint: $offsetCheckpoint")
+  }
 
-  def recoveryPointCheckpoint: Long = partitionMeta.getRecoverOffset
-
-  def setReCoverOffsetCheckpoint(offsetCheckpoint: Long): Unit = partitionMeta.setRecoverOffset(offsetCheckpoint)
+  def persistRecoverOffsetCheckpoint(): Unit = {
+    if (partitionMeta.getRecoverOffset == recoveryPoint) {
+      return
+    }
+    partitionMeta.setRecoverOffset(recoveryPoint)
+    persistPartitionMeta()
+    info(s"saved recoverOffsetCheckpoint: $recoveryPoint")
+  }
 
   def saveLeaderEpochCheckpoint(meta: ElasticLeaderEpochCheckpointMeta): Unit = {
     persistMeta(metaStream, MetaKeyValue.of(LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(meta.encode())))
@@ -112,6 +131,18 @@ class ElasticLog(val metaStream: api.Stream,
     val elasticLogMeta = logMeta()
     persistMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
     debug(s"saved log meta: $elasticLogMeta")
+  }
+
+  private def persistPartitionMeta(): Unit = {
+    persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+  }
+
+  override private[log] def flush(offset: Long): Unit = {
+    val currentRecoveryPoint = recoveryPoint
+    if (currentRecoveryPoint <= offset) {
+      val segmentsToFlush = segments.values(currentRecoveryPoint, offset)
+      segmentsToFlush.foreach(_.flush())
+    }
   }
 
   /**
@@ -265,7 +296,7 @@ object ElasticLog extends Logging {
     }
 
     val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, leaderEpochCheckpointMeta, dir, config,
-      segments, offsets.recoveryPoint, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+      segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     elasticLog
   }
 
