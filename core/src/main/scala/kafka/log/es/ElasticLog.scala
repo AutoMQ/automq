@@ -38,6 +38,7 @@ class ElasticLog(val metaStream: api.Stream,
                  val streamManager: ElasticLogStreamManager,
                  val streamSliceManager: ElasticStreamSliceManager,
                  val producerStateManager: ProducerStateManager,
+                 val logMeta: ElasticLogMeta,
                  val partitionMeta: ElasticPartitionMeta,
                  val leaderEpochCheckpointMeta: ElasticLeaderEpochCheckpointMeta,
                  _dir: File,
@@ -53,8 +54,6 @@ class ElasticLog(val metaStream: api.Stream,
   import kafka.log.es.ElasticLog._
 
   this.logIdent = s"[ElasticLog partition=$topicPartition] "
-
-  private var cleanedSegments: List[ElasticLogSegment] = List()
 
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
@@ -100,42 +99,16 @@ class ElasticLog(val metaStream: api.Stream,
   }
 
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
-    if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
-      throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
-    }
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
-    val meta = new ElasticStreamSegmentMeta()
-    meta.baseOffset(baseOffset)
-    meta.streamSuffix(suffix)
-    val segment: ElasticLogSegment = ElasticLogSegment(_dir, meta, streamSliceManager, config, time)
-    if (suffix.equals(LocalLog.CleanedFileSuffix)) {
-      // remove cleanedSegments when replace
-      cleanedSegments = cleanedSegments :+ segment
-    }
-    persistLogMeta()
-    info(s"Created a new log segment $baseOffset")
-    segment
-  }
-
-  private def logMeta(): ElasticLogMeta = {
-    val elasticLogMeta = new ElasticLogMeta()
-    streamManager.streams().forEach((name, stream) => {
-      elasticLogMeta.putStream(name, stream.streamId())
-    })
-    elasticLogMeta.setSegments(segments.values.map(s => (s.asInstanceOf[ElasticLogSegment]).meta).toList.asJava)
-    elasticLogMeta.setCleanedSegments(cleanedSegments.map(s => s.meta).asJava)
-    elasticLogMeta
+    createAndSaveSegment(metaStream, suffix)(baseOffset, logMeta, _dir, config, streamSliceManager, time)
   }
 
   private def persistLogMeta(): Unit = {
-    val elasticLogMeta = logMeta()
-    persistMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
-    debug(s"saved log meta: $elasticLogMeta")
+    persistLogMetaInStream(metaStream, logMeta)
   }
 
   private def persistPartitionMeta(): Unit = {
-    info(s"save partition meta $partitionMeta")
-    persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+    persistPartitionMetaInStream(metaStream, partitionMeta)
   }
 
   override private[log] def flush(offset: Long): Unit = {
@@ -271,7 +244,7 @@ object ElasticLog extends Logging {
 
     // load LogSegments and recover log
     val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreams, client.streamClient())
+    val logStreamManager = new ElasticLogStreamManager(logMeta, client.streamClient())
     val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
     val segments = new LogSegments(topicPartition)
     val offsets = new ElasticLogLoader(
@@ -287,7 +260,8 @@ object ElasticLog extends Logging {
       partitionMeta.getRecoverOffset,
       leaderEpochCache = None,
       producerStateManager = producerStateManager,
-      numRemainingSegments = numRemainingSegments).load()
+      numRemainingSegments = numRemainingSegments,
+      createAndSaveSegment(metaStream)).load()
     info(s"loaded log meta: $logMeta")
 
     // load leader epoch checkpoint
@@ -306,7 +280,7 @@ object ElasticLog extends Logging {
       info(s"last leaderEpoch entry is: $lastEntry")
     }
 
-    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, partitionMeta, leaderEpochCheckpointMeta, dir, config,
+    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, logMeta, partitionMeta, leaderEpochCheckpointMeta, dir, config,
       segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
     if (partitionMeta.getCleanedShutdown) {
       // set cleanedShutdown=false before append, the mark will be set to true when gracefully close.
@@ -330,8 +304,42 @@ object ElasticLog extends Logging {
     metaStream
   }
 
+  private def persistLogMetaInStream(metaStream: api.Stream, elasticLogMeta: ElasticLogMeta): Unit = {
+    persistMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(elasticLogMeta)))
+    info(s"saved log meta: $elasticLogMeta")
+  }
+
+  private def persistPartitionMetaInStream(metaStream: api.Stream, partitionMeta: ElasticPartitionMeta): Unit = {
+    persistMeta(metaStream, MetaKeyValue.of(PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+    info(s"save partition meta $partitionMeta")
+  }
+
   def persistMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
     metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(metaKeyValue))).get()
+  }
+
+  /**
+   * Create a new segment and save the meta in metaStream. Note that cleaned segment is not considered in this method.
+   */
+  def createAndSaveSegment(metaStream: api.Stream, suffix: String = "")(baseOffset: Long, logMeta: ElasticLogMeta, dir: File,
+      config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+    if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
+      throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
+    }
+    val meta = new ElasticStreamSegmentMeta()
+    meta.baseOffset(baseOffset)
+    meta.streamSuffix(suffix)
+    val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time)
+    if (suffix.equals(LocalLog.CleanedFileSuffix)) {
+      // remove cleanedSegments when replace
+      logMeta.getCleanedSegments.add(segment.meta)
+    } else {
+      logMeta.getSegments.add(segment.meta)
+    }
+
+    persistLogMetaInStream(metaStream, logMeta)
+    info(s"Created a new log segment $baseOffset")
+    segment
   }
 
   def getMetas(metaStream: api.Stream): mutable.Map[String, Any] = {

@@ -17,10 +17,9 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.Stream;
+import java.util.HashMap;
 import sdk.elastic.stream.api.StreamClient;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Elastic log dimension stream manager.
  */
 public class ElasticLogStreamManager {
+    private final ElasticLogMeta elasticLogMeta;
     private final Map<String, LazyStream> streamMap = new ConcurrentHashMap<>();
     private final StreamClient streamClient;
     /**
@@ -40,9 +40,10 @@ public class ElasticLogStreamManager {
      */
     private LazyStream.EventListener outerListener;
 
-    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient) {
+    public ElasticLogStreamManager(ElasticLogMeta elasticLogMeta, StreamClient streamClient) {
         this.streamClient = streamClient;
-        streams.forEach((name, streamId) -> {
+        this.elasticLogMeta = elasticLogMeta;
+        elasticLogMeta.getStreams().forEach((name, streamId) -> {
             try {
                 streamMap.put(name, new LazyStream(name, streamId, streamClient));
             } catch (Exception e) {
@@ -65,10 +66,6 @@ public class ElasticLogStreamManager {
         });
     }
 
-    public Map<String, Stream> streams() {
-        return Collections.unmodifiableMap(streamMap);
-    }
-
     public void setListener(LazyStream.EventListener listener) {
         this.outerListener = listener;
     }
@@ -80,6 +77,11 @@ public class ElasticLogStreamManager {
     class LazyStreamEventListener implements LazyStream.EventListener {
         @Override
         public void onEvent(long streamId, LazyStream.Event event) {
+            // update streamMap
+            Map<String, Long> streamNameIdMap = new HashMap<>();
+            streamMap.forEach((name, stream) -> streamNameIdMap.put(name, stream.streamId()));
+            elasticLogMeta.setStreams(streamNameIdMap);
+
             Optional.ofNullable(outerListener).ifPresent(listener -> listener.onEvent(streamId, event));
         }
     }

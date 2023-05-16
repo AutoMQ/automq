@@ -24,8 +24,8 @@ import sdk.elastic.stream.api.RecordBatch;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Elastic stream slice.
- * support read from in-flight write buffer
+ * Elastic stream slices support read from in-flight write buffer.
+ * Note that a ElasticStreamSlice is a logical LogSegment based on elastic stream.
  */
 public interface ElasticStreamSlice {
 

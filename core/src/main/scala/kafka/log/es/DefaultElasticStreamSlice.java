@@ -47,7 +47,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
             this.startOffsetInStream = streamNextOffset;
             sliceRange.start(startOffsetInStream);
             this.nextOffset = 0L;
-        } else if (sliceRange.end() == -1L) {
+        } else if (sliceRange.end() == Offsets.NOOP_OFFSET) {
             // unsealed stream slice
             this.startOffsetInStream = sliceRange.start();
             this.nextOffset = streamNextOffset - startOffsetInStream;
@@ -105,7 +105,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     @Override
     public String toString() {
         // TODO: stream info
-        return "DefaultElasticStreamSegment{" +
+        return "DefaultElasticStreamSlice{" +
                 "startOffsetInStream=" + startOffsetInStream +
                 ", stream=" + stream +
                 ", nextOffset=" + nextOffset +

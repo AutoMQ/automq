@@ -35,7 +35,7 @@ import scala.jdk.CollectionConverters.CollectionHasAsScala
  */
 class ElasticLogLoader(logMeta: ElasticLogMeta,
                        segments: LogSegments,
-                       streamSegmentManager: ElasticStreamSliceManager,
+                       streamSliceManager: ElasticStreamSliceManager,
                        dir: File,
                        topicPartition: TopicPartition,
                        config: LogConfig,
@@ -45,7 +45,8 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        recoveryPointCheckpoint: Long,
                        leaderEpochCache: Option[LeaderEpochFileCache],
                        producerStateManager: ElasticProducerStateManager,
-                       numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]
+                       numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+                       createAndSaveSegmentFunc: (Long, ElasticLogMeta, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment
                       ) extends Logging {
   logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}] "
 
@@ -100,7 +101,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def loadSegments(): Unit = {
     for (segmentMeta <- logMeta.getSegments.asScala) {
-      segments.add(ElasticLogSegment(dir, segmentMeta, streamSegmentManager, config, time))
+      segments.add(ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time))
     }
   }
 
@@ -204,9 +205,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
     if (segments.isEmpty) {
       // no existing segments, create a new mutable segment beginning at logStartOffset
-      val meta = new ElasticStreamSegmentMeta()
-      meta.baseOffset(logStartOffsetCheckpoint)
-      segments.add(ElasticLogSegment(dir, meta, streamSegmentManager, config, time))
+      segments.add(createAndSaveSegmentFunc(logStartOffsetCheckpoint, logMeta, dir, config, streamSliceManager, time))
     }
 
     // Update the recovery point if there was a clean shutdown and did not perform any changes to

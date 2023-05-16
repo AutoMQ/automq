@@ -33,7 +33,13 @@ import java.util.Map;
  * logical meta data for a Kafka topicPartition.
  */
 public class ElasticLogMeta {
+    /**
+     * KV map for segment file suffix -> streamId.
+     */
     private Map<String, Long> streams = new HashMap<>();
+    /**
+     * segment list for this topicPartition. Each item refers to a logical Kafka segment(including log, index, time-index, txn).
+     */
     private List<ElasticStreamSegmentMeta> segments = new LinkedList<>();
     private List<ElasticStreamSegmentMeta> cleanedSegments = new LinkedList<>();
 

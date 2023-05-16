@@ -20,6 +20,9 @@ package kafka.log.es;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class ElasticStreamSegmentMeta {
+    /**
+     * base offset of the segment.
+     */
     @JsonProperty("bo")
     private long baseOffset;
     @JsonProperty("ct")
@@ -30,10 +33,19 @@ public class ElasticStreamSegmentMeta {
     private String streamSuffix = "";
     @JsonProperty("ls")
     private SliceRange log = new SliceRange();
+    /**
+     * offset range of the log stream
+     */
     @JsonProperty("os")
     private SliceRange offset = new SliceRange();
+    /**
+     * offset range of the time index stream
+     */
     @JsonProperty("ts")
     private SliceRange time = new SliceRange();
+    /**
+     * offset range of the txn index stream
+     */
     @JsonProperty("txs")
     private SliceRange txn = new SliceRange();
 
@@ -106,8 +118,8 @@ public class ElasticStreamSegmentMeta {
 
     @Override
     public String toString() {
-        return "ElasticStreamSliceMeta{" +
-                "segmentBaseOffset=" + baseOffset +
+        return "ElasticStreamSegmentMeta{" +
+                "baseOffset=" + baseOffset +
                 ", createTimestamp=" + createTimestamp +
                 ", lastModifiedTimestamp=" + lastModifiedTimestamp +
                 ", streamSuffix='" + streamSuffix + '\'' +
