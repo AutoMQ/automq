@@ -101,7 +101,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def loadSegments(): Unit = {
     for (segmentMeta <- logMeta.getSegments.asScala) {
-      segments.add(ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time))
+      segments.add(ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, logMeta))
     }
   }
 

@@ -35,7 +35,8 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         baseOffset: Long,
                         indexIntervalBytes: Int,
                         rollJitterMs: Long,
-                        time: Time) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
+                        time: Time,
+                        val logMeta: ElasticLogMeta) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
   override def offsetIndex: OffsetIndex = offsetIdx
 
   override def timeIndex: TimeIndex = timeIdx
@@ -137,12 +138,14 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def deleteIfExists(): Unit = {
-    // TODO: remove segment from log meta and save
+    val deleted = logMeta.removeSegmentOnOffset(baseOffset)
+    if (deleted) {
+      logMeta.persist()
+    }
   }
 
   override def deleted(): Boolean = {
-    // TODO:
-    false
+    !logMeta.containsSegmentOnOffset(baseOffset)
   }
 
   override def lastModified = meta.lastModifiedTimestamp
@@ -155,7 +158,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
 object ElasticLogSegment {
   def apply(dir: File, meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
-            time: Time): ElasticLogSegment = {
+            time: Time, logMeta: ElasticLogMeta): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(UnifiedLog.logFile(dir, baseOffset, suffix), sm.loadOrCreateSlice("log" + suffix, meta.log))
@@ -163,6 +166,6 @@ object ElasticLogSegment {
     val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 
-    new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time)
+    new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, logMeta)
   }
 }
