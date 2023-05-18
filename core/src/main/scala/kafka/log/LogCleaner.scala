@@ -388,9 +388,6 @@ class LogCleaner(initialConfig: CleanerConfig,
     }
 
     private def cleanLog(cleanable: LogToClean): Unit = {
-      if (true) {
-        return
-      }
       val startOffset = cleanable.firstDirtyOffset
       var endOffset = startOffset
       try {

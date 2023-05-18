@@ -49,7 +49,7 @@ class ElasticLog(val metaStream: api.Stream,
                  time: Time,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel,
-                 val _initStartOffset: Long = 0, // only used for init log startOffset
+                 val _initStartOffset: Long = 0, // only used for log-startOffset initialization
 ) extends LocalLog(_dir, c, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
 
   import kafka.log.es.ElasticLog._

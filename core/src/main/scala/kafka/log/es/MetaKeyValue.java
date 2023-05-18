@@ -50,7 +50,7 @@ public class MetaKeyValue {
         buf.get(keyBytes);
         String key = new String(keyBytes, StandardCharsets.UTF_8);
         // value
-        ByteBuffer value = buf.slice();
+        ByteBuffer value = buf.duplicate();
         return MetaKeyValue.of(key, value);
     }
 

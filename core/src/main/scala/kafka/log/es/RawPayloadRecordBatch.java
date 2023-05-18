@@ -37,7 +37,7 @@ public class RawPayloadRecordBatch implements RecordBatch {
 
     @Override
     public int count() {
-        return rawPayload.limit();
+        return rawPayload.remaining();
     }
 
     @Override
@@ -52,6 +52,6 @@ public class RawPayloadRecordBatch implements RecordBatch {
 
     @Override
     public ByteBuffer rawPayload() {
-        return rawPayload.slice();
+        return rawPayload.duplicate();
     }
 }

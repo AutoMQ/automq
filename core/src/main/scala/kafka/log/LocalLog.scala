@@ -1023,7 +1023,6 @@ object LocalLog extends Logging {
   }
 
   private[log] def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
-    // TODO: forbid, close the compaction.
     LogSegment.deleteIfExists(dir, baseOffset, fileSuffix = CleanedFileSuffix)
     LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM,
       fileSuffix = CleanedFileSuffix, initFileSize = logConfig.initFileSize, preallocate = logConfig.preallocate)

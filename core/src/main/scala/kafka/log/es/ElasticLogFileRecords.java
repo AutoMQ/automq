@@ -66,6 +66,7 @@ public class ElasticLogFileRecords extends FileRecords {
         return file;
     }
 
+    @Override
     public FileChannel channel() {
         throw new UnsupportedOperationException();
     }
@@ -83,6 +84,7 @@ public class ElasticLogFileRecords extends FileRecords {
             }
             recordBatch.writeTo(buffer);
         }
+        buffer.flip();
     }
 
     @Override
@@ -175,6 +177,7 @@ public class ElasticLogFileRecords extends FileRecords {
         return streamSegment;
     }
 
+    @Override
     protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start) {
         LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, sizeInBytes());
         return new RecordBatchIterator<>(inputStream);
@@ -381,6 +384,7 @@ public class ElasticLogFileRecords extends FileRecords {
             } else {
                 ByteBuffer buf = ByteBuffer.allocate(inner.sizeInBytes());
                 inner.writeTo(buf);
+                buf.flip();
                 return buf;
             }
         }

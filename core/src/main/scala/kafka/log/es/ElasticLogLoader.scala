@@ -95,7 +95,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
     logMeta.getCleanedSegments.forEach(m => {
       info(s"Deleting cleaned segment ${m.baseOffset}")
     })
-    logMeta.setCleanedSegments(util.Collections.emptyList())
+    logMeta.setCleanedSegments(new util.LinkedList[ElasticStreamSegmentMeta]())
 
   }
 
