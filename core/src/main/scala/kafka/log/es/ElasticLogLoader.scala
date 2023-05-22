@@ -26,14 +26,14 @@ import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ConcurrentNavigableMap}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
 /**
  * ref. LogLoader
  */
 class ElasticLogLoader(logMeta: ElasticLogMeta,
                        segments: LogSegments,
-                       segmentMap: ConcurrentNavigableMap[Long, ElasticLogSegment],
+                       segmentMap: collection.concurrent.Map[Long, ElasticLogSegment],
                        streamSliceManager: ElasticStreamSliceManager,
                        dir: File,
                        topicPartition: TopicPartition,

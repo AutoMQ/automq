@@ -36,6 +36,9 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
      */
     private final long startOffsetInStream;
     private final Stream stream;
+    /**
+     * next relative offset of bytes to be appended to this segment.
+     */
     private long nextOffset;
     private boolean sealed = false;
 

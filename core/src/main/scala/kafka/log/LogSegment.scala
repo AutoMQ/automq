@@ -402,6 +402,11 @@ class LogSegmentKafka private[log] (val log: FileRecords,
     offsetIndex.reset()
     timeIndex.reset()
     txnIndex.reset()
+    recover0(producerStateManager, leaderEpochCache)
+  }
+
+  @nonthreadsafe
+  protected def recover0(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
     var validBytes = 0
     var lastIndexEntry = 0
     maxTimestampAndOffsetSoFar = TimestampOffset.Unknown

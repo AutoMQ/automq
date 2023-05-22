@@ -31,20 +31,23 @@ public class ElasticStreamSegmentMeta {
     private long lastModifiedTimestamp;
     @JsonProperty("s")
     private String streamSuffix = "";
+    /**
+     * byte offset range of the log stream
+     */
     @JsonProperty("ls")
     private SliceRange log = new SliceRange();
     /**
-     * offset range of the log stream
+     * byte offset range of the index stream
      */
     @JsonProperty("os")
     private SliceRange offset = new SliceRange();
     /**
-     * offset range of the time index stream
+     * byte offset range of the time index stream
      */
     @JsonProperty("ts")
     private SliceRange time = new SliceRange();
     /**
-     * offset range of the txn index stream
+     * byte offset range of the txn index stream
      */
     @JsonProperty("txs")
     private SliceRange txn = new SliceRange();

@@ -32,6 +32,10 @@ public class StreamSliceSupplier {
         return streamSliceManager.loadOrCreateSlice(streamName, sliceRange);
     }
 
+    /**
+     * reset the slice to an open empty slice. This is used in segment index recovery.
+     * @return a new open empty slice
+     */
     public ElasticStreamSlice reset() {
         return streamSliceManager.newSlice(streamName);
     }

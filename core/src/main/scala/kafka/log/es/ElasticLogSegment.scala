@@ -18,6 +18,7 @@
 package kafka.log.es
 
 import kafka.log._
+import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
 import kafka.utils.{nonthreadsafe, threadsafe}
 import org.apache.kafka.common.record.MemoryRecords
@@ -124,6 +125,27 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     _meta.time(timeIdx.stream.sliceRange)
     _meta.txn(txnIndex.stream.sliceRange)
     _meta
+  }
+
+  /**
+   * Run recovery on the given segment. This will rebuild the index from the log file and lop off any invalid bytes
+   * from the end of the log and index.
+   *
+   * @param producerStateManager Producer state corresponding to the segment's base offset. This is needed to recover
+   *                             the transaction index.
+   * @param leaderEpochCache     Optionally a cache for updating the leader epoch during recovery.
+   * @return The number of bytes truncated from the log
+   * @throws LogSegmentOffsetOverflowException if the log segment contains an offset that causes the index offset to overflow
+   */
+  @nonthreadsafe
+  override def recover(producerStateManager: ProducerStateManager,
+      leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
+    offsetIndex.reset()
+    timeIndex.reset()
+    txnIndex.reset()
+    logListener.onEvent(baseOffset, ElasticMetaEvent.SEGMENT_UPDATE)
+
+    recover0(producerStateManager, leaderEpochCache)
   }
 
   /**
