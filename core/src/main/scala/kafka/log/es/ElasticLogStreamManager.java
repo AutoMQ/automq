@@ -17,7 +17,8 @@
 
 package kafka.log.es;
 
-import java.util.HashMap;
+import java.util.Collections;
+import sdk.elastic.stream.api.Stream;
 import sdk.elastic.stream.api.StreamClient;
 
 import java.util.Map;
@@ -28,7 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Elastic log dimension stream manager.
  */
 public class ElasticLogStreamManager {
-    private final ElasticLogMeta elasticLogMeta;
     private final Map<String, LazyStream> streamMap = new ConcurrentHashMap<>();
     private final StreamClient streamClient;
     /**
@@ -38,12 +38,11 @@ public class ElasticLogStreamManager {
     /**
      * outer register listener
      */
-    private LazyStream.EventListener outerListener;
+    private ElasticEventListener outerListener;
 
-    public ElasticLogStreamManager(ElasticLogMeta elasticLogMeta, StreamClient streamClient) {
+    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient) {
         this.streamClient = streamClient;
-        this.elasticLogMeta = elasticLogMeta;
-        elasticLogMeta.getStreams().forEach((name, streamId) -> {
+        streams.forEach((name, streamId) -> {
             try {
                 streamMap.put(name, new LazyStream(name, streamId, streamClient));
             } catch (Exception e) {
@@ -66,7 +65,11 @@ public class ElasticLogStreamManager {
         });
     }
 
-    public void setListener(LazyStream.EventListener listener) {
+    public Map<String, Stream> streams() {
+        return Collections.unmodifiableMap(streamMap);
+    }
+
+    public void setListener(ElasticEventListener listener) {
         this.outerListener = listener;
     }
 
@@ -74,14 +77,9 @@ public class ElasticLogStreamManager {
         // TODO: close stream recycle resource.
     }
 
-    class LazyStreamEventListener implements LazyStream.EventListener {
+    class LazyStreamEventListener implements ElasticEventListener {
         @Override
-        public void onEvent(long streamId, LazyStream.Event event) {
-            // update streamMap
-            Map<String, Long> streamNameIdMap = new HashMap<>();
-            streamMap.forEach((name, stream) -> streamNameIdMap.put(name, stream.streamId()));
-            elasticLogMeta.setStreams(streamNameIdMap);
-
+        public void onEvent(long streamId, ElasticMetaEvent event) {
             Optional.ofNullable(outerListener).ifPresent(listener -> listener.onEvent(streamId, event));
         }
     }

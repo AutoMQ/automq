@@ -41,7 +41,7 @@ public class LazyStream implements Stream {
     private final String name;
     private final StreamClient client;
     private volatile Stream inner = NOOP_STREAM;
-    private EventListener eventListener;
+    private ElasticEventListener eventListener;
 
     public LazyStream(String name, long streamId, StreamClient client) throws ExecutionException, InterruptedException {
         this.name = name;
@@ -74,7 +74,7 @@ public class LazyStream implements Stream {
                 // TODO: keep retry or fail all succeed request.
                 // TODO: replica count
                 this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(1).build()).get();
-                notifyListener(Event.CREATE);
+                notifyListener(ElasticMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {
                 return FutureUtil.failedFuture(new IOException(e));
             }
@@ -102,24 +102,16 @@ public class LazyStream implements Stream {
         return "LazyStream{name='" + name + '\'' + '}';
     }
 
-    public void setListener(EventListener listener) {
+    public void setListener(ElasticEventListener listener) {
         this.eventListener = listener;
     }
 
-    public void notifyListener(Event event) {
+    public void notifyListener(ElasticMetaEvent event) {
         try {
             Optional.ofNullable(eventListener).ifPresent(listener -> listener.onEvent(inner.streamId(), event));
         } catch (Throwable e) {
             //TODO: log unexpected exception
         }
-    }
-
-    public enum Event {
-        CREATE
-    }
-
-    public interface EventListener {
-        void onEvent(long streamId, Event event);
     }
 
     static class NoopStream implements Stream {

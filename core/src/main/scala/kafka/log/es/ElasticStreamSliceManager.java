@@ -35,6 +35,10 @@ public class ElasticStreamSliceManager {
         this.streamManager = streamManager;
     }
 
+    public ElasticLogStreamManager getStreamManager() {
+        return streamManager;
+    }
+
     public ElasticStreamSlice newSlice(String streamName) {
         // seal last segment with the same stream name when create new segment
         ElasticStreamSlice lastSegment = lastSlices.get(streamName);

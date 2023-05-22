@@ -38,7 +38,8 @@ class ElasticUnifiedLog(logStartOffset: Long,
   extends UnifiedLog(logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
     leaderEpochCache, producerStateManager, _topicId, false) {
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
-    elasticLog.replaceSegments(newSegments, oldSegments)
+    val deletedSegments = elasticLog.replaceSegments(newSegments, oldSegments)
+    deleteProducerSnapshots(deletedSegments, asyncDelete = true)
   }
 
   override private[log] def splitOverflowedSegment(segment: LogSegment) = {

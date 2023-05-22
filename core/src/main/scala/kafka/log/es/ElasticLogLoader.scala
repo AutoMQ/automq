@@ -26,15 +26,14 @@ import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
-import java.util
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
-import scala.jdk.CollectionConverters.CollectionHasAsScala
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ConcurrentNavigableMap}
 
 /**
  * ref. LogLoader
  */
 class ElasticLogLoader(logMeta: ElasticLogMeta,
                        segments: LogSegments,
+                       segmentMap: ConcurrentNavigableMap[Long, ElasticLogSegment],
                        streamSliceManager: ElasticStreamSliceManager,
                        dir: File,
                        topicPartition: TopicPartition,
@@ -46,9 +45,10 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        leaderEpochCache: Option[LeaderEpochFileCache],
                        producerStateManager: ElasticProducerStateManager,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-                       createAndSaveSegmentFunc: (Long, ElasticLogMeta, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment
-                      ) extends Logging {
-  logIdent = s"[LogLoader partition=$topicPartition, dir=${dir.getParent}] "
+                       segmentEventListener: ElasticEventListener,
+                       createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment)
+  extends Logging {
+  logIdent = s"[ElasticLogLoader partition=$topicPartition, dir=${dir.getParent}] "
 
   /**
    * Load the log segments from the log files on disk, and returns the components of the loaded log.
@@ -91,18 +91,16 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
   }
 
 
+  // do nothing
   private def removeTempFiles(): Unit = {
-    logMeta.getCleanedSegments.forEach(m => {
-      info(s"Deleting cleaned segment ${m.baseOffset}")
-    })
-    logMeta.setCleanedSegments(new util.LinkedList[ElasticStreamSegmentMeta]())
-
   }
 
   private def loadSegments(): Unit = {
-    for (segmentMeta <- logMeta.getSegments.asScala) {
-      segments.add(ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, logMeta))
-    }
+    logMeta.getSegmentMetas.forEach(segmentMeta => {
+      val segment = ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, segmentEventListener)
+      segments.add(segment)
+      segmentMap.put(segment.baseOffset, segment)
+    })
   }
 
   /**
@@ -205,7 +203,9 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
     if (segments.isEmpty) {
       // no existing segments, create a new mutable segment beginning at logStartOffset
-      segments.add(createAndSaveSegmentFunc(logStartOffsetCheckpoint, logMeta, dir, config, streamSliceManager, time))
+      val segment = createAndSaveSegmentFunc(logStartOffsetCheckpoint, dir, config, streamSliceManager, time)
+      segments.add(segment)
+      // No need to put it into segmentMap since it was done in 'createAndSaveSegmentFunc'.
     }
 
     // Update the recovery point if there was a clean shutdown and did not perform any changes to
@@ -244,6 +244,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
       info(s"Deleting segments as part of log recovery: ${toDelete.mkString(",")}")
       toDelete.foreach { segment =>
         segments.remove(segment.baseOffset)
+        segmentMap.remove(segment.baseOffset)
       }
     }
   }

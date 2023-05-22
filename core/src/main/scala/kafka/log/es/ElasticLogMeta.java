@@ -17,20 +17,14 @@
 
 package kafka.log.es;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import sdk.elastic.stream.api.Stream;
 
 // TODO: save meta to stream periodically. save meta when broker shutdown.
 
@@ -38,28 +32,16 @@ import sdk.elastic.stream.api.Stream;
  * logical meta data for a Kafka topicPartition.
  */
 public class ElasticLogMeta {
-    public static final String LOG_META_KEY = "log";
-    private static final Logger log = LoggerFactory.getLogger(ElasticLogMeta.class);
-
     /**
      * KV map for segment file suffix -> streamId.
      */
-    private Map<String, Long> streams = new HashMap<>();
+    private Map<String, Long> streamMap = new HashMap<>();
     /**
-     * segment list for this topicPartition. Each item refers to a logical Kafka segment(including log, index, time-index, txn).
+     * segmentMeta List for this topicPartition. Each segmentMeta refers to a logical Kafka segment(including log, index, time-index, txn).
      */
-    private List<ElasticStreamSegmentMeta> segments = new LinkedList<>();
-    private List<ElasticStreamSegmentMeta> cleanedSegments = new LinkedList<>();
-    @JsonIgnore
-    private Stream metaStream;
-    @JsonIgnore
-    private String logIndent = "";
+    private List<ElasticStreamSegmentMeta> segmentMetas = new LinkedList<>();
 
-    public ElasticLogMeta() {}
-
-    public ElasticLogMeta(Stream metaStream, String logIndent) {
-        this.metaStream = metaStream;
-        this.logIndent = logIndent;
+    public ElasticLogMeta() {
     }
 
     public static ByteBuffer encode(ElasticLogMeta meta) {
@@ -83,68 +65,31 @@ public class ElasticLogMeta {
         }
     }
 
-    public void setMetaStream(Stream metaStream) {
-        this.metaStream = metaStream;
-    }
-
-    public void setLogIndent(String logIndent) {
-        this.logIndent = logIndent;
-    }
-
-    public void addSegment(ElasticStreamSegmentMeta segment) {
-        segments.add(segment);
-    }
-
-    public boolean removeSegmentOnOffset(long baseOffset) {
-        return segments.removeIf(segment -> segment.baseOffset() == baseOffset);
-    }
-
     public boolean containsSegmentOnOffset(long baseOffset) {
-        return segments.stream().anyMatch(segment -> segment.baseOffset() == baseOffset);
+        return segmentMetas.stream().anyMatch(segmentMeta -> segmentMeta.baseOffset() == baseOffset);
     }
 
-    public void persist() throws ExecutionException, InterruptedException {
-        if (metaStream == null) {
-            throw new IllegalStateException("metaStream is null");
-        }
-        MetaKeyValue keyValue = MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(this));
-        metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(keyValue))).get();
-        log.info("{} saved log meta: {}", logIndent, this);
+    public List<ElasticStreamSegmentMeta> getSegmentMetas() {
+        return segmentMetas;
     }
 
-    public List<ElasticStreamSegmentMeta> getSegments() {
-        return segments;
+    public void setSegmentMetas(List<ElasticStreamSegmentMeta> segmentMetas) {
+        this.segmentMetas = segmentMetas;
     }
 
-    public void setSegments(List<ElasticStreamSegmentMeta> segments) {
-        this.segments = segments;
+    public Map<String, Long> getStreamMap() {
+        return streamMap;
     }
 
-    public Map<String, Long> getStreams() {
-        return streams;
-    }
-
-    public void setStreams(Map<String, Long> streams) {
-        this.streams = streams;
-    }
-
-    public void putStream(String name, long streamId) {
-        streams.put(name, streamId);
-    }
-
-    public List<ElasticStreamSegmentMeta> getCleanedSegments() {
-        return cleanedSegments;
-    }
-
-    public void setCleanedSegments(List<ElasticStreamSegmentMeta> cleanedSegments) {
-        this.cleanedSegments = cleanedSegments;
+    public void setStreamMap(Map<String, Long> streamMap) {
+        this.streamMap = streamMap;
     }
 
     @Override
     public String toString() {
         return "ElasticLogMeta{" +
-                "streams=" + streams +
-                ", segments=" + segments +
-                '}';
+            "streamMap=" + streamMap +
+            ", segmentMetas=" + segmentMetas +
+            '}';
     }
 }
