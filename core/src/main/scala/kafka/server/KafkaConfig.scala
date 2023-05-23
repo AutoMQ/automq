@@ -656,6 +656,18 @@ object KafkaConfig {
   val PasswordEncoderKeyLengthProp =  "password.encoder.key.length"
   val PasswordEncoderIterationsProp =  "password.encoder.iterations"
 
+  // elastic stream inject start
+  /** ********* Elastic stream config *********/
+  val ElasticStreamEndpointProp = "elastic.stream.endpoint"
+  val ElasticStreamNamespaceProp = "elastic.stream.namespace"
+  val ElasticStreamReplicaCountProp = "elastic.stream.replica.count"
+
+  val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
+    "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
+  val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
+  val ElasticStreamReplicaCountDoc = "The stream replica count"
+  // elastic stream inject end
+
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
   val ZkConnectDoc = "Specifies the ZooKeeper connection string in the form <code>hostname:port</code> where host and port are the " +
@@ -1441,6 +1453,13 @@ object KafkaConfig {
       .define(RaftConfig.QUORUM_LINGER_MS_CONFIG, INT, Defaults.QuorumLingerMs, null, MEDIUM, RaftConfig.QUORUM_LINGER_MS_DOC)
       .define(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG, INT, Defaults.QuorumRequestTimeoutMs, null, MEDIUM, RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_DOC)
       .define(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG, INT, Defaults.QuorumRetryBackoffMs, null, LOW, RaftConfig.QUORUM_RETRY_BACKOFF_MS_DOC)
+
+    // elastic stream inject start
+    /** ********* Elastic stream Configuration *********/
+      .define(ElasticStreamEndpointProp, STRING, null, HIGH, ElasticStreamEndpointDoc)
+      .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
+      .define(ElasticStreamReplicaCountProp, INT, 1, HIGH, ElasticStreamReplicaCountDoc)
+    // elastic stream inject end
   }
 
   /** ********* Remote Log Management Configuration *********/
@@ -1964,6 +1983,13 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val quorumLingerMs = getInt(RaftConfig.QUORUM_LINGER_MS_CONFIG)
   val quorumRequestTimeoutMs = getInt(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG)
   val quorumRetryBackoffMs = getInt(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG)
+
+  // elastic stream inject start
+  /** ********* Elastic stream Configuration *********/
+  val elasticStreamEndpoint = getString(KafkaConfig.ElasticStreamEndpointProp)
+  val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
+  val elasticStreamReplicaCount = getInt(KafkaConfig.ElasticStreamReplicaCountProp)
+  // elastic stream inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
     dynamicConfig.addReconfigurable(reconfigurable)

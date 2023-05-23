@@ -519,6 +519,7 @@ class LogManager(logDirs: Seq[File],
   private def fetchLogConfig(topicName: String): LogConfig = {
     // ensure consistency between default config and overrides
     val defaultConfig = currentDefaultConfig
+    // TODO: Topic dimension replicaCount
     fetchTopicConfigOverrides(defaultConfig, Set(topicName)).values.headOption.getOrElse(defaultConfig)
   }
 

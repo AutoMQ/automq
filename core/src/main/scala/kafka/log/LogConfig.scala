@@ -113,6 +113,10 @@ case class LogConfig(props: java.util.Map[_, _], overriddenConfigs: Set[String] 
   val FollowerReplicationThrottledReplicas = getList(LogConfig.FollowerReplicationThrottledReplicasProp)
   val messageDownConversionEnable = getBoolean(LogConfig.MessageDownConversionEnableProp)
 
+  // elastic stream inject start
+  val replicaCount = getInt(LogConfig.ReplicaCountProp)
+  // elastic stream inject end
+
   class RemoteLogConfig {
     val remoteStorageEnable = getBoolean(LogConfig.RemoteLogStorageEnableProp)
 
@@ -226,6 +230,11 @@ object LogConfig {
   // Leave these out of TopicConfig for now as they are replication quota configs
   val LeaderReplicationThrottledReplicasProp = "leader.replication.throttled.replicas"
   val FollowerReplicationThrottledReplicasProp = "follower.replication.throttled.replicas"
+
+  // elastic stream inject start
+  val ReplicaCountProp = "replica.count"
+  val ReplicaCountDoc = "The number of replicas for this topic."
+  // elastic stream inject end
 
   val SegmentSizeDoc = TopicConfig.SEGMENT_BYTES_DOC
   val SegmentMsDoc = TopicConfig.SEGMENT_MS_DOC
@@ -389,6 +398,11 @@ object LogConfig {
       .defineInternal(RemoteLogStorageEnableProp, BOOLEAN, Defaults.RemoteLogStorageEnable, null, MEDIUM, RemoteLogStorageEnableDoc)
       .defineInternal(LocalLogRetentionMsProp, LONG, Defaults.LocalRetentionMs, atLeast(-2), MEDIUM, LocalLogRetentionMsDoc)
       .defineInternal(LocalLogRetentionBytesProp, LONG, Defaults.LocalRetentionBytes, atLeast(-2), MEDIUM, LocalLogRetentionBytesDoc)
+
+    // elastic stream inject start
+    logConfigDef
+      .define(ReplicaCountProp, INT, 1, HIGH, ReplicaCountDoc)
+    // elastic stream inject end
 
     logConfigDef
   }
@@ -559,6 +573,11 @@ object LogConfig {
     logProps.put(MessageTimestampTypeProp, kafkaConfig.logMessageTimestampType.name)
     logProps.put(MessageTimestampDifferenceMaxMsProp, kafkaConfig.logMessageTimestampDifferenceMaxMs: java.lang.Long)
     logProps.put(MessageDownConversionEnableProp, kafkaConfig.logMessageDownConversionEnable: java.lang.Boolean)
+
+    // elastic stream inject start
+    logProps.put(ReplicaCountProp, kafkaConfig.elasticStreamReplicaCount)
+    // elastic stream inject end
+
     logProps
   }
 

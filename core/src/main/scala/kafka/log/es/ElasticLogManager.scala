@@ -18,7 +18,8 @@
 package kafka.log.es
 
 import kafka.log._
-import kafka.server.LogDirFailureChannel
+import kafka.log.es.ElasticLogManager.NAMESPACE
+import kafka.server.{KafkaConfig, LogDirFailureChannel}
 import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
@@ -41,7 +42,7 @@ class ElasticLogManager(val client: Client) {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig): ElasticLog = {
     // TODO: add log close hook, remove closed elastic log
-    val elasticLog = ElasticLog(client, dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
+    val elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
     elasticLogs.put(topicPartition, elasticLog)
     elasticLog
   }
@@ -60,11 +61,39 @@ class ElasticLogManager(val client: Client) {
 }
 
 object ElasticLogManager {
-  val Default = new ElasticLogManager(new ElasticRedisClient())
+  private val ES_ENDPOINT_PREFIX = "es://"
+  private val MEMORY_ENDPOINT_PREFIX = "memory://"
+  private val REDIS_ENDPOINT_PREFIX = "redis://"
 
-  def getElasticLog(topicPartition: TopicPartition): ElasticLog = Default.elasticLogs.get(topicPartition)
+  var INSTANCE: Option[ElasticLogManager] = None
+  var NAMESPACE = ""
 
-  def getAllElasticLogs: Iterable[ElasticLog] = Default.elasticLogs.asScala.values
+  def init(config: KafkaConfig, clusterId: String): Unit = {
+    val endpoint = config.elasticStreamEndpoint
+    if (endpoint == null) {
+      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+    }
+    if (endpoint.startsWith(ES_ENDPOINT_PREFIX)) {
+      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+    } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
+      INSTANCE = Some(new ElasticLogManager(new MemoryClient()))
+    } else if (endpoint.startsWith(REDIS_ENDPOINT_PREFIX)) {
+      INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient()))
+    } else {
+      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+    }
+
+    val namespace = config.elasticStreamNamespace
+    NAMESPACE = if (namespace == null || namespace.isEmpty) {
+      "_kafka_" + clusterId
+    } else {
+      namespace
+    }
+  }
+
+  def getElasticLog(topicPartition: TopicPartition): ElasticLog = INSTANCE.get.elasticLogs.get(topicPartition)
+
+  def getAllElasticLogs: Iterable[ElasticLog] = INSTANCE.get.elasticLogs.asScala.values
 
   def getLog(dir: File,
              config: LogConfig,
@@ -75,10 +104,10 @@ object ElasticLogManager {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
              numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): ElasticLog = {
-    Default.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
+    INSTANCE.get.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
   }
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {
-    Default.newSegment(topicPartition, baseOffset, time, fileSuffix)
+    INSTANCE.get.newSegment(topicPartition, baseOffset, time, fileSuffix)
   }
 }

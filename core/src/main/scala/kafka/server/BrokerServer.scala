@@ -26,6 +26,7 @@ import kafka.cluster.Broker.ServerInfo
 import kafka.coordinator.group.{GroupCoordinator, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
+import kafka.log.es.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.security.CredentialProvider
@@ -197,6 +198,10 @@ class BrokerServer(
       logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
+
+      // elastic stream inject start
+      ElasticLogManager.init(config, clusterId)
+      // elastic stream inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
