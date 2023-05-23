@@ -49,10 +49,13 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.OptionalLong;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 
 public class ElasticLogFileRecords extends FileRecords {
     private final ElasticStreamSlice streamSegment;
     private final File file;
+    // Inflight append result.
+    private volatile CompletableFuture<?> lastAppendFuture = CompletableFuture.completedFuture(null);
 
     public ElasticLogFileRecords(File file, ElasticStreamSlice streamSegment) {
         super(0, Integer.MAX_VALUE, false);
@@ -109,14 +112,22 @@ public class ElasticLogFileRecords extends FileRecords {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
         int appendSize = records.sizeInBytes();
-        streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
+        lastAppendFuture = streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
         size.getAndAdd(appendSize);
         return appendSize;
     }
 
     @Override
     public void flush() throws IOException {
-        //TODO: await all async append complete
+        try {
+            asyncFlush().get();
+        } catch (Throwable e) {
+            throw new IOException(e);
+        }
+    }
+
+    public CompletableFuture<Void> asyncFlush() {
+        return this.lastAppendFuture.thenApply(rst -> null);
     }
 
     @Override

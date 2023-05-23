@@ -37,6 +37,13 @@ class ElasticUnifiedLog(logStartOffset: Long,
                         _topicId: Option[Uuid])
   extends UnifiedLog(logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
     leaderEpochCache, producerStateManager, _topicId, false) {
+
+  var confirmOffsetChangeListener: Option[() => Unit] = None
+
+  elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
+  def confirmOffset(): LogOffsetMetadata = {
+    elasticLog.confirmOffset.get()
+  }
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
     val deletedSegments = elasticLog.replaceSegments(newSegments, oldSegments)
     deleteProducerSnapshots(deletedSegments, asyncDelete = true)

@@ -16,9 +16,6 @@
  */
 package kafka.cluster
 
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import java.util.Optional
-import java.util.concurrent.CompletableFuture
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -31,21 +28,23 @@ import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
 import kafka.utils.CoreUtils.{inReadLock, inWriteLock}
 import kafka.utils._
 import kafka.zookeeper.ZooKeeperClientException
-import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
-import org.apache.kafka.common.message.{DescribeProducersResponseData, FetchResponseData}
 import org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.EpochEndOffset
+import org.apache.kafka.common.message.{DescribeProducersResponseData, FetchResponseData}
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record.{MemoryRecords, RecordBatch}
-import org.apache.kafka.common.requests._
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
+import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
+import org.apache.kafka.common.{IsolationLevel, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 
+import java.util.Optional
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
 
@@ -391,6 +390,13 @@ class Partition(val topicPartition: TopicPartition,
       val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId)
       maybeLog = Some(log)
       updateHighWatermark(log)
+      // elastic stream inject start
+      log match {
+        case elasticUnifiedLog: ElasticUnifiedLog =>
+          elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
+        case _ =>
+      }
+      // elastic stream inject end
       log
     } finally {
       logManager.finishedInitializingLog(topicPartition, maybeLog)
@@ -1013,6 +1019,14 @@ class Partition(val topicPartition: TopicPartition,
         newHighWatermark = replicaState.logEndOffsetMetadata
       }
     }
+    // elastic stream inject start
+    // move high watermark based on log confirm offset to prevent ack inflight record.
+    leaderLog match {
+      case elasticLog: ElasticUnifiedLog =>
+        newHighWatermark = elasticLog.confirmOffset()
+      case _ =>
+    }
+    // elastic stream inject end
 
     leaderLog.maybeIncrementHighWatermark(newHighWatermark) match {
       case Some(oldHighWatermark) =>
@@ -1033,6 +1047,22 @@ class Partition(val topicPartition: TopicPartition,
         false
     }
   }
+
+  // elastic stream inject start
+  /**
+   * Only log confirm offset move forward, then the high watermark can move forward.
+   * So we need to try complete the delayed requests(ack to produce), after confirm offset move forward.
+   */
+  private def handleLeaderConfirmOffsetMove(): Unit = {
+    leaderLogIfLocal match {
+      case Some(leaderLog) =>
+        if (maybeIncrementLeaderHW(leaderLog)) {
+          tryCompleteDelayedRequests()
+        }
+      case None =>
+    }
+  }
+  // elastic stream inject end
 
   /**
    * The low watermark offset value, calculated only if the local replica is the partition leader

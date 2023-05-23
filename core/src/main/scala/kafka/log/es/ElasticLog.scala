@@ -24,6 +24,7 @@ import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
 import sdk.elastic.stream.api
 import sdk.elastic.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
@@ -31,6 +32,7 @@ import sdk.elastic.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.util
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -41,22 +43,23 @@ import scala.jdk.CollectionConverters._
  * for a given segment.
  *
  * NOTE: this class is not thread-safe, and it relies on the thread safety provided by the Log class.
- * @param metaStream The meta stream
- * @param streamManager The stream manager
- * @param streamSliceManager The stream slice manager
- * @param producerStateManager The producer state manager
- * @param segmentMap Map of baseOffset to segment. It is generally consistent with the 'segments'. We use it rather than 'segments' to persist segments' info to avoid errors when 1. a new segment is created but has not been added to 'segments'; 2. an existing segment is deleted. 3. the new segment is added to 'segments'.
- * @param partitionMeta The partition meta
+ *
+ * @param metaStream                The meta stream
+ * @param streamManager             The stream manager
+ * @param streamSliceManager        The stream slice manager
+ * @param producerStateManager      The producer state manager
+ * @param segmentMap                Map of baseOffset to segment. It is generally consistent with the 'segments'. We use it rather than 'segments' to persist segments' info to avoid errors when 1. a new segment is created but has not been added to 'segments'; 2. an existing segment is deleted. 3. the new segment is added to 'segments'.
+ * @param partitionMeta             The partition meta
  * @param leaderEpochCheckpointMeta The leader epoch checkpoint meta
- * @param _dir The directory in which log segments are created.
- * @param _config The log configuration settings.
- * @param segments The non-empty log segments recovered from disk
- * @param nextOffsetMetadata The offset where the next message could be appended
- * @param scheduler The thread pool scheduler used for background actions
- * @param time The time instance used for checking the clock
- * @param topicPartition The topic partition associated with this log
- * @param logDirFailureChannel The LogDirFailureChannel instance to asynchronously handle Log dir failure
- * @param _initStartOffset The start offset of the log. Only used for log-startOffset initialization
+ * @param _dir                      The directory in which log segments are created.
+ * @param _config                   The log configuration settings.
+ * @param segments                  The non-empty log segments recovered from disk
+ * @param nextOffsetMetadata        The offset where the next message could be appended
+ * @param scheduler                 The thread pool scheduler used for background actions
+ * @param time                      The time instance used for checking the clock
+ * @param topicPartition            The topic partition associated with this log
+ * @param logDirFailureChannel      The LogDirFailureChannel instance to asynchronously handle Log dir failure
+ * @param _initStartOffset          The start offset of the log. Only used for log-startOffset initialization
  */
 class ElasticLog(val metaStream: api.Stream,
                  val streamManager: ElasticLogStreamManager,
@@ -75,9 +78,12 @@ class ElasticLog(val metaStream: api.Stream,
                  logDirFailureChannel: LogDirFailureChannel,
                  val _initStartOffset: Long = 0,
                  val segmentEventListener: ElasticEventListener
-) extends LocalLog(_dir, _config, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
+                ) extends LocalLog(_dir, _config, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
 
   import kafka.log.es.ElasticLog._
+
+  var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
+  var confirmOffsetChangeListener: Option[() => Unit] = None
 
   this.logIdent = s"[ElasticLog partition=$topicPartition] "
 
@@ -130,7 +136,7 @@ class ElasticLog(val metaStream: api.Stream,
 
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
-    createAndSaveSegment(metaStream, segmentMap, segmentEventListener, suffix)( baseOffset, _dir, config, streamSliceManager, time)
+    createAndSaveSegment(metaStream, segmentMap, segmentEventListener, suffix)(baseOffset, _dir, config, streamSliceManager, time)
   }
 
   private def persistLogMeta(): Unit = {
@@ -139,6 +145,23 @@ class ElasticLog(val metaStream: api.Stream,
 
   private def persistPartitionMeta(): Unit = {
     persistPartitionMetaInStream(metaStream, partitionMeta)
+  }
+
+
+  override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
+    val activeSegment = segments.activeSegment;
+    activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
+      shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
+    updateLogEndOffset(lastOffset + 1)
+    activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
+      confirmOffset.synchronized {
+        val offset = confirmOffset.get()
+        if (offset.messageOffset < lastOffset + 1) {
+          confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
+          confirmOffsetChangeListener.map(_.apply())
+        }
+      }
+    })
   }
 
   override private[log] def flush(offset: Long): Unit = {
@@ -263,7 +286,7 @@ object ElasticLog extends Logging {
       (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
     }
     if (snapshotsMap.nonEmpty) {
-        info(s"loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
+      info(s"loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
     } else {
       info(s"loaded no producer snapshots")
     }
@@ -332,7 +355,7 @@ object ElasticLog extends Logging {
       persistMeta(metaStream, MetaKeyValue.of(LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(newMeta.encode())))
       newMeta
     } else {
-        leaderEpochCheckpointMetaOpt.get
+      leaderEpochCheckpointMetaOpt.get
     }
     info(s"loaded leader epoch checkpoint with ${leaderEpochCheckpointMeta.entries.size} entries")
     if (!leaderEpochCheckpointMeta.entries.isEmpty) {
@@ -400,7 +423,7 @@ object ElasticLog extends Logging {
    * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
    */
   def createAndSaveSegment(metaStream: api.Stream, segmentMap: collection.concurrent.Map[Long, ElasticLogSegment], segmentEventListener: ElasticEventListener, suffix: String = "")(baseOffset: Long, dir: File,
-      config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+                                                                                                                                                                                    config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }
@@ -451,7 +474,7 @@ object ElasticLog extends Logging {
         case ElasticLog.PRODUCER_SNAPSHOTS_META_KEY =>
           metaMap.put(kv._1, ElasticPartitionProducerSnapshotsMeta.decode(kv._2))
         case ElasticLog.LEADER_EPOCH_CHECKPOINT_KEY =>
-            metaMap.put(kv._1, ElasticLeaderEpochCheckpointMeta.decode(kv._2))
+          metaMap.put(kv._1, ElasticLeaderEpochCheckpointMeta.decode(kv._2))
         case _ =>
           error(s"unknown meta key: ${kv._1}")
       }

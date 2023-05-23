@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
+import java.util.concurrent.CompletableFuture
 import scala.math._
 
 
@@ -38,6 +39,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         rollJitterMs: Long,
                         time: Time,
                         val logListener: ElasticEventListener) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
+
   override def offsetIndex: OffsetIndex = offsetIdx
 
   override def timeIndex: TimeIndex = timeIdx
@@ -54,6 +56,10 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   override def append(largestOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
     super.append(largestOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records)
     meta.lastModifiedTimestamp(System.currentTimeMillis())
+  }
+
+  def asyncLogFlush(): CompletableFuture[Void] = {
+    log.asyncFlush()
   }
 
   @threadsafe

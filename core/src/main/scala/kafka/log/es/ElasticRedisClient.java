@@ -25,6 +25,8 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticRedisClient implements Client {
@@ -32,6 +34,7 @@ public class ElasticRedisClient implements Client {
     private final JedisPooled jedis = new JedisPooled("localhost", 6379);
     private final StreamClient streamClient = new StreamClientImpl(jedis);
     private final KVClient kvClient = new KVClientImpl(jedis);
+    private final ExecutorService executors = Executors.newSingleThreadExecutor();
 
     @Override
     public StreamClient streamClient() {
@@ -44,7 +47,7 @@ public class ElasticRedisClient implements Client {
     }
 
 
-    static class StreamImpl implements Stream {
+    class StreamImpl implements Stream {
         private static final String STREAM_CONTENT_PREFIX_IN_REDIS = "S_";
         private static final String STREAM_CONTENT_RECORD_MAP_PREFIX_IN_REDIS = STREAM_CONTENT_PREFIX_IN_REDIS + "RM_";
         private static final String STREAM_CONTENT_NEXT_OFFSET_PREFIX_IN_REDIS = STREAM_CONTENT_PREFIX_IN_REDIS + "NO_";
@@ -89,10 +92,19 @@ public class ElasticRedisClient implements Client {
             long baseOffset = nextOffsetAlloc.getAndAdd(recordBatch.count());
             RecordBatchWithContextWrapper wrapper = new RecordBatchWithContextWrapper(recordBatch, baseOffset);
             recordMap.put(baseOffset, wrapper);
-            this.jedis.hset(recordMapKey.getBytes(StandardCharsets.UTF_8), String.valueOf(baseOffset).getBytes(StandardCharsets.UTF_8), wrapper.encode());
-            this.jedis.set(offsetKey, String.valueOf(nextOffsetAlloc.get()));
-            log.info("[stream {}] saved record batch with baseOffset: {}, next Offset is: {}", streamId, baseOffset, nextOffsetAlloc.get());
-            return CompletableFuture.completedFuture(() -> baseOffset);
+            CompletableFuture<AppendResult> cf = new CompletableFuture<>();
+            executors.submit(() -> {
+                try {
+                    Thread.sleep(2);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                this.jedis.hset(recordMapKey.getBytes(StandardCharsets.UTF_8), String.valueOf(baseOffset).getBytes(StandardCharsets.UTF_8), wrapper.encode());
+                this.jedis.set(offsetKey, String.valueOf(nextOffsetAlloc.get()));
+                log.info("[stream {}] saved record batch with baseOffset: {}, next Offset is: {}", streamId, baseOffset, nextOffsetAlloc.get());
+                cf.complete(() -> baseOffset);
+            });
+            return cf;
         }
 
         @Override
@@ -123,7 +135,7 @@ public class ElasticRedisClient implements Client {
         }
     }
 
-    static class StreamClientImpl implements StreamClient {
+    class StreamClientImpl implements StreamClient {
         private static final String STREAM_PREFIX_IN_REDIS = "NID_S";
         private final AtomicLong streamIdAlloc;
         private final JedisPooled jedis;
