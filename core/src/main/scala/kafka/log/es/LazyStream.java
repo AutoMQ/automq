@@ -24,7 +24,6 @@ import sdk.elastic.stream.api.OpenStreamOptions;
 import sdk.elastic.stream.api.RecordBatch;
 import sdk.elastic.stream.api.Stream;
 import sdk.elastic.stream.api.StreamClient;
-import sdk.elastic.stream.client.common.FutureUtil;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -83,8 +82,13 @@ public class LazyStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint) {
-        return inner.fetch(startOffset, maxBytesHint);
+    public CompletableFuture<Void> trim(long newStartOffset) {
+        return inner.trim(newStartOffset);
+    }
+
+    @Override
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        return inner.fetch(startOffset, endOffset, maxBytesHint);
     }
 
     @Override
@@ -136,7 +140,12 @@ public class LazyStream implements Stream {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint) {
+        public CompletableFuture<Void> trim(long newStartOffset) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
             return CompletableFuture.completedFuture(Collections::emptyList);
         }
 

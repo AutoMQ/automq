@@ -1,17 +1,5 @@
 package kafka.log.es;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.JedisPooled;
@@ -26,6 +14,18 @@ import sdk.elastic.stream.api.RecordBatch;
 import sdk.elastic.stream.api.RecordBatchWithContext;
 import sdk.elastic.stream.api.Stream;
 import sdk.elastic.stream.api.StreamClient;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticRedisClient implements Client {
     private static final Logger log = LoggerFactory.getLogger(ElasticRedisClient.class);
@@ -49,11 +49,11 @@ public class ElasticRedisClient implements Client {
         private static final String STREAM_CONTENT_RECORD_MAP_PREFIX_IN_REDIS = STREAM_CONTENT_PREFIX_IN_REDIS + "RM_";
         private static final String STREAM_CONTENT_NEXT_OFFSET_PREFIX_IN_REDIS = STREAM_CONTENT_PREFIX_IN_REDIS + "NO_";
         private final AtomicLong nextOffsetAlloc;
-        private final NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
         private final long streamId;
         private final String recordMapKey;
         private final String offsetKey;
         private final JedisPooled jedis;
+        private NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
 
         public StreamImpl(JedisPooled jedis, long streamId) {
             this.jedis = jedis;
@@ -96,15 +96,20 @@ public class ElasticRedisClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, int maxSizeHint) {
-            Optional<RecordBatchWithContext> opt = Optional.ofNullable(recordMap.floorEntry(startOffset)).map(Map.Entry::getValue).filter(rb -> rb.lastOffset() > startOffset);
-            if (opt.isPresent()) {
-                log.info("[stream {}] fetching from startOffset {} with maxSizeHint {}, baseOffset is {}",streamId, startOffset, maxSizeHint, opt.get().baseOffset());
-                return CompletableFuture.completedFuture(() -> Collections.singletonList(opt.get()));
-            } else {
-                log.info("[stream {}] fetching from startOffset {} with maxSizeHint {}, no record batch found", streamId, startOffset, maxSizeHint);
-                return CompletableFuture.completedFuture(Collections::emptyList);
-            }
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
+            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(startOffset, endOffset).values());
+            log.info("[stream {}] fetching from startOffset {} with maxSizeHint {}, baseOffset {}, recordsCount {}", streamId, startOffset, maxSizeHint, startOffset, records.size());
+            return CompletableFuture.completedFuture(() -> records);
+        }
+
+        @Override
+        public CompletableFuture<Void> trim(long newStartOffset) {
+            recordMap.headMap(newStartOffset).forEach((baseOffset, record) -> {
+                jedis.hdel(recordMapKey.getBytes(StandardCharsets.UTF_8), String.valueOf(baseOffset).getBytes(StandardCharsets.UTF_8));
+                log.info("[stream {}] trim record batch with baseOffset: {}", streamId, baseOffset);
+            });
+            recordMap = new ConcurrentSkipListMap<>(recordMap.tailMap(newStartOffset));
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override
@@ -128,14 +133,15 @@ public class ElasticRedisClient implements Client {
             long nextStreamId = Optional.ofNullable(this.jedis.get(STREAM_PREFIX_IN_REDIS)).map(Long::parseLong).orElse(0L);
             this.streamIdAlloc = new AtomicLong(nextStreamId);
         }
+
         @Override
         public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions createStreamOptions) {
             return CompletableFuture.completedFuture(streamIdAlloc.getAndIncrement())
-                .thenApply(streamId -> {
-                log.info("creating stream {}", streamId);
-                jedis.set(STREAM_PREFIX_IN_REDIS, String.valueOf(streamIdAlloc.get()));
-                return new StreamImpl(jedis, streamId);
-            });
+                    .thenApply(streamId -> {
+                        log.info("creating stream {}", streamId);
+                        jedis.set(STREAM_PREFIX_IN_REDIS, String.valueOf(streamIdAlloc.get()));
+                        return new StreamImpl(jedis, streamId);
+                    });
         }
 
         @Override

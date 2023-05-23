@@ -30,7 +30,7 @@ import sdk.elastic.stream.api.Stream;
 import sdk.elastic.stream.api.StreamClient;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +57,7 @@ public class MemoryClient implements Client {
 
     static class StreamImpl implements Stream {
         private final AtomicLong nextOffsetAlloc = new AtomicLong();
-        private final NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
+        private NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
         private final long streamId;
 
         public StreamImpl(long streamId) {
@@ -87,13 +87,15 @@ public class MemoryClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, int maxSizeHint) {
-            Optional<RecordBatchWithContext> opt = Optional.ofNullable(recordMap.floorEntry(startOffset)).map(Map.Entry::getValue).filter(rb -> rb.lastOffset() > startOffset);
-            if (opt.isPresent()) {
-                return CompletableFuture.completedFuture(() -> Collections.singletonList(opt.get()));
-            } else {
-                return CompletableFuture.completedFuture(Collections::emptyList);
-            }
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
+            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(startOffset, endOffset).values());
+            return CompletableFuture.completedFuture(() -> records);
+        }
+
+        @Override
+        public CompletableFuture<Void> trim(long newStartOffset) {
+            recordMap = new ConcurrentSkipListMap<>(recordMap.tailMap(newStartOffset));
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override

@@ -94,8 +94,7 @@ public class ElasticLogFileRecords extends FileRecords {
     }
 
     public Records read(int position, int fetchSize) throws IOException {
-        // TODO: maxSizeHint 语义，是否真满足 maxSize
-        return new BatchIteratorRecordsAdaptor(position, fetchSize);
+        return new BatchIteratorRecordsAdaptor(position, Math.min(sizeInBytes() - position, fetchSize));
     }
 
     @Override
@@ -189,6 +188,7 @@ public class ElasticLogFileRecords extends FileRecords {
     }
 
     static class StreamSegmentInputStream implements LogInputStream<FileLogInputStream.FileChannelRecordBatch> {
+        private static final int FETCH_BATCH_SIZE = 64 * 1024;
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final int end;
         private final Queue<FileChannelRecordBatchWrapper> remaining = new LinkedList<>();
@@ -212,7 +212,8 @@ public class ElasticLogFileRecords extends FileRecords {
                 if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
                     return null;
                 try {
-                    FetchResult rst = elasticLogFileRecords.streamSegment.fetch(position, 1).get();
+                    // TOD: endoffset
+                    FetchResult rst = elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE).get();
                     rst.recordBatchList().forEach(streamRecord -> {
                         for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
                             remaining.offer(new FileChannelRecordBatchWrapper(r, position));

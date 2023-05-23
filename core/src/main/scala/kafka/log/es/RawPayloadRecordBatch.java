@@ -17,12 +17,11 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.KeyValue;
 import sdk.elastic.stream.api.RecordBatch;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
-import java.util.List;
+import java.util.Map;
 
 public class RawPayloadRecordBatch implements RecordBatch {
     private final ByteBuffer rawPayload;
@@ -46,8 +45,8 @@ public class RawPayloadRecordBatch implements RecordBatch {
     }
 
     @Override
-    public List<KeyValue> properties() {
-        return Collections.emptyList();
+    public Map<String, String> properties() {
+        return Collections.emptyMap();
     }
 
     @Override

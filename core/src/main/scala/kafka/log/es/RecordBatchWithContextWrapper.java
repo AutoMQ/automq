@@ -17,11 +17,11 @@
 
 package kafka.log.es;
 
-import java.nio.ByteBuffer;
-import java.util.List;
-import sdk.elastic.stream.api.KeyValue;
 import sdk.elastic.stream.api.RecordBatch;
 import sdk.elastic.stream.api.RecordBatchWithContext;
+
+import java.nio.ByteBuffer;
+import java.util.Map;
 
 public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
     private final RecordBatch recordBatch;
@@ -53,7 +53,7 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
     }
 
     @Override
-    public List<KeyValue> properties() {
+    public Map<String, String> properties() {
         return recordBatch.properties();
     }
 

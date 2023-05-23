@@ -19,14 +19,13 @@ package kafka.log.es;
 
 import sdk.elastic.stream.api.AppendResult;
 import sdk.elastic.stream.api.FetchResult;
-import sdk.elastic.stream.api.KeyValue;
 import sdk.elastic.stream.api.RecordBatch;
 import sdk.elastic.stream.api.RecordBatchWithContext;
 import sdk.elastic.stream.api.Stream;
-import sdk.elastic.stream.client.common.FutureUtil;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -72,8 +71,8 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, int maxBytesHint) {
-        return stream.fetch(startOffsetInStream + startOffset, maxBytesHint).thenApply(FetchResultWrapper::new);
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        return stream.fetch(startOffsetInStream + startOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new);
     }
 
     @Override
@@ -170,7 +169,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
         }
 
         @Override
-        public List<KeyValue> properties() {
+        public Map<String, String> properties() {
             return inner.properties();
         }
 

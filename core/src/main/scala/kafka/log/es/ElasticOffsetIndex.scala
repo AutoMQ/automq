@@ -69,7 +69,7 @@ class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier
 
   def parseEntry(n: Int): OffsetPosition = {
     val startOffset = n.toLong * entrySize
-    val rst = stream.fetch(startOffset, entrySize).get()
+    val rst = stream.fetch(startOffset, startOffset +  entrySize).get()
     if (rst.recordBatchList().size() == 0) {
       throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
     }

@@ -26,7 +26,7 @@ import java.nio.ByteBuffer
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(_file: File,streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
+class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
   extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
@@ -86,7 +86,7 @@ class ElasticTransactionIndex(_file: File,streamSliceSupplier: StreamSliceSuppli
           return queue.dequeue()
         }
         try {
-          val records = stream.fetch(position, 1024).get().recordBatchList()
+          val records = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).get().recordBatchList()
           records.forEach(recordBatch => {
             val readBuf = Unpooled.wrappedBuffer(recordBatch.rawPayload())
             val size = readBuf.readableBytes()

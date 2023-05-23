@@ -426,7 +426,7 @@ object ElasticLog extends Logging {
     var pos = startOffset
     var done = false
     while (!done) {
-      val fetchRst = metaStream.fetch(pos, 128 * 1024).get()
+      val fetchRst = metaStream.fetch(pos, endOffset, 64 * 1024).get()
       for (recordBatch <- fetchRst.recordBatchList().asScala) {
         // TODO: catch illegal decode
         val kv = MetaKeyValue.decode(recordBatch.rawPayload())
