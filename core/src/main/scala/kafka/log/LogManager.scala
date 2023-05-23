@@ -389,12 +389,15 @@ class LogManager(logDirs: Seq[File],
               s"$logDirAbsolutePath, resetting to the base offset of the first segment", e)
         }
 
+        // elastic stream inject start
         var logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
           logDir.isDirectory && UnifiedLog.parseTopicPartitionName(logDir).topic != KafkaRaftServer.MetadataTopic)
         logsToLoad.foreach(logDir => {
           warn(s"Unexpected partition directory $logDir, expect there is no normal partition in the log directory.")
         })
         logsToLoad = Array()
+        // elastic stream inject end
+
         numTotalLogs += logsToLoad.length
         numRemainingLogs.put(dir.getAbsolutePath, logsToLoad.length)
 
@@ -941,6 +944,7 @@ class LogManager(logDirs: Seq[File],
             UnifiedLog.logDirName(topicPartition)
         }
 
+        // elastic stream inject start
         val logDir = if (!isClusterMetaPath(logDirName)) {
           new File(logDirs.head.getAbsolutePath, logDirName)
         } else {
@@ -951,6 +955,7 @@ class LogManager(logDirs: Seq[File],
             .getOrElse(Failure(new KafkaStorageException("No log directories available. Tried " + logDirs.map(_.getAbsolutePath).mkString(", "))))
             .get // If Failure, will throw
         }
+        // elastic stream inject end
 
         val config = fetchLogConfig(topicPartition.topic)
         val log = UnifiedLog(
@@ -1401,9 +1406,11 @@ object LogManager {
       interBrokerProtocolVersion = config.interBrokerProtocolVersion)
   }
 
+  // elastic stream inject start
   def isClusterMetaPath(dirName: String): Boolean = {
     // FIXME: check file path topic part
     dirName.contains(Topic.CLUSTER_METADATA_TOPIC_NAME)
   }
+  // elastic stream inject end
 
 }

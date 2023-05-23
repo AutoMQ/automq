@@ -387,6 +387,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
    def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long] =
      offsetIndex.fetchUpperBoundOffset(startOffsetPosition, fetchSize).map(_.offset)
 
+  // elastic stream inject start
   /**
    * Run recovery on the given segment. This will rebuild the index from the log file and lop off any invalid bytes
    * from the end of the log and index.
@@ -452,6 +453,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
     timeIndex.trimToValidSize()
     truncated
   }
+  // elastic stream inject end
 
   private def loadLargestTimestamp(): Unit = {
     // Get the last time index entry. If the time index is empty, it will return (-1, baseOffset)
@@ -759,6 +761,7 @@ object LogSegment {
     UnifiedLog.deleteFileIfExists(UnifiedLog.logFile(dir, baseOffset, fileSuffix))
   }
 
+  // elastic stream inject start
   def isClusterMetaLogSegment(dir: File): Boolean = {
     // FIXME: check file path topic part
     dir.getAbsolutePath.contains(Topic.CLUSTER_METADATA_TOPIC_NAME);
@@ -768,6 +771,7 @@ object LogSegment {
     // TODO: impl, reuse LocalLog#parseTopicPartitionName
     LocalLog.parseTopicPartitionName(dir)
   }
+  // elastic stream inject end
 }
 
 object LogFlushStats extends KafkaMetricsGroup {

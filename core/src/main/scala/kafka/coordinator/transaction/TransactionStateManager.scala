@@ -461,9 +461,11 @@ class TransactionStateManager(brokerId: Int,
                 buffer.clear()
                 fileRecords.readInto(buffer, 0)
                 MemoryRecords.readableRecords(buffer)
+              // elastic stream inject start
               // match other cases, like BatchIteratorRecordsAdaptor
               case _ =>
                 fetchDataInfo.records
+              // elastic stream inject end
             }
 
             memRecords.batches.forEach { batch =>

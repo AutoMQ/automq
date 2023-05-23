@@ -16,6 +16,9 @@
  */
 package kafka.cluster
 
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import java.util.Optional
+import java.util.concurrent.CompletableFuture
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -28,26 +31,23 @@ import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
 import kafka.utils.CoreUtils.{inReadLock, inWriteLock}
 import kafka.utils._
 import kafka.zookeeper.ZooKeeperClientException
+import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
+import org.apache.kafka.common.message.{DescribeProducersResponseData, FetchResponseData}
 import org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.EpochEndOffset
-import org.apache.kafka.common.message.{DescribeProducersResponseData, FetchResponseData}
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record.{MemoryRecords, RecordBatch}
-import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
 import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.common.{IsolationLevel, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 
-import java.util.Optional
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.locks.ReentrantReadWriteLock
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
-
 trait AlterPartitionListener {
   def markIsrExpand(): Unit
   def markIsrShrink(): Unit
@@ -301,7 +301,9 @@ class Partition(val topicPartition: TopicPartition,
   newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
 
+  // elastic stream inject start
   private var closed: Boolean = false
+  // elastic stream inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
 
@@ -1217,10 +1219,12 @@ class Partition(val topicPartition: TopicPartition,
   def appendRecordsToLeader(records: MemoryRecords, origin: AppendOrigin, requiredAcks: Int,
                             requestLocal: RequestLocal): LogAppendInfo = {
     val (info, leaderHWIncremented) = inReadLock(leaderIsrUpdateLock) {
+      // elastic stream inject start
       if (closed) {
         throw new NotLeaderOrFollowerException("Leader %d for partition %s on broker %d is already closed"
           .format(localBrokerId, topicPartition, localBrokerId))
       }
+      // elastic stream inject end
       leaderLogIfLocal match {
         case Some(leaderLog) =>
           val minIsr = leaderLog.config.minInSyncReplicas
