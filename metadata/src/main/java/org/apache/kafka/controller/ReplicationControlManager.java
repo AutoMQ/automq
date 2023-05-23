@@ -206,10 +206,12 @@ public class ReplicationControlManager {
             return this;
         }
 
+        // elastic stream inject start
         public Builder setQuorumController(Controller quorumController) {
             this.quorumController = quorumController;
             return this;
         }
+        // elastic stream inject end
 
         ReplicationControlManager build() {
             if (configurationControl == null) {
@@ -238,7 +240,9 @@ public class ReplicationControlManager {
                 clusterControl,
                 createTopicPolicy,
                 featureControl,
+                // elastic stream inject start
                 quorumController
+                // elastic stream inject end
             );
         }
     }
@@ -1717,10 +1721,10 @@ public class ReplicationControlManager {
 
             // Note: if brokerToRemove was passed as NO_LEADER, this is a no-op (the new
             // target ISR will be the same as the old one).
-            // builder.setTargetIsr(Replicas.toList(
-            //    Replicas.copyWithout(partition.isr, brokerToRemove)));
 
             // elastic stream inject start
+            // builder.setTargetIsr(Replicas.toList(
+            //    Replicas.copyWithout(partition.isr, brokerToRemove)));
             // TODO: change builder args set and build func logic => 目前逻辑符合预期，需要添加单测确保后续也一致
             if (brokerToAdd != -1) {
                 // new broker is unfenced(available), then the broker take no leader partition

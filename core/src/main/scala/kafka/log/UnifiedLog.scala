@@ -1832,12 +1832,13 @@ object UnifiedLog extends Logging {
             topicId: Option[Uuid],
             keepPartitionMetadataFile: Boolean,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): UnifiedLog = {
+    // elastic stream inject start
     // create the log directory if it doesn't exist
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
     val segments = new LogSegments(topicPartition)
+
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
-    // elastic stream inject start
     if (!isClusterMetaLogSegment(dir)) {
       val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig)
       val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
@@ -1851,14 +1852,15 @@ object UnifiedLog extends Logging {
         localLog.producerStateManager,
         topicId)
     }
-    // elastic stream inject end
     Files.createDirectories(dir.toPath)
+
     val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(
       dir,
       topicPartition,
       logDirFailureChannel,
       config.recordVersion,
       s"[UnifiedLog partition=$topicPartition, dir=${dir.getParent}] ")
+    // elastic stream inject end
     val offsets = new LogLoader(
       dir,
       topicPartition,
@@ -2165,10 +2167,13 @@ object UnifiedLog extends Logging {
     LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset)
   }
 
+  // elastic stream inject start
   def isClusterMetaLogSegment(dir: File): Boolean = {
     // FIXME: check file path topic part
     dir.getAbsolutePath.contains(Topic.CLUSTER_METADATA_TOPIC_NAME);
   }
+  // elastic stream inject end
+
 }
 
 object LogMetricNames {

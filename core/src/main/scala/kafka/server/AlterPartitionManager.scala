@@ -192,7 +192,7 @@ class DefaultAlterPartitionManager(
   private def sendRequest(inflightAlterPartitionItems: Seq[AlterPartitionItem]): Unit = {
     val brokerEpoch = brokerEpochSupplier()
     val (request, topicNamesByIds) = buildRequest(inflightAlterPartitionItems, brokerEpoch)
-    debug(s"sending alterpartition to controller $request")
+    debug(s"Sending AlterPartition to controller $request")
 
     // We will not timeout AlterPartition request, instead letting it retry indefinitely
     // until a response is received, or a new LeaderAndIsr overwrites the existing isrState

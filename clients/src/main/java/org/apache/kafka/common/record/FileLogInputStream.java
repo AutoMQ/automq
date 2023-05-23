@@ -119,7 +119,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             this.batchSize = batchSize;
         }
 
-        // only for es use
+        // elastic stream inject start
         public FileChannelRecordBatch() {
             this.offset = -1;
             this.magic = -1;
@@ -127,6 +127,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             this.position = -1;
             this.batchSize = -1;
         }
+        // elastic stream inject end
 
         @Override
         public CompressionType compressionType() {

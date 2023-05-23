@@ -243,9 +243,11 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
         outputStream.write(this.buffer.duplicate());
     }
 
+    // elastic stream inject start
     public ByteBuffer buffer() {
         return this.buffer.duplicate();
     }
+    // elastic stream inject end
 
     @Override
     public boolean isTransactional() {
