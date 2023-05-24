@@ -23,7 +23,7 @@ import kafka.server.{KafkaConfig, LogDirFailureChannel}
 import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
-import sdk.elastic.stream.api.Client
+import com.automq.elasticstream.client.api.Client
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}

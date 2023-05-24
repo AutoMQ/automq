@@ -1856,7 +1856,7 @@ public class ReplicationControlManager {
                                                                ReassignablePartition target) {
 
         if (target.replicas().size() != 1) {
-            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" +tp+ "] replicas[" + target.replicas() + "]");
+            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
         }
         // TODO: is replica is the same as origin then do nothing.
         PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
@@ -1891,7 +1891,7 @@ public class ReplicationControlManager {
         topicPartitions.setTopic(topicPartition.topic());
         topicPartitions.partitions().add(topicPartition.partition());
         data.setTopicPartitions(new ElectLeadersRequestData.TopicPartitionsCollection(Collections.singletonList(topicPartitions).listIterator()));
-        quorumController.electLeaders(context,data).whenComplete((resp, ex) -> {
+        quorumController.electLeaders(context, data).whenComplete((resp, ex) -> {
             if (ex != null) {
                 log.warn("force elect partition[{}] leader fail", topicPartition, ex);
             } else {

@@ -17,7 +17,7 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.Stream;
+import com.automq.elasticstream.client.api.Stream;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;

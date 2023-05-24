@@ -17,12 +17,12 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.Stream;
+import com.automq.elasticstream.client.api.Stream;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static sdk.elastic.stream.utils.Arguments.check;
+import static com.automq.elasticstream.client.utils.Arguments.check;
 
 /**
  * Elastic log dimension stream segment manager.

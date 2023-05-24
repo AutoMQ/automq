@@ -26,8 +26,8 @@ import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
-import sdk.elastic.stream.api
-import sdk.elastic.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import com.automq.elasticstream.client.api
+import com.automq.elasticstream.client.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 
 import java.io.File
 import java.nio.ByteBuffer

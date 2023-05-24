@@ -20,6 +20,12 @@ import java.nio.charset.StandardCharsets
 buildscript {
   repositories {
     mavenCentral()
+    maven {
+      url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+      mavenContent {
+        snapshotsOnly()
+      }
+    }
   }
   apply from: "$rootDir/gradle/dependencies.gradle"
 
@@ -121,6 +127,13 @@ allprojects {
 
   repositories {
     mavenCentral()
+
+    maven {
+      url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+      mavenContent {
+        snapshotsOnly()
+      }
+    }
   }
 
   dependencyUpdates {
@@ -904,7 +917,7 @@ project(':core') {
     implementation libs.commonsCli
 
     //    implementation libs.elasticstream
-    implementation('sdk.elastic.stream:client-java:0.0.1-SNAPSHOT')
+    implementation libs.esClient
     implementation 'redis.clients:jedis:4.3.1'
 
     compileOnly libs.log4j

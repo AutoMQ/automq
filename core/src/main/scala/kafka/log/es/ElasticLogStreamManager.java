@@ -18,8 +18,8 @@
 package kafka.log.es;
 
 import java.util.Collections;
-import sdk.elastic.stream.api.Stream;
-import sdk.elastic.stream.api.StreamClient;
+import com.automq.elasticstream.client.api.Stream;
+import com.automq.elasticstream.client.api.StreamClient;
 
 import java.util.Map;
 import java.util.Optional;

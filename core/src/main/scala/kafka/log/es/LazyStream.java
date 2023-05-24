@@ -17,13 +17,13 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.AppendResult;
-import sdk.elastic.stream.api.CreateStreamOptions;
-import sdk.elastic.stream.api.FetchResult;
-import sdk.elastic.stream.api.OpenStreamOptions;
-import sdk.elastic.stream.api.RecordBatch;
-import sdk.elastic.stream.api.Stream;
-import sdk.elastic.stream.api.StreamClient;
+import com.automq.elasticstream.client.api.AppendResult;
+import com.automq.elasticstream.client.api.CreateStreamOptions;
+import com.automq.elasticstream.client.api.FetchResult;
+import com.automq.elasticstream.client.api.OpenStreamOptions;
+import com.automq.elasticstream.client.api.RecordBatch;
+import com.automq.elasticstream.client.api.Stream;
+import com.automq.elasticstream.client.api.StreamClient;
 
 import java.io.IOException;
 import java.util.Collections;

@@ -17,7 +17,7 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.RecordBatch;
+import com.automq.elasticstream.client.api.RecordBatch;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
