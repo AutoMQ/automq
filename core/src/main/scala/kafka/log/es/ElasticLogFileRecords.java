@@ -39,7 +39,7 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.common.utils.Time;
-import sdk.elastic.stream.api.FetchResult;
+import com.automq.elasticstream.client.api.FetchResult;
 
 import java.io.File;
 import java.io.IOException;

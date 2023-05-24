@@ -219,5 +219,5 @@ libs += [
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
-  elasticstream: "sdk.elastic.stream:client-java:$versions.elasticstream"
+  esClient: "com.automq.elasticstream:client:$versions.elasticstream"
 ]

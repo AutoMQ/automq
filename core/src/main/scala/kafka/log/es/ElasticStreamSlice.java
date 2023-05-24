@@ -17,9 +17,9 @@
 
 package kafka.log.es;
 
-import sdk.elastic.stream.api.AppendResult;
-import sdk.elastic.stream.api.FetchResult;
-import sdk.elastic.stream.api.RecordBatch;
+import com.automq.elasticstream.client.api.AppendResult;
+import com.automq.elasticstream.client.api.FetchResult;
+import com.automq.elasticstream.client.api.RecordBatch;
 
 import java.util.concurrent.CompletableFuture;
 
