@@ -67,12 +67,12 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   }
 
   override def renameTo(f: File): Unit = {
-    throw new UnsupportedOperationException();
+    throw new UnsupportedOperationException()
   }
 
   override def truncateTo(offset: Long): Unit = {
     // TODO: check
-    throw new UnsupportedOperationException();
+    throw new UnsupportedOperationException()
   }
 
   override protected def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {

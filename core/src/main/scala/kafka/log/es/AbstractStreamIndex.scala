@@ -27,10 +27,6 @@ import java.util.concurrent.locks.{Lock, ReentrantLock}
 
 /**
  * Implementation ref. AbstractIndex
- *
- * @param stream
- * @param baseOffset
- * @param maxIndexSize
  */
 abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
 
@@ -41,10 +37,10 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
   protected def _warmEntries: Int = 8192 / entrySize
 
   protected val lock = new ReentrantLock
-  protected val adjustedMaxIndexSize = roundDownToExactMultiple(maxIndexSize, entrySize)
+  private val adjustedMaxIndexSize = roundDownToExactMultiple(maxIndexSize, entrySize)
 
   @volatile
-  protected var _maxEntries: Int = (adjustedMaxIndexSize / entrySize)
+  protected var _maxEntries: Int = adjustedMaxIndexSize / entrySize
 
   @volatile
   protected var _entries: Int = (stream.nextOffset() / entrySize).toInt
@@ -179,7 +175,7 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
     }
   }
 
-  def roundDownToExactMultiple(number: Int, factor: Int) = factor * (number / factor)
+  def roundDownToExactMultiple(number: Int, factor: Int): Int = factor * (number / factor)
 
   protected[log] def forceUnmap(): Unit = {}
 }

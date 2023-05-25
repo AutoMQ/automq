@@ -46,6 +46,7 @@ public class ElasticPartitionMeta {
     @JsonProperty("cs")
     private boolean cleanedShutdown;
 
+    @SuppressWarnings("unused") // used by jackson
     public ElasticPartitionMeta() {}
 
     public ElasticPartitionMeta(Long startOffset, Long cleanerOffset, Long recoverOffset) {

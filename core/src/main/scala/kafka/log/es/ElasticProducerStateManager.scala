@@ -28,13 +28,7 @@ import scala.collection.mutable
 
 /**
  * ElasticProducerStateManager. Temporarily, we only persist the last snapshot.
- * @param topicPartition
- * @param logDir
- * @param maxTransactionTimeoutMs
- * @param producerStateManagerConfig
- * @param time
  * @param snapshotsMap All valid snapshots.
- * @param persistFun
  */
 class ElasticProducerStateManager(
     override val topicPartition: TopicPartition,

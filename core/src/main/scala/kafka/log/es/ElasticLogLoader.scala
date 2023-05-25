@@ -155,7 +155,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
           Some(logEndOffset)
         else {
           // wont' happen
-          throw new IllegalStateException();
+          throw new IllegalStateException()
         }
       } else None
     }

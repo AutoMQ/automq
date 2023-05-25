@@ -17,6 +17,7 @@
 
 package kafka.log.es
 
+import kafka.common.LogSegmentOffsetOverflowException
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
@@ -25,6 +26,7 @@ import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import scala.math._
 
@@ -174,9 +176,9 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     false
   }
 
-  override def lastModified = meta.lastModifiedTimestamp
+  override def lastModified: Long = meta.lastModifiedTimestamp
 
-  override def lastModified_=(ms: Long) = {
+  override def lastModified_=(ms: Long): Path = {
     meta.lastModifiedTimestamp(ms)
     null
   }

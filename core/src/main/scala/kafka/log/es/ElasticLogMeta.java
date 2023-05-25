@@ -65,10 +65,6 @@ public class ElasticLogMeta {
         }
     }
 
-    public boolean containsSegmentOnOffset(long baseOffset) {
-        return segmentMetas.stream().anyMatch(segmentMeta -> segmentMeta.baseOffset() == baseOffset);
-    }
-
     public List<ElasticStreamSegmentMeta> getSegmentMetas() {
         return segmentMetas;
     }
