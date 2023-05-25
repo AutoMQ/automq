@@ -110,7 +110,7 @@ public class MemoryClient implements Client {
     }
 
     static class StreamClientImpl implements StreamClient {
-        private AtomicLong streamIdAlloc = new AtomicLong();
+        private final AtomicLong streamIdAlloc = new AtomicLong();
 
         @Override
         public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions createStreamOptions) {
@@ -135,7 +135,7 @@ public class MemoryClient implements Client {
         @Override
         public CompletableFuture<List<KeyValue>> getKV(List<String> list) {
             List<KeyValue> rst = new LinkedList<>();
-            list.forEach(key -> rst.add(KeyValue.of(key, Optional.ofNullable(store.get(key)).map(b -> b.slice()).orElse(null))));
+            list.forEach(key -> rst.add(KeyValue.of(key, Optional.ofNullable(store.get(key)).map(ByteBuffer::slice).orElse(null))));
             return CompletableFuture.completedFuture(rst);
         }
 

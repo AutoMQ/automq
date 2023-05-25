@@ -17,6 +17,8 @@
 
 package kafka.log.es
 
+import com.automq.elasticstream.client.api
+import com.automq.elasticstream.client.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
@@ -26,8 +28,6 @@ import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
-import com.automq.elasticstream.client.api
-import com.automq.elasticstream.client.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -98,7 +98,7 @@ class ElasticLog(val metaStream: api.Stream,
     elasticLogMeta(streamManager.streams(), segmentMap.toMap)
   }
 
-  def getLogStartOffsetFromMeta: Long = partitionMeta.getStartOffset
+  private def getLogStartOffsetFromMeta: Long = partitionMeta.getStartOffset
 
   def persistLogStartOffset(): Unit = {
     if (getLogStartOffsetFromMeta == logStartOffset) {
@@ -149,7 +149,7 @@ class ElasticLog(val metaStream: api.Stream,
 
 
   override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
-    val activeSegment = segments.activeSegment;
+    val activeSegment = segments.activeSegment
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
     updateLogEndOffset(lastOffset + 1)
@@ -218,17 +218,17 @@ class ElasticLog(val metaStream: api.Stream,
     maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()
       segments.close()
-      streamManager.close();
+      streamManager.close()
     }
   }
 }
 
 object ElasticLog extends Logging {
-  val LOG_META_KEY: String = "LOG"
-  val PRODUCER_SNAPSHOTS_META_KEY: String = "PRODUCER_SNAPSHOTS"
-  val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
-  val PARTITION_META_KEY: String = "PARTITION"
-  val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
+  private val LOG_META_KEY: String = "LOG"
+  private val PRODUCER_SNAPSHOTS_META_KEY: String = "PRODUCER_SNAPSHOTS"
+  private val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
+  private val PARTITION_META_KEY: String = "PARTITION"
+  private val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
 
   def apply(client: Client, namespace: String, dir: File,
             config: LogConfig,
@@ -241,8 +241,8 @@ object ElasticLog extends Logging {
             producerStateManagerConfig: ProducerStateManagerConfig): ElasticLog = {
     this.logIdent = s"[ElasticLog partition=$topicPartition] "
 
-    val key = namespace + "/" + topicPartition.topic() + "-" + topicPartition.partition();
-    val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get();
+    val key = namespace + "/" + topicPartition.topic() + "-" + topicPartition.partition()
+    val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
 
     var partitionMeta: ElasticPartitionMeta = null
 
@@ -252,7 +252,7 @@ object ElasticLog extends Logging {
       createMetaStream(client, key, config.replicaCount)
     } else {
       val keyValue = kvList.get(0)
-      val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong();
+      val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
       // open partition meta stream
       client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().build()).get()
     }
@@ -388,14 +388,14 @@ object ElasticLog extends Logging {
     elasticLogMeta
   }
 
-  def createMetaStream(client: Client, key: String, replicaCount: Int): api.Stream = {
+  private def createMetaStream(client: Client, key: String, replicaCount: Int): api.Stream = {
     //TODO: replica count
     val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount).build()).get()
 
     // save partition meta stream id relation to PM
     val streamId = metaStream.streamId()
     info(s"created meta stream for $key, streamId: $streamId")
-    val valueBuf = ByteBuffer.allocate(8);
+    val valueBuf = ByteBuffer.allocate(8)
     valueBuf.putLong(streamId)
     valueBuf.flip()
     client.kvClient().putKV(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
@@ -413,7 +413,7 @@ object ElasticLog extends Logging {
     info(s"save log meta $logMeta")
   }
 
-  def persistMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
+  private def persistMeta(metaStream: api.Stream, metaKeyValue: MetaKeyValue): Unit = {
     metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(metaKeyValue))).get()
   }
 
@@ -422,8 +422,8 @@ object ElasticLog extends Logging {
    * For the newly created segment, the meta will immediately be saved in metaStream.
    * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
    */
-  def createAndSaveSegment(metaStream: api.Stream, segmentMap: collection.concurrent.Map[Long, ElasticLogSegment], segmentEventListener: ElasticEventListener, suffix: String = "")(baseOffset: Long, dir: File,
-                                                                                                                                                                                    config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+  private def createAndSaveSegment(metaStream: api.Stream, segmentMap: collection.concurrent.Map[Long, ElasticLogSegment], segmentEventListener: ElasticEventListener, suffix: String = "")(baseOffset: Long, dir: File,
+                                                                                                                                                                                            config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }
@@ -440,7 +440,7 @@ object ElasticLog extends Logging {
     segment
   }
 
-  def getMetas(metaStream: api.Stream): mutable.Map[String, Any] = {
+  private def getMetas(metaStream: api.Stream): mutable.Map[String, Any] = {
     val startOffset = metaStream.startOffset()
     val endOffset = metaStream.nextOffset()
     val kvMap: mutable.Map[String, ByteBuffer] = mutable.Map()

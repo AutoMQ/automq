@@ -26,7 +26,7 @@ import java.util.Set;
  */
 public class ElasticPartitionProducerSnapshotsMeta {
     public static final ElasticPartitionProducerSnapshotsMeta EMPTY = new ElasticPartitionProducerSnapshotsMeta(new HashSet<>());
-    private Set<Long> snapshots;
+    private final Set<Long> snapshots;
 
     public ElasticPartitionProducerSnapshotsMeta(Set<Long> snapshots) {
         this.snapshots = snapshots;

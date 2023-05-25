@@ -71,7 +71,7 @@ object ElasticUnifiedLog extends Logging {
                            lastOffset: Long,
                            time: Time,
                            reloadFromCleanShutdown: Boolean,
-                           logPrefix: String) = {
+                           logPrefix: String): Unit = {
     val offsetsToSnapshot = {
       if (segments.nonEmpty) {
         val lastSegmentBaseOffset = segments.lastSegment.get.baseOffset

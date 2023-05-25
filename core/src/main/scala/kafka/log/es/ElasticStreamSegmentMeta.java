@@ -71,10 +71,12 @@ public class ElasticStreamSegmentMeta {
         this.streamSuffix = streamSuffix;
     }
 
+    @SuppressWarnings("unused")
     public long createTimestamp() {
         return createTimestamp;
     }
 
+    @SuppressWarnings("unused")
     public void createTimestamp(long createTimestamp) {
         this.createTimestamp = createTimestamp;
     }
