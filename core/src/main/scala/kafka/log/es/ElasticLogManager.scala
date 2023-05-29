@@ -75,8 +75,13 @@ object ElasticLogManager {
       throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
     }
     if (endpoint.startsWith(ES_ENDPOINT_PREFIX)) {
+      val kvEndpoint = config.elasticStreamKvEndpoint;
+      if (!kvEndpoint.startsWith(ES_ENDPOINT_PREFIX)) {
+        throw new IllegalArgumentException(s"Elastic stream endpoint and kvEndpoint must be the same protocol: $endpoint $kvEndpoint")
+      }
       val streamClient = new DefaultClientBuilder()
           .endpoint(endpoint.substring(ES_ENDPOINT_PREFIX.length))
+          .kvEndpoint(kvEndpoint.substring(ES_ENDPOINT_PREFIX.length))
           .build()
       INSTANCE = Some(new ElasticLogManager(streamClient))
     } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
