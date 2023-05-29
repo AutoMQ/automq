@@ -127,7 +127,7 @@ versions += [
   zinc: "1.7.2",
   zookeeper: "3.6.3",
   zstd: "1.5.2-1",
-  elasticstream: "0.0.1-SNAPSHOT"
+  elasticstream: "1.0-SNAPSHOT"
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
