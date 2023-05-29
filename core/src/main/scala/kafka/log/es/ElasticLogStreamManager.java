@@ -35,11 +35,11 @@ public class ElasticLogStreamManager {
     /**
      * inner listener for created LazyStream
      */
-    private final LazyStreamEventListener innerListener = new LazyStreamEventListener();
+    private final LazyStreamStreamEventListener innerListener = new LazyStreamStreamEventListener();
     /**
      * outer register listener
      */
-    private ElasticEventListener outerListener;
+    private ElasticStreamEventListener outerListener;
 
     public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount) {
         this.streamClient = streamClient;
@@ -71,7 +71,7 @@ public class ElasticLogStreamManager {
         return Collections.unmodifiableMap(streamMap);
     }
 
-    public void setListener(ElasticEventListener listener) {
+    public void setListener(ElasticStreamEventListener listener) {
         this.outerListener = listener;
     }
 
@@ -79,9 +79,9 @@ public class ElasticLogStreamManager {
         // TODO: close stream recycle resource.
     }
 
-    class LazyStreamEventListener implements ElasticEventListener {
+    class LazyStreamStreamEventListener implements ElasticStreamEventListener {
         @Override
-        public void onEvent(long streamId, ElasticMetaEvent event) {
+        public void onEvent(long streamId, ElasticStreamMetaEvent event) {
             Optional.ofNullable(outerListener).ifPresent(listener -> listener.onEvent(streamId, event));
         }
     }

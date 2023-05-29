@@ -40,7 +40,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         indexIntervalBytes: Int,
                         rollJitterMs: Long,
                         time: Time,
-                        val logListener: ElasticEventListener) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
+                        val logListener: ElasticStreamEventListener) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
 
   override def offsetIndex: OffsetIndex = offsetIdx
 
@@ -151,7 +151,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     offsetIndex.reset()
     timeIndex.reset()
     txnIndex.reset()
-    logListener.onEvent(baseOffset, ElasticMetaEvent.SEGMENT_UPDATE)
+    logListener.onEvent(baseOffset, ElasticStreamMetaEvent.SEGMENT_UPDATE)
 
     recover0(producerStateManager, leaderEpochCache)
   }
@@ -168,7 +168,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def deleteIfExists(): Unit = {
-    logListener.onEvent(baseOffset, ElasticMetaEvent.SEGMENT_DELETE)
+    logListener.onEvent(baseOffset, ElasticStreamMetaEvent.SEGMENT_DELETE)
   }
 
   override def deleted(): Boolean = {
@@ -186,7 +186,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
 object ElasticLogSegment {
   def apply(dir: File, meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
-            time: Time, segmentEventListener: ElasticEventListener): ElasticLogSegment = {
+            time: Time, segmentEventListener: ElasticStreamEventListener): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(UnifiedLog.logFile(dir, baseOffset, suffix), sm.loadOrCreateSlice("log" + suffix, meta.log))

@@ -24,8 +24,8 @@ import com.automq.elasticstream.client.api.RecordBatch;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Elastic stream slices support read from in-flight write buffer.
- * Note that a ElasticStreamSlice is a logical LogSegment based on elastic stream.
+ * Elastic stream slice is a slice from elastic stream, the position of slice is start from 0.
+ * In the same time, there is only one writable slice in a stream, and the writable slice is always the last slice.
  */
 public interface ElasticStreamSlice {
 
@@ -62,6 +62,10 @@ public interface ElasticStreamSlice {
      */
     long startOffsetInStream();
 
+    /**
+     * Get slice range which is the relative offset range in stream.
+     * @return {@link SliceRange}
+     */
     SliceRange sliceRange();
 
     /**

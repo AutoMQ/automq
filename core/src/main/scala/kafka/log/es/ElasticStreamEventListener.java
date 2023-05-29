@@ -17,8 +17,9 @@
 
 package kafka.log.es;
 
-public enum ElasticMetaEvent {
-    STREAM_DO_CREATE,
-    SEGMENT_UPDATE,
-    SEGMENT_DELETE,
+/**
+ * Elastic stream event listener.
+ */
+public interface ElasticStreamEventListener {
+    void onEvent(long streamId, ElasticStreamMetaEvent event);
 }

@@ -45,7 +45,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        leaderEpochCache: Option[LeaderEpochFileCache],
                        producerStateManager: ElasticProducerStateManager,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-                       segmentEventListener: ElasticEventListener,
+                       segmentEventListener: ElasticStreamEventListener,
                        createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment)
   extends Logging {
   logIdent = s"[ElasticLogLoader partition=$topicPartition, dir=${dir.getParent}] "
