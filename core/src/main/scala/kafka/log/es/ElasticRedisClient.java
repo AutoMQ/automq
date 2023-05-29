@@ -48,10 +48,17 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticRedisClient implements Client {
     private static final Logger log = LoggerFactory.getLogger(ElasticRedisClient.class);
-    private final JedisPooled jedis = new JedisPooled("localhost", 6379);
-    private final StreamClient streamClient = new StreamClientImpl(jedis);
-    private final KVClient kvClient = new KVClientImpl(jedis);
+    private final JedisPooled jedis;
+    private final StreamClient streamClient;
+    private final KVClient kvClient;
     private final ExecutorService executors = Executors.newSingleThreadExecutor();
+
+    public ElasticRedisClient(String endpoint) {
+        String[] parts = endpoint.split(":");
+        this.jedis = new JedisPooled(parts[0], Integer.parseInt(parts[1]));
+        this.streamClient = new StreamClientImpl(jedis);
+        this.kvClient = new KVClientImpl(jedis);
+    }
 
     @Override
     public StreamClient streamClient() {

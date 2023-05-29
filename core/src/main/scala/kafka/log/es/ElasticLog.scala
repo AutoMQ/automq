@@ -389,7 +389,7 @@ object ElasticLog extends Logging {
     elasticLogMeta
   }
 
-  private def createMetaStream(client: Client, key: String, replicaCount: Int, logIdent: String = ""): api.Stream = {
+  private def createMetaStream(client: Client, key: String, replicaCount: Int, logIdent: String): api.Stream = {
     val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount).build()).get()
     // save partition meta stream id relation to PM
     val streamId = metaStream.streamId()
@@ -402,7 +402,7 @@ object ElasticLog extends Logging {
   }
 
   // Note that we should always use the latest log meta to persist.
-  private def persistLogMetaInStream(metaStream: api.Stream, logMeta: ElasticLogMeta, logIdent: String = ""): Unit = {
+  private def persistLogMetaInStream(metaStream: api.Stream, logMeta: ElasticLogMeta, logIdent: String): Unit = {
     persistMeta(metaStream, MetaKeyValue.of(LOG_META_KEY, ElasticLogMeta.encode(logMeta)))
     info(s"${logIdent}save log meta $logMeta")
   }
@@ -416,7 +416,7 @@ object ElasticLog extends Logging {
    * For the newly created segment, the meta will immediately be saved in metaStream.
    * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
    */
-  private def createAndSaveSegment(metaStream: api.Stream, segmentMap: collection.concurrent.Map[Long, ElasticLogSegment], segmentEventListener: ElasticStreamEventListener, suffix: String = "", logIdent: String = "")(baseOffset: Long, dir: File,
+  private def createAndSaveSegment(metaStream: api.Stream, segmentMap: collection.concurrent.Map[Long, ElasticLogSegment], segmentEventListener: ElasticStreamEventListener, suffix: String = "", logIdent: String)(baseOffset: Long, dir: File,
                                                                                                                                                                                                                          config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
@@ -434,7 +434,7 @@ object ElasticLog extends Logging {
     segment
   }
 
-  private def getMetas(metaStream: api.Stream, logIdent: String = ""): mutable.Map[String, Any] = {
+  private def getMetas(metaStream: api.Stream, logIdent: String): mutable.Map[String, Any] = {
     val startOffset = metaStream.startOffset()
     val endOffset = metaStream.nextOffset()
     val kvMap: mutable.Map[String, ByteBuffer] = mutable.Map()

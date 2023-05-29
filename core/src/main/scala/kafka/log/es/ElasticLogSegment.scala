@@ -17,7 +17,6 @@
 
 package kafka.log.es
 
-import kafka.common.LogSegmentOffsetOverflowException
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}

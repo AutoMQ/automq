@@ -17,6 +17,7 @@
 
 package kafka.log.es
 
+import com.automq.elasticstream.client.DefaultClientBuilder
 import kafka.log._
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.server.{KafkaConfig, LogDirFailureChannel}
@@ -74,11 +75,14 @@ object ElasticLogManager {
       throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
     }
     if (endpoint.startsWith(ES_ENDPOINT_PREFIX)) {
-      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+      val streamClient = new DefaultClientBuilder()
+          .endpoint(endpoint.substring(ES_ENDPOINT_PREFIX.length))
+          .build()
+      INSTANCE = Some(new ElasticLogManager(streamClient))
     } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
       INSTANCE = Some(new ElasticLogManager(new MemoryClient()))
     } else if (endpoint.startsWith(REDIS_ENDPOINT_PREFIX)) {
-      INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient()))
+      INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length))))
     } else {
       throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
     }
