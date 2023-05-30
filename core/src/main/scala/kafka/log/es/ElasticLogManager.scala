@@ -79,10 +79,10 @@ object ElasticLogManager {
       if (!kvEndpoint.startsWith(ES_ENDPOINT_PREFIX)) {
         throw new IllegalArgumentException(s"Elastic stream endpoint and kvEndpoint must be the same protocol: $endpoint $kvEndpoint")
       }
-      val streamClient = new DefaultClientBuilder()
+      val streamClient = new AlwaysSuccessClient(new DefaultClientBuilder()
           .endpoint(endpoint.substring(ES_ENDPOINT_PREFIX.length))
           .kvEndpoint(kvEndpoint.substring(ES_ENDPOINT_PREFIX.length))
-          .build()
+          .build())
       INSTANCE = Some(new ElasticLogManager(streamClient))
     } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
       INSTANCE = Some(new ElasticLogManager(new MemoryClient()))
