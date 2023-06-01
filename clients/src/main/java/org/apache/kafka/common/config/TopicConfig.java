@@ -209,4 +209,10 @@ public class TopicConfig {
         "broker will not perform down-conversion for consumers expecting an older message format. The broker responds " +
         "with <code>UNSUPPORTED_VERSION</code> error for consume requests from such older clients. This configuration" +
         "does not apply to any message format conversion that might be required for replication to followers.";
+
+    // elastic stream inject start
+    public static final String REPLICATION_FACTOR_CONFIG = "replication.factor";
+    public static final String REPLICATION_FACTOR_DOC = "The replication factor for the topic";
+    // elastic stream inject end
+
 }

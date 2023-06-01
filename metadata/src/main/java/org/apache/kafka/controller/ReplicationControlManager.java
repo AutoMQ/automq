@@ -27,6 +27,7 @@ import org.apache.kafka.common.ElectionType;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -102,6 +103,7 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
 import org.slf4j.Logger;
 
+import java.util.AbstractMap;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -587,7 +589,15 @@ public class ReplicationControlManager {
             if (topicErrors.containsKey(topic.name())) continue;
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
-            Map<String, Entry<OpType, String>> keyToOps = configChanges.get(configResource);
+
+            // elastic stream inject start
+            Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
+            // pass topic replication factor through log config.
+            int replicationFactor = topic.replicationFactor() == -1 ?
+                    defaultReplicationFactor : topic.replicationFactor();
+            keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
+            // elastic stream inject end
+
             List<ApiMessageAndVersion> configRecords;
             if (keyToOps != null) {
                 ControllerResult<ApiError> configResult =
@@ -651,6 +661,15 @@ public class ReplicationControlManager {
         Map<String, String> creationConfigs = translateCreationConfigs(topic.configs());
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
         if (!topic.assignments().isEmpty()) {
+
+            // elastic stream inject start
+            // TODO: support manual assignment when assignment partition replica is only one.
+            //noinspection ConstantValue
+            if (true) {
+                return new ApiError(INVALID_REQUEST, "Manual partition assignment is not supported yet.");
+            }
+            // elastic stream inject end
+
             if (topic.replicationFactor() != -1) {
                 return new ApiError(INVALID_REQUEST,
                     "A manual partition assignment was specified, but replication " +
@@ -704,8 +723,15 @@ public class ReplicationControlManager {
         } else {
             int numPartitions = topic.numPartitions() == -1 ?
                 defaultNumPartitions : topic.numPartitions();
+            // elastic stream inject start
+            // force replication factor = 1, the real replication factor is decided by elastic stream
             short replicationFactor = topic.replicationFactor() == -1 ?
                 defaultReplicationFactor : topic.replicationFactor();
+            if (replicationFactor != 1) {
+                replicationFactor = 1;
+                log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
+            }
+            // elastic stream inject end
             try {
                 TopicAssignment topicAssignment = clusterControl.replicaPlacer().place(new PlacementSpec(
                     0,
@@ -741,8 +767,9 @@ public class ReplicationControlManager {
                     "Unable to replicate the partition " + replicationFactor +
                         " time(s): " + e.getMessage());
             }
+            short finalReplicationFactor = replicationFactor;
             ApiError error = maybeCheckCreateTopicPolicy(() -> new CreateTopicPolicy.RequestMetadata(
-                topic.name(), numPartitions, replicationFactor, null, creationConfigs));
+                topic.name(), numPartitions, finalReplicationFactor, null, creationConfigs));
             if (error.isFailure()) return error;
         }
         Uuid topicId = Uuid.randomUuid();
@@ -1006,7 +1033,7 @@ public class ReplicationControlManager {
                 // elastic stream inject start
                 List<Integer> newIsr = partitionData.newIsr();
                 if (newIsr.size() != 1) {
-                    throw new InvalidReplicaAssignmentException("elastic stream not support isr = 1");
+                    throw new InvalidReplicaAssignmentException("elastic stream not support isr != 1");
                 }
                 builder.setTargetNode(newIsr.get(0));
                 // elastic stream inject end

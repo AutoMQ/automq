@@ -250,7 +250,7 @@ object ElasticLog extends Logging {
     // open meta stream
     val metaNotExists = kvList.get(0).value() == null
     val metaStream = if (metaNotExists) {
-      createMetaStream(client, key, config.replicaCount, logIdent = logIdent)
+      createMetaStream(client, key, config.replicationFactor, logIdent = logIdent)
     } else {
       val keyValue = kvList.get(0)
       val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
@@ -308,7 +308,7 @@ object ElasticLog extends Logging {
       maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
 
     val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicaCount)
+    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor)
     val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
     val segmentMap = new ConcurrentHashMap[Long, ElasticLogSegment]().asScala
     val segmentEventListener = new ElasticStreamEventListener() {

@@ -114,7 +114,7 @@ case class LogConfig(props: java.util.Map[_, _], overriddenConfigs: Set[String] 
   val messageDownConversionEnable = getBoolean(LogConfig.MessageDownConversionEnableProp)
 
   // elastic stream inject start
-  val replicaCount = getInt(LogConfig.ReplicaCountProp)
+  val replicationFactor = getInt(LogConfig.ReplicationFactorProp)
   // elastic stream inject end
 
   class RemoteLogConfig {
@@ -232,8 +232,8 @@ object LogConfig {
   val FollowerReplicationThrottledReplicasProp = "follower.replication.throttled.replicas"
 
   // elastic stream inject start
-  val ReplicaCountProp = "replica.count"
-  val ReplicaCountDoc = "The number of replicas for this topic."
+  val ReplicationFactorProp = "replication.factor"
+  val ReplicationFactorDoc = "The number of replicas for this topic."
   // elastic stream inject end
 
   val SegmentSizeDoc = TopicConfig.SEGMENT_BYTES_DOC
@@ -401,7 +401,7 @@ object LogConfig {
 
     // elastic stream inject start
     logConfigDef
-      .define(ReplicaCountProp, INT, 1, HIGH, ReplicaCountDoc)
+      .define(ReplicationFactorProp, INT, 1, HIGH, ReplicationFactorDoc)
     // elastic stream inject end
 
     logConfigDef
@@ -575,7 +575,7 @@ object LogConfig {
     logProps.put(MessageDownConversionEnableProp, kafkaConfig.logMessageDownConversionEnable: java.lang.Boolean)
 
     // elastic stream inject start
-    logProps.put(ReplicaCountProp, kafkaConfig.elasticStreamReplicaCount)
+    logProps.put(ReplicationFactorProp, kafkaConfig.defaultReplicationFactor.asInstanceOf[Object])
     // elastic stream inject end
 
     logProps
