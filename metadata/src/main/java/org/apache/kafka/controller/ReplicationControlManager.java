@@ -595,6 +595,8 @@ public class ReplicationControlManager {
             // pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
                     defaultReplicationFactor : topic.replicationFactor();
+            // the real replication factor is decided by elastic stream
+            keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
             keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
             // elastic stream inject end
 
