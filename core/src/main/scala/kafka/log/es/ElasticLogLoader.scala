@@ -178,10 +178,10 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
           try {
             recoverSegment(segment)
           } catch {
-            case _: InvalidOffsetException =>
+            case e: InvalidOffsetException =>
               val startOffset = segment.baseOffset
               warn(s"Found invalid offset during recovery. Deleting the" +
-                s" corrupt segment and creating an empty one with starting offset $startOffset")
+                s" corrupt segment and creating an empty one with starting offset $startOffset", e)
               segment.truncateTo(startOffset)
           }
         if (truncatedBytes > 0) {

@@ -90,11 +90,6 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
     // noop implementation.
   }
 
-  // TODO
-  def reset(): Unit = {
-    stream = streamSliceSupplier.reset()
-  }
-
   def relativeOffset(offset: Long): Int = {
     val relativeOffset = toRelative(offset)
     if (relativeOffset.isEmpty)

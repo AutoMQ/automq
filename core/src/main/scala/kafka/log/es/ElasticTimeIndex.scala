@@ -110,6 +110,12 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
     }
   }
 
+  override def reset(): Unit = {
+    stream = streamSliceSupplier.reset()
+    _entries = 0;
+    _lastEntry = lastEntryFromIndexFile
+  }
+
   def truncate(): Unit = {
     //TODO:
   }
