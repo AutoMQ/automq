@@ -151,18 +151,24 @@ class ElasticLog(val metaStream: api.Stream,
 
   override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
     val activeSegment = segments.activeSegment
+    val startTimestamp = time.nanoseconds()
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
+    debug(s"${logIdent}append $lastOffset stage1[async] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
     updateLogEndOffset(lastOffset + 1)
     activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
+      debug(s"${logIdent}append $lastOffset stage2[callback] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       // TODO: add multiple thread executors and shard different log to certain thread.
-      APPEND_CALLBACK_EXECUTOR.submit(() => {
-        val offset = confirmOffset.get()
-        if (offset.messageOffset < lastOffset + 1) {
-          confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
-          confirmOffsetChangeListener.map(_.apply())
+      APPEND_CALLBACK_EXECUTOR.submit(new Runnable {
+        override def run(): Unit = {
+          val offset = confirmOffset.get()
+          if (offset.messageOffset < lastOffset + 1) {
+            confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
+            confirmOffsetChangeListener.foreach(_.apply())
+          }
+          debug(s"${logIdent}append $lastOffset stage3[ack] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
         }
       })
     })
