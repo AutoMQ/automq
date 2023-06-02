@@ -27,13 +27,13 @@ import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{ThreadUtils, Time}
 
 import java.io.File
 import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ExecutorService, Executors}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -155,13 +155,16 @@ class ElasticLog(val metaStream: api.Stream,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
     updateLogEndOffset(lastOffset + 1)
     activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
-      confirmOffset.synchronized {
+      // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
+      // append callback executor is single thread executor, so the callback will be executed in order.
+      // TODO: add multiple thread executors and shard different log to certain thread.
+      APPEND_CALLBACK_EXECUTOR.submit(() => {
         val offset = confirmOffset.get()
         if (offset.messageOffset < lastOffset + 1) {
           confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
           confirmOffsetChangeListener.map(_.apply())
         }
-      }
+      })
     })
   }
 
@@ -230,6 +233,7 @@ object ElasticLog extends Logging {
   private val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
   private val PARTITION_META_KEY: String = "PARTITION"
   private val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
+  private val APPEND_CALLBACK_EXECUTOR: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-%d", true))
 
   def apply(client: Client, namespace: String, dir: File,
             config: LogConfig,
