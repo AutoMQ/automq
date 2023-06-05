@@ -268,6 +268,7 @@ class Partition(val topicPartition: TopicPartition,
   // The current epoch for the partition for KRaft controllers. The current ZK version for the legacy controllers.
   @volatile private var partitionEpoch: Int = LeaderAndIsr.InitialPartitionEpoch
   @volatile private var leaderEpoch: Int = LeaderAndIsr.InitialLeaderEpoch - 1
+  @volatile private var newLeaderEpoch: Int = 0
   // start offset for 'leaderEpoch' above (leader epoch of the current leader for this partition),
   // defined when this broker is leader for partition
   @volatile private[cluster] var leaderEpochStartOffsetOpt: Option[Long] = None
@@ -389,7 +390,7 @@ class Partition(val topicPartition: TopicPartition,
     logManager.initializingLog(topicPartition)
     var maybeLog: Option[UnifiedLog] = None
     try {
-      val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId)
+      val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId, newLeaderEpoch)
       maybeLog = Some(log)
       updateHighWatermark(log)
       // elastic stream inject start
@@ -641,6 +642,9 @@ class Partition(val topicPartition: TopicPartition,
       )
 
       try {
+        if (isNewLeaderEpoch) {
+          newLeaderEpoch = partitionState.leaderEpoch
+        }
         createLogIfNotExists(partitionState.isNew, isFutureReplica = false, highWatermarkCheckpoints, topicId)
       } catch {
         case e: ZooKeeperClientException =>

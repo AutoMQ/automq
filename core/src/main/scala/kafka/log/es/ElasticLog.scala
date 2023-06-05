@@ -77,7 +77,8 @@ class ElasticLog(val metaStream: api.Stream,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel,
                  val _initStartOffset: Long = 0,
-                 val segmentEventListener: ElasticStreamEventListener
+                 val segmentEventListener: ElasticStreamEventListener,
+                 leaderEpoch: Long
                 ) extends LocalLog(_dir, _config, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
 
   import kafka.log.es.ElasticLog._
@@ -85,7 +86,7 @@ class ElasticLog(val metaStream: api.Stream,
   var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
-  this.logIdent = s"[ElasticLog partition=$topicPartition] "
+  this.logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
@@ -249,8 +250,9 @@ object ElasticLog extends Logging {
             logDirFailureChannel: LogDirFailureChannel,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
             maxTransactionTimeoutMs: Int,
-            producerStateManagerConfig: ProducerStateManagerConfig): ElasticLog = {
-    val logIdent = s"[ElasticLog partition=$topicPartition] "
+            producerStateManagerConfig: ProducerStateManagerConfig,
+            leaderEpoch: Long): ElasticLog = {
+    val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
     val key = namespace + "/" + topicPartition.topic() + "-" + topicPartition.partition()
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
@@ -260,7 +262,7 @@ object ElasticLog extends Logging {
     // open meta stream
     val metaNotExists = kvList.get(0).value() == null
     val metaStream = if (metaNotExists) {
-      createMetaStream(client, key, config.replicationFactor, logIdent = logIdent)
+      createMetaStream(client, key, config.replicationFactor, leaderEpoch, logIdent = logIdent)
     } else {
       val keyValue = kvList.get(0)
       val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
@@ -318,7 +320,7 @@ object ElasticLog extends Logging {
       maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
 
     val logMeta: ElasticLogMeta = metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor)
+    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
     val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
     val segmentMap = new ConcurrentHashMap[Long, ElasticLogSegment]().asScala
     val segmentEventListener = new ElasticStreamEventListener() {
@@ -375,7 +377,7 @@ object ElasticLog extends Logging {
     }
 
     val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, segmentMap, partitionMeta, leaderEpochCheckpointMeta, dir, config,
-      segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, offsets.logStartOffset, segmentEventListener)
+      segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, offsets.logStartOffset, segmentEventListener, leaderEpoch)
     if (partitionMeta.getCleanedShutdown) {
       // set cleanedShutdown=false before append, the mark will be set to true when gracefully close.
       partitionMeta.setCleanedShutdown(false)
@@ -399,8 +401,9 @@ object ElasticLog extends Logging {
     elasticLogMeta
   }
 
-  private def createMetaStream(client: Client, key: String, replicaCount: Int, logIdent: String): api.Stream = {
-    val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount).build()).get()
+  private def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): api.Stream = {
+    val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
+      .epoch(leaderEpoch).build()).get()
     // save partition meta stream id relation to PM
     val streamId = metaStream.streamId()
     info(s"${logIdent}created meta stream for $key, streamId: $streamId")

@@ -41,9 +41,11 @@ class ElasticLogManager(val client: Client) {
              logDirFailureChannel: LogDirFailureChannel,
              numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
              maxTransactionTimeoutMs: Int,
-             producerStateManagerConfig: ProducerStateManagerConfig): ElasticLog = {
+             producerStateManagerConfig: ProducerStateManagerConfig,
+             leaderEpoch: Long): ElasticLog = {
     // TODO: add log close hook, remove closed elastic log
-    val elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
+    val elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+      numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
     elasticLogs.put(topicPartition, elasticLog)
     elasticLog
   }
@@ -112,8 +114,10 @@ object ElasticLogManager {
              logDirFailureChannel: LogDirFailureChannel,
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
-             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): ElasticLog = {
-    INSTANCE.get.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig)
+             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+             leaderEpoch: Long): ElasticLog = {
+    INSTANCE.get.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
+      maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
   }
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {

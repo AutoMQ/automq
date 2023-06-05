@@ -32,6 +32,7 @@ public class ElasticLogStreamManager {
     private final Map<String, LazyStream> streamMap = new ConcurrentHashMap<>();
     private final StreamClient streamClient;
     private final int replicaCount;
+    private final long epoch;
     /**
      * inner listener for created LazyStream
      */
@@ -41,12 +42,15 @@ public class ElasticLogStreamManager {
      */
     private ElasticStreamEventListener outerListener;
 
-    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount) {
+    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch) {
         this.streamClient = streamClient;
         this.replicaCount = replicaCount;
+        this.epoch = epoch;
         streams.forEach((name, streamId) -> {
             try {
-                streamMap.put(name, new LazyStream(name, streamId, streamClient, replicaCount));
+                LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch);
+                stream.setListener(innerListener);
+                streamMap.put(name, stream);
             } catch (Exception e) {
                 // TODO: handle exception
                 throw new RuntimeException(e);
@@ -57,7 +61,7 @@ public class ElasticLogStreamManager {
     public LazyStream getStream(String name) {
         return streamMap.computeIfAbsent(name, key -> {
             try {
-                LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount);
+                LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch);
                 lazyStream.setListener(innerListener);
                 return lazyStream;
             } catch (Exception e) {

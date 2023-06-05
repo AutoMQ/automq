@@ -1831,7 +1831,8 @@ object UnifiedLog extends Logging {
             lastShutdownClean: Boolean = true,
             topicId: Option[Uuid],
             keepPartitionMetadataFile: Boolean,
-            numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]): UnifiedLog = {
+            numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+            leaderEpoch: Long = 0): UnifiedLog = {
     // elastic stream inject start
     // create the log directory if it doesn't exist
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
@@ -1840,7 +1841,7 @@ object UnifiedLog extends Logging {
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
     if (!isClusterMetaLogSegment(dir)) {
-      val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig)
+      val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
       val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
       // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
       // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

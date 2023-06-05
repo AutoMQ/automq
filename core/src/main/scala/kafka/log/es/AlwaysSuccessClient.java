@@ -88,7 +88,7 @@ public class AlwaysSuccessClient implements Client {
         private void createAndOpenStream0(CreateStreamOptions options, CompletableFuture<Stream> cf) {
             streamClient.createAndOpenStream(options).whenCompleteAsync((stream, ex) -> {
                 if (ex != null) {
-                    LOGGER.error("Create and open stream fail, retry later");
+                    LOGGER.error("Create and open stream fail, retry later", ex);
                     STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
                 } else {
                     cf.complete(new StreamImpl(stream));
@@ -106,7 +106,7 @@ public class AlwaysSuccessClient implements Client {
         private void openStream0(long streamId, OpenStreamOptions options, CompletableFuture<Stream> cf) {
             streamClient.openStream(streamId, options).whenCompleteAsync((stream, ex) -> {
                 if (ex != null) {
-                    LOGGER.error("Create open stream[{}] fail, retry later", streamId);
+                    LOGGER.error("Create open stream[{}] fail, retry later", streamId, ex);
                     STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
                 } else {
                     cf.complete(new StreamImpl(stream));
