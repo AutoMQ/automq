@@ -56,14 +56,29 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   }
 
   def parseEntry(n: Int): TimestampOffset = {
-    // TODO: handle exception, or always success?
-    val startOffset = n.toLong * entrySize
-    val rst = stream.fetch(startOffset, startOffset + entrySize).get()
-    if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
+    val startOffset = n * entrySize
+    // try get from cache
+    var timestampOffset = TimestampOffset(cache.getLong(startOffset), cache.getInt(startOffset + 8))
+    if (timestampOffset.timestamp == 0 && timestampOffset.offset == 0) {
+      // cache missing, try read from remote and put it to cache.
+      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024)).get()
+      if (rst.recordBatchList().size() == 0) {
+        throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
+      }
+      rst.recordBatchList().forEach(record => {
+        cache synchronized {
+          cache.position(record.baseOffset().toInt)
+          cache.put(record.rawPayload())
+        }
+      })
+    } else {
+      return timestampOffset
     }
-    val buffer = rst.recordBatchList().get(0).rawPayload()
-    new TimestampOffset(buffer.getLong(0), baseOffset + buffer.getInt(8))
+    timestampOffset = TimestampOffset(cache.getLong(startOffset), cache.getInt(startOffset + 8))
+    if (timestampOffset.timestamp == 0 && timestampOffset.offset == 0) {
+      throw new IllegalStateException(s"expect offset $startOffset already in cache")
+    }
+    timestampOffset
   }
 
   def maybeAppend(timestamp: Long, offset: Long, skipFullCheck: Boolean = false): Unit = {
@@ -90,9 +105,14 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
 
         val buffer = ByteBuffer.allocate(entrySize)
         buffer.putLong(timestamp)
-        buffer.putInt(relativeOffset(offset))
+        val relatedOffset = relativeOffset(offset)
+        buffer.putInt(relatedOffset)
         buffer.flip()
         stream.append(RawPayloadRecordBatch.of(buffer))
+
+        // put time index to cache
+        cache.putLong(_entries * entrySize, timestamp)
+        cache.putInt(_entries * entrySize + 8, relatedOffset)
 
         _entries += 1
         _lastEntry = TimestampOffset(timestamp, offset)
@@ -112,7 +132,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
 
   override def reset(): Unit = {
     stream = streamSliceSupplier.reset()
-    _entries = 0;
+    _entries = 0
     _lastEntry = lastEntryFromIndexFile
   }
 

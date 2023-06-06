@@ -20,7 +20,7 @@ package kafka.log.es
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
-import kafka.utils.{nonthreadsafe, threadsafe}
+import kafka.utils.{CoreUtils, nonthreadsafe, threadsafe}
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.Time
 
@@ -159,7 +159,11 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
    * Close this log segment
    */
   override def close(): Unit = {
-    // TODO:
+    // TODO: timestamp insert
+    CoreUtils.swallow(offsetIdx.close(), this)
+    CoreUtils.swallow(timeIdx.close(), this)
+    CoreUtils.swallow(log.close(), this)
+    CoreUtils.swallow(txnIndex.close(), this)
   }
 
   override def closeHandlers(): Unit = {

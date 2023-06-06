@@ -68,13 +68,32 @@ class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier
   }
 
   def parseEntry(n: Int): OffsetPosition = {
-    val startOffset = n.toLong * entrySize
-    val rst = stream.fetch(startOffset, startOffset +  entrySize).get()
-    if (rst.recordBatchList().size() == 0) {
-      throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
+    val startOffset = n * entrySize
+    // try get from cache
+    var offsetPosition = OffsetPosition(baseOffset + cache.getInt(startOffset), cache.getInt(startOffset + 4))
+    if (offsetPosition.offset == 0 && offsetPosition.position == 0) {
+      // cache missing, usually the first offset index won't be record.
+      // try read from remote and put it to cache.
+      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024)).get()
+      if (rst.recordBatchList().size() == 0) {
+        throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
+      }
+      rst.recordBatchList().forEach(record => {
+        cache synchronized {
+          // replace it with position put in higher JDK version.
+          cache.position(record.baseOffset().toInt)
+          cache.put(record.rawPayload())
+        }
+      })
+    } else {
+      return offsetPosition
     }
-    val buffer = rst.recordBatchList().get(0).rawPayload()
-    OffsetPosition(baseOffset + buffer.getInt(0), buffer.getInt(4))
+    // expect offset index already in cache.
+    offsetPosition = OffsetPosition(baseOffset + cache.getInt(startOffset), cache.getInt(startOffset + 4))
+    if (offsetPosition.offset == 0 && offsetPosition.position == 0) {
+      throw new IllegalStateException(s"expect offset $startOffset already in cache")
+    }
+    offsetPosition
   }
 
   def entry(n: Int): OffsetPosition = {
@@ -93,10 +112,15 @@ class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier
         trace(s"Adding index entry $offset => $position to ${file.getAbsolutePath}")
 
         val buffer = ByteBuffer.allocate(8)
-        buffer.putInt(relativeOffset(offset))
+        val relatedOffset = relativeOffset(offset)
+        buffer.putInt(relatedOffset)
         buffer.putInt(position)
         buffer.flip()
         stream.append(RawPayloadRecordBatch.of(buffer))
+
+        // put offset index to cache
+        cache.putInt(_entries * entrySize, relatedOffset)
+        cache.putInt(_entries * entrySize + 4, position)
 
         _entries += 1
         _lastOffset = offset
@@ -109,7 +133,7 @@ class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier
 
   override def reset(): Unit = {
     stream = streamSliceSupplier.reset()
-    _entries = 0;
+    _entries = 0
     _lastOffset = lastEntry.offset
   }
 
