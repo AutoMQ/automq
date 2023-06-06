@@ -13,10 +13,11 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  */
 
 package kafka.log.es;
 
-public enum ElasticStreamMetaEvent {
-    STREAM_DO_CREATE,
+public interface ElasticLogSegmentEventListener {
+    void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event);
 }

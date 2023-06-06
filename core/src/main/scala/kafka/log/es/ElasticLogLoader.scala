@@ -33,7 +33,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
  */
 class ElasticLogLoader(logMeta: ElasticLogMeta,
                        segments: LogSegments,
-                       segmentMap: collection.concurrent.Map[Long, ElasticLogSegment],
+                       logSegmentsManager: ElasticLogSegmentManager,
                        streamSliceManager: ElasticStreamSliceManager,
                        dir: File,
                        topicPartition: TopicPartition,
@@ -45,7 +45,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        leaderEpochCache: Option[LeaderEpochFileCache],
                        producerStateManager: ElasticProducerStateManager,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-                       segmentEventListener: ElasticStreamEventListener,
                        createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment)
   extends Logging {
   logIdent = s"[ElasticLogLoader partition=$topicPartition, dir=${dir.getParent}] "
@@ -97,9 +96,9 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def loadSegments(): Unit = {
     logMeta.getSegmentMetas.forEach(segmentMeta => {
-      val segment = ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, segmentEventListener)
+      val segment = ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, logSegmentsManager.logSegmentEventListener())
       segments.add(segment)
-      segmentMap.put(segment.baseOffset, segment)
+      logSegmentsManager.put(segment.baseOffset, segment)
     })
   }
 
@@ -244,7 +243,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
       info(s"Deleting segments as part of log recovery: ${toDelete.mkString(",")}")
       toDelete.foreach { segment =>
         segments.remove(segment.baseOffset)
-        segmentMap.remove(segment.baseOffset)
+        logSegmentsManager.remove(segment.baseOffset)
       }
     }
   }
