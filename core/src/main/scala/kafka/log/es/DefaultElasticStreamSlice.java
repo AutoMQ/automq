@@ -105,6 +105,11 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
+    public Stream stream() {
+        return stream;
+    }
+
+    @Override
     public String toString() {
         // TODO: stream info
         return "DefaultElasticStreamSlice{" +

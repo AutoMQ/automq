@@ -20,6 +20,7 @@ package kafka.log.es;
 import com.automq.elasticstream.client.api.AppendResult;
 import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
+import com.automq.elasticstream.client.api.Stream;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -77,4 +78,6 @@ public interface ElasticStreamSlice {
      * Seal slice, forbid future append.
      */
     void seal();
+
+    Stream stream();
 }

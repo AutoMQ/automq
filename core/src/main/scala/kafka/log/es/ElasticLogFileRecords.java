@@ -17,6 +17,7 @@
 
 package kafka.log.es;
 
+import com.automq.elasticstream.client.api.FetchResult;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.network.TransferableChannel;
@@ -39,7 +40,8 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.common.utils.Time;
-import com.automq.elasticstream.client.api.FetchResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -52,6 +54,7 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 
 public class ElasticLogFileRecords extends FileRecords {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     private final ElasticStreamSlice streamSegment;
     private final File file;
     // Inflight append result.
@@ -226,9 +229,17 @@ public class ElasticLogFileRecords extends FileRecords {
                     // TOD: endoffset
                     FetchResult rst = elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE).get();
                     rst.recordBatchList().forEach(streamRecord -> {
-                        for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
-                            remaining.offer(new FileChannelRecordBatchWrapper(r, position));
-                            position += r.sizeInBytes();
+                        try {
+                            for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
+                                remaining.offer(new FileChannelRecordBatchWrapper(r, position));
+                                position += r.sizeInBytes();
+                            }
+                        } catch (Throwable e) {
+                            ElasticStreamSlice slice = elasticLogFileRecords.streamSegment;
+                            byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
+                            streamRecord.rawPayload().get(bytes);
+                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(),  slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
+                            throw e;
                         }
                     });
                     if (remaining.isEmpty()) {
