@@ -39,6 +39,7 @@ import org.apache.kafka.common.record.UnalignedFileRecords;
 import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,19 +53,25 @@ import java.util.LinkedList;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticLogFileRecords extends FileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     private final ElasticStreamSlice streamSegment;
     private final File file;
     // Inflight append result.
-    private volatile CompletableFuture<?> lastAppendFuture = CompletableFuture.completedFuture(null);
+    private volatile CompletableFuture<?> lastAppend;
+    private final AtomicLong committedOffset;
 
     public ElasticLogFileRecords(File file, ElasticStreamSlice streamSegment) {
         super(0, Integer.MAX_VALUE, false);
         this.file = file;
         this.streamSegment = streamSegment;
         size.set((int) streamSegment.nextOffset());
+        this.committedOffset = new AtomicLong(size.get());
+        this.lastAppend = CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -115,9 +122,21 @@ public class ElasticLogFileRecords extends FileRecords {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
         int appendSize = records.sizeInBytes();
-        lastAppendFuture = streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
+        CompletableFuture<?> cf = streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
         size.getAndAdd(appendSize);
+        long committedOffset = size.get();
+        cf.thenAccept(rst -> updateCommittedOffset(committedOffset));
+        lastAppend = cf;
         return appendSize;
+    }
+
+    private void updateCommittedOffset(long newCommittedOffset) {
+        while (true) {
+            long oldCommittedOffset = this.committedOffset.get();
+            if (oldCommittedOffset < newCommittedOffset && this.committedOffset.compareAndSet(oldCommittedOffset, newCommittedOffset)) {
+                break;
+            }
+        }
     }
 
     @Override
@@ -130,7 +149,7 @@ public class ElasticLogFileRecords extends FileRecords {
     }
 
     public CompletableFuture<Void> asyncFlush() {
-        return this.lastAppendFuture.thenApply(rst -> null);
+        return this.lastAppend.thenApply(rst -> null);
     }
 
     @Override
@@ -203,10 +222,13 @@ public class ElasticLogFileRecords extends FileRecords {
 
     static class StreamSegmentInputStream implements LogInputStream<FileLogInputStream.FileChannelRecordBatch> {
         private static final int FETCH_BATCH_SIZE = 64 * 1024;
+        private static final ExecutorService FETCH_WAIT_COMMIT_EXECUTORS = Executors.newFixedThreadPool(4,
+                ThreadUtils.createThreadFactory("fetch-wait-commit-%d", true));
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final int end;
         private final Queue<FileChannelRecordBatchWrapper> remaining = new LinkedList<>();
         private int position;
+
 
         public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, int start, int end) {
             this.elasticLogFileRecords = elasticLogFileRecords;
@@ -226,8 +248,14 @@ public class ElasticLogFileRecords extends FileRecords {
                 if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
                     return null;
                 try {
-                    // TOD: endoffset
-                    FetchResult rst = elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE).get();
+                    CompletableFuture<Void> cf;
+                    if (end < elasticLogFileRecords.committedOffset.get()) {
+                        cf = new CompletableFuture<>();
+                        elasticLogFileRecords.lastAppend.whenCompleteAsync((rst, ex) -> cf.complete(null), FETCH_WAIT_COMMIT_EXECUTORS);
+                    } else {
+                        cf = CompletableFuture.completedFuture(null);
+                    }
+                    FetchResult rst = cf.thenCompose(nil -> elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE)).get();
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
                             for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
@@ -238,7 +266,7 @@ public class ElasticLogFileRecords extends FileRecords {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSegment;
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
-                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload-size={}", slice.stream().streamId(),  slice.sliceRange().start() + streamRecord.baseOffset(), bytes.length);
+                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
                             throw e;
                         }
                     });
