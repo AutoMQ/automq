@@ -238,7 +238,7 @@ public class ElasticLogFileRecords extends FileRecords {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSegment;
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
-                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(),  slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
+                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload-size={}", slice.stream().streamId(),  slice.sliceRange().start() + streamRecord.baseOffset(), bytes.length);
                             throw e;
                         }
                     });
