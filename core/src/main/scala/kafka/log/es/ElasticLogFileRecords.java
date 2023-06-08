@@ -133,7 +133,9 @@ public class ElasticLogFileRecords extends FileRecords {
     private void updateCommittedOffset(long newCommittedOffset) {
         while (true) {
             long oldCommittedOffset = this.committedOffset.get();
-            if (oldCommittedOffset < newCommittedOffset && this.committedOffset.compareAndSet(oldCommittedOffset, newCommittedOffset)) {
+            if (oldCommittedOffset >= newCommittedOffset) {
+                break;
+            } else if (this.committedOffset.compareAndSet(oldCommittedOffset, newCommittedOffset)) {
                 break;
             }
         }
@@ -255,7 +257,7 @@ public class ElasticLogFileRecords extends FileRecords {
                     } else {
                         cf = CompletableFuture.completedFuture(null);
                     }
-                    FetchResult rst = cf.thenCompose(nil -> elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE)).get();
+                    FetchResult rst = cf.thenApply(nil -> elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE)).get();
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
                             for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {

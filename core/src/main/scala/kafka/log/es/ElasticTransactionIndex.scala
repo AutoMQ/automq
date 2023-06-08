@@ -86,7 +86,7 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
           return queue.dequeue()
         }
         try {
-          val records = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).get().recordBatchList()
+          val records = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).recordBatchList()
           records.forEach(recordBatch => {
             val readBuf = Unpooled.wrappedBuffer(recordBatch.rawPayload())
             val size = readBuf.readableBytes()

@@ -71,8 +71,13 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return stream.fetch(startOffsetInStream + startOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new);
+    public FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) {
+        try {
+            return stream.fetch(startOffsetInStream + startOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
+        } catch (Throwable e) {
+            // TODO: specific exception
+            throw new RuntimeException(e);
+        }
     }
 
     @Override

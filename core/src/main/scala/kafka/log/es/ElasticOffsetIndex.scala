@@ -74,7 +74,7 @@ class ElasticOffsetIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier
     if (offsetPosition.offset == 0 && offsetPosition.position == 0) {
       // cache missing, usually the first offset index won't be record.
       // try read from remote and put it to cache.
-      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024)).get()
+      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024))
       if (rst.recordBatchList().size() == 0) {
         throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
       }
