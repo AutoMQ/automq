@@ -21,6 +21,7 @@ import com.automq.elasticstream.client.api
 import com.automq.elasticstream.client.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
+import kafka.log.es.metrics.Timer
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
@@ -81,10 +82,15 @@ class ElasticLog(val metaStream: api.Stream,
 
   import kafka.log.es.ElasticLog._
 
+  this.logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
   var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
-  this.logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
+  private var lastRecordTimestamp = 0L
+  private val appendTimer = new Timer()
+  private val appendCallbackTimer = new Timer()
+  private val appendAckTimer = new Timer()
+
 
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
@@ -143,30 +149,43 @@ class ElasticLog(val metaStream: api.Stream,
     info(s"${logIdent}save partition meta $partitionMeta")
   }
 
-
   override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
     val activeSegment = segments.activeSegment
     val startTimestamp = time.nanoseconds()
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
-    debug(s"${logIdent}append $lastOffset stage1[async] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
+    appendTimer.update(System.nanoTime() - startTimestamp)
     updateLogEndOffset(lastOffset + 1)
     activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
-      debug(s"${logIdent}append $lastOffset stage2[callback] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
+      appendCallbackTimer.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       // TODO: add multiple thread executors and shard different log to certain thread.
       APPEND_CALLBACK_EXECUTOR.submit(new Runnable {
         override def run(): Unit = {
-          val offset = confirmOffset.get()
-          if (offset.messageOffset < lastOffset + 1) {
-            confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
-            confirmOffsetChangeListener.foreach(_.apply())
-          }
-          debug(s"${logIdent}append $lastOffset stage3[ack] elapse ${(time.nanoseconds() - startTimestamp) / 1000} us")
+          appendCallback(lastOffset, activeSegment)
         }
       })
     })
+  }
+
+  private def appendCallback(lastOffset: Long, activeSegment: LogSegment): Unit = {
+    val startNanos = System.nanoTime()
+    val offset = confirmOffset.get()
+    if (offset.messageOffset < lastOffset + 1) {
+      confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
+      confirmOffsetChangeListener.foreach(_.apply())
+    }
+    appendAckTimer.update(System.nanoTime() - startNanos)
+    if (System.currentTimeMillis() - lastRecordTimestamp > 1000) {
+      val appendAvgCost = appendTimer.getAndReset()
+      val appendCallbackAvgCost = appendCallbackTimer.getAndReset()
+      val appendAckAvgCost = appendAckTimer.getAndReset()
+      if (appendCallbackAvgCost > 5000000 || appendAckAvgCost > 1000000) {
+        warn(s"$logIdent append cost too much, appendAvgCost=$appendAvgCost ns, appendCallbackAvgCost=$appendCallbackAvgCost ns, appendAckAvgCost=$appendAckAvgCost ns")
+      }
+      lastRecordTimestamp = System.currentTimeMillis();
+    }
   }
 
   override private[log] def flush(offset: Long): Unit = {
