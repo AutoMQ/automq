@@ -21,46 +21,132 @@ import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
 import kafka.utils.{CoreUtils, nonthreadsafe, threadsafe}
-import org.apache.kafka.common.record.MemoryRecords
+import org.apache.kafka.common.InvalidRecordException
+import org.apache.kafka.common.errors.CorruptRecordException
+import org.apache.kafka.common.record.FileRecords.{LogOffsetPosition, TimestampAndOffset}
+import org.apache.kafka.common.record.{FileRecords, MemoryRecords, RecordBatch}
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
-import scala.math._
+import scala.jdk.CollectionConverters._
+
 
 
 class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
-                        log: ElasticLogFileRecords,
-                        val offsetIdx: ElasticOffsetIndex,
+                        val _log: ElasticLogFileRecords,
                         val timeIdx: ElasticTimeIndex,
-                        txnIndex: ElasticTransactionIndex,
-                        baseOffset: Long,
-                        indexIntervalBytes: Int,
-                        rollJitterMs: Long,
-                        time: Time,
-                        val logListener: ElasticLogSegmentEventListener) extends LogSegmentKafka(log, null, null, txnIndex, baseOffset, indexIntervalBytes, rollJitterMs, time) with LogSegment {
+                        val txnIndex: ElasticTransactionIndex,
+                        val baseOffset: Long,
+                        val indexIntervalBytes: Int,
+                        val rollJitterMs: Long,
+                        val time: Time,
+                        val logListener: ElasticLogSegmentEventListener) extends LogSegment {
 
-  override def offsetIndex: OffsetIndex = offsetIdx
+  def log: FileRecords = throw new UnsupportedOperationException()
 
-  override def timeIndex: TimeIndex = timeIdx
+  def offsetIndex: OffsetIndex = {
+    throw new UnsupportedOperationException()
+  }
 
-  override def resizeIndexes(size: Int): Unit = {
+  def timeIndex: TimeIndex = timeIdx
+
+  def shouldRoll(rollParams: RollParams): Boolean = {
+    val reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs
+    size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
+      (size > 0 && reachedRollMs) || timeIndex.isFull
+  }
+
+  def resizeIndexes(size: Int): Unit = {
     // noop implementation.
   }
 
-  override def sanityCheck(timeIndexFileNewlyCreated: Boolean): Unit = {
+  def sanityCheck(timeIndexFileNewlyCreated: Boolean): Unit = {
     // TODO: check LogLoader logic
   }
 
+  private val created = time.milliseconds
 
-  override def append(largestOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
-    super.append(largestOffset, largestTimestamp, shallowOffsetOfMaxTimestamp, records)
+  protected var bytesSinceLastIndexEntry = 0
+
+  @volatile protected var rollingBasedTimestamp: Option[Long] = None
+
+  @volatile private var _maxTimestampAndOffsetSoFar: TimestampOffset = TimestampOffset.Unknown
+
+  def maxTimestampAndOffsetSoFar_=(timestampOffset: TimestampOffset): Unit = _maxTimestampAndOffsetSoFar = timestampOffset
+
+  def maxTimestampAndOffsetSoFar: TimestampOffset = {
+    if (_maxTimestampAndOffsetSoFar == TimestampOffset.Unknown)
+      _maxTimestampAndOffsetSoFar = timeIndex.lastEntry
+    _maxTimestampAndOffsetSoFar
+  }
+
+  def maxTimestampSoFar: Long = {
+    maxTimestampAndOffsetSoFar.timestamp
+  }
+
+  def offsetOfMaxTimestampSoFar: Long = {
+    maxTimestampAndOffsetSoFar.offset
+  }
+
+  def size: Int = _log.sizeInBytes()
+
+  def append(largestOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
+    if (records.sizeInBytes > 0) {
+      val physicalPosition = _log.sizeInBytes()
+      if (physicalPosition == 0)
+        rollingBasedTimestamp = Some(largestTimestamp)
+      // append the messages
+      val appendedBytes = _log.append(records, largestOffset + 1)
+      trace(s"Appended $appendedBytes at end offset $largestOffset")
+      // Update the in memory max timestamp and corresponding offset.
+      if (largestTimestamp > maxTimestampSoFar) {
+        maxTimestampAndOffsetSoFar = TimestampOffset(largestTimestamp, shallowOffsetOfMaxTimestamp)
+      }
+      // append an entry to the index (if needed)
+      if (bytesSinceLastIndexEntry > indexIntervalBytes) {
+        timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar)
+        bytesSinceLastIndexEntry = 0
+      }
+      bytesSinceLastIndexEntry += records.sizeInBytes
+    }
     meta.lastModifiedTimestamp(System.currentTimeMillis())
   }
 
   def asyncLogFlush(): CompletableFuture[Void] = {
-    log.asyncFlush()
+    _log.asyncFlush()
+  }
+  def appendFromFile(records: FileRecords, start: Int): Int = {
+    throw new UnsupportedOperationException()
+  }
+
+  @nonthreadsafe
+  def updateTxnIndex(completedTxn: CompletedTxn, lastStableOffset: Long): Unit = {
+    if (completedTxn.isAborted) {
+      trace(s"Writing aborted transaction $completedTxn to transaction index, last stable offset is $lastStableOffset")
+      txnIndex.append(new AbortedTxn(completedTxn, lastStableOffset))
+    }
+  }
+
+  protected def updateProducerState(producerStateManager: ProducerStateManager, batch: RecordBatch): Unit = {
+    if (batch.hasProducerId) {
+      val producerId = batch.producerId
+      val appendInfo = producerStateManager.prepareUpdate(producerId, origin = AppendOrigin.Replication)
+      val maybeCompletedTxn = appendInfo.append(batch, firstOffsetMetadataOpt = None)
+      producerStateManager.update(appendInfo)
+      maybeCompletedTxn.foreach { completedTxn =>
+        val lastStableOffset = producerStateManager.lastStableOffset(completedTxn)
+        updateTxnIndex(completedTxn, lastStableOffset)
+        producerStateManager.completeTxn(completedTxn)
+      }
+    }
+    producerStateManager.updateMapEndOffset(batch.lastOffset + 1)
+  }
+
+  @threadsafe
+  private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): LogOffsetPosition = {
+    throw new UnsupportedOperationException()
   }
 
   @threadsafe
@@ -70,35 +156,106 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                     minOneMessage: Boolean = false): FetchDataInfo = {
     if (maxSize < 0)
       throw new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log")
-
-    val startOffsetAndSize = translateOffset(startOffset)
-
-    // if the start position is already off the end of the log, return null
-    if (startOffsetAndSize == null)
-      return null
-
-    val startPosition = startOffsetAndSize.position
-    val offsetMetadata = LogOffsetMetadata(startOffset, this.baseOffset, startPosition)
-
-    val adjustedMaxSize =
-      if (minOneMessage) math.max(maxSize, startOffsetAndSize.size)
-      else maxSize
-
-    // return a log segment but with zero size in the case below
-    if (adjustedMaxSize == 0)
+    val offsetMetadata = LogOffsetMetadata(startOffset, this.baseOffset, (startOffset - this.baseOffset).toInt)
+    if (maxSize == 0) {
       return FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY)
-
-    // calculate the length of the message set to read based on whether or not they gave us a maxOffset
-    val fetchSize: Int = min((maxPosition - startPosition).toInt, adjustedMaxSize)
-
-    FetchDataInfo(offsetMetadata, log.read(startPosition, fetchSize),
-      firstEntryIncomplete = adjustedMaxSize < startOffsetAndSize.size)
+    }
+    // TODO: filter by maxPosition support
+    val records = _log.read(startOffset, maxSize)
+    FetchDataInfo(offsetMetadata, records)
   }
+
+  def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long] = {
+    throw new UnsupportedOperationException()
+  }
+
+  @nonthreadsafe
+  override def recover(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
+    timeIndex.reset()
+    txnIndex.reset()
+    logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_UPDATE)
+
+    recover0(producerStateManager, leaderEpochCache)
+  }
+
+  @nonthreadsafe
+  protected def recover0(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
+    var validBytes = 0
+    var lastIndexEntry = 0
+    maxTimestampAndOffsetSoFar = TimestampOffset.Unknown
+    try {
+      for (batch <- _log.batches.asScala) {
+        batch.ensureValid()
+        // The max timestamp is exposed at the batch level, so no need to iterate the records
+        if (batch.maxTimestamp > maxTimestampSoFar) {
+          maxTimestampAndOffsetSoFar = TimestampOffset(batch.maxTimestamp, batch.lastOffset)
+        }
+
+        // Build offset index
+        if (validBytes - lastIndexEntry > indexIntervalBytes) {
+          timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar)
+          lastIndexEntry = validBytes
+        }
+        validBytes += batch.sizeInBytes()
+
+        if (batch.magic >= RecordBatch.MAGIC_VALUE_V2) {
+          leaderEpochCache.foreach { cache =>
+            if (batch.partitionLeaderEpoch >= 0 && cache.latestEpoch.forall(batch.partitionLeaderEpoch > _))
+              cache.assign(batch.partitionLeaderEpoch, batch.baseOffset)
+          }
+          updateProducerState(producerStateManager, batch)
+        }
+      }
+    } catch {
+      case e@(_: CorruptRecordException | _: InvalidRecordException) =>
+        warn("Found invalid messages in log segment at byte offset %d: %s. %s"
+          .format(validBytes, e.getMessage, e.getCause))
+    }
+    // won't have record corrupted cause truncate
+    // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
+    timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
+    timeIndex.trimToValidSize()
+    0
+  }
+
+  protected def loadLargestTimestamp(): Unit = {
+    // Get the last time index entry. If the time index is empty, it will return (-1, baseOffset)
+    val lastTimeIndexEntry = timeIndex.lastEntry
+    maxTimestampAndOffsetSoFar = lastTimeIndexEntry
+    val maxTimestampOffsetAfterLastEntry = _log.largestTimestampAfter(maxTimestampAndOffsetSoFar.offset)
+    if (maxTimestampOffsetAfterLastEntry.timestamp > lastTimeIndexEntry.timestamp) {
+      maxTimestampAndOffsetSoFar = TimestampOffset(maxTimestampOffsetAfterLastEntry.timestamp, maxTimestampOffsetAfterLastEntry.offset)
+    }
+  }
+
+  def collectAbortedTxns(fetchOffset: Long, upperBoundOffset: Long): TxnIndexSearchResult =
+    txnIndex.collectAbortedTxns(fetchOffset, upperBoundOffset)
+
+  override def toString: String = "ElasticLogSegment(baseOffset=" + baseOffset +
+    ", size=" + size +
+    ", lastModifiedTime=" + lastModified +
+    ", largestRecordTimestamp=" + largestRecordTimestamp +
+    ")"
 
   @nonthreadsafe
   override def truncateTo(offset: Long): Int = {
     // TODO: check truncate logic
-    -1
+    throw new UnsupportedOperationException()
+  }
+
+
+  @threadsafe
+  override def readNextOffset: Long = {
+    _log.nextOffset()
+  }
+
+  @threadsafe
+  override def flush(): Unit = {
+    LogFlushStats.logFlushTimer.time { () =>
+      _log.flush()
+      timeIndex.flush()
+      txnIndex.flush()
+    }
   }
 
   override def updateParentDir(dir: File): Unit = {
@@ -116,53 +273,54 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   override def onBecomeInactiveSegment(): Unit = {
     timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
-    log.seal()
-    _meta.log(log.streamSegment.sliceRange)
-    offsetIdx.seal()
-    _meta.offset(offsetIdx.stream.sliceRange)
+    _log.seal()
+    _meta.log(_log.streamSegment.sliceRange)
     timeIdx.seal()
     _meta.time(timeIdx.stream.sliceRange)
     txnIndex.seal()
     _meta.txn(txnIndex.stream.sliceRange)
   }
 
-  def meta: ElasticStreamSegmentMeta = {
-    _meta.log(log.streamSegment.sliceRange)
-    _meta.offset(offsetIdx.stream.sliceRange)
-    _meta.time(timeIdx.stream.sliceRange)
-    _meta.txn(txnIndex.stream.sliceRange)
-    _meta
+  protected def loadFirstBatchTimestamp(): Unit = {
+    if (rollingBasedTimestamp.isEmpty) {
+      val iter = _log.batches.iterator()
+      if (iter.hasNext)
+        rollingBasedTimestamp = Some(iter.next().maxTimestamp)
+    }
   }
 
-  /**
-   * Run recovery on the given segment. This will rebuild the index from the log file and lop off any invalid bytes
-   * from the end of the log and index.
-   *
-   * @param producerStateManager Producer state corresponding to the segment's base offset. This is needed to recover
-   *                             the transaction index.
-   * @param leaderEpochCache     Optionally a cache for updating the leader epoch during recovery.
-   * @return The number of bytes truncated from the log
-   * @throws LogSegmentOffsetOverflowException if the log segment contains an offset that causes the index offset to overflow
-   */
-  @nonthreadsafe
-  override def recover(producerStateManager: ProducerStateManager,
-      leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
-    offsetIndex.reset()
-    timeIndex.reset()
-    txnIndex.reset()
-    logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_UPDATE)
-
-    recover0(producerStateManager, leaderEpochCache)
+  def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long = {
+    // Load the timestamp of the first message into memory
+    loadFirstBatchTimestamp()
+    rollingBasedTimestamp match {
+      case Some(t) if t >= 0 => messageTimestamp - t
+      case _ => now - created
+    }
   }
+
+  def getFirstBatchTimestamp(): Long = {
+    loadFirstBatchTimestamp()
+    rollingBasedTimestamp match {
+      case Some(t) if t >= 0 => t
+      case _ => Long.MaxValue
+    }
+  }
+
+  override def findOffsetByTimestamp(timestamp: Long, startingOffset: Long = baseOffset): Option[TimestampAndOffset] = {
+    // Get the index entry with a timestamp less than or equal to the target timestamp
+    val timestampOffset = timeIndex.lookup(timestamp)
+    // Search the timestamp
+    Option(_log.searchForTimestamp(timestamp, timestampOffset.offset))
+  }
+
 
   /**
    * Close this log segment
    */
   override def close(): Unit = {
     // TODO: timestamp insert
-    CoreUtils.swallow(offsetIdx.close(), this)
     CoreUtils.swallow(timeIdx.close(), this)
-    CoreUtils.swallow(log.close(), this)
+    CoreUtils.swallow(_log.close(), this)
     CoreUtils.swallow(txnIndex.close(), this)
   }
 
@@ -181,10 +339,29 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   override def lastModified: Long = meta.lastModifiedTimestamp
 
+  def largestRecordTimestamp: Option[Long] = if (maxTimestampSoFar >= 0) Some(maxTimestampSoFar) else None
+
+  def largestTimestamp: Long = if (maxTimestampSoFar >= 0) maxTimestampSoFar else lastModified
+
   override def lastModified_=(ms: Long): Path = {
     meta.lastModifiedTimestamp(ms)
     null
   }
+
+  def meta: ElasticStreamSegmentMeta = {
+    _meta.log(_log.streamSegment.sliceRange)
+    _meta.time(timeIdx.stream.sliceRange)
+    _meta.txn(txnIndex.stream.sliceRange)
+    _meta
+  }
+
+  override def lazyOffsetIndex: LazyIndex[OffsetIndex] = throw new UnsupportedOperationException()
+
+  override def lazyTimeIndex: LazyIndex[TimeIndex] = throw new UnsupportedOperationException()
+
+  override def canConvertToRelativeOffset(offset: Long): Boolean = throw new UnsupportedOperationException()
+
+  override def hasOverflow: Boolean = throw new UnsupportedOperationException()
 }
 
 object ElasticLogSegment {
@@ -192,11 +369,10 @@ object ElasticLogSegment {
             time: Time, segmentEventListener: ElasticLogSegmentEventListener): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
-    val log = new ElasticLogFileRecords(UnifiedLog.logFile(dir, baseOffset, suffix), sm.loadOrCreateSlice("log" + suffix, meta.log))
-    val offsetIndex = new ElasticOffsetIndex(UnifiedLog.offsetIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "idx" + suffix, meta.offset), baseOffset, logConfig.maxIndexSize)
+    val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset)
     val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 
-    new ElasticLogSegment(meta, log, offsetIndex, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener)
+    new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener)
   }
 }

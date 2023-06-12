@@ -89,8 +89,6 @@ object ElasticUnifiedLog extends Logging {
     val segmentRecoveryStart = time.milliseconds()
 
     if (lastOffset > producerStateManager.mapEndOffset && !isEmptyBeforeTruncation) {
-      val segmentOfLastOffset = segments.floorSegment(lastOffset)
-
       segments.values(producerStateManager.mapEndOffset, lastOffset).foreach { segment =>
         val startOffset = Utils.max(segment.baseOffset, producerStateManager.mapEndOffset, logStartOffset)
         producerStateManager.updateMapEndOffset(startOffset)
@@ -98,13 +96,7 @@ object ElasticUnifiedLog extends Logging {
         if (offsetsToSnapshot.contains(Some(segment.baseOffset)))
           producerStateManager.takeSnapshot()
 
-        val maxPosition = if (segmentOfLastOffset.contains(segment)) {
-          Option(segment.translateOffset(lastOffset))
-            .map(_.position)
-            .getOrElse(segment.size)
-        } else {
-          segment.size
-        }
+        val maxPosition = segment.size
 
         val fetchDataInfo = segment.read(startOffset,
           maxSize = Int.MaxValue,

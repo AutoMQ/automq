@@ -22,10 +22,8 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.DefaultRecordBatch;
-import org.apache.kafka.common.record.FileLogInputStream;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.LogInputStream;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -34,98 +32,72 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.RecordBatchIterator;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.RecordsUtil;
-import org.apache.kafka.common.record.TimestampType;
-import org.apache.kafka.common.record.UnalignedFileRecords;
 import org.apache.kafka.common.utils.AbstractIterator;
-import org.apache.kafka.common.utils.BufferSupplier;
-import org.apache.kafka.common.utils.CloseableIterator;
-import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.OptionalLong;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class ElasticLogFileRecords extends FileRecords {
+public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
+    protected final AtomicInteger size;
+    protected final Iterable<RecordBatch> batches;
     private final ElasticStreamSlice streamSegment;
-    private final File file;
+    // logic offset instead of physical offset
+    private final long baseOffset;
+    private final AtomicLong nextOffset;
+    private final AtomicLong committedOffset;
     // Inflight append result.
     private volatile CompletableFuture<?> lastAppend;
-    private final AtomicLong committedOffset;
 
-    public ElasticLogFileRecords(File file, ElasticStreamSlice streamSegment) {
-        super(0, Integer.MAX_VALUE, false);
-        this.file = file;
+
+    public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset) {
+        this.baseOffset = baseOffset;
         this.streamSegment = streamSegment;
-        size.set((int) streamSegment.nextOffset());
-        this.committedOffset = new AtomicLong(size.get());
+        // TODO: init size when recover, all is size matter anymore?
+        long nextOffset = streamSegment.nextOffset();
+        size = new AtomicInteger((int) nextOffset);
+        this.nextOffset = new AtomicLong(baseOffset + nextOffset);
+        this.committedOffset = new AtomicLong(baseOffset + nextOffset);
         this.lastAppend = CompletableFuture.completedFuture(null);
+
+        batches = batchesFrom(baseOffset);
+
     }
 
-    @Override
-    public File file() {
-        return file;
+    public int sizeInBytes() {
+        return size.get();
     }
 
-    @Override
-    public FileChannel channel() {
-        throw new UnsupportedOperationException();
+    public long nextOffset() {
+        return nextOffset.get();
     }
 
-    @Override
-    public long fileSize() {
-        return sizeInBytes();
+    public Records read(long startOffset, int maxSize) {
+        return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
     }
 
-    @Override
-    public void readInto(ByteBuffer buffer, int position) {
-        for (FileLogInputStream.FileChannelRecordBatch recordBatch : batchesFrom(position)) {
-            if (recordBatch.sizeInBytes() > buffer.remaining()) {
-                return;
-            }
-            recordBatch.writeTo(buffer);
-        }
-        buffer.flip();
-    }
-
-    @Override
-    public FileRecords slice(int position, int size) throws IOException {
-        // don't expect to be called
-        throw new UnsupportedOperationException();
-    }
-
-    public Records read(int position, int fetchSize) throws IOException {
-        return new BatchIteratorRecordsAdaptor(position, Math.min(sizeInBytes() - position, fetchSize));
-    }
-
-    @Override
-    public UnalignedFileRecords sliceUnaligned(int position, int size) {
-        // don't expect to be called
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public int append(MemoryRecords records) throws IOException {
+    public int append(MemoryRecords records, long lastOffset) {
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
         int appendSize = records.sizeInBytes();
-        CompletableFuture<?> cf = streamSegment.append(RawPayloadRecordBatch.of(records.buffer()));
+        int count = (int) (lastOffset - nextOffset.get());
+        com.automq.elasticstream.client.DefaultRecordBatch batch = new com.automq.elasticstream.client.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
+        CompletableFuture<?> cf = streamSegment.append(batch);
+        nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
-        long committedOffset = size.get();
-        cf.thenAccept(rst -> updateCommittedOffset(committedOffset));
+        cf.thenAccept(rst -> updateCommittedOffset(lastOffset));
         lastAppend = cf;
         return appendSize;
     }
@@ -141,7 +113,6 @@ public class ElasticLogFileRecords extends FileRecords {
         }
     }
 
-    @Override
     public void flush() throws IOException {
         try {
             asyncFlush().get();
@@ -154,115 +125,88 @@ public class ElasticLogFileRecords extends FileRecords {
         return this.lastAppend.thenApply(rst -> null);
     }
 
-    @Override
-    public void close() throws IOException {
-        // TODO: recycle resource
-    }
-
-    @Override
-    public void closeHandlers() throws IOException {
-        // noop implementation
-    }
-
-    @Override
-    public boolean deleteIfExists() throws IOException {
-        // TODO: delete segment by outer segment
-        return true;
-    }
-
-    @Override
-    public void trim() throws IOException {
-        // noop implementation.
-    }
-
-    @Override
-    public void updateParentDir(File parentDir) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void renameTo(File f) throws IOException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public int truncateTo(int targetSize) throws IOException {
-        if (targetSize == size.get()) {
-            return 0;
-        }
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public ConvertedRecords<? extends Records> downConvert(byte toMagic, long firstOffset, Time time) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public long writeTo(TransferableChannel destChannel, long offset, int length) throws IOException {
-        throw new UnsupportedOperationException();
-    }
-
     public void seal() {
 
+    }
+
+    public void close() {
+    }
+
+    public FileRecords.TimestampAndOffset searchForTimestamp(long targetTimestamp, long startingOffset) {
+        for (RecordBatch batch : batchesFrom(startingOffset)) {
+            if (batch.maxTimestamp() >= targetTimestamp) {
+                // We found a message
+                for (Record record : batch) {
+                    long timestamp = record.timestamp();
+                    if (timestamp >= targetTimestamp && record.offset() >= startingOffset)
+                        return new FileRecords.TimestampAndOffset(timestamp, record.offset(),
+                                maybeLeaderEpoch(batch.partitionLeaderEpoch()));
+                }
+            }
+        }
+        return null;
+    }
+
+    private Optional<Integer> maybeLeaderEpoch(int leaderEpoch) {
+        return leaderEpoch == RecordBatch.NO_PARTITION_LEADER_EPOCH ?
+                Optional.empty() : Optional.of(leaderEpoch);
+    }
+
+
+    public FileRecords.TimestampAndOffset largestTimestampAfter(long startOffset) {
+        // TODO: implement
+        return new FileRecords.TimestampAndOffset(0, 0, Optional.empty());
     }
 
     public ElasticStreamSlice streamSegment() {
         return streamSegment;
     }
 
-    @Override
-    protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start) {
-        LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, sizeInBytes());
+    public Iterable<RecordBatch> batchesFrom(final long startOffset) {
+        return () -> batchIterator(startOffset, Integer.MAX_VALUE);
+    }
+
+    protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, int fetchSize) {
+        LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(this, startOffset, fetchSize);
         return new RecordBatchIterator<>(inputStream);
     }
 
-    protected RecordBatchIterator<FileLogInputStream.FileChannelRecordBatch> batchIterator(int start, int fetchSize) {
-        LogInputStream<FileLogInputStream.FileChannelRecordBatch> inputStream = new StreamSegmentInputStream(this, start, Math.min(start + fetchSize, sizeInBytes()));
-        return new RecordBatchIterator<>(inputStream);
-    }
-
-    static class StreamSegmentInputStream implements LogInputStream<FileLogInputStream.FileChannelRecordBatch> {
+    static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
         private static final int FETCH_BATCH_SIZE = 64 * 1024;
-        private static final ExecutorService FETCH_WAIT_COMMIT_EXECUTORS = Executors.newFixedThreadPool(4,
-                ThreadUtils.createThreadFactory("fetch-wait-commit-%d", true));
         private final ElasticLogFileRecords elasticLogFileRecords;
-        private final int end;
-        private final Queue<FileChannelRecordBatchWrapper> remaining = new LinkedList<>();
-        private int position;
+        private final Queue<RecordBatch> remaining = new LinkedList<>();
+        private final int maxSize;
+        private final long endOffset;
+        private long nextFetchOffset;
+        private int readSize;
 
 
-        public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, int start, int end) {
+        public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, long startOffset, int maxSize) {
             this.elasticLogFileRecords = elasticLogFileRecords;
-            this.end = end;
-            this.position = start;
+            this.maxSize = maxSize;
+            this.nextFetchOffset = startOffset - elasticLogFileRecords.baseOffset;
+            this.endOffset = elasticLogFileRecords.committedOffset.get() - elasticLogFileRecords.baseOffset;
         }
 
 
         @Override
-        public FileLogInputStream.FileChannelRecordBatch nextBatch() throws IOException {
+        public RecordBatch nextBatch() throws IOException {
             for (; ; ) {
-                FileChannelRecordBatchWrapper recordBatch = remaining.poll();
+                RecordBatch recordBatch = remaining.poll();
                 if (recordBatch != null) {
                     return recordBatch;
                 }
-                // TODO: end 有点问题
-                if (position >= end - HEADER_SIZE_UP_TO_MAGIC)
+                if (readSize > maxSize || nextFetchOffset >= endOffset) {
                     return null;
+                }
                 try {
-                    CompletableFuture<Void> cf;
-                    if (end < elasticLogFileRecords.committedOffset.get()) {
-                        cf = new CompletableFuture<>();
-                        elasticLogFileRecords.lastAppend.whenCompleteAsync((rst, ex) -> cf.complete(null), FETCH_WAIT_COMMIT_EXECUTORS);
-                    } else {
-                        cf = CompletableFuture.completedFuture(null);
-                    }
-                    FetchResult rst = cf.thenApply(nil -> elasticLogFileRecords.streamSegment.fetch(position, end, FETCH_BATCH_SIZE)).get();
+                    FetchResult rst = elasticLogFileRecords.streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE));
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
+                            readSize += streamRecord.rawPayload().remaining();
                             for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
-                                remaining.offer(new FileChannelRecordBatchWrapper(r, position));
-                                position += r.sizeInBytes();
+                                remaining.offer(r);
+                                nextFetchOffset = r.lastOffset() - elasticLogFileRecords.baseOffset + 1;
                             }
                         } catch (Throwable e) {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSegment;
@@ -282,175 +226,18 @@ public class ElasticLogFileRecords extends FileRecords {
         }
     }
 
-    static class FileChannelRecordBatchWrapper extends FileLogInputStream.FileChannelRecordBatch {
-        private final RecordBatch inner;
-        private final int position;
-
-        public FileChannelRecordBatchWrapper(RecordBatch recordBatch, int position) {
-            this.inner = recordBatch;
-            this.position = position;
-        }
-
-        @Override
-        public boolean isValid() {
-            return inner.isValid();
-        }
-
-        @Override
-        public void ensureValid() {
-            inner.ensureValid();
-        }
-
-        @Override
-        public long checksum() {
-            return inner.checksum();
-        }
-
-        @Override
-        public long maxTimestamp() {
-            return inner.maxTimestamp();
-        }
-
-        @Override
-        public TimestampType timestampType() {
-            return inner.timestampType();
-        }
-
-        @Override
-        public long baseOffset() {
-            return inner.baseOffset();
-        }
-
-        @Override
-        public long lastOffset() {
-            return inner.lastOffset();
-        }
-
-        @Override
-        public long nextOffset() {
-            return inner.nextOffset();
-        }
-
-        @Override
-        public byte magic() {
-            return inner.magic();
-        }
-
-        @Override
-        public long producerId() {
-            return inner.producerId();
-        }
-
-        @Override
-        public short producerEpoch() {
-            return inner.producerEpoch();
-        }
-
-        @Override
-        public boolean hasProducerId() {
-            return inner.hasProducerId();
-        }
-
-        @Override
-        public int baseSequence() {
-            return inner.baseSequence();
-        }
-
-        @Override
-        public int lastSequence() {
-            return inner.lastSequence();
-        }
-
-        @Override
-        public CompressionType compressionType() {
-            return inner.compressionType();
-        }
-
-        @Override
-        public int sizeInBytes() {
-            return inner.sizeInBytes();
-        }
-
-        @Override
-        public Integer countOrNull() {
-            return inner.countOrNull();
-        }
-
-        @Override
-        public boolean isCompressed() {
-            return inner.isCompressed();
-        }
-
-        @Override
-        public void writeTo(ByteBuffer buffer) {
-            inner.writeTo(buffer);
-        }
-
-        @Override
-        protected RecordBatch toMemoryRecordBatch(ByteBuffer buffer) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        protected int headerSize() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public int position() {
-            return position;
-        }
-
-        @Override
-        public boolean isTransactional() {
-            return inner.isTransactional();
-        }
-
-        @Override
-        public OptionalLong deleteHorizonMs() {
-            return inner.deleteHorizonMs();
-        }
-
-        @Override
-        public int partitionLeaderEpoch() {
-            return inner.partitionLeaderEpoch();
-        }
-
-        @Override
-        public CloseableIterator<Record> streamingIterator(BufferSupplier decompressionBufferSupplier) {
-            return inner.streamingIterator(decompressionBufferSupplier);
-        }
-
-        @Override
-        public boolean isControlBatch() {
-            return inner.isControlBatch();
-        }
-
-        @Override
-        public Iterator<Record> iterator() {
-            return inner.iterator();
-        }
-
-        public ByteBuffer buffer() {
-            if (inner instanceof DefaultRecordBatch) {
-                return ((DefaultRecordBatch) inner).buffer();
-            } else {
-                ByteBuffer buf = ByteBuffer.allocate(inner.sizeInBytes());
-                inner.writeTo(buf);
-                buf.flip();
-                return buf;
-            }
-        }
-    }
-
-    class BatchIteratorRecordsAdaptor extends AbstractRecords {
-        private final int position;
+    public static class BatchIteratorRecordsAdaptor extends AbstractRecords {
+        private final ElasticLogFileRecords elasticLogFileRecords;
+        private final long startOffset;
         private final int fetchSize;
         private int sizeInBytes = -1;
         private MemoryRecords memoryRecords;
+        // iterator last record batch exclusive last offset.
+        private long lastOffset = -1;
 
-        public BatchIteratorRecordsAdaptor(int position, int fetchSize) {
-            this.position = position;
+        public BatchIteratorRecordsAdaptor(ElasticLogFileRecords elasticLogFileRecords, long startOffset, int fetchSize) {
+            this.elasticLogFileRecords = elasticLogFileRecords;
+            this.startOffset = startOffset;
             this.fetchSize = fetchSize;
         }
 
@@ -463,13 +250,17 @@ public class ElasticLogFileRecords extends FileRecords {
 
         @Override
         public Iterable<? extends RecordBatch> batches() {
-            Iterator<FileLogInputStream.FileChannelRecordBatch> iterator = ElasticLogFileRecords.this.batchIterator(position, fetchSize);
-            return (Iterable<FileLogInputStream.FileChannelRecordBatch>) () -> iterator;
+            if (memoryRecords == null) {
+                Iterator<RecordBatch> iterator = elasticLogFileRecords.batchIterator(startOffset, fetchSize);
+                return (Iterable<RecordBatch>) () -> iterator;
+            } else {
+                return memoryRecords.batches();
+            }
         }
 
         @Override
         public AbstractIterator<? extends RecordBatch> batchIterator() {
-            return ElasticLogFileRecords.this.batchIterator(position, fetchSize);
+            return elasticLogFileRecords.batchIterator(startOffset, fetchSize);
         }
 
         @Override
@@ -484,16 +275,29 @@ public class ElasticLogFileRecords extends FileRecords {
             return memoryRecords.writeTo(channel, position, length);
         }
 
+        public long lastOffset() {
+            ensureAllLoaded();
+            return lastOffset;
+        }
+
         private void ensureAllLoaded() {
             if (sizeInBytes != -1) {
                 return;
             }
+            // TODO: direct fetch and composite to a large memoryRecords
             sizeInBytes = 0;
             CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
+            RecordBatch lastBatch = null;
             for (RecordBatch batch : batches()) {
                 sizeInBytes += batch.sizeInBytes();
-                ByteBuffer buffer = ((FileChannelRecordBatchWrapper) batch).buffer();
+                ByteBuffer buffer = ((DefaultRecordBatch) batch).buffer().duplicate();
                 allRecordsBuf.addComponent(true, Unpooled.wrappedBuffer(buffer));
+                lastBatch = batch;
+            }
+            if (lastBatch != null) {
+                lastOffset = lastBatch.lastOffset() + 1;
+            } else {
+                lastOffset = startOffset;
             }
             memoryRecords = MemoryRecords.readableRecords(allRecordsBuf.nioBuffer());
         }

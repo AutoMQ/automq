@@ -83,9 +83,11 @@ public class ElasticLogMeta {
 
     @Override
     public String toString() {
+        int size = segmentMetas.size();
+        List<ElasticStreamSegmentMeta> lastNthSegmentMetas = segmentMetas.subList(Math.max(0, size - 5), size);
         return "ElasticLogMeta{" +
             "streamMap=" + streamMap +
-            ", segmentMetas=" + segmentMetas +
+            ", lastNthSegmentMetas=" + lastNthSegmentMetas +
             '}';
     }
 }

@@ -30,6 +30,7 @@ import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeEx
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{Time, Utils}
+import kafka.log.es.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
 
 import scala.jdk.CollectionConverters._
 import scala.collection.{Seq, immutable}
@@ -421,8 +422,17 @@ class LocalLog(@volatile private var _dir: File,
 
           fetchDataInfo = segment.read(startOffset, maxLength, maxPosition, minOneMessage)
           if (fetchDataInfo != null) {
-            if (includeAbortedTxns)
-              fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo)
+            if (includeAbortedTxns) {
+              // elastic stream inject start
+              val upperBoundOpt =  fetchDataInfo.records match {
+                case adaptor: BatchIteratorRecordsAdaptor =>
+                  Some(adaptor.lastOffset())
+                case _ =>
+                  None
+              }
+              fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo, upperBoundOpt)
+              // elastic stream inject end
+            }
           } else segmentOpt = segments.higherSegment(baseOffset)
         }
 
@@ -444,12 +454,16 @@ class LocalLog(@volatile private var _dir: File,
   }
 
   private def addAbortedTransactions(startOffset: Long, segment: LogSegment,
-                                     fetchInfo: FetchDataInfo): FetchDataInfo = {
+                                     fetchInfo: FetchDataInfo, upperBoundOffsetOpt: Option[Long]): FetchDataInfo = {
     val fetchSize = fetchInfo.records.sizeInBytes
     val startOffsetPosition = OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
       fetchInfo.fetchOffsetMetadata.relativePositionInSegment)
-    val upperBoundOffset = segment.fetchUpperBoundOffset(startOffsetPosition, fetchSize).getOrElse {
-      segments.higherSegment(segment.baseOffset).map(_.baseOffset).getOrElse(logEndOffset)
+    // TODO: modify it don't need fetch upper bound
+    val upperBoundOffset = upperBoundOffsetOpt match {
+      case Some(x) => x
+      case None => segment.fetchUpperBoundOffset(startOffsetPosition, fetchSize).getOrElse {
+        segments.higherSegment(segment.baseOffset).map(_.baseOffset).getOrElse(logEndOffset)
+      }
     }
 
     val abortedTransactions = ListBuffer.empty[FetchResponseData.AbortedTransaction]

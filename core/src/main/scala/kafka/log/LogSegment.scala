@@ -455,7 +455,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
   }
   // elastic stream inject end
 
-  private def loadLargestTimestamp(): Unit = {
+  protected def loadLargestTimestamp(): Unit = {
     // Get the last time index entry. If the time index is empty, it will return (-1, baseOffset)
     val lastTimeIndexEntry = timeIndex.lastEntry
     maxTimestampAndOffsetSoFar = lastTimeIndexEntry

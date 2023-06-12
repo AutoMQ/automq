@@ -363,7 +363,10 @@ class LogCleaner(initialConfig: CleanerConfig,
           // there's a log, clean it
           this.lastPreCleanStats = preCleanStats
           try {
-            cleanLog(cleanable)
+            if (false) {
+              // TODO: implement clean without direct log file
+              cleanLog(cleanable)
+            }
             true
           } catch {
             case e @ (_: ThreadShutdownException | _: ControlThrowable) => throw e

@@ -17,10 +17,12 @@
 
 package kafka.log.es;
 
+import com.automq.elasticstream.client.DefaultRecordBatch;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.Map;
 
 public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
@@ -63,8 +65,9 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
     }
 
     public byte[] encode() {
-        ByteBuffer buffer = ByteBuffer.allocate(8 + recordBatch.rawPayload().remaining())
+        ByteBuffer buffer = ByteBuffer.allocate(8 + 4 + recordBatch.rawPayload().remaining())
             .putLong(baseOffset)
+            .putInt(recordBatch.count())
             .put(recordBatch.rawPayload().duplicate())
             .flip();
         return buffer.array();
@@ -72,6 +75,7 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
 
     public static RecordBatchWithContextWrapper decode(ByteBuffer buffer) {
         long baseOffset = buffer.getLong();
-        return new RecordBatchWithContextWrapper(RawPayloadRecordBatch.of(buffer), baseOffset);
+        int count = buffer.getInt();
+        return new RecordBatchWithContextWrapper(new DefaultRecordBatch(count, 0, Collections.emptyMap(), buffer), baseOffset);
     }
 }

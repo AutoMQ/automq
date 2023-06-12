@@ -37,11 +37,6 @@ public class ElasticStreamSegmentMeta {
     @JsonProperty("ls")
     private SliceRange log = new SliceRange();
     /**
-     * byte offset range of the index stream
-     */
-    @JsonProperty("os")
-    private SliceRange offset = new SliceRange();
-    /**
      * byte offset range of the time index stream
      */
     @JsonProperty("ts")
@@ -97,14 +92,6 @@ public class ElasticStreamSegmentMeta {
         this.log = log;
     }
 
-    public SliceRange offset() {
-        return offset;
-    }
-
-    public void offset(SliceRange offset) {
-        this.offset = offset;
-    }
-
     public SliceRange time() {
         return time;
     }
@@ -129,7 +116,6 @@ public class ElasticStreamSegmentMeta {
                 ", lastModifiedTimestamp=" + lastModifiedTimestamp +
                 ", streamSuffix='" + streamSuffix + '\'' +
                 ", log=" + log +
-                ", offset=" + offset +
                 ", time=" + time +
                 ", txn=" + txn +
                 '}';
