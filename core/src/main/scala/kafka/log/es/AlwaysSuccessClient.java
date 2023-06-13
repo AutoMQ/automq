@@ -142,13 +142,13 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             CompletableFuture<AppendResult> cf = new CompletableFuture<>();
             stream.append(recordBatch)
-                    .whenCompleteAsync((rst, ex) -> {
+                    .whenComplete((rst, ex) -> {
                         if (ex != null) {
                             cf.completeExceptionally(ex);
                         } else {
                             cf.complete(rst);
                         }
-                    }, APPEND_CALLBACK_EXECUTORS);
+                    });
             return cf;
         }
 

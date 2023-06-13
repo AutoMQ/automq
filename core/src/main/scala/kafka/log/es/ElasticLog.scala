@@ -33,9 +33,10 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ExecutorService, Executors}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ExecutorService, Executors, LinkedBlockingQueue}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
+import scala.util.control.Breaks.{break, breakable}
 
 /**
  * An append-only log for storing messages in elastic stream. The log is a sequence of LogSegments, each with a base offset.
@@ -90,6 +91,8 @@ class ElasticLog(val metaStream: api.Stream,
   private val appendTimer = new Timer()
   private val appendCallbackTimer = new Timer()
   private val appendAckTimer = new Timer()
+  private val appendAckQueue = new LinkedBlockingQueue[Long]()
+  private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
 
 
   // persist log meta when lazy stream real create
@@ -155,27 +158,45 @@ class ElasticLog(val metaStream: api.Stream,
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
     appendTimer.update(System.nanoTime() - startTimestamp)
-    updateLogEndOffset(lastOffset + 1)
+    val endOffset = lastOffset + 1
+    updateLogEndOffset(endOffset)
     activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
       appendCallbackTimer.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
-      // TODO: add multiple thread executors and shard different log to certain thread.
-      APPEND_CALLBACK_EXECUTOR.submit(new Runnable {
-        override def run(): Unit = {
-          appendCallback(lastOffset, activeSegment)
+      val startNanos = System.nanoTime()
+      var notify = false
+      breakable {
+        while (true) {
+          val offset = confirmOffset.get()
+          if (offset.messageOffset < endOffset) {
+            confirmOffset.compareAndSet(offset, LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
+            notify = true
+            confirmOffsetChangeListener.foreach(_.apply())
+          } else {
+            break()
+          }
         }
-      })
+      }
+      if (notify) {
+        appendAckQueue.offer(endOffset)
+        appendAckThread.submit(new Runnable {
+          override def run(): Unit = {
+            appendCallback(startNanos)
+          }
+        })
+      }
     })
   }
 
-  private def appendCallback(lastOffset: Long, activeSegment: LogSegment): Unit = {
-    val startNanos = System.nanoTime()
-    val offset = confirmOffset.get()
-    if (offset.messageOffset < lastOffset + 1) {
-      confirmOffset.set(LogOffsetMetadata(lastOffset + 1, activeSegment.baseOffset, activeSegment.size))
-      confirmOffsetChangeListener.foreach(_.apply())
+  private def appendCallback(startNanos: Long): Unit = {
+    // group notify
+    if (appendAckQueue.isEmpty) {
+      return
     }
+    appendAckQueue.clear()
+    confirmOffsetChangeListener.foreach(_.apply())
+
     appendAckTimer.update(System.nanoTime() - startNanos)
     if (System.currentTimeMillis() - lastRecordTimestamp > 1000) {
       val appendAvgCost = appendTimer.getAndReset()
@@ -253,7 +274,11 @@ object ElasticLog extends Logging {
   private val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
   private val PARTITION_META_KEY: String = "PARTITION"
   private val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
-  private val APPEND_CALLBACK_EXECUTOR: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-%d", true))
+  private val APPEND_CALLBACK_EXECUTOR: Array[ExecutorService] = new Array[ExecutorService](4)
+
+  for (i <- 0 until 4) {
+    APPEND_CALLBACK_EXECUTOR(i) = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-" + i, true))
+  }
 
   def apply(client: Client, namespace: String, dir: File,
             config: LogConfig,
