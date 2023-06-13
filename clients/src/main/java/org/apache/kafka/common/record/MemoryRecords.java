@@ -75,7 +75,6 @@ public class MemoryRecords extends AbstractRecords {
         if (position + length > buffer.limit())
             throw new IllegalArgumentException("position+length should not be greater than buffer.limit(), position: "
                     + position + ", length: " + length + ", buffer.limit(): " + buffer.limit());
-
         return Utils.tryWriteTo(channel, (int) position, length, buffer);
     }
 

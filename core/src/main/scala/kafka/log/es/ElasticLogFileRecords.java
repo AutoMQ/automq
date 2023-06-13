@@ -18,6 +18,7 @@
 package kafka.log.es;
 
 import com.automq.elasticstream.client.api.FetchResult;
+import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.network.TransferableChannel;
@@ -27,12 +28,14 @@ import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.LogInputStream;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.PooledResource;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.RecordBatchIterator;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.RecordsUtil;
 import org.apache.kafka.common.utils.AbstractIterator;
+import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +45,7 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
@@ -84,7 +88,27 @@ public class ElasticLogFileRecords {
     }
 
     public Records read(long startOffset, int maxSize) {
-        return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
+        if (ReadManualReleaseHint.isMarked()) {
+            return readAll0(startOffset, maxSize);
+        } else {
+            return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
+        }
+    }
+
+    private Records readAll0(long startOffset, int maxSize) {
+        int readSize = 0;
+        long nextFetchOffset = startOffset - baseOffset;
+        long endOffset = this.committedOffset.get() - baseOffset;
+        List<ByteBuffer> recordBuffers = new LinkedList<>();
+        while (readSize <= maxSize && nextFetchOffset < endOffset) {
+            FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
+            for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
+                recordBuffers.add(recordBatchWithContext.rawPayload());
+                nextFetchOffset = recordBatchWithContext.lastOffset() - baseOffset;
+                readSize += recordBatchWithContext.rawPayload().remaining();
+            }
+        }
+        return PooledMemoryRecords.of(recordBuffers);
     }
 
     public int append(MemoryRecords records, long lastOffset) {
@@ -152,7 +176,6 @@ public class ElasticLogFileRecords {
                 Optional.empty() : Optional.of(leaderEpoch);
     }
 
-
     public FileRecords.TimestampAndOffset largestTimestampAfter(long startOffset) {
         // TODO: implement
         return new FileRecords.TimestampAndOffset(0, 0, Optional.empty());
@@ -169,6 +192,64 @@ public class ElasticLogFileRecords {
     protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, int fetchSize) {
         LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(this, startOffset, fetchSize);
         return new RecordBatchIterator<>(inputStream);
+    }
+
+    public static class PooledMemoryRecords extends AbstractRecords implements PooledResource {
+        private final List<ByteBuffer> subBuffers;
+        private final MemoryRecords memoryRecords;
+
+        private PooledMemoryRecords(List<ByteBuffer> subBuffers) {
+            this.subBuffers = subBuffers;
+            CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer();
+            for (ByteBuffer buf : subBuffers) {
+                compositeByteBuf.addComponent(true, Unpooled.wrappedBuffer(buf));
+            }
+            this.memoryRecords = MemoryRecords.readableRecords(compositeByteBuf.nioBuffer());
+        }
+
+        public static PooledMemoryRecords of(List<ByteBuffer> subBuffers) {
+            return new PooledMemoryRecords(subBuffers);
+        }
+
+        @Override
+        public int sizeInBytes() {
+            return memoryRecords.sizeInBytes();
+        }
+
+        @Override
+        public Iterable<? extends RecordBatch> batches() {
+            return memoryRecords.batches();
+        }
+
+        @Override
+        public AbstractIterator<? extends RecordBatch> batchIterator() {
+            return memoryRecords.batchIterator();
+        }
+
+        @Override
+        public ConvertedRecords<? extends Records> downConvert(byte toMagic, long firstOffset, Time time) {
+            return memoryRecords.downConvert(toMagic, firstOffset, time);
+        }
+
+        @Override
+        public long writeTo(TransferableChannel channel, long position, int length) throws IOException {
+            return memoryRecords.writeTo(channel, position, length);
+        }
+
+        @Override
+        public void release() {
+            for (ByteBuffer buffer : subBuffers) {
+                if (!buffer.isDirect()) {
+                    continue;
+                }
+                try {
+                    ByteBufferUnmapper.unmap("buffer", buffer);
+                } catch (IOException e) {
+                    LOGGER.error("Failed to unmap buffer", e);
+                }
+            }
+            subBuffers.clear();
+        }
     }
 
     static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
@@ -203,8 +284,16 @@ public class ElasticLogFileRecords {
                     FetchResult rst = elasticLogFileRecords.streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE));
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
-                            readSize += streamRecord.rawPayload().remaining();
-                            for (RecordBatch r : MemoryRecords.readableRecords(streamRecord.rawPayload()).batches()) {
+                            ByteBuffer buf = streamRecord.rawPayload();
+                            if (buf.isDirect()) {
+                                ByteBuffer heapBuf = ByteBuffer.allocate(buf.remaining());
+                                heapBuf.put(buf);
+                                heapBuf.flip();
+                                ByteBufferUnmapper.unmap("buffer", buf);
+                                buf = heapBuf;
+                            }
+                            readSize += buf.remaining();
+                            for (RecordBatch r : MemoryRecords.readableRecords(buf).batches()) {
                                 remaining.offer(r);
                                 nextFetchOffset = r.lastOffset() - elasticLogFileRecords.baseOffset + 1;
                             }
@@ -213,7 +302,7 @@ public class ElasticLogFileRecords {
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
                             LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
-                            throw e;
+                            throw new RuntimeException(e);
                         }
                     });
                     if (remaining.isEmpty()) {

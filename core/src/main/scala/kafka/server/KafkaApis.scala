@@ -24,6 +24,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
+import kafka.log.es.ReadManualReleaseHint
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
@@ -977,6 +978,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         clientMetadata = clientMetadata
       )
 
+      // elastic stream inject start
+      ReadManualReleaseHint.mark()
       // call the replica manager to fetch messages from the local replica
       replicaManager.fetchMessages(
         params = params,
@@ -984,6 +987,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         quota = replicationQuota(fetchRequest),
         responseCallback = processResponseCallback,
       )
+      ReadManualReleaseHint.reset()
+      // elastic stream inject end
     }
   }
 
