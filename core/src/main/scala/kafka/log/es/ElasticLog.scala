@@ -32,7 +32,7 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 
 import java.io.File
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ExecutorService, Executors, LinkedBlockingQueue}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -87,10 +87,6 @@ class ElasticLog(val metaStream: api.Stream,
   var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
-  private var lastRecordTimestamp = 0L
-  private val appendTimer = new Timer()
-  private val appendCallbackTimer = new Timer()
-  private val appendAckTimer = new Timer()
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
   private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
 
@@ -157,11 +153,11 @@ class ElasticLog(val metaStream: api.Stream,
     val startTimestamp = time.nanoseconds()
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
-    appendTimer.update(System.nanoTime() - startTimestamp)
+    APPEND_TIMER.update(System.nanoTime() - startTimestamp)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
     activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
-      appendCallbackTimer.update(System.nanoTime() - startTimestamp)
+      APPEND_CALLBACK_TIMER.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       val startNanos = System.nanoTime()
@@ -197,15 +193,14 @@ class ElasticLog(val metaStream: api.Stream,
     appendAckQueue.clear()
     confirmOffsetChangeListener.foreach(_.apply())
 
-    appendAckTimer.update(System.nanoTime() - startNanos)
-    if (System.currentTimeMillis() - lastRecordTimestamp > 1000) {
-      val appendAvgCost = appendTimer.getAndReset()
-      val appendCallbackAvgCost = appendCallbackTimer.getAndReset()
-      val appendAckAvgCost = appendAckTimer.getAndReset()
-      if (appendCallbackAvgCost > 5000000 || appendAckAvgCost > 1000000) {
-        warn(s"$logIdent append cost too much, appendAvgCost=$appendAvgCost ns, appendCallbackAvgCost=$appendCallbackAvgCost ns, appendAckAvgCost=$appendAckAvgCost ns")
-      }
-      lastRecordTimestamp = System.currentTimeMillis();
+    APPEND_ACK_TIMER.update(System.nanoTime() - startNanos)
+    val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
+    val now = System.currentTimeMillis()
+    if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+      val appendStatistics = APPEND_TIMER.getAndReset()
+      val appendCallbackStatistics = APPEND_CALLBACK_TIMER.getAndReset()
+      val appendAckStatistics = APPEND_ACK_TIMER.getAndReset()
+      logger.warn(s"log append cost, appendStatistics=$appendStatistics, appendCallbackStatistics=$appendCallbackStatistics, appendAckStatistics=$appendAckStatistics")
     }
   }
 
@@ -274,6 +269,10 @@ object ElasticLog extends Logging {
   private val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
   private val PARTITION_META_KEY: String = "PARTITION"
   private val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
+  private val LAST_RECORD_TIMESTAMP = new AtomicLong()
+  private val APPEND_TIMER = new Timer()
+  private val APPEND_CALLBACK_TIMER = new Timer()
+  private val APPEND_ACK_TIMER = new Timer()
   private val APPEND_CALLBACK_EXECUTOR: Array[ExecutorService] = new Array[ExecutorService](4)
 
   for (i <- 0 until 4) {

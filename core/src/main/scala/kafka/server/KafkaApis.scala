@@ -27,6 +27,7 @@ import kafka.log.AppendOrigin
 import kafka.log.es.ReadManualReleaseHint
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
+import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.metadata.ConfigRepository
 import kafka.utils.Implicits._
@@ -79,7 +80,7 @@ import java.lang.{Long => JLong}
 import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, Set, immutable, mutable}
@@ -551,6 +552,7 @@ class KafkaApis(val requestChannel: RequestChannel,
    * Handle a produce request
    */
   def handleProduceRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
+    val startNanos = System.nanoTime()
     val produceRequest = request.body[ProduceRequest]
 
     if (RequestUtils.hasTransactionalRecords(produceRequest)) {
@@ -596,6 +598,18 @@ class KafkaApis(val requestChannel: RequestChannel,
     // https://issues.apache.org/jira/browse/KAFKA-10730
     @nowarn("cat=deprecation")
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
+      // elastic stream inject start
+      PRODUCE_CALLBACK_TIMER.update(System.nanoTime() - startNanos)
+      val now = System.currentTimeMillis()
+      val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
+      if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+        val produceStatistics = PRODUCE_TIMER.getAndReset()
+        val produceCallbackStatistics = PRODUCE_CALLBACK_TIMER.getAndReset()
+        info(s"produce cost, produceStatistics=$produceStatistics produceCallbackStatistics=$produceCallbackStatistics")
+      }
+      // elastic stream inject end
+
+
       val mergedResponseStatus = responseStatus ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ invalidRequestResponses
       var errorInResponse = false
 
@@ -679,6 +693,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
       // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
       produceRequest.clearPartitionRecords()
+      PRODUCE_TIMER.update(System.nanoTime() - startNanos)
     }
   }
 
@@ -3539,6 +3554,10 @@ class KafkaApis(val requestChannel: RequestChannel,
 }
 
 object KafkaApis {
+  val LAST_RECORD_TIMESTAMP = new AtomicLong()
+  val PRODUCE_TIMER = new kafka.log.es.metrics.Timer()
+  val PRODUCE_CALLBACK_TIMER = new kafka.log.es.metrics.Timer()
+
   // Traffic from both in-sync and out of sync replicas are accounted for in replication quota to ensure total replication
   // traffic doesn't exceed quota.
   // TODO: remove resolvedResponseData method when sizeOf can take a data object.

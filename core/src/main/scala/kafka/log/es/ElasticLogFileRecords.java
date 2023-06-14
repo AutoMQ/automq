@@ -99,16 +99,16 @@ public class ElasticLogFileRecords {
         int readSize = 0;
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = this.committedOffset.get() - baseOffset;
-        List<ByteBuffer> recordBuffers = new LinkedList<>();
+        List<FetchResult> fetchResults = new LinkedList<>();
         while (readSize <= maxSize && nextFetchOffset < endOffset) {
             FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
+            fetchResults.add(rst);
             for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
-                recordBuffers.add(recordBatchWithContext.rawPayload());
                 nextFetchOffset = recordBatchWithContext.lastOffset() - baseOffset;
                 readSize += recordBatchWithContext.rawPayload().remaining();
             }
         }
-        return PooledMemoryRecords.of(recordBuffers);
+        return PooledMemoryRecords.of(fetchResults);
     }
 
     public int append(MemoryRecords records, long lastOffset) {
@@ -195,20 +195,22 @@ public class ElasticLogFileRecords {
     }
 
     public static class PooledMemoryRecords extends AbstractRecords implements PooledResource {
-        private final List<ByteBuffer> subBuffers;
+        private final List<FetchResult> fetchResults;
         private final MemoryRecords memoryRecords;
 
-        private PooledMemoryRecords(List<ByteBuffer> subBuffers) {
-            this.subBuffers = subBuffers;
+        private PooledMemoryRecords(List<FetchResult> fetchResults) {
+            this.fetchResults = fetchResults;
             CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer();
-            for (ByteBuffer buf : subBuffers) {
-                compositeByteBuf.addComponent(true, Unpooled.wrappedBuffer(buf));
+            for (FetchResult fetchResult : fetchResults) {
+                for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
+                    compositeByteBuf.addComponent(true, Unpooled.wrappedBuffer(recordBatchWithContext.rawPayload()));
+                }
             }
             this.memoryRecords = MemoryRecords.readableRecords(compositeByteBuf.nioBuffer());
         }
 
-        public static PooledMemoryRecords of(List<ByteBuffer> subBuffers) {
-            return new PooledMemoryRecords(subBuffers);
+        public static PooledMemoryRecords of(List<FetchResult> fetchResults) {
+            return new PooledMemoryRecords(fetchResults);
         }
 
         @Override
@@ -238,17 +240,7 @@ public class ElasticLogFileRecords {
 
         @Override
         public void release() {
-            for (ByteBuffer buffer : subBuffers) {
-                if (!buffer.isDirect()) {
-                    continue;
-                }
-                try {
-                    ByteBufferUnmapper.unmap("buffer", buffer);
-                } catch (IOException e) {
-                    LOGGER.error("Failed to unmap buffer", e);
-                }
-            }
-            subBuffers.clear();
+            //TODO: invoke release on fetchResults
         }
     }
 
@@ -289,7 +281,6 @@ public class ElasticLogFileRecords {
                                 ByteBuffer heapBuf = ByteBuffer.allocate(buf.remaining());
                                 heapBuf.put(buf);
                                 heapBuf.flip();
-                                ByteBufferUnmapper.unmap("buffer", buf);
                                 buf = heapBuf;
                             }
                             readSize += buf.remaining();
@@ -305,6 +296,7 @@ public class ElasticLogFileRecords {
                             throw new RuntimeException(e);
                         }
                     });
+                    // free fetch result
                     if (remaining.isEmpty()) {
                         return null;
                     }
