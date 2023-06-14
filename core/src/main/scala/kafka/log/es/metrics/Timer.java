@@ -46,7 +46,7 @@ public class Timer {
         return new Statistics(count, timeNanos / count);
     }
 
-    static class Statistics {
+    public static class Statistics {
         public long count;
         public long avg;
 
