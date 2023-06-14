@@ -35,7 +35,6 @@ import org.apache.kafka.common.record.RecordBatchIterator;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.RecordsUtil;
 import org.apache.kafka.common.utils.AbstractIterator;
-import org.apache.kafka.common.utils.ByteBufferUnmapper;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -240,7 +239,8 @@ public class ElasticLogFileRecords {
 
         @Override
         public void release() {
-            //TODO: invoke release on fetchResults
+            fetchResults.forEach(FetchResult::free);
+            fetchResults.clear();
         }
     }
 
@@ -296,7 +296,7 @@ public class ElasticLogFileRecords {
                             throw new RuntimeException(e);
                         }
                     });
-                    // free fetch result
+                    rst.free();
                     if (remaining.isEmpty()) {
                         return null;
                     }
