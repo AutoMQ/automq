@@ -168,7 +168,6 @@ class ElasticLog(val metaStream: api.Stream,
           if (offset.messageOffset < endOffset) {
             confirmOffset.compareAndSet(offset, LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
             notify = true
-            confirmOffsetChangeListener.foreach(_.apply())
           } else {
             break()
           }
