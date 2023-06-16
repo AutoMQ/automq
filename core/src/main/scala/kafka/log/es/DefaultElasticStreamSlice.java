@@ -139,15 +139,22 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     class FetchResultWrapper implements FetchResult {
+        private final FetchResult inner;
         private final List<RecordBatchWithContext> recordBatchList;
 
         public FetchResultWrapper(FetchResult fetchResult) {
+            this.inner = fetchResult;
             this.recordBatchList = fetchResult.recordBatchList().stream().map(RecordBatchWithContextWrapper::new).collect(Collectors.toList());
         }
 
         @Override
         public List<RecordBatchWithContext> recordBatchList() {
             return recordBatchList;
+        }
+
+        @Override
+        public void free() {
+            this.inner.free();
         }
     }
 

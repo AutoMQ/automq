@@ -87,11 +87,11 @@ public class ElasticLogFileRecords {
     }
 
     public Records read(long startOffset, int maxSize) {
-//        if (ReadManualReleaseHint.isMarked()) {
-//            return readAll0(startOffset, maxSize);
-//        } else {
-        return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
-//        }
+        if (ReadManualReleaseHint.isMarked()) {
+            return readAll0(startOffset, maxSize);
+        } else {
+            return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
+        }
     }
 
     private Records readAll0(long startOffset, int maxSize) {
