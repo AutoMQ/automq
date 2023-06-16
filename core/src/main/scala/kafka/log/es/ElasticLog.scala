@@ -33,7 +33,7 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ExecutorService, Executors, LinkedBlockingQueue}
+import java.util.concurrent._
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.control.Breaks.{break, breakable}
@@ -151,12 +151,25 @@ class ElasticLog(val metaStream: api.Stream,
   override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
     val activeSegment = segments.activeSegment
     val startTimestamp = time.nanoseconds()
+
+    val permit = records.sizeInBytes()
+    if (!APPEND_PERMIT_SEMAPHORE.tryAcquire(permit)) {
+      while (!APPEND_PERMIT_SEMAPHORE.tryAcquire(permit, 1, TimeUnit.SECONDS)) {
+        tryAppendStatistics()
+      }
+      APPEND_PERMIT_ACQUIRE_FAIL_TIMER.update(System.nanoTime() - startTimestamp)
+    }
+
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
     APPEND_TIMER.update(System.nanoTime() - startTimestamp)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
-    activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().thenAccept(_ => {
+    val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
+    cf.whenComplete((_, _) => {
+      APPEND_PERMIT_SEMAPHORE.release(permit)
+    })
+    cf.thenAccept(_ => {
       APPEND_CALLBACK_TIMER.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
@@ -191,15 +204,21 @@ class ElasticLog(val metaStream: api.Stream,
     }
     appendAckQueue.clear()
     confirmOffsetChangeListener.foreach(_.apply())
-
     APPEND_ACK_TIMER.update(System.nanoTime() - startNanos)
+
+    tryAppendStatistics()
+  }
+
+  private def tryAppendStatistics(): Unit = {
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
     if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+      val permitAcquireFailStatistics = APPEND_PERMIT_ACQUIRE_FAIL_TIMER.getAndReset()
+      val remainingPermits = APPEND_PERMIT_SEMAPHORE.availablePermits()
       val appendStatistics = APPEND_TIMER.getAndReset()
-      val appendCallbackStatistics = APPEND_CALLBACK_TIMER.getAndReset()
-      val appendAckStatistics = APPEND_ACK_TIMER.getAndReset()
-      logger.warn(s"log append cost, appendStatistics=$appendStatistics, appendCallbackStatistics=$appendCallbackStatistics, appendAckStatistics=$appendAckStatistics")
+      val callbackStatistics = APPEND_CALLBACK_TIMER.getAndReset()
+      val ackStatistics = APPEND_ACK_TIMER.getAndReset()
+      logger.warn(s"log append cost, permitAcquireFail=$permitAcquireFailStatistics, remainingPermit=$remainingPermits/$APPEND_PERMIT ,append=$appendStatistics, callback=$callbackStatistics, ack=$ackStatistics")
     }
   }
 
@@ -268,7 +287,12 @@ object ElasticLog extends Logging {
   private val PRODUCER_SNAPSHOT_KEY_PREFIX: String = "PRODUCER_SNAPSHOT_"
   private val PARTITION_META_KEY: String = "PARTITION"
   private val LEADER_EPOCH_CHECKPOINT_KEY: String = "LEADER_EPOCH_CHECKPOINT"
+
+  private val APPEND_PERMIT = 1024 * 1024 * 1024
+  private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
+
   private val LAST_RECORD_TIMESTAMP = new AtomicLong()
+  private val APPEND_PERMIT_ACQUIRE_FAIL_TIMER = new Timer()
   private val APPEND_TIMER = new Timer()
   private val APPEND_CALLBACK_TIMER = new Timer()
   private val APPEND_ACK_TIMER = new Timer()
