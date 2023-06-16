@@ -350,6 +350,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   def meta: ElasticStreamSegmentMeta = {
     _meta.log(_log.streamSegment.sliceRange)
+    _meta.logSize(_log.sizeInBytes())
     _meta.time(timeIdx.stream.sliceRange)
     _meta.txn(txnIndex.stream.sliceRange)
     _meta
@@ -369,7 +370,7 @@ object ElasticLogSegment {
             time: Time, segmentEventListener: ElasticLogSegmentEventListener): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
-    val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset)
+    val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset, meta.logSize())
     val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 

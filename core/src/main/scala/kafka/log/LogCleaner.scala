@@ -22,12 +22,14 @@ import java.nio._
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import kafka.common._
+import kafka.log.es.ElasticLogSegment
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.{BrokerReconfigurable, KafkaConfig, LogDirFailureChannel}
 import kafka.utils._
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.errors.{CorruptRecordException, KafkaStorageException}
+import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetention
 import org.apache.kafka.common.record._
@@ -364,7 +366,6 @@ class LogCleaner(initialConfig: CleanerConfig,
           this.lastPreCleanStats = preCleanStats
           try {
             if (false) {
-              // TODO: implement clean without direct log file
               cleanLog(cleanable)
             }
             true
@@ -603,8 +604,16 @@ private[log] class Cleaner(val id: Int,
           s"${if(retainLegacyDeletesAndTxnMarkers) "retaining" else "discarding"} deletes.")
 
         try {
-          cleanInto(log.topicPartition, currentSegment.log, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
-            log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, stats, currentTime = currentTime)
+          // elastic stream inject start
+          currentSegment match {
+            case segment: ElasticLogSegment =>
+              cleanIntoV2(log.topicPartition, segment, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
+                log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, stats, currentTime = currentTime)
+            case _ =>
+              cleanInto(log.topicPartition, currentSegment.log, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
+                log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, stats, currentTime = currentTime)
+          }
+          // elastic stream inject end
         } catch {
           case e: LogSegmentOffsetOverflowException =>
             // Split the current segment. It's also safest to abort the current cleaning process, so that we retry from
@@ -867,12 +876,12 @@ private[log] class Cleaner(val id: Int,
     while(segs.nonEmpty) {
       var group = List(segs.head)
       var logSize = segs.head.size.toLong
-      var indexSize = segs.head.offsetIndex.sizeInBytes.toLong
+      var indexSize = offsetIndexSize(segs.head).toLong
       var timeIndexSize = segs.head.timeIndex.sizeInBytes.toLong
       segs = segs.tail
       while(segs.nonEmpty &&
             logSize + segs.head.size <= maxSize &&
-            indexSize + segs.head.offsetIndex.sizeInBytes <= maxIndexSize &&
+            indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
             timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
             //if first segment size is 0, we don't need to do the index offset range check.
             //this will avoid empty log left every 2^31 message.
@@ -880,13 +889,20 @@ private[log] class Cleaner(val id: Int,
               lastOffsetForFirstSegment(segs, firstUncleanableOffset) - group.last.baseOffset <= Int.MaxValue)) {
         group = segs.head :: group
         logSize += segs.head.size
-        indexSize += segs.head.offsetIndex.sizeInBytes
+        indexSize += offsetIndexSize(segs.head)
         timeIndexSize += segs.head.timeIndex.sizeInBytes
         segs = segs.tail
       }
       grouped ::= group.reverse
     }
     grouped.reverse
+  }
+
+  private def offsetIndexSize(segment: LogSegment): Int = {
+    segment match {
+      case _: ElasticLogSegment => 0
+      case _ => segment.offsetIndex.sizeInBytes
+    }
   }
 
   /**
@@ -968,6 +984,12 @@ private[log] class Cleaner(val id: Int,
                                        maxLogMessageSize: Int,
                                        transactionMetadata: CleanedTransactionMetadata,
                                        stats: CleanerStats): Boolean = {
+    // elastic stream inject start
+    if (segment.isInstanceOf[ElasticLogSegment]) {
+      return buildOffsetMapForSegmentV2(topicPartition, segment, map, startOffset, nextSegmentStartOffset, transactionMetadata, stats)
+    }
+    // elastic stream inject end
+
     var position = segment.offsetIndex.lookup(startOffset).position
     val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
     while (position < segment.log.sizeInBytes) {
@@ -1028,6 +1050,149 @@ private[log] class Cleaner(val id: Int,
     restoreBuffers()
     false
   }
+
+  // elastic stream inject start
+  def isClusterMetaTopic(topicPartition: TopicPartition): Boolean = {
+    Topic.CLUSTER_METADATA_TOPIC_NAME.equals(topicPartition.topic())
+  }
+
+  private[log] def cleanIntoV2(topicPartition: TopicPartition,
+                             src: ElasticLogSegment,
+                             dest: LogSegment,
+                             map: OffsetMap,
+                             retainLegacyDeletesAndTxnMarkers: Boolean,
+                             deleteRetentionMs: Long,
+                             maxLogMessageSize: Int,
+                             transactionMetadata: CleanedTransactionMetadata,
+                             lastRecordsOfActiveProducers: Map[Long, LastRecord],
+                             stats: CleanerStats,
+                             currentTime: Long): Unit = {
+    val logCleanerFilter: RecordFilter = new RecordFilter(currentTime, deleteRetentionMs) {
+      var discardBatchRecords: Boolean = _
+
+      override def checkBatchRetention(batch: RecordBatch): RecordFilter.BatchRetentionResult = {
+        // we piggy-back on the tombstone retention logic to delay deletion of transaction markers.
+        // note that we will never delete a marker until all the records from that transaction are removed.
+        val canDiscardBatch = shouldDiscardBatch(batch, transactionMetadata)
+
+        if (batch.isControlBatch)
+          discardBatchRecords = canDiscardBatch && batch.deleteHorizonMs().isPresent && batch.deleteHorizonMs().getAsLong <= currentTime
+        else
+          discardBatchRecords = canDiscardBatch
+
+        def isBatchLastRecordOfProducer: Boolean = {
+          // We retain the batch in order to preserve the state of active producers. There are three cases:
+          // 1) The producer is no longer active, which means we can delete all records for that producer.
+          // 2) The producer is still active and has a last data offset. We retain the batch that contains
+          //    this offset since it also contains the last sequence number for this producer.
+          // 3) The last entry in the log is a transaction marker. We retain this marker since it has the
+          //    last producer epoch, which is needed to ensure fencing.
+          lastRecordsOfActiveProducers.get(batch.producerId).exists { lastRecord =>
+            lastRecord.lastDataOffset match {
+              case Some(offset) => batch.lastOffset == offset
+              case None => batch.isControlBatch && batch.producerEpoch == lastRecord.producerEpoch
+            }
+          }
+        }
+
+        val batchRetention: BatchRetention =
+          if (batch.hasProducerId && isBatchLastRecordOfProducer)
+            BatchRetention.RETAIN_EMPTY
+          else if (discardBatchRecords)
+            BatchRetention.DELETE
+          else
+            BatchRetention.DELETE_EMPTY
+        new RecordFilter.BatchRetentionResult(batchRetention, canDiscardBatch && batch.isControlBatch)
+      }
+
+      override def shouldRetainRecord(batch: RecordBatch, record: Record): Boolean = {
+        if (discardBatchRecords)
+        // The batch is only retained to preserve producer sequence information; the records can be removed
+          false
+        else if (batch.isControlBatch)
+          true
+        else
+          Cleaner.this.shouldRetainRecord(map, retainLegacyDeletesAndTxnMarkers, batch, record, stats, currentTime = currentTime)
+      }
+    }
+
+    val fetchDataInfo = src.read(0, Integer.MAX_VALUE)
+    for (batch <- fetchDataInfo.records.batches().asScala) {
+      checkDone(topicPartition)
+      val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
+      throttler.maybeThrottle(records.sizeInBytes)
+      val result = records.filterTo(topicPartition, logCleanerFilter, writeBuffer, maxLogMessageSize, decompressionBufferSupplier)
+
+      stats.readMessages(result.messagesRead, result.bytesRead)
+      stats.recopyMessages(result.messagesRetained, result.bytesRetained)
+      // if any messages are to be retained, write them out
+      val outputBuffer = result.outputBuffer
+      if (outputBuffer.position() > 0) {
+        outputBuffer.flip()
+        val retained = MemoryRecords.readableRecords(outputBuffer)
+        // it's OK not to hold the Log's lock in this case, because this segment is only accessed by other threads
+        // after `Log.replaceSegments` (which acquires the lock) is called
+        dest.append(largestOffset = result.maxOffset,
+          largestTimestamp = result.maxTimestamp,
+          shallowOffsetOfMaxTimestamp = result.shallowOffsetOfMaxTimestamp,
+          records = retained)
+        throttler.maybeThrottle(outputBuffer.limit())
+      }
+    }
+  }
+
+  private def buildOffsetMapForSegmentV2(topicPartition: TopicPartition,
+                                       segment: LogSegment,
+                                       map: OffsetMap,
+                                       startOffset: Long,
+                                       nextSegmentStartOffset: Long,
+                                       transactionMetadata: CleanedTransactionMetadata,
+                                       stats: CleanerStats): Boolean = {
+    val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
+    val fetchDataInfo = segment.read(startOffset, Integer.MAX_VALUE, Long.MaxValue)
+    for (batch <- fetchDataInfo.records.batches().asScala) {
+      checkDone(topicPartition)
+      throttler.maybeThrottle(batch.sizeInBytes())
+
+      if (batch.isControlBatch) {
+        transactionMetadata.onControlBatchRead(batch)
+        stats.indexMessagesRead(1)
+      } else {
+        val isAborted = transactionMetadata.onBatchRead(batch)
+        if (isAborted) {
+          // If the batch is aborted, do not bother populating the offset map.
+          // Note that abort markers are supported in v2 and above, which means count is defined.
+          stats.indexMessagesRead(batch.countOrNull)
+        } else {
+          val recordsIterator = batch.streamingIterator(decompressionBufferSupplier)
+          try {
+            for (record <- recordsIterator.asScala) {
+              if (record.hasKey && record.offset >= startOffset) {
+                if (map.size < maxDesiredMapSize)
+                  map.put(record.key, record.offset)
+                else
+                  return true
+              }
+              stats.indexMessagesRead(1)
+            }
+          } finally recordsIterator.close()
+        }
+      }
+
+      if (batch.lastOffset >= startOffset)
+        map.updateLatestOffset(batch.lastOffset)
+
+      val bytesRead = batch.sizeInBytes()
+      stats.indexBytesRead(bytesRead)
+
+    }
+
+    // In the case of offsets gap, fast forward to latest expected offset in this segment.
+    map.updateLatestOffset(nextSegmentStartOffset - 1L)
+    false
+  }
+  // elastic stream inject end
+
 }
 
 /**

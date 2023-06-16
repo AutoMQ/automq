@@ -90,6 +90,8 @@ class ElasticLog(val metaStream: api.Stream,
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
   private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
 
+  private var modified = false
+
 
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
@@ -195,6 +197,8 @@ class ElasticLog(val metaStream: api.Stream,
         })
       }
     })
+
+    modified = true
   }
 
   private def appendCallback(startNanos: Long): Unit = {
@@ -272,6 +276,10 @@ class ElasticLog(val metaStream: api.Stream,
     partitionMeta.setCleanedShutdown(true)
     partitionMeta.setRecoverOffset(recoveryPoint)
     persistPartitionMeta()
+    if (modified) {
+      // update log size
+      persistLogMeta()
+    }
 
     maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()

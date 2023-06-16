@@ -31,6 +31,8 @@ public class ElasticStreamSegmentMeta {
     private long lastModifiedTimestamp;
     @JsonProperty("s")
     private String streamSuffix = "";
+    @JsonProperty("lsz")
+    private int logSize;
     /**
      * byte offset range of the log stream
      */
@@ -64,6 +66,14 @@ public class ElasticStreamSegmentMeta {
 
     public void streamSuffix(String streamSuffix) {
         this.streamSuffix = streamSuffix;
+    }
+
+    public int logSize() {
+        return logSize;
+    }
+
+    public void logSize(int logSize) {
+        this.logSize = logSize;
     }
 
     @SuppressWarnings("unused")
@@ -115,6 +125,7 @@ public class ElasticStreamSegmentMeta {
                 ", createTimestamp=" + createTimestamp +
                 ", lastModifiedTimestamp=" + lastModifiedTimestamp +
                 ", streamSuffix='" + streamSuffix + '\'' +
+                ", logSize=" + logSize +
                 ", log=" + log +
                 ", time=" + time +
                 ", txn=" + txn +

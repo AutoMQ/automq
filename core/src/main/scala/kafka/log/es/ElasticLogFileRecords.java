@@ -64,12 +64,12 @@ public class ElasticLogFileRecords {
     private volatile CompletableFuture<?> lastAppend;
 
 
-    public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset) {
+    public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset, int size) {
         this.baseOffset = baseOffset;
         this.streamSegment = streamSegment;
         // TODO: init size when recover, all is size matter anymore?
         long nextOffset = streamSegment.nextOffset();
-        size = new AtomicInteger((int) nextOffset);
+        this.size = new AtomicInteger(size == 0? (int) nextOffset: size);
         this.nextOffset = new AtomicLong(baseOffset + nextOffset);
         this.committedOffset = new AtomicLong(baseOffset + nextOffset);
         this.lastAppend = CompletableFuture.completedFuture(null);
