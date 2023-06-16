@@ -17,8 +17,9 @@
 
 package kafka.server
 
-import java.util.concurrent.TimeUnit
+import kafka.log.es.ReadManualReleaseHint
 
+import java.util.concurrent.TimeUnit
 import kafka.metrics.KafkaMetricsGroup
 import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
@@ -162,12 +163,16 @@ class DelayedFetch(
       tp -> status.fetchInfo
     }
 
+    // elastic stream inject start
+    ReadManualReleaseHint.mark()
     val logReadResults = replicaManager.readFromLocalLog(
       params,
       fetchInfos,
       quota,
       readFromPurgatory = true
     )
+    ReadManualReleaseHint.reset()
+    // elastic stream inject end
 
     val fetchPartitionData = logReadResults.map { case (tp, result) =>
       val isReassignmentFetch = params.isFromFollower &&

@@ -103,7 +103,13 @@ public class ElasticLogFileRecords {
             FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
             fetchResults.add(rst);
             for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
-                nextFetchOffset = recordBatchWithContext.lastOffset() - baseOffset;
+                if (recordBatchWithContext.lastOffset() > nextFetchOffset) {
+                    nextFetchOffset = recordBatchWithContext.lastOffset();
+                } else {
+                    LOGGER.error("Invalid record batch, last offset {} is less than next offset {}",
+                            recordBatchWithContext.lastOffset(), nextFetchOffset);
+                    throw new IllegalStateException();
+                }
                 readSize += recordBatchWithContext.rawPayload().remaining();
             }
         }
