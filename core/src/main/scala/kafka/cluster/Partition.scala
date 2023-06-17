@@ -65,11 +65,11 @@ class DelayedOperations(topicPartition: TopicPartition,
     Partition.DELAY_FETCH_EXECUTOR.submit(new Runnable {
       override def run(): Unit = {
         fetch.checkAndComplete(requestKey)
+        deleteRecords.checkAndComplete(requestKey)
       }
     })
     // elastic stream inject end
     produce.checkAndComplete(requestKey)
-    deleteRecords.checkAndComplete(requestKey)
   }
 
   def numDelayedDelete: Int = deleteRecords.numDelayed
