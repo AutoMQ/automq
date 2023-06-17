@@ -27,7 +27,7 @@ import kafka.log.AppendOrigin
 import kafka.log.es.ReadManualReleaseHint
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
-import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
+import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIMER, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.metadata.ConfigRepository
 import kafka.utils.Implicits._
@@ -599,14 +599,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     @nowarn("cat=deprecation")
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
       // elastic stream inject start
-      PRODUCE_CALLBACK_TIMER.update(System.nanoTime() - startNanos)
-      val now = System.currentTimeMillis()
-      val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
-      if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
-        val produceStatistics = PRODUCE_TIMER.getAndReset()
-        val produceCallbackStatistics = PRODUCE_CALLBACK_TIMER.getAndReset()
-        info(s"produce cost, produceStatistics=$produceStatistics produceCallbackStatistics=$produceCallbackStatistics")
-      }
+      val callbackStartNanos = System.nanoTime()
+      PRODUCE_CALLBACK_TIMER.update(callbackStartNanos - startNanos)
       // elastic stream inject end
 
 
@@ -666,6 +660,18 @@ class KafkaApis(val requestChannel: RequestChannel,
       } else {
         requestChannel.sendResponse(request, new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs), None)
       }
+
+      // elastic stream inject start
+      PRODUCE_ACK_TIMER.update(System.nanoTime() - callbackStartNanos)
+      val now = System.currentTimeMillis()
+      val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
+      if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+        val produceStatistics = PRODUCE_TIMER.getAndReset()
+        val produceCallbackStatistics = PRODUCE_CALLBACK_TIMER.getAndReset()
+        val produceAckStatistics = PRODUCE_ACK_TIMER.getAndReset()
+        info(s"produce cost, produce=$produceStatistics callback=$produceCallbackStatistics ack=$produceAckStatistics")
+      }
+      // elastic stream inject end
     }
 
     def processingStatsCallback(processingStats: FetchResponseStats): Unit = {
@@ -3557,6 +3563,7 @@ object KafkaApis {
   val LAST_RECORD_TIMESTAMP = new AtomicLong()
   val PRODUCE_TIMER = new kafka.log.es.metrics.Timer()
   val PRODUCE_CALLBACK_TIMER = new kafka.log.es.metrics.Timer()
+  val PRODUCE_ACK_TIMER = new kafka.log.es.metrics.Timer()
 
   // Traffic from both in-sync and out of sync replicas are accounted for in replication quota to ensure total replication
   // traffic doesn't exceed quota.
