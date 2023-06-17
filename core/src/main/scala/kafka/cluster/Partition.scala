@@ -18,7 +18,7 @@ package kafka.cluster
 
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -41,7 +41,7 @@ import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record.{MemoryRecords, RecordBatch}
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
@@ -61,7 +61,13 @@ class DelayedOperations(topicPartition: TopicPartition,
 
   def checkAndCompleteAll(): Unit = {
     val requestKey = TopicPartitionOperationKey(topicPartition)
-    fetch.checkAndComplete(requestKey)
+    // elastic stream inject start
+    Partition.DELAY_FETCH_EXECUTOR.submit(new Runnable {
+      override def run(): Unit = {
+        fetch.checkAndComplete(requestKey)
+      }
+    })
+    // elastic stream inject end
     produce.checkAndComplete(requestKey)
     deleteRecords.checkAndComplete(requestKey)
   }
@@ -70,6 +76,10 @@ class DelayedOperations(topicPartition: TopicPartition,
 }
 
 object Partition extends KafkaMetricsGroup {
+  // elastic stream inject start
+  val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
+  // elastic stream inject end
+
   def apply(topicPartition: TopicPartition,
             time: Time,
             replicaManager: ReplicaManager): Partition = {
