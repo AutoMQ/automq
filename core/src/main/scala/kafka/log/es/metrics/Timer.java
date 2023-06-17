@@ -17,6 +17,7 @@
 
 package kafka.log.es.metrics;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.LongAdder;
 public class Timer {
     private final LongAdder count = new LongAdder();
     private final LongAdder timeNanos = new LongAdder();
+    private final AtomicLong maxElapseNanos = new AtomicLong();
 
     public Timer() {
     }
@@ -32,6 +34,15 @@ public class Timer {
     public void update(long elapseNanos) {
         count.add(1);
         timeNanos.add(elapseNanos);
+        for (; ; ) {
+            long oldMaxElapseNanos = maxElapseNanos.get();
+            if (elapseNanos <= oldMaxElapseNanos) {
+                break;
+            }
+            if (maxElapseNanos.compareAndSet(oldMaxElapseNanos, elapseNanos)) {
+                break;
+            }
+        }
     }
 
     /**
@@ -40,32 +51,39 @@ public class Timer {
     public Statistics getAndReset() {
         long count = this.count.sumThenReset();
         long timeNanos = this.timeNanos.sumThenReset();
+        long maxElapseNanos = this.maxElapseNanos.getAndSet(0);
         if (count == 0) {
-            return new Statistics(0, 0);
+            return new Statistics(0, 0, maxElapseNanos);
         }
-        return new Statistics(count, timeNanos / count);
+        return new Statistics(count, timeNanos / count, maxElapseNanos);
     }
 
     public static class Statistics {
         public long count;
         public long avg;
+        public long max;
 
-        public Statistics(long count, long avg) {
+        public Statistics(long count, long avg, long max) {
             this.count = count;
             this.avg = avg;
+            this.max = max;
+        }
+
+        static String readableNanos(long nanos) {
+            String readableStr;
+            if (nanos > 1000000) {
+                readableStr = nanos / 1000000 + "ms";
+            } else if (nanos > 1000) {
+                readableStr = nanos / 1000 + "us";
+            } else {
+                readableStr = nanos + "ns";
+            }
+            return readableStr;
         }
 
         @Override
         public String toString() {
-            String avgStr;
-            if (avg > 1000000) {
-                avgStr = avg / 1000000 + "ms";
-            } else if (avg > 1000) {
-                avgStr = avg / 1000 + "us";
-            } else {
-                avgStr = avg + "ns";
-            }
-            return "{count=" + count + ", avg=" + avgStr + '}';
+            return "{count=" + count + ", avg=" + readableNanos(avg) + ", max=" + readableNanos(max) + '}';
         }
     }
 
