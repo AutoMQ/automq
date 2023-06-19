@@ -311,7 +311,7 @@ object ElasticLog extends Logging {
   private val APPEND_ACK_TIMER = new Timer()
   private val APPEND_CALLBACK_EXECUTOR: Array[ExecutorService] = new Array[ExecutorService](8)
 
-  for (i <- 0 until 4) {
+  for (i <- APPEND_CALLBACK_EXECUTOR.indices) {
     APPEND_CALLBACK_EXECUTOR(i) = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-" + i, true))
   }
 
