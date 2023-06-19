@@ -47,6 +47,7 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
+import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.collection.{Map, Seq}
@@ -61,14 +62,19 @@ class DelayedOperations(topicPartition: TopicPartition,
                         produce: DelayedOperationPurgatory[DelayedProduce],
                         fetch: DelayedOperationPurgatory[DelayedFetch],
                         deleteRecords: DelayedOperationPurgatory[DelayedDeleteRecords]) {
+  private val logger = LoggerFactory.getLogger(getClass.getName)
 
   def checkAndCompleteAll(): Unit = {
     val requestKey = TopicPartitionOperationKey(topicPartition)
     // elastic stream inject start
     Partition.DELAY_FETCH_EXECUTOR.submit(new Runnable {
       override def run(): Unit = {
-        fetch.checkAndComplete(requestKey)
-        deleteRecords.checkAndComplete(requestKey)
+        try {
+          fetch.checkAndComplete(requestKey)
+          deleteRecords.checkAndComplete(requestKey)
+        } catch {
+          case e: Throwable => logger.error("delay fetch fail", e)
+        }
       }
     })
     // elastic stream inject end
