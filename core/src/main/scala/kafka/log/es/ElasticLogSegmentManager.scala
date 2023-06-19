@@ -21,7 +21,9 @@ import com.automq.elasticstream.client.api
 import kafka.log.es.ElasticLog.info
 
 import java.util
+import java.util.Optional
 import java.util.stream.Collectors
+import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
 class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: ElasticLogStreamManager, val logIdent: String) {
   val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
@@ -35,13 +37,40 @@ class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: El
     segments.remove(baseOffset)
   }
 
-  def persistLogMeta(): Unit = {
+  def persistLogMeta(): ElasticLogMeta = {
     val meta = logMeta()
     val kv = MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(meta))
     metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(kv))).get()
     info(s"${logIdent}save log meta $meta")
-
+    trimStream(meta)
+    meta
   }
+
+  private def trimStream(meta: ElasticLogMeta): Unit = {
+    val streamMinOffsets = new util.HashMap[String, java.lang.Long]()
+    for (segMeta <- meta.getSegmentMetas.asScala) {
+      streamMinOffsets.compute("log" + segMeta.streamSuffix(), (_, v) => {
+        math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(0L))
+      })
+      streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (_, v) => {
+        Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(0L))
+      })
+      streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (_, v) => {
+        Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(0L))
+      })
+    }
+    for (entry <- streamManager.streams().entrySet().asScala) {
+      val streamName = entry.getKey
+      val stream = entry.getValue
+      var minOffset = streamMinOffsets.get(streamName)
+      // if minOffset == null, then stream is not used by any segment, should trim it to end.
+      minOffset = Optional.ofNullable(minOffset).orElse(stream.nextOffset())
+      if (minOffset > stream.startOffset()) {
+        stream.trim(minOffset)
+      }
+    }
+  }
+
 
   def logSegmentEventListener(): ElasticLogSegmentEventListener = {
     segmentEventListener
