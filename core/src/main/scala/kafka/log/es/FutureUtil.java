@@ -17,6 +17,9 @@
 
 package kafka.log.es;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.CompletableFuture;
 
 public class FutureUtil {
@@ -24,5 +27,12 @@ public class FutureUtil {
         CompletableFuture<T> cf = new CompletableFuture<>();
         cf.completeExceptionally(ex);
                 return cf;
+    }
+    public static void suppress(Runnable run, Logger logger) {
+        try {
+            run.run();
+        } catch (Throwable t) {
+            logger.error("Suppress error", t);
+        }
     }
 }

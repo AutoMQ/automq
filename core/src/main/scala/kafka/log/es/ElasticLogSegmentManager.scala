@@ -19,13 +19,14 @@ package kafka.log.es
 
 import com.automq.elasticstream.client.api
 import kafka.log.es.ElasticLog.info
+import kafka.log.es.ElasticLog.error
 
 import java.util
 import java.util.Optional
 import java.util.stream.Collectors
 import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
-class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: ElasticLogStreamManager, val logIdent: String) {
+class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: ElasticLogStreamManager, logIdent: String) {
   val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
   val segmentEventListener = new EventListener()
 
@@ -47,6 +48,14 @@ class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: El
   }
 
   private def trimStream(meta: ElasticLogMeta): Unit = {
+    try {
+      trimStream0(meta)
+    } catch {
+      case e: Throwable => error(s"$logIdent trim stream failed", e)
+    }
+  }
+
+  private def trimStream0(meta: ElasticLogMeta): Unit = {
     val streamMinOffsets = new util.HashMap[String, java.lang.Long]()
     for (segMeta <- meta.getSegmentMetas.asScala) {
       streamMinOffsets.compute("log" + segMeta.streamSuffix(), (_, v) => {

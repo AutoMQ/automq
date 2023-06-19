@@ -36,6 +36,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import static kafka.log.es.FutureUtil.suppress;
+
 public class AlwaysSuccessClient implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
 
@@ -87,12 +89,14 @@ public class AlwaysSuccessClient implements Client {
 
         private void createAndOpenStream0(CreateStreamOptions options, CompletableFuture<Stream> cf) {
             streamClient.createAndOpenStream(options).whenCompleteAsync((stream, ex) -> {
-                if (ex != null) {
-                    LOGGER.error("Create and open stream fail, retry later", ex);
-                    STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
-                } else {
-                    cf.complete(new StreamImpl(stream));
-                }
+                FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        LOGGER.error("Create and open stream fail, retry later", ex);
+                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
+                    } else {
+                        cf.complete(new StreamImpl(stream));
+                    }
+                }, LOGGER);
             }, STREAM_MANAGER_CALLBACK_EXECUTORS);
         }
 
@@ -105,12 +109,14 @@ public class AlwaysSuccessClient implements Client {
 
         private void openStream0(long streamId, OpenStreamOptions options, CompletableFuture<Stream> cf) {
             streamClient.openStream(streamId, options).whenCompleteAsync((stream, ex) -> {
-                if (ex != null) {
-                    LOGGER.error("Create open stream[{}] fail, retry later", streamId, ex);
-                    STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
-                } else {
-                    cf.complete(new StreamImpl(stream));
-                }
+                FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        LOGGER.error("Create open stream[{}] fail, retry later", streamId, ex);
+                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
+                    } else {
+                        cf.complete(new StreamImpl(stream));
+                    }
+                }, LOGGER);
             }, APPEND_CALLBACK_EXECUTORS);
         }
     }
@@ -142,13 +148,13 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             CompletableFuture<AppendResult> cf = new CompletableFuture<>();
             stream.append(recordBatch)
-                    .whenComplete((rst, ex) -> {
+                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
                         if (ex != null) {
                             cf.completeExceptionally(ex);
                         } else {
                             cf.complete(rst);
                         }
-                    });
+                    }, LOGGER));
             return cf;
         }
 
@@ -162,16 +168,18 @@ public class AlwaysSuccessClient implements Client {
 
         private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
             stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
-                if (ex != null) {
-                    LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
-                    if (!closed) {
-                        FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
+                FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
+                        if (!closed) {
+                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
+                        } else {
+                            cf.completeExceptionally(new IllegalStateException("stream already closed"));
+                        }
                     } else {
-                        cf.completeExceptionally(new IllegalStateException("stream already closed"));
+                        cf.complete(rst);
                     }
-                } else {
-                    cf.complete(rst);
-                }
+                }, LOGGER);
             }, FETCH_CALLBACK_EXECUTORS);
         }
 
@@ -179,11 +187,13 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<Void> trim(long newStartOffset) {
             CompletableFuture<Void> cf = new CompletableFuture<>();
             stream.trim(newStartOffset).whenCompleteAsync((rst, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                } else {
-                    cf.complete(rst);
-                }
+                FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(rst);
+                    }
+                }, LOGGER);
             }, APPEND_CALLBACK_EXECUTORS);
             return cf;
         }
@@ -192,13 +202,13 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<Void> close() {
             closed = true;
             CompletableFuture<Void> cf = new CompletableFuture<>();
-            stream.close().whenCompleteAsync((rst, ex) -> {
+            stream.close().whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
                     cf.complete(rst);
                 }
-            }, APPEND_CALLBACK_EXECUTORS);
+            }, LOGGER), APPEND_CALLBACK_EXECUTORS);
             return cf;
         }
 
@@ -206,11 +216,13 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<Void> destroy() {
             CompletableFuture<Void> cf = new CompletableFuture<>();
             stream.destroy().whenCompleteAsync((rst, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                } else {
-                    cf.complete(rst);
-                }
+                FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(rst);
+                    }
+                }, LOGGER);
             }, APPEND_CALLBACK_EXECUTORS);
             return cf;
         }

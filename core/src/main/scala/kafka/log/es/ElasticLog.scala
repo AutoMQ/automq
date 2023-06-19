@@ -192,7 +192,12 @@ class ElasticLog(val metaStream: api.Stream,
         appendAckQueue.offer(endOffset)
         appendAckThread.submit(new Runnable {
           override def run(): Unit = {
-            appendCallback(startNanos)
+            try {
+              appendCallback(startNanos)
+            } catch {
+              case e: Throwable =>
+                error(s"append callback error", e)
+            }
           }
         })
       }
