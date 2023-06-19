@@ -77,7 +77,7 @@ class DelayedOperations(topicPartition: TopicPartition,
 
 object Partition extends KafkaMetricsGroup {
   // elastic stream inject start
-  val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
+  val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
   // elastic stream inject end
 
   def apply(topicPartition: TopicPartition,
