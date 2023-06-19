@@ -20,10 +20,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
 import kafka.api.LeaderAndIsr
+import kafka.cluster.Partition.{LAST_RECORD_TIMESTAMP, TRY_COMPLETE_TIMER, UPDATE_WATERMARK_TIMER}
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
 import kafka.log.es.ElasticUnifiedLog
+import kafka.log.es.metrics.Timer
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
@@ -46,6 +48,7 @@ import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
 trait AlterPartitionListener {
@@ -78,6 +81,9 @@ class DelayedOperations(topicPartition: TopicPartition,
 object Partition extends KafkaMetricsGroup {
   // elastic stream inject start
   val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
+  val UPDATE_WATERMARK_TIMER = new Timer()
+  val TRY_COMPLETE_TIMER = new Timer()
+  val LAST_RECORD_TIMESTAMP = new AtomicLong()
   // elastic stream inject end
 
   def apply(topicPartition: TopicPartition,
@@ -1072,10 +1078,21 @@ class Partition(val topicPartition: TopicPartition,
   private def handleLeaderConfirmOffsetMove(): Unit = {
     leaderLogIfLocal match {
       case Some(leaderLog) =>
+        val incrementLeaderStartNanos = System.nanoTime()
         if (maybeIncrementLeaderHW(leaderLog)) {
+          val tryCompleteDelayRequestStartNanos = System.nanoTime()
+          UPDATE_WATERMARK_TIMER.update(tryCompleteDelayRequestStartNanos - incrementLeaderStartNanos)
           tryCompleteDelayedRequests()
+          TRY_COMPLETE_TIMER.update(System.nanoTime() - tryCompleteDelayRequestStartNanos)
         }
       case None =>
+    }
+    val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
+    val now = System.currentTimeMillis()
+    if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+      val updateWatermarkStatistics = UPDATE_WATERMARK_TIMER.getAndReset()
+      val tryCompleteStatistics = TRY_COMPLETE_TIMER.getAndReset()
+      logger.warn(s"handle offset move cost, maybeIncrementLeaderHW=$updateWatermarkStatistics, tryCompleteDelayedRequests=$tryCompleteStatistics")
     }
   }
   // elastic stream inject end
