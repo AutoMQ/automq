@@ -24,7 +24,7 @@ import kafka.cluster.Partition.{LAST_RECORD_TIMESTAMP, TRY_COMPLETE_TIMER, UPDAT
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.es.ElasticUnifiedLog
+import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.log.es.metrics.Timer
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server._
@@ -567,16 +567,19 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   // elastic stream inject start
+  /**
+   * Close this partition and trigger a re-election.
+   * It may be messy here, but it is necessary to ensure the following steps:
+   * 1) This broker(current leader) has closed the partition and the related streams.
+   * 2) The next leader will then open the partition and the related streams.
+   */
   def close(): Unit = {
-    logManager.remove(topicPartition)
-    // use the same lock as append set closed mark to forbid future append
+    logManager.removeFromCurrentLogs(topicPartition)
+    ElasticLogManager.removeLog(topicPartition)
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }
-    if (log.isDefined && log.get.isInstanceOf[ElasticUnifiedLog]) {
-      val elasticLog = log.get
-      elasticLog.close()
-    }
+    log.foreach(_.close())
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()

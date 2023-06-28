@@ -28,15 +28,15 @@ import org.apache.kafka.common.utils.{Time, Utils}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class ElasticUnifiedLog(logStartOffset: Long,
+class ElasticUnifiedLog(_logStartOffset: Long,
                         elasticLog: ElasticLog,
                         brokerTopicStats: BrokerTopicStats,
                         producerIdExpirationCheckIntervalMs: Int,
-                        leaderEpochCache: Option[LeaderEpochFileCache],
+                        _leaderEpochCache: Option[LeaderEpochFileCache],
                         producerStateManager: ProducerStateManager,
                         _topicId: Option[Uuid])
-  extends UnifiedLog(logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
-    leaderEpochCache, producerStateManager, _topicId, false) {
+  extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
+    _leaderEpochCache, producerStateManager, _topicId, false) {
 
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -58,9 +58,15 @@ class ElasticUnifiedLog(logStartOffset: Long,
     // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
   }
 
+  override def close(): Unit = {
+    super.close()
+    elasticLog.segments.clear()
+    elasticLog.isMemoryMappedBufferClosed = true
+    elasticLog.deleteEmptyDir()
+  }
+
   override private[log] def delete(): Unit = {
-    // TODO: close instead of delete, cause of when replica is not on current node, the log will be deleted
-    // TODO: real delete invoke
+    throw new UnsupportedOperationException("delete() is not supported for ElasticUnifiedLog")
   }
 }
 

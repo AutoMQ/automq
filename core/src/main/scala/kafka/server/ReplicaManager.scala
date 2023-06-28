@@ -460,8 +460,11 @@ class ReplicaManager(val config: KafkaConfig,
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               maybeRemoveTopicMetrics(topicPartition.topic)
               // elastic stream inject start
-              // In case of elastic stream, partition leader alter is triggered by set isr/replicas,
-              // when broker is not response for the partition, we need close the partition
+              if (logManager.cleaner != null) {
+                logManager.cleaner.abortCleaning(topicPartition)
+              }
+              // For elastic stream, partition leader alter is triggered by setting isr/replicas.
+              // When broker is not response for the partition, we need to close the partition
               // instead of delete the partition.
               hostedPartition.partition.close()
               // elastic stream inject end
@@ -481,7 +484,7 @@ class ReplicaManager(val config: KafkaConfig,
     if (partitionsToDelete.nonEmpty) {
       // Delete the logs and checkpoint.
       // elastic stream inject start
-//      logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
+//            logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
       // elastic stream inject end
     }
     errorMap

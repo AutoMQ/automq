@@ -73,6 +73,7 @@ public class AlwaysSuccessClient implements Client {
         return kvClient;
     }
 
+    // TODO: do not retry when stream closed.
     static class StreamClientImpl implements StreamClient {
         private final StreamClient streamClient;
 

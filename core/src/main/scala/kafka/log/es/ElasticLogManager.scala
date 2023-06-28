@@ -51,6 +51,24 @@ class ElasticLogManager(val client: Client) {
   }
 
   /**
+   * Delete elastic log by topic partition. Note that this method may not be called by the broker holding the partition.
+   * @param topicPartition topic partition
+   */
+  def destroyLog(topicPartition: TopicPartition): Unit = {
+    // Removal may have happened in partition's closure. This is a defensive work.
+    elasticLogs.remove(topicPartition)
+    ElasticLog.destroy(client, NAMESPACE, topicPartition)
+  }
+
+  /**
+   * Remove elastic log in the map.
+   * @param topicPartition topic partition
+   */
+  def removeLog(topicPartition: TopicPartition): Unit = {
+    elasticLogs.remove(topicPartition)
+  }
+
+  /**
    * New elastic log segment.
    */
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, suffix: String): ElasticLogSegment = {
@@ -100,6 +118,14 @@ object ElasticLogManager {
     } else {
       namespace
     }
+  }
+
+  def removeLog(topicPartition: TopicPartition): Unit = {
+    INSTANCE.get.removeLog(topicPartition)
+  }
+
+  def destroyLog(topicPartition: TopicPartition): Unit = {
+    INSTANCE.get.destroyLog(topicPartition)
   }
 
   def getElasticLog(topicPartition: TopicPartition): ElasticLog = INSTANCE.get.elasticLogs.get(topicPartition)

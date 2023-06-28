@@ -267,7 +267,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   this.logIdent = s"[UnifiedLog partition=$topicPartition, dir=$parentDir] "
 
   /* A lock that guards all modifications to the log */
-  private val lock = new Object
+  protected val lock = new Object
 
   /* The earliest offset which is part of an incomplete transaction. This is used to compute the
    * last stable offset (LSO) in ReplicaManager. Note that it is possible that the "true" first unstable offset
@@ -1773,7 +1773,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   @threadsafe
   private[log] def addSegment(segment: LogSegment): LogSegment = localLog.segments.add(segment)
 
-  private def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+  protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, parentDir, msg) {
       fun
     }
@@ -1848,7 +1848,7 @@ object UnifiedLog extends Logging {
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,
-        leaderEpochCache = Option(leaderEpochFileCache),
+        _leaderEpochCache = Option(leaderEpochFileCache),
         localLog.producerStateManager,
         topicId)
     }

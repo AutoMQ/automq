@@ -24,7 +24,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.es.ReadManualReleaseHint
+import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
 import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIMER, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
@@ -144,6 +144,66 @@ class KafkaApis(val requestChannel: RequestChannel,
     metadataSupport.maybeForward(request, handler, responseCallback)
   }
 
+  // elastic stream inject start
+  /**
+   * Generate a map of topic -> partitionNum based on provided topicsRequestData.
+   * @param topicsRequestData the requesting DeleteTopicsRequestData
+   * @return a map of topic -> partitionNum
+   */
+  private def getPartitionNumSnapshotMap(topicsRequestData: DeleteTopicsRequestData): util.HashMap[String, Integer] = {
+    val partitionNumMap = new util.HashMap[String, Integer]()
+    topicsRequestData.topics().forEach(topic => {
+      if (topic.name() == null) {
+        metadataCache.getTopicName(topic.topicId()).foreach(topicName => {
+          partitionNumMap.put(topicName, metadataCache.numPartitions(topicName).get)
+        })
+      } else {
+        metadataCache.numPartitions(topic.name()).foreach(partitionNum => {
+          partitionNumMap.put(topic.name(), partitionNum)
+        })
+      }
+    })
+
+    topicsRequestData.topicNames().forEach(topicName => {
+      metadataCache.numPartitions(topicName).foreach(partitionNum => {
+        partitionNumMap.put(topicName, partitionNum)
+      })
+    })
+    partitionNumMap
+  }
+
+  /**
+   * Forward DeleteTopicsRequest to controller and destroy the logs of the deleted topics.
+   * @param request the DeleteTopicsRequest
+   * @param handler the handler that may handle the DeleteTopicsRequest
+   */
+  private def maybeForwardTopicDeletionToController(
+    request: RequestChannel.Request,
+    handler: RequestChannel.Request => Unit
+  ): Unit = {
+    // get the map here since metadataCache has been updated before the callback.
+    val partitionNumMap = getPartitionNumSnapshotMap(request.body[DeleteTopicsRequest].data())
+
+    def responseCallback(responseOpt: Option[AbstractResponse]): Unit = {
+      responseOpt match {
+        case Some(response) =>
+          requestHelper.sendForwardedResponse(request, response)
+          response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
+            if (result.errorCode() != Errors.NONE.code()) {
+              return
+            }
+            val partitionNum = partitionNumMap.get(result.name())
+            for (partitionId <- 0 until partitionNum) {
+              ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionId))
+            }
+          })
+        case None => handleInvalidVersionsDuringForwarding(request)
+      }
+    }
+    metadataSupport.maybeForward(request, handler, responseCallback)
+  }
+  // elastic stream inject end
+
   private def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = {
     info(s"The client connection will be closed due to controller responded " +
       s"unsupported version exception during $request forwarding. " +
@@ -202,7 +262,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
         case ApiKeys.API_VERSIONS => handleApiVersionsRequest(request)
         case ApiKeys.CREATE_TOPICS => maybeForwardToController(request, handleCreateTopicsRequest)
-        case ApiKeys.DELETE_TOPICS => maybeForwardToController(request, handleDeleteTopicsRequest)
+        case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.DELETE_RECORDS => handleDeleteRecordsRequest(request)
         case ApiKeys.INIT_PRODUCER_ID => handleInitProducerIdRequest(request, requestLocal)
         case ApiKeys.OFFSET_FOR_LEADER_EPOCH => handleOffsetForLeaderEpochRequest(request)

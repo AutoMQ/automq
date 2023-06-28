@@ -279,6 +279,7 @@ class ElasticLog(val metaStream: api.Stream,
   override private[log] def close(): Unit = {
     // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
     partitionMeta.setCleanedShutdown(true)
+    partitionMeta.setStartOffset(logStartOffset)
     partitionMeta.setRecoverOffset(recoveryPoint)
     persistPartitionMeta()
     if (modified) {
@@ -315,6 +316,8 @@ object ElasticLog extends Logging {
     APPEND_CALLBACK_EXECUTOR(i) = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-" + i, true))
   }
 
+  def formatStreamKey(namespace: String, topicPartition: TopicPartition): String = namespace + "/" + topicPartition.topic() + "/" + topicPartition.partition()
+
   def apply(client: Client, namespace: String, dir: File,
             config: LogConfig,
             scheduler: Scheduler,
@@ -327,7 +330,7 @@ object ElasticLog extends Logging {
             leaderEpoch: Long): ElasticLog = {
     val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
-    val key = namespace + "/" + topicPartition.topic() + "-" + topicPartition.partition()
+    val key = formatStreamKey(namespace, topicPartition)
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
 
     var partitionMeta: ElasticPartitionMeta = null
@@ -442,6 +445,48 @@ object ElasticLog extends Logging {
       elasticLog.persistPartitionMeta()
     }
     elasticLog
+  }
+
+  /**
+   * Destroy related streams of the targeted partition.
+   *
+   * @param client         elastic stream client
+   * @param namespace      namespace
+   * @param topicPartition topic partition
+   * @return Unit
+   */
+  def destroy(client: Client, namespace: String, topicPartition: TopicPartition): Unit = {
+    val logIdent = s"[ElasticLog partition=$topicPartition] "
+
+    val key = formatStreamKey(namespace, topicPartition)
+    val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
+    val keyValue = kvList.get(0)
+    val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
+    // First, open partition meta stream.
+    val metaStream = openStreamWithRetry(client, metaStreamId)
+    // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
+    val metaMap = getMetas(metaStream, logIdent = logIdent)
+
+    metaMap.get(LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
+      // Then, destroy log stream, time index stream, txn stream, ...
+      logMeta.getStreamMap.values().forEach(streamId => {
+        openStreamWithRetry(client, streamId).destroy()
+      })
+    })
+
+    // Finally, destroy meta stream and kv info.
+    metaStream.destroy()
+    client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+
+    info(s"$logIdent Destroyed")
+  }
+
+  private def openStreamWithRetry(client: Client, streamId: Long): api.Stream = {
+    client.streamClient()
+        .openStream(streamId, OpenStreamOptions.newBuilder().build())
+        .exceptionally(_ => client.streamClient()
+            .openStream(streamId, OpenStreamOptions.newBuilder().build()).join()
+        ).join()
   }
 
   private def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): api.Stream = {

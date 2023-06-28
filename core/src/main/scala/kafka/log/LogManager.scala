@@ -1163,8 +1163,8 @@ class LogManager(logDirs: Seq[File],
   }
 
   // elastic stream inject start
-  def remove(topicPartition: TopicPartition): Unit = {
-    currentLogs.remove(topicPartition)
+  def removeFromCurrentLogs(topicPartition: TopicPartition): Unit = {
+    removeLogAndMetrics(currentLogs, topicPartition)
   }
   // elastic stream inject end
 
