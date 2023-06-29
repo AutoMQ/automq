@@ -17,7 +17,6 @@
 
 package kafka.log.es
 
-import com.automq.elasticstream.client.api
 import kafka.log.es.ElasticLog.info
 import kafka.log.es.ElasticLog.error
 
@@ -26,7 +25,7 @@ import java.util.Optional
 import java.util.stream.Collectors
 import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
-class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: ElasticLogStreamManager, logIdent: String) {
+class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: ElasticLogStreamManager, logIdent: String) {
   val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
   val segmentEventListener = new EventListener()
 
@@ -40,8 +39,8 @@ class ElasticLogSegmentManager(val metaStream: api.Stream, val streamManager: El
 
   def persistLogMeta(): ElasticLogMeta = {
     val meta = logMeta()
-    val kv = MetaKeyValue.of(ElasticLog.LOG_META_KEY, ElasticLogMeta.encode(meta))
-    metaStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(kv))).get()
+    val kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta))
+    metaStream.append(kv).get()
     info(s"${logIdent}save log meta $meta")
     trimStream(meta)
     meta

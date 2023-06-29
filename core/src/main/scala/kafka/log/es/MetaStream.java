@@ -1,0 +1,210 @@
+package kafka.log.es;
+
+import com.automq.elasticstream.client.api.AppendResult;
+import com.automq.elasticstream.client.api.FetchResult;
+import com.automq.elasticstream.client.api.RecordBatch;
+import com.automq.elasticstream.client.api.RecordBatchWithContext;
+import com.automq.elasticstream.client.api.Stream;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Meta stream is a wrapper of stream, it is used to record basic info of a topicPartition.
+ * It serves as a kv stream.
+ */
+public class MetaStream implements Stream {
+    public static final String LOG_META_KEY = "LOG";
+    public static final String PRODUCER_SNAPSHOTS_META_KEY = "PRODUCER_SNAPSHOTS";
+    public static final String PRODUCER_SNAPSHOT_KEY_PREFIX = "PRODUCER_SNAPSHOT_";
+    public static final String PARTITION_META_KEY = "PARTITION";
+    public static final String LEADER_EPOCH_CHECKPOINT_KEY = "LEADER_EPOCH_CHECKPOINT";
+    public static final Logger logger = LoggerFactory.getLogger(MetaStream.class);
+
+    private final Stream innerStream;
+    private final ScheduledExecutorService trimScheduler;
+    private final String logIdent;
+    /**
+     * metaCache is used to cache meta key values.
+     * key: meta key
+     * value: pair of base offset and meta value
+     */
+    private final Map<String, Pair<Long, ByteBuffer>> metaCache;
+
+    /**
+     * trimFuture is used to record a trim task. It may be cancelled and rescheduled.
+     */
+    private ScheduledFuture<?> trimFuture;
+    public MetaStream(Stream innerStream, ScheduledExecutorService trimScheduler, String logIdent) {
+        this.innerStream = innerStream;
+        this.trimScheduler = trimScheduler;
+        this.metaCache = new ConcurrentHashMap<>();
+        this.logIdent = logIdent;
+    }
+
+    @Override
+    public long streamId() {
+        return innerStream.streamId();
+    }
+
+    @Override
+    public long startOffset() {
+        return innerStream.startOffset();
+    }
+
+    @Override
+    public long nextOffset() {
+        return innerStream.nextOffset();
+    }
+
+    @Deprecated
+    @Override
+    public CompletableFuture<AppendResult> append(RecordBatch batch) {
+        return append(MetaKeyValue.decode(batch.rawPayload()));
+    }
+
+    public CompletableFuture<AppendResult> append(MetaKeyValue kv) {
+        return append0(kv).thenApply(result -> {
+            metaCache.put(kv.getKey(), Pair.of(result.baseOffset(), kv.getValue()));
+            trimAsync();
+            return result;
+        });
+    }
+
+    /**
+     * Append a batch of meta key values without trims.
+     * @return a future of append result
+     */
+    private CompletableFuture<AppendResult> append0(MetaKeyValue kv) {
+        return innerStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(kv)));
+    }
+
+    @Override
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        return innerStream.fetch(startOffset, endOffset, maxBytesHint);
+    }
+
+    @Override
+    public CompletableFuture<Void> trim(long newStartOffset) {
+        return innerStream.trim(newStartOffset);
+    }
+
+    @Override
+    public CompletableFuture<Void> close() {
+        if (trimFuture != null) {
+            trimFuture.cancel(true);
+        }
+        return innerStream.close();
+    }
+
+    @Override
+    public CompletableFuture<Void> destroy() {
+        if (trimFuture != null) {
+            trimFuture.cancel(true);
+        }
+        return innerStream.destroy();
+    }
+
+    /**
+     * Replay meta stream and return a map of meta keyValues. KeyValues will be cached in metaCache.
+     * @return meta keyValues map
+     */
+    public Map<String, Object> replay() {
+        metaCache.clear();
+
+        long startOffset = startOffset();
+        long endOffset = nextOffset();
+        long pos = startOffset;
+        boolean done = false;
+
+        while (!done) {
+            FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).join();
+            for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
+                try {
+                    MetaKeyValue kv = MetaKeyValue.decode(context.rawPayload());
+                    metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
+                } catch (Exception e) {
+                    logger.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
+                }
+                pos = context.lastOffset();
+            }
+            if (pos >= endOffset) {
+                done = true;
+            }
+        }
+        return getValidMetaMap();
+    }
+
+    private Map<String, Object> getValidMetaMap() {
+        Map<String, Object> metaMap = new HashMap<>();
+        metaCache.forEach((key, pair) -> {
+            switch (key) {
+                case LOG_META_KEY:
+                    metaMap.put(key, ElasticLogMeta.decode(pair.getRight()));
+                    break;
+                case PARTITION_META_KEY:
+                    metaMap.put(key, ElasticPartitionMeta.decode(pair.getRight()));
+                    break;
+                case PRODUCER_SNAPSHOTS_META_KEY:
+                    metaMap.put(key, ElasticPartitionProducerSnapshotsMeta.decode(pair.getRight()));
+                    break;
+                case LEADER_EPOCH_CHECKPOINT_KEY:
+                    metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(pair.getRight()));
+                    break;
+                default:
+                    if (key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
+                        metaMap.put(key, ElasticPartitionProducerSnapshotMeta.decode(pair.getRight()));
+                    } else {
+                        logger.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
+                    }
+            }
+        });
+        return metaMap;
+    }
+
+    private void trimAsync() {
+        if (trimFuture != null) {
+            trimFuture.cancel(true);
+        }
+        // trigger after 10 SECONDS to avoid successive trims
+        trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
+    }
+
+    private void doCompaction() {
+        if (metaCache.size() <= 1) {
+            return;
+        }
+
+        Set<Long> validSnapshots = metaCache.get(PRODUCER_SNAPSHOTS_META_KEY) == null ? Collections.emptySet() :
+                ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight()).getSnapshots();
+
+        long lastOffset = 0L;
+        Iterator<Map.Entry<String, Pair<Long, ByteBuffer>>> iterator = metaCache.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Pair<Long, ByteBuffer>> entry = iterator.next();
+            // remove invalid producer snapshots
+            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX) && !validSnapshots.contains(entry.getValue().getLeft())) {
+                iterator.remove();
+                continue;
+            }
+            if (lastOffset < entry.getValue().getLeft()) {
+                lastOffset = entry.getValue().getLeft();
+            }
+            append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight()));
+        }
+
+        trim(lastOffset + 1);
+        logger.debug("{} streamId {}: compact before {}", logIdent, streamId(), lastOffset);
+    }
+}

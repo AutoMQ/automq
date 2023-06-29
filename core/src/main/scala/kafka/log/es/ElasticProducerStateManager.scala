@@ -90,7 +90,7 @@ class ElasticProducerStateManager(
         }
     }
 
-    def writeSnapshot(offset: Long, entries: mutable.Map[Long, ProducerStateEntry]): Unit = {
+    private def writeSnapshot(offset: Long, entries: mutable.Map[Long, ProducerStateEntry]): Unit = {
         val buffer = ProducerStateManager.writeSnapshotToBuffer(entries)
         val rawSnapshot: Array[Byte] = new Array[Byte](buffer.remaining())
         buffer.get(rawSnapshot)
