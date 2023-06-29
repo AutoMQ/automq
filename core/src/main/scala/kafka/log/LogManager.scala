@@ -392,9 +392,15 @@ class LogManager(logDirs: Seq[File],
         // elastic stream inject start
         var logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
           logDir.isDirectory && UnifiedLog.parseTopicPartitionName(logDir).topic != KafkaRaftServer.MetadataTopic)
-        logsToLoad.foreach(logDir => {
-          warn(s"Unexpected partition directory $logDir, expect there is no normal partition in the log directory.")
-        })
+        try{
+          logsToLoad.foreach(logDir => {
+            warn(s"Unexpected partition directory $logDir. It may be due to an unclean shutdown.")
+            Utils.delete(logDir)
+          })
+        } catch {
+            case e: IOException =>
+                warn(s"Error occurred while cleaning $logDirAbsolutePath", e)
+        }
         logsToLoad = Array()
         // elastic stream inject end
 
@@ -522,7 +528,6 @@ class LogManager(logDirs: Seq[File],
   private def fetchLogConfig(topicName: String): LogConfig = {
     // ensure consistency between default config and overrides
     val defaultConfig = currentDefaultConfig
-    // TODO: Topic dimension replicaCount
     fetchTopicConfigOverrides(defaultConfig, Set(topicName)).values.headOption.getOrElse(defaultConfig)
   }
 

@@ -595,8 +595,9 @@ public class ReplicationControlManager {
             // pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
                     defaultReplicationFactor : topic.replicationFactor();
-            // the real replication factor is decided by elastic stream
+            // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
             keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
+            // We reuse the passed replicationFactor to config elastic stream settings.
             keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
             // elastic stream inject end
 
@@ -726,7 +727,7 @@ public class ReplicationControlManager {
             int numPartitions = topic.numPartitions() == -1 ?
                 defaultNumPartitions : topic.numPartitions();
             // elastic stream inject start
-            // force replication factor = 1, the real replication factor is decided by elastic stream
+            // Force replication factor in kafka layer to 1 since real replications are ensured in elastic stream layer.
             short replicationFactor = topic.replicationFactor() == -1 ?
                 defaultReplicationFactor : topic.replicationFactor();
             if (replicationFactor != 1) {
