@@ -151,20 +151,20 @@ public class MetaStream implements Stream {
         metaCache.forEach((key, pair) -> {
             switch (key) {
                 case LOG_META_KEY:
-                    metaMap.put(key, ElasticLogMeta.decode(pair.getRight()));
+                    metaMap.put(key, ElasticLogMeta.decode(pair.getRight().duplicate()));
                     break;
                 case PARTITION_META_KEY:
-                    metaMap.put(key, ElasticPartitionMeta.decode(pair.getRight()));
+                    metaMap.put(key, ElasticPartitionMeta.decode(pair.getRight().duplicate()));
                     break;
                 case PRODUCER_SNAPSHOTS_META_KEY:
-                    metaMap.put(key, ElasticPartitionProducerSnapshotsMeta.decode(pair.getRight()));
+                    metaMap.put(key, ElasticPartitionProducerSnapshotsMeta.decode(pair.getRight().duplicate()));
                     break;
                 case LEADER_EPOCH_CHECKPOINT_KEY:
-                    metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(pair.getRight()));
+                    metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(pair.getRight().duplicate()));
                     break;
                 default:
                     if (key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
-                        metaMap.put(key, ElasticPartitionProducerSnapshotMeta.decode(pair.getRight()));
+                        metaMap.put(key, ElasticPartitionProducerSnapshotMeta.decode(pair.getRight().duplicate()));
                     } else {
                         logger.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
                     }
@@ -187,7 +187,7 @@ public class MetaStream implements Stream {
         }
 
         Set<Long> validSnapshots = metaCache.get(PRODUCER_SNAPSHOTS_META_KEY) == null ? Collections.emptySet() :
-                ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight()).getSnapshots();
+                ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate()).getSnapshots();
 
         long lastOffset = 0L;
         Iterator<Map.Entry<String, Pair<Long, ByteBuffer>>> iterator = metaCache.entrySet().iterator();
@@ -201,7 +201,7 @@ public class MetaStream implements Stream {
             if (lastOffset < entry.getValue().getLeft()) {
                 lastOffset = entry.getValue().getLeft();
             }
-            append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight()));
+            append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate()));
         }
 
         trim(lastOffset + 1);

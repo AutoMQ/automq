@@ -232,8 +232,8 @@ object LogConfig {
   val FollowerReplicationThrottledReplicasProp = "follower.replication.throttled.replicas"
 
   // elastic stream inject start
-  val ReplicationFactorProp = "replication.factor"
-  val ReplicationFactorDoc = "The number of replicas for this topic."
+  val ReplicationFactorProp = TopicConfig.REPLICATION_FACTOR_CONFIG
+  val ReplicationFactorDoc = TopicConfig.REPLICATION_FACTOR_DOC
   // elastic stream inject end
 
   val SegmentSizeDoc = TopicConfig.SEGMENT_BYTES_DOC

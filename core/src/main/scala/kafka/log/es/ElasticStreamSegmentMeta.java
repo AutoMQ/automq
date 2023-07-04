@@ -31,6 +31,10 @@ public class ElasticStreamSegmentMeta {
     private long lastModifiedTimestamp;
     @JsonProperty("s")
     private String streamSuffix = "";
+
+    /**
+     * size of the log segment. The value is not accurate, it is only used to estimate the size of the segment.
+     */
     @JsonProperty("lsz")
     private int logSize;
     /**

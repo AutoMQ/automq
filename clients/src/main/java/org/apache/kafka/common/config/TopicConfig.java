@@ -211,8 +211,8 @@ public class TopicConfig {
         "does not apply to any message format conversion that might be required for replication to followers.";
 
     // elastic stream inject start
-    public static final String REPLICATION_FACTOR_CONFIG = "replication.factor";
-    public static final String REPLICATION_FACTOR_DOC = "The replication factor for the topic";
+    public static final String REPLICATION_FACTOR_CONFIG = "elasticstream.replication.factor";
+    public static final String REPLICATION_FACTOR_DOC = "The number of replicas in elastic streams for this log.";
     // elastic stream inject end
 
 }

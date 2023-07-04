@@ -68,7 +68,7 @@ public class MetaKeyValue {
         buf.writeByte(MAGIC_V0);
         buf.writeInt(keyBytes.length);
         buf.writeBytes(keyBytes);
-        buf.writeBytes(kv.value);
+        buf.writeBytes(kv.value.duplicate());
         return buf.nioBuffer();
     }
 

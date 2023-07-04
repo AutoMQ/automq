@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
+import java.util.Objects;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.ConfigEntry;
@@ -80,6 +81,8 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.es.CreatePartitionPolicy;
+import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
 import org.apache.kafka.controller.es.PartitionLeaderSelector;
 import org.apache.kafka.controller.es.RandomPartitionLeaderSelector;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
@@ -323,6 +326,11 @@ public class ReplicationControlManager {
      * The policy to use to validate that topic assignments are valid, if one is present.
      */
     private final Optional<CreateTopicPolicy> createTopicPolicy;
+
+    /**
+     * The policy to use to validate that partition assignments are valid, if one is present.
+     */
+    private final Optional<CreatePartitionPolicy> createPartitionPolicy = Optional.of(new ElasticCreatePartitionPolicy());
 
     /**
      * The feature control manager.
@@ -592,13 +600,19 @@ public class ReplicationControlManager {
 
             // elastic stream inject start
             Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
-            // pass topic replication factor through log config.
+            // First, we pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
                     defaultReplicationFactor : topic.replicationFactor();
             // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
             keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
             // We reuse the passed replicationFactor to config elastic stream settings.
             keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
+
+            // Then, we force replication factor to 1 here since "replicas" on broker layer can only be 1.
+            if (replicationFactor != 1) {
+                topic.setReplicationFactor((short) 1);
+                log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
+            }
             // elastic stream inject end
 
             List<ApiMessageAndVersion> configRecords;
@@ -664,15 +678,6 @@ public class ReplicationControlManager {
         Map<String, String> creationConfigs = translateCreationConfigs(topic.configs());
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
         if (!topic.assignments().isEmpty()) {
-
-            // elastic stream inject start
-            // TODO: support manual assignment when assignment partition replica is only one.
-            //noinspection ConstantValue
-            if (true) {
-                return new ApiError(INVALID_REQUEST, "Manual partition assignment is not supported yet.");
-            }
-            // elastic stream inject end
-
             if (topic.replicationFactor() != -1) {
                 return new ApiError(INVALID_REQUEST,
                     "A manual partition assignment was specified, but replication " +
@@ -726,15 +731,8 @@ public class ReplicationControlManager {
         } else {
             int numPartitions = topic.numPartitions() == -1 ?
                 defaultNumPartitions : topic.numPartitions();
-            // elastic stream inject start
-            // Force replication factor in kafka layer to 1 since real replications are ensured in elastic stream layer.
             short replicationFactor = topic.replicationFactor() == -1 ?
                 defaultReplicationFactor : topic.replicationFactor();
-            if (replicationFactor != 1) {
-                replicationFactor = 1;
-                log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
-            }
-            // elastic stream inject end
             try {
                 TopicAssignment topicAssignment = clusterControl.replicaPlacer().place(new PlacementSpec(
                     0,
@@ -770,9 +768,8 @@ public class ReplicationControlManager {
                     "Unable to replicate the partition " + replicationFactor +
                         " time(s): " + e.getMessage());
             }
-            short finalReplicationFactor = replicationFactor;
             ApiError error = maybeCheckCreateTopicPolicy(() -> new CreateTopicPolicy.RequestMetadata(
-                topic.name(), numPartitions, finalReplicationFactor, null, creationConfigs));
+                topic.name(), numPartitions, replicationFactor, null, creationConfigs));
             if (error.isFailure()) return error;
         }
         Uuid topicId = Uuid.randomUuid();
@@ -824,6 +821,10 @@ public class ReplicationControlManager {
             }
         }
         return ApiError.NONE;
+    }
+
+    private void maybeCheckCreatePartitionPolicy(CreatePartitionPolicy.RequestMetadata requestMetadata) throws PolicyViolationException{
+        createPartitionPolicy.ifPresent(policy -> policy.validate(requestMetadata));
     }
 
     static void validateNewTopicNames(Map<String, ApiError> topicErrors,
@@ -1645,6 +1646,12 @@ public class ReplicationControlManager {
                     "Unable to replicate the partition " + replicationFactor +
                         " time(s): All brokers are currently fenced or in controlled shutdown.");
             }
+
+            // elastic stream inject start
+            // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
+            maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(replicas, isr));
+            // elastic stream inject end
+
             records.add(new ApiMessageAndVersion(new PartitionRecord().
                 setPartitionId(partitionId).
                 setTopicId(topicId).
@@ -1888,7 +1895,16 @@ public class ReplicationControlManager {
         if (target.replicas().size() != 1) {
             throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
         }
-        // TODO: is replica is the same as origin then do nothing.
+        // Check that the requested partition assignment is valid.
+        validateManualPartitionAssignment(target.replicas(), OptionalInt.empty());
+
+        List<Integer> currentReplicas = Replicas.toList(part.replicas);
+        // No need to change the assignment if it is already the same.
+        if (Objects.equals(currentReplicas, target.replicas())) {
+            // The requested assignment is the same as the current assignment.
+            return Optional.empty();
+        }
+
         PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
                 tp.topicId(),
                 tp.partitionId(),
