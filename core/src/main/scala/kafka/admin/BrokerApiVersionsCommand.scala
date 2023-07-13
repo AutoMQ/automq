@@ -102,7 +102,7 @@ object BrokerApiVersionsCommand {
 
   // org.apache.kafka.clients.admin.AdminClient doesn't currently expose a way to retrieve the supported api versions.
   // We inline the bits we need from kafka.admin.AdminClient so that we can delete it.
-  private class AdminClient(val time: Time,
+  class AdminClient(val time: Time,
                             val client: ConsumerNetworkClient,
                             val bootstrapBrokers: List[Node]) extends Logging {
 
@@ -200,7 +200,7 @@ object BrokerApiVersionsCommand {
 
   }
 
-  private object AdminClient {
+  object AdminClient {
     val DefaultConnectionMaxIdleMs = 9 * 60 * 1000
     val DefaultRequestTimeoutMs = 5000
     val DefaultMaxInFlightRequestsPerConnection = 100

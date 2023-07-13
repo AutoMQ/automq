@@ -89,9 +89,9 @@ object LogCompactionTester {
       .describedAs("percent")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(0)
-    val sleepSecsOpt = parser.accepts("sleep", "Time in milliseconds to sleep between production and consumption.")
+    val sleepSecsOpt = parser.accepts("sleep", "Time in seconds to sleep between production and consumption.")
       .withRequiredArg
-      .describedAs("ms")
+      .describedAs("s")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(0)
 
