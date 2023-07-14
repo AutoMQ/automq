@@ -617,18 +617,21 @@ class LogManager(logDirs: Seq[File],
       jobs.forKeyValue { (dir, dirJobs) =>
         if (waitForAllToComplete(dirJobs,
           e => warn(s"There was an error in one of the threads during LogManager shutdown: ${e.getCause}"))) {
-          val logs = logsInDir(localLogsByDir, dir)
+          // elastic stream inject start
+//          val logs = logsInDir(localLogsByDir, dir)
 
+          // No need for updating recovery points, updating log start offsets or writing clean shutdown marker Since they have all been done in log.close()
           // update the last flush point
-          debug(s"Updating recovery points at $dir")
-          checkpointRecoveryOffsetsInDir(dir, logs)
-
-          debug(s"Updating log start offsets at $dir")
-          checkpointLogStartOffsetsInDir(dir, logs)
-
-          // mark that the shutdown was clean by creating marker file
-          debug(s"Writing clean shutdown marker at $dir")
-          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+//          debug(s"Updating recovery points at $dir")
+//          checkpointRecoveryOffsetsInDir(dir, logs)
+//
+//          debug(s"Updating log start offsets at $dir")
+//          checkpointLogStartOffsetsInDir(dir, logs)
+//
+//          // mark that the shutdown was clean by creating marker file
+//          debug(s"Writing clean shutdown marker at $dir")
+//          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+          // elastic stream inject end
         }
       }
     } finally {
