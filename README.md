@@ -8,14 +8,17 @@ AutoMQ for Apache Kafka
 ## What is AutoMQ for Apache Kafka
 AutoMQ for Apache Kafka is redesigned based on cloud infrastructure, and users 
 benefit from 
-**elastic computing resources** and nearly **unlimited cheap storage** 
-resources 
-in the cloud. It is developed based on Apache Kafka and use LogSegment as a code 
-aspect to replace Kafka's local storage with a cloud-native stream storage 
-called [Elastic Stream](https://github.com/AutoMQ/elastic-stream). This design allows Kafka Brokers to become stateless 
-and could scale up/down in seconds. Due to the small code aspect, it can 
-reuse almost all the upper-level code in Kafka, providing **100% functional 
-compatibility**.
+**elastic computing resources** and nearly **unlimited cheap storage** in 
+the cloud. It is developed based on Apache Kafka and replace Kafka's local storage with  [Elastic Stream](https://github.com/AutoMQ/elastic-stream). This design allows Kafka Brokers to become stateless and could scale up/down in seconds. And by making targeted modifications at the LogSegment level and extensively reusing upper-level code, it guarantees **100% functional compatibility**.
+
+Compared to Apache Kafka, AutoMQ for Apache Kafka offers the following advantages:
+
+1. Enhanced Scalability: It leverages cloud-native infrastructure and stateless Kafka Brokers, enabling seamless scaling to meet varying workloads. This elasticity allows for efficient resource allocation and ensures optimal performance even during peak periods.
+
+2. Cost Efficiency: By utilizing object storage(S3), it could save storage cost up to 70%; By leveraging serverless architecture and dynamically scaling based on workload, it can achieve significant cost savings of up to 80% in compute expenses.
+
+3. Simplified Management: It automatically balances the distribution of partitions across brokers in seconds. This streamlines operations, reduces administrative overhead, and allows IT teams to focus on higher-value tasks.
+
 
 ## Quick Start
 ### Build
