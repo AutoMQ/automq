@@ -466,7 +466,8 @@ object ElasticLog extends Logging {
 
     metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
       // Then, destroy log stream, time index stream, txn stream, ...
-      logMeta.getStreamMap.values().forEach(streamId => {
+      // streamId <0 means the stream is not actually created.
+      logMeta.getStreamMap.values().forEach(streamId => if( streamId >= 0) {
         openStreamWithRetry(client, streamId, logIdent).destroy()
       })
     })
