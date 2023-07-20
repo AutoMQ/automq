@@ -17,9 +17,11 @@
 
 package kafka.log.es
 
+import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 
-class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
+class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extends Logging {
+  this.logIdent = s"[ElasticCheckoutPointFileWithHandler $rawKafkaMeta] "
 
   def write(entries: Iterable[(TopicPartition, Long)]): Unit = {
     rawKafkaMeta match {
@@ -40,7 +42,11 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) {
     for (elem <- entries) {
       val (topicPartition, checkpoint) = elem
       val elasticLog = ElasticLogManager.getElasticLog(topicPartition)
-      f(elasticLog, checkpoint)
+      if (elasticLog == null) {
+        warn(s"Cannot find elastic log for $topicPartition and skip persistence. Is this broker shutting down?")
+      } else {
+        f(elasticLog, checkpoint)
+      }
     }
   }
 
