@@ -1324,7 +1324,7 @@ public class ReplicationControlManager {
                 (short) 1));
         }
         generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId));
+            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId), true);
     }
 
     ControllerResult<ElectLeadersResponseData> electLeaders(ElectLeadersRequestData request) {
@@ -1715,6 +1715,32 @@ public class ReplicationControlManager {
                                      int brokerToAdd,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
+        generateLeaderAndIsrUpdates(context, brokerToRemove, brokerToAdd, records, iterator, false);
+    }
+
+    /**
+     * Iterate over a sequence of partitions and generate ISR changes and/or leader
+     * changes if necessary.
+     *
+     * @param context           A human-readable context string used in log4j logging.
+     * @param brokerToRemove    NO_LEADER if no broker is being removed; the ID of the
+     *                          broker to remove from the ISR and leadership, otherwise.
+     * @param brokerToAdd       NO_LEADER if no broker is being added; the ID of the
+     *                          broker which is now eligible to be a leader, otherwise.
+     * @param records           A list of records which we will append to.
+     * @param iterator          The iterator containing the partitions to examine.
+     * @param fencing           Whether to fence the provided partitions. That is to say,
+     *                          set their leader to {@link org.apache.kafka.metadata.LeaderConstants#NO_LEADER}
+     *                          temporarily. It aims to ensure that the partitions should be firstly closed and
+     *                          then be re-opened. In case that the original broker is out of communication and
+     *                          then fail to touch re-elections, The partitions are scheduled to be re-elected.
+     */
+    void generateLeaderAndIsrUpdates(String context,
+                                     int brokerToRemove,
+                                     int brokerToAdd,
+                                     List<ApiMessageAndVersion> records,
+                                     Iterator<TopicIdPartition> iterator,
+                                     boolean fencing) {
         int oldSize = records.size();
 
         // If the caller passed a valid broker ID for brokerToAdd, rather than passing
@@ -1729,10 +1755,12 @@ public class ReplicationControlManager {
         // from the target ISR, but we need to exclude it here too, to handle the case
         // where there is an unclean leader election which chooses a leader from outside
         // the ISR.
-        IntPredicate isAcceptableLeader =
+        // elastic stream inject start
+        IntPredicate isAcceptableLeader = fencing ? r -> false :
             r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
 
         PartitionLeaderSelector partitionLeaderSelector = null;
+        // elastic stream inject end
 
         while (iterator.hasNext()) {
             TopicIdPartition topicIdPart = iterator.next();
@@ -1773,6 +1801,11 @@ public class ReplicationControlManager {
                 partitionLeaderSelector
                         .select(partition, br -> br.id() != brokerToRemove)
                         .ifPresent(broker -> builder.setTargetNode(broker.id()));
+            }
+
+            if (fencing) {
+                TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
+                addPartitionToReElectTimeouts(topicPartition);
             }
             // elastic stream inject end
 
@@ -1918,15 +1951,24 @@ public class ReplicationControlManager {
             log.warn("unknown topicId[{}]", tp.topicId());
         } else {
             TopicPartition topicPartition = new TopicPartition(topicControlInfo.name, tp.partitionId());
-            Timeout timeout =  timer.newTimeout(t -> {
-                partitionReElectTimeouts.remove(topicPartition);
-                if (quorumController != null) {
-                    tryElectLeader(topicPartition);
-                }
-            }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
-            partitionReElectTimeouts.put(topicPartition, timeout);
+            addPartitionToReElectTimeouts(topicPartition);
         }
         return builder.build();
+    }
+
+    /**
+     * Add partition to re-elect leader timeout.
+     * Generally, this method is invoked to ensure that the partition leader can be re-elected even if the original broker is out of communication.
+     * @param topicPartition the topic partition that needs to be re-elected
+     */
+    private void addPartitionToReElectTimeouts(TopicPartition topicPartition) {
+        Timeout timeout =  timer.newTimeout(t -> {
+            partitionReElectTimeouts.remove(topicPartition);
+            if (quorumController != null) {
+                tryElectLeader(topicPartition);
+            }
+        }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
+        partitionReElectTimeouts.put(topicPartition, timeout);
     }
 
     private void tryElectLeader(TopicPartition topicPartition) {
