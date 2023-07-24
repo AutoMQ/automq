@@ -47,7 +47,7 @@ class ElasticLogReOpenTest(Test):
         self.kafka.start()
 
     @cluster(num_nodes=3)
-    @matrix(topic_count=[1], partition_count=[1], replication_factor=[1], metadata_quorum=[quorum.all_kraft])
+    @matrix(topic_count=[1], partition_count=[1], replication_factor=[1], metadata_quorum=quorum.all_kraft)
     def test_elastic_log_create(self, topic_count, partition_count, replication_factor,
                                 metadata_quorum=quorum.colocated_kraft):
         """ Test that we can create a topic with elastic log and record time cost"""
@@ -65,18 +65,17 @@ class ElasticLogReOpenTest(Test):
         topics_create_end_time = time.time_ns()
         self.logger.info("Time to create topics: %.2f ms" % ((topics_create_end_time - topics_create_start_time) / 1e6))
 
+
     def start_test_log_compaction_tool(self, topic_name, partition_count=1, replication_factor=1):
         self.reopen_verifier = ElasticLogReopenTester(self.test_context, self.kafka, topic_name, partition_count, replication_factor)
         self.reopen_verifier.start()
 
 
     @cluster(num_nodes=4)
-    @matrix(partition_count=[1], replication_factor=[1], metadata_quorum=[quorum.remote_kraft])
+    @matrix(partition_count=[1], replication_factor=[1], metadata_quorum=quorum.all_kraft)
     def test_elastic_log_reassign(self, partition_count=1, replication_factor=1,
                                 metadata_quorum=quorum.colocated_kraft):
         """ Test that we can reassign a topic with elastic log and record time cost"""
 
         topic = "test-elastic-log-reopen"
         self.start_test_log_compaction_tool(topic, partition_count, replication_factor)
-        print(self.reopen_verifier.message)
-
