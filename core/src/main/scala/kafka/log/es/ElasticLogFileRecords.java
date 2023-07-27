@@ -51,6 +51,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.kafka.common.utils.Utils;
+
 public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     protected final AtomicInteger size;
@@ -86,18 +88,18 @@ public class ElasticLogFileRecords {
         return nextOffset.get();
     }
 
-    public Records read(long startOffset, int maxSize) {
+    public Records read(long startOffset, long maxOffset, int maxSize) {
         if (ReadManualReleaseHint.isMarked()) {
-            return readAll0(startOffset, maxSize);
+            return readAll0(startOffset, maxOffset, maxSize);
         } else {
-            return new BatchIteratorRecordsAdaptor(this, startOffset, maxSize);
+            return new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize);
         }
     }
 
-    private Records readAll0(long startOffset, int maxSize) {
+    private Records readAll0(long startOffset, long maxOffset, int maxSize) {
         int readSize = 0;
         long nextFetchOffset = startOffset - baseOffset;
-        long endOffset = this.committedOffset.get() - baseOffset;
+        long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         List<FetchResult> fetchResults = new LinkedList<>();
         while (readSize <= maxSize && nextFetchOffset < endOffset) {
             FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
@@ -191,11 +193,11 @@ public class ElasticLogFileRecords {
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
-        return () -> batchIterator(startOffset, Integer.MAX_VALUE);
+        return () -> batchIterator(startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
     }
 
-    protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, int fetchSize) {
-        LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(this, startOffset, fetchSize);
+    protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, long maxOffset, int fetchSize) {
+        LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(this, startOffset, maxOffset, fetchSize);
         return new RecordBatchIterator<>(inputStream);
     }
 
@@ -260,11 +262,11 @@ public class ElasticLogFileRecords {
         private int readSize;
 
 
-        public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, long startOffset, int maxSize) {
+        public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, long startOffset, long maxOffset, int maxSize) {
             this.elasticLogFileRecords = elasticLogFileRecords;
             this.maxSize = maxSize;
             this.nextFetchOffset = startOffset - elasticLogFileRecords.baseOffset;
-            this.endOffset = elasticLogFileRecords.committedOffset.get() - elasticLogFileRecords.baseOffset;
+            this.endOffset = Utils.min(elasticLogFileRecords.committedOffset.get(), maxOffset) - elasticLogFileRecords.baseOffset;
         }
 
 
@@ -316,15 +318,17 @@ public class ElasticLogFileRecords {
     public static class BatchIteratorRecordsAdaptor extends AbstractRecords {
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final long startOffset;
+        private final long maxOffset;
         private final int fetchSize;
         private int sizeInBytes = -1;
         private MemoryRecords memoryRecords;
         // iterator last record batch exclusive last offset.
         private long lastOffset = -1;
 
-        public BatchIteratorRecordsAdaptor(ElasticLogFileRecords elasticLogFileRecords, long startOffset, int fetchSize) {
+        public BatchIteratorRecordsAdaptor(ElasticLogFileRecords elasticLogFileRecords, long startOffset, long maxOffset, int fetchSize) {
             this.elasticLogFileRecords = elasticLogFileRecords;
             this.startOffset = startOffset;
+            this.maxOffset = maxOffset;
             this.fetchSize = fetchSize;
         }
 
@@ -338,7 +342,7 @@ public class ElasticLogFileRecords {
         @Override
         public Iterable<? extends RecordBatch> batches() {
             if (memoryRecords == null) {
-                Iterator<RecordBatch> iterator = elasticLogFileRecords.batchIterator(startOffset, fetchSize);
+                Iterator<RecordBatch> iterator = elasticLogFileRecords.batchIterator(startOffset, maxOffset, fetchSize);
                 return (Iterable<RecordBatch>) () -> iterator;
             } else {
                 return memoryRecords.batches();
@@ -347,7 +351,7 @@ public class ElasticLogFileRecords {
 
         @Override
         public AbstractIterator<? extends RecordBatch> batchIterator() {
-            return elasticLogFileRecords.batchIterator(startOffset, fetchSize);
+            return elasticLogFileRecords.batchIterator(startOffset, maxOffset, fetchSize);
         }
 
         @Override

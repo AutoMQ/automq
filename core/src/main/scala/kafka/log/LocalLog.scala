@@ -420,7 +420,7 @@ class LocalLog(@volatile private var _dir: File,
             if (maxOffsetMetadata.segmentBaseOffset == segment.baseOffset) maxOffsetMetadata.relativePositionInSegment
             else segment.size
 
-          fetchDataInfo = segment.read(startOffset, maxLength, maxPosition, minOneMessage)
+          fetchDataInfo = segment.read(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
           if (fetchDataInfo != null) {
             if (includeAbortedTxns) {
               // elastic stream inject start

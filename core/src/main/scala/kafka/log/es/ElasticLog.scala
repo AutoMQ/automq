@@ -83,6 +83,9 @@ class ElasticLog(val metaStream: MetaStream,
   import kafka.log.es.ElasticLog._
 
   this.logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
+  /**
+   * The next valid offset. The records with offset smaller than $confirmOffset has been confirmed by ElasticStream.
+   */
   var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -338,7 +341,7 @@ object ElasticLog extends Logging {
       val keyValue = kvList.get(0)
       val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
       // open partition meta stream
-      client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().build())
+      client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
           .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
           .get()
     }

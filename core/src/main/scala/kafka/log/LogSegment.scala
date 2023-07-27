@@ -71,6 +71,7 @@ trait LogSegment extends Logging {
   def read(startOffset: Long,
            maxSize: Int,
            maxPosition: Long = size,
+           maxOffset: Long = Long.MaxValue,
            minOneMessage: Boolean = false): FetchDataInfo
   def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long]
   @nonthreadsafe
@@ -347,6 +348,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
    * @param startOffset A lower bound on the first offset to include in the message set we read
    * @param maxSize The maximum number of bytes to include in the message set we read
    * @param maxPosition The maximum position in the log segment that should be exposed for read
+   * @param maxOffset An higher exclusive bound in the message set we read
    * @param minOneMessage If this is true, the first message will be returned even if it exceeds `maxSize` (if one exists)
    *
    * @return The fetched data and the offset metadata of the first message whose offset is >= startOffset,
@@ -356,6 +358,7 @@ class LogSegmentKafka private[log] (val log: FileRecords,
   def read(startOffset: Long,
            maxSize: Int,
            maxPosition: Long = size,
+           maxOffset: Long = Long.MaxValue,
            minOneMessage: Boolean = false): FetchDataInfo = {
     if (maxSize < 0)
       throw new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log")

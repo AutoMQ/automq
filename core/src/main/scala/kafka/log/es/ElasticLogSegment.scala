@@ -153,6 +153,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   override def read(startOffset: Long,
                     maxSize: Int,
                     maxPosition: Long = size,
+                    maxOffset: Long = Long.MaxValue,
                     minOneMessage: Boolean = false): FetchDataInfo = {
     if (maxSize < 0)
       throw new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log")
@@ -160,8 +161,9 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     if (maxSize == 0) {
       return FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY)
     }
-    // TODO: filter by maxPosition support
-    val records = _log.read(startOffset, maxSize)
+    // Note that 'maxPosition' and 'minOneMessage' are not used here. 'maxOffset' is a better alternative to 'maxPosition'.
+    // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
+    val records = _log.read(startOffset, maxOffset, maxSize)
     FetchDataInfo(offsetMetadata, records)
   }
 
