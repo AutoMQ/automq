@@ -129,7 +129,8 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         # segment is deleted. An altenate to using timeouts is to poll each
         # partition until the log start offset matches the end offset. The
         # latter is more robust.
-        time.sleep(6)
+        # 6->12 seconds to bypass the initial delay of cleanup task
+        time.sleep(12)
 
     @cluster(num_nodes=8)
     @matrix(bounce_brokers=[True, False],
