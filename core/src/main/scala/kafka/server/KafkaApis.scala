@@ -146,30 +146,29 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   // elastic stream inject start
   /**
-   * Generate a map of topic -> partitionNum based on provided topicsRequestData.
+   * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
+   *
    * @param topicsRequestData the requesting DeleteTopicsRequestData
-   * @return a map of topic -> partitionNum
+   * @return a map of topic -> [(partitionId, epochId)]
    */
-  private def getPartitionNumSnapshotMap(topicsRequestData: DeleteTopicsRequestData): util.HashMap[String, Integer] = {
-    val partitionNumMap = new util.HashMap[String, Integer]()
+  private def getPartitionEpochSnapshotMap(topicsRequestData: DeleteTopicsRequestData): util.HashMap[String, Array[(Int, Int)]] = {
+    val partitionEpochMap = new util.HashMap[String, Array[(Int, Int)]]()
     topicsRequestData.topics().forEach(topic => {
-      if (topic.name() == null) {
-        metadataCache.getTopicName(topic.topicId()).foreach(topicName => {
-          partitionNumMap.put(topicName, metadataCache.numPartitions(topicName).get)
-        })
+      val topicName = if (topic.name() == null) {
+        metadataCache.getTopicName(topic.topicId()).get
       } else {
-        metadataCache.numPartitions(topic.name()).foreach(partitionNum => {
-          partitionNumMap.put(topic.name(), partitionNum)
-        })
+        topic.name()
       }
-    })
-
-    topicsRequestData.topicNames().forEach(topicName => {
       metadataCache.numPartitions(topicName).foreach(partitionNum => {
-        partitionNumMap.put(topicName, partitionNum)
+        val partitionEpochArray = Array.fill[(Int, Int)](partitionNum)((0, 0))
+        for (i <- 0 until partitionNum) {
+          partitionEpochArray(i) = (i, metadataCache.getPartitionInfo(topicName, i).get.leaderEpoch())
+        }
+        partitionEpochMap.put(topicName, partitionEpochArray)
       })
     })
-    partitionNumMap
+
+    partitionEpochMap
   }
 
   /**
@@ -182,7 +181,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     handler: RequestChannel.Request => Unit
   ): Unit = {
     // get the map here since metadataCache has been updated before the callback.
-    val partitionNumMap = getPartitionNumSnapshotMap(request.body[DeleteTopicsRequest].data())
+    val topicNameToPartitionEpochsMap = getPartitionEpochSnapshotMap(request.body[DeleteTopicsRequest].data())
 
     def responseCallback(responseOpt: Option[AbstractResponse]): Unit = {
       responseOpt match {
@@ -192,10 +191,9 @@ class KafkaApis(val requestChannel: RequestChannel,
             if (result.errorCode() != Errors.NONE.code()) {
               return
             }
-            val partitionNum = partitionNumMap.get(result.name())
-            for (partitionId <- 0 until partitionNum) {
-              ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionId))
-            }
+            topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
+              ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
+            })
           })
         case None => handleInvalidVersionsDuringForwarding(request)
       }

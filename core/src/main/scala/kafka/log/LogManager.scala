@@ -919,6 +919,7 @@ class LogManager(logDirs: Seq[File],
    * @param isNew Whether the replica should have existed on the broker or not
    * @param isFuture True if the future log of the specified partition should be returned or created
    * @param topicId The topic ID of the partition's topic
+   * @param leaderEpoch The leader epoch of the partition
    * @throws KafkaStorageException if isNew=false, log is not found in the cache and there is offline log directory on the broker
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */

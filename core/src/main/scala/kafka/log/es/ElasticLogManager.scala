@@ -53,11 +53,12 @@ class ElasticLogManager(val client: Client) {
   /**
    * Delete elastic log by topic partition. Note that this method may not be called by the broker holding the partition.
    * @param topicPartition topic partition
+   * @param epoch epoch of the partition
    */
-  def destroyLog(topicPartition: TopicPartition): Unit = {
+  def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
     // Removal may have happened in partition's closure. This is a defensive work.
     elasticLogs.remove(topicPartition)
-    ElasticLog.destroy(client, NAMESPACE, topicPartition)
+    ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
   }
 
   /**
@@ -124,8 +125,8 @@ object ElasticLogManager {
     INSTANCE.get.removeLog(topicPartition)
   }
 
-  def destroyLog(topicPartition: TopicPartition): Unit = {
-    INSTANCE.get.destroyLog(topicPartition)
+  def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
+    INSTANCE.get.destroyLog(topicPartition, epoch)
   }
 
   def getElasticLog(topicPartition: TopicPartition): ElasticLog = INSTANCE.get.elasticLogs.get(topicPartition)

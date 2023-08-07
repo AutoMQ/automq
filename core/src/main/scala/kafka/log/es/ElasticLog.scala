@@ -453,17 +453,18 @@ object ElasticLog extends Logging {
    * @param client         elastic stream client
    * @param namespace      namespace
    * @param topicPartition topic partition
+   * @param currentEpoch   current epoch of the partition
    * @return Unit
    */
-  def destroy(client: Client, namespace: String, topicPartition: TopicPartition): Unit = {
+  def destroy(client: Client, namespace: String, topicPartition: TopicPartition, currentEpoch: Long): Unit = {
     val logIdent = s"[ElasticLog partition=$topicPartition] "
 
     val key = formatStreamKey(namespace, topicPartition)
     val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
     val keyValue = kvList.get(0)
     val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
-    // First, open partition meta stream.
-    val metaStream = openStreamWithRetry(client, metaStreamId, logIdent)
+    // First, open partition meta stream with higher epoch.
+    val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
     // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
     val metaMap = metaStream.replay().asScala
 
@@ -471,7 +472,7 @@ object ElasticLog extends Logging {
       // Then, destroy log stream, time index stream, txn stream, ...
       // streamId <0 means the stream is not actually created.
       logMeta.getStreamMap.values().forEach(streamId => if( streamId >= 0) {
-        openStreamWithRetry(client, streamId, logIdent).destroy()
+        openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
       })
     })
 
@@ -479,12 +480,12 @@ object ElasticLog extends Logging {
     metaStream.destroy()
     client.kvClient().delKV(java.util.Arrays.asList(key)).get()
 
-    info(s"$logIdent Destroyed")
+    info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
   }
 
-  private def openStreamWithRetry(client: Client, streamId: Long, logIdent: String): MetaStream = {
+  private def openStreamWithRetry(client: Client, streamId: Long, epoch: Long, logIdent: String): MetaStream = {
     client.streamClient()
-        .openStream(streamId, OpenStreamOptions.newBuilder().build())
+        .openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build())
         .exceptionally(_ => client.streamClient()
             .openStream(streamId, OpenStreamOptions.newBuilder().build()).join()
         ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
