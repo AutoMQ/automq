@@ -1840,7 +1840,7 @@ object UnifiedLog extends Logging {
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
     if (!isClusterMetaLogSegment(dir)) {
-      val localLog = ElasticLogManager.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
+      val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
       val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
       // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
       // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

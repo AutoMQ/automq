@@ -66,7 +66,7 @@ public class ElasticLogStreamManager {
                 return lazyStream;
             } catch (Exception e) {
                 // TODO: handle exception
-                return null;
+                throw new RuntimeException(e);
             }
         });
     }

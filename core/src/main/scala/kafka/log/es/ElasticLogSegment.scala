@@ -149,6 +149,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     throw new UnsupportedOperationException()
   }
 
+  // Compared with LogSegment, null is impossible to be returned anymore.
   @threadsafe
   override def read(startOffset: Long,
                     maxSize: Int,
@@ -241,9 +242,14 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   @nonthreadsafe
   override def truncateTo(offset: Long): Int = {
-    // TODO: check truncate logic
     throw new UnsupportedOperationException()
   }
+
+  /**
+   * get appended offset. It can be used to show whether the segment contains any valid data.
+   * @return appended offset
+   */
+  def appendedOffset: Long = _log.appendedOffset()
 
 
   @threadsafe
@@ -264,8 +270,8 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // TODO: check
   }
 
+  // Do nothing here.
   override def changeFileSuffixes(oldSuffix: String, newSuffix: String): Unit = {
-    // TODO: check
   }
 
   override def hasSuffix(suffix: String): Boolean = {

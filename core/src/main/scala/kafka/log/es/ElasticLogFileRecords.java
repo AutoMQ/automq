@@ -88,6 +88,10 @@ public class ElasticLogFileRecords {
         return nextOffset.get();
     }
 
+    public long appendedOffset() {
+        return nextOffset.get() - baseOffset;
+    }
+
     public Records read(long startOffset, long maxOffset, int maxSize) {
         if (ReadManualReleaseHint.isMarked()) {
             return readAll0(startOffset, maxOffset, maxSize);
@@ -123,6 +127,7 @@ public class ElasticLogFileRecords {
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
         int appendSize = records.sizeInBytes();
+        // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset.get());
         com.automq.elasticstream.client.DefaultRecordBatch batch = new com.automq.elasticstream.client.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
         CompletableFuture<?> cf = streamSegment.append(batch);

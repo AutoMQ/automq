@@ -34,7 +34,7 @@ public class ElasticLeaderEpochCheckpointMeta {
     public byte[] encode() {
         int totalLength = 4 // version
             + 4 // following entries size
-            +12 * entries.size(); // all entries
+            + 12 * entries.size(); // all entries
         ByteBuffer buffer = ByteBuffer.allocate(totalLength)
             .putInt(version)
             .putInt(entries.size());
@@ -47,7 +47,7 @@ public class ElasticLeaderEpochCheckpointMeta {
         int version = buffer.getInt();
         int entryCount = buffer.getInt();
         List<EpochEntry> entryList = new ArrayList<>(entryCount);
-        while(buffer.hasRemaining()) {
+        while (buffer.hasRemaining()) {
             entryList.add(new EpochEntry(buffer.getInt(), buffer.getLong()));
         }
         if (entryList.size() != entryCount) {

@@ -181,12 +181,15 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
               val startOffset = segment.baseOffset
               warn(s"Found invalid offset during recovery. Deleting the" +
                 s" corrupt segment and creating an empty one with starting offset $startOffset", e)
-              segment.truncateTo(startOffset)
+              // We use appended offset here to decide whether to truncate the segment.
+              // It is equivalent to 'truncatedBytes' since we only care if the segment has any data.
+              segment.asInstanceOf[ElasticLogSegment].appendedOffset
           }
         if (truncatedBytes > 0) {
           // we had an invalid message, delete all remaining log
           warn(s"Corruption found in segment ${segment.baseOffset}," +
             s" truncating to offset ${segment.readNextOffset}")
+          // remove all other segments
           removeAndDeleteSegmentsAsync(unflushedIter.toList)
           truncated = true
           // segment is truncated, so set remaining segments to 0
@@ -196,14 +199,20 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
           numRemainingSegments.put(threadName, numUnflushed - numFlushed)
         }
       }
+
+      if (truncated) {
+        val baseOffset = segments.lastSegment.get.baseOffset
+        // remove the targeted segment and recreate an empty one with the correct base offset
+        removeAndDeleteSegmentsAsync(List(segments.lastSegment.get))
+        createAndAddToSegments(baseOffset)
+      }
     }
 
     val logEndOffsetOption = deleteSegmentsIfLogStartGreaterThanLogEnd()
 
     if (segments.isEmpty) {
       // no existing segments, create a new mutable segment beginning at logStartOffset
-      val segment = createAndSaveSegmentFunc(logStartOffsetCheckpoint, dir, config, streamSliceManager, time)
-      segments.add(segment)
+      createAndAddToSegments(logStartOffsetCheckpoint)
       // No need to put it into segmentMap since it was done in 'createAndSaveSegmentFunc'.
     }
 
@@ -220,6 +229,11 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
         val logEndOffset = logEndOffsetOption.getOrElse(segments.lastSegment.get.readNextOffset)
         (Math.min(recoveryPointCheckpoint, logEndOffset), logEndOffset)
     }
+  }
+
+  private def createAndAddToSegments(baseOffset: Long): Unit = {
+    val segment = createAndSaveSegmentFunc(baseOffset, dir, config, streamSliceManager, time)
+    segments.add(segment)
   }
 
   /**

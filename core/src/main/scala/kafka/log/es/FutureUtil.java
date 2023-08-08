@@ -26,7 +26,7 @@ public class FutureUtil {
     public static <T> CompletableFuture<T> failedFuture(Throwable ex) {
         CompletableFuture<T> cf = new CompletableFuture<>();
         cf.completeExceptionally(ex);
-                return cf;
+        return cf;
     }
     public static void suppress(Runnable run, Logger logger) {
         try {

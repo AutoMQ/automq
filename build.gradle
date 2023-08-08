@@ -465,6 +465,70 @@ subprojects {
     }
   }
 
+  tasks.register('esUnitTest', Test) {
+    description = 'Runs unit tests for elastic stream storage.'
+    dependsOn compileJava
+
+    maxParallelForks = maxTestForks
+    ignoreFailures = userIgnoreFailures
+
+    maxHeapSize = defaultMaxHeapSize
+    jvmArgs = defaultJvmArgs
+
+    testLogging {
+      events = userTestLoggingEvents ?: testLoggingEvents
+      showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+      exceptionFormat = testExceptionFormat
+      displayGranularity = 0
+    }
+    logTestStdout.rehydrate(delegate, owner, this)()
+
+    exclude testsToExclude
+
+    useJUnitPlatform {
+      includeTags 'esUnit'
+    }
+
+    retry {
+      maxRetries = userMaxTestRetries
+      maxFailures = userMaxTestRetryFailures
+    }
+  }
+
+  tasks.register('esIntegrationTest', Test) {
+    description = 'Runs integration tests for elastic stream storage.'
+    dependsOn compileJava
+    shouldRunAfter test
+
+    // Increase heap size for integration tests
+    maxHeapSize = "2560m"
+    jvmArgs = defaultJvmArgs
+
+    testLogging {
+      events = userTestLoggingEvents ?: testLoggingEvents
+      showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+      exceptionFormat = testExceptionFormat
+      displayGranularity = 0
+    }
+    logTestStdout.rehydrate(delegate, owner, this)()
+
+    exclude testsToExclude
+
+    useJUnitPlatform {
+      includeTags 'esIntegration'
+    }
+
+    retry {
+      maxRetries = userMaxTestRetries
+      maxFailures = userMaxTestRetryFailures
+    }
+
+    // Allows devs to run tests in a loop to debug flaky tests. See README.
+    if (project.hasProperty("rerun-tests")) {
+      outputs.upToDateWhen { false }
+    }
+  }
+
   task integrationTest(type: Test, dependsOn: compileJava) {
     maxParallelForks = maxTestForks
     ignoreFailures = userIgnoreFailures

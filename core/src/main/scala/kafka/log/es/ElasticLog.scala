@@ -492,7 +492,7 @@ object ElasticLog extends Logging {
         .join()
   }
 
-  private def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): MetaStream = {
+  private[es] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): MetaStream = {
     val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder()
         .replicaCount(replicaCount)
         .epoch(leaderEpoch).build()
@@ -518,7 +518,7 @@ object ElasticLog extends Logging {
    * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
    */
   private def createAndSaveSegment(logSegmentManager: ElasticLogSegmentManager, suffix: String = "", logIdent: String)(baseOffset: Long, dir: File,
-                                                                                                                                                                                                 config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+                                   config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }

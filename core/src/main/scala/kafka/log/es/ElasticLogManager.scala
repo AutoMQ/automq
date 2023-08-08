@@ -33,7 +33,7 @@ import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 class ElasticLogManager(val client: Client) {
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
 
-  def getLog(dir: File,
+  def getOrCreateLog(dir: File,
              config: LogConfig,
              scheduler: Scheduler,
              time: Time,
@@ -44,10 +44,8 @@ class ElasticLogManager(val client: Client) {
              producerStateManagerConfig: ProducerStateManagerConfig,
              leaderEpoch: Long): ElasticLog = {
     // TODO: add log close hook, remove closed elastic log
-    val elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-      numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
-    elasticLogs.put(topicPartition, elasticLog)
-    elasticLog
+    elasticLogs.computeIfAbsent(topicPartition, _ => ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+      numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch))
   }
 
   /**
@@ -133,7 +131,8 @@ object ElasticLogManager {
 
   def getAllElasticLogs: Iterable[ElasticLog] = INSTANCE.get.elasticLogs.asScala.values
 
-  def getLog(dir: File,
+  // visible for testing
+  def getOrCreateLog(dir: File,
              config: LogConfig,
              scheduler: Scheduler,
              time: Time,
@@ -143,7 +142,7 @@ object ElasticLogManager {
              producerStateManagerConfig: ProducerStateManagerConfig,
              numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
              leaderEpoch: Long): ElasticLog = {
-    INSTANCE.get.getLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
+    INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
       maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
   }
 

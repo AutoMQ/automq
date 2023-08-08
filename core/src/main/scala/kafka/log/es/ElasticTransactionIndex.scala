@@ -60,6 +60,7 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
 
   override def reset(): Unit = {
     stream = streamSliceSupplier.reset()
+    lastOffset = None
   }
 
   override def close(): Unit = {

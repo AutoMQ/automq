@@ -261,6 +261,17 @@ object TestUtils extends Logging {
     Await.result(future, FiniteDuration(5, TimeUnit.MINUTES))
   }
 
+  def createSimpleEsBrokerConfig(nodeId: Int = 1,
+                                 endpoint: String = "memory://",
+                                 kvEndpoint: String = "",
+                                 namespace: String = "__esk_test__"): Properties = {
+    val props = createBrokerConfig(nodeId, "")
+    props.put(KafkaConfig.ElasticStreamEndpointProp, endpoint)
+    props.put(KafkaConfig.ElasticStreamKvEndpointProp, kvEndpoint)
+    props.put(KafkaConfig.ElasticStreamNamespaceProp, namespace)
+    props
+  }
+
   /**
     * Create a test config for the provided parameters.
     *
