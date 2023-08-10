@@ -64,6 +64,7 @@ public class ElasticLogFileRecords {
     private final AtomicLong committedOffset;
     // Inflight append result.
     private volatile CompletableFuture<?> lastAppend;
+    private boolean closed;
 
 
     public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset, int size) {
@@ -77,6 +78,7 @@ public class ElasticLogFileRecords {
         this.lastAppend = CompletableFuture.completedFuture(null);
 
         batches = batchesFrom(baseOffset);
+        closed = false;
 
     }
 
@@ -123,6 +125,9 @@ public class ElasticLogFileRecords {
     }
 
     public int append(MemoryRecords records, long lastOffset) {
+        if (closed) {
+            throw new IllegalStateException("Cannot append to a closed log segment");
+        }
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
                     " bytes is too large for segment with current file position at " + size.get());
@@ -166,6 +171,11 @@ public class ElasticLogFileRecords {
     }
 
     public void close() {
+        closed = true;
+    }
+
+    public void closeHandlers() {
+        closed = true;
     }
 
     public FileRecords.TimestampAndOffset searchForTimestamp(long targetTimestamp, long startingOffset) {

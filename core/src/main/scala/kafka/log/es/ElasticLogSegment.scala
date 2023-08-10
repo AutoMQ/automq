@@ -274,8 +274,8 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   override def changeFileSuffixes(oldSuffix: String, newSuffix: String): Unit = {
   }
 
+  // No need to support suffix in ElasticLogSegment. Just return false.
   override def hasSuffix(suffix: String): Boolean = {
-    // TODO: check
     false
   }
 
@@ -333,15 +333,17 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def closeHandlers(): Unit = {
-    // TODO:
+    CoreUtils.swallow(timeIdx.closeHandler(), this)
+    CoreUtils.swallow(_log.closeHandlers(), this)
+    CoreUtils.swallow(txnIndex.close(), this)
   }
 
   override def deleteIfExists(): Unit = {
     logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_DELETE)
   }
 
+  // No need to support this method. If this instance can still be accessed, it is not deleted.
   override def deleted(): Boolean = {
-    // TODO: check
     false
   }
 
