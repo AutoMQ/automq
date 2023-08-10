@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReadManualReleaseHint {
 
-    public static FastThreadLocal<AtomicBoolean> MANUAL_RELEASE = new FastThreadLocal<AtomicBoolean>() {
+    public static final FastThreadLocal<AtomicBoolean> MANUAL_RELEASE = new FastThreadLocal<>() {
         @Override
         protected AtomicBoolean initialValue() {
             return new AtomicBoolean(false);

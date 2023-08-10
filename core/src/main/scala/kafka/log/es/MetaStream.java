@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.log.es;
 
 import com.automq.elasticstream.client.api.AppendResult;
@@ -30,7 +47,7 @@ public class MetaStream implements Stream {
     public static final String PRODUCER_SNAPSHOT_KEY_PREFIX = "PRODUCER_SNAPSHOT_";
     public static final String PARTITION_META_KEY = "PARTITION";
     public static final String LEADER_EPOCH_CHECKPOINT_KEY = "LEADER_EPOCH_CHECKPOINT";
-    public static final Logger logger = LoggerFactory.getLogger(MetaStream.class);
+    public static final Logger LOGGER = LoggerFactory.getLogger(MetaStream.class);
 
     private final Stream innerStream;
     private final ScheduledExecutorService trimScheduler;
@@ -135,7 +152,7 @@ public class MetaStream implements Stream {
                     MetaKeyValue kv = MetaKeyValue.decode(context.rawPayload());
                     metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
                 } catch (Exception e) {
-                    logger.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
+                    LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
                 }
                 pos = context.lastOffset();
             }
@@ -166,7 +183,7 @@ public class MetaStream implements Stream {
                     if (key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
                         metaMap.put(key, ElasticPartitionProducerSnapshotMeta.decode(pair.getRight().duplicate()));
                     } else {
-                        logger.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
+                        LOGGER.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
                     }
             }
         });
@@ -205,6 +222,6 @@ public class MetaStream implements Stream {
         }
 
         trim(lastOffset + 1);
-        logger.debug("{} streamId {}: compact before {}", logIdent, streamId(), lastOffset);
+        LOGGER.debug("{} streamId {}: compact before {}", logIdent, streamId(), lastOffset);
     }
 }

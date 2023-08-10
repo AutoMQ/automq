@@ -36,8 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static kafka.log.es.FutureUtil.suppress;
-
 public class AlwaysSuccessClient implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
 

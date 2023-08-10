@@ -71,7 +71,7 @@ public class ElasticLogFileRecords {
         this.streamSegment = streamSegment;
         // TODO: init size when recover, all is size matter anymore?
         long nextOffset = streamSegment.nextOffset();
-        this.size = new AtomicInteger(size == 0? (int) nextOffset: size);
+        this.size = new AtomicInteger(size == 0 ? (int) nextOffset : size);
         this.nextOffset = new AtomicLong(baseOffset + nextOffset);
         this.committedOffset = new AtomicLong(baseOffset + nextOffset);
         this.lastAppend = CompletableFuture.completedFuture(null);
