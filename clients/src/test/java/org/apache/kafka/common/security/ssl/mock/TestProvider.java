@@ -28,7 +28,7 @@ public class TestProvider extends Provider {
     }
 
     protected TestProvider(String name, double version, String info) {
-        super(name, version, info);
+        super(name, Double.toString(version), info);
         super.put(KEY_MANAGER_FACTORY, TestKeyManagerFactory.class.getName());
         super.put(TRUST_MANAGER_FACTORY, TestTrustManagerFactory.class.getName());
     }

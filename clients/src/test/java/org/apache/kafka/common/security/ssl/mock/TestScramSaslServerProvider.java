@@ -25,7 +25,7 @@ public class TestScramSaslServerProvider extends Provider {
     }
 
     protected TestScramSaslServerProvider(String name, double version, String info) {
-        super(name, version, info);
+        super(name, Double.toString(version), info);
     }
 
 }

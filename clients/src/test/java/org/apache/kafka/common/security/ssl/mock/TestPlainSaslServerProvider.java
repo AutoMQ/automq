@@ -25,7 +25,7 @@ public class TestPlainSaslServerProvider extends Provider {
     }
 
     protected TestPlainSaslServerProvider(String name, double version, String info) {
-        super(name, version, info);
+        super(name, Double.toString(version), info);
     }
 
 }
