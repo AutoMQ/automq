@@ -44,6 +44,7 @@
   <allow pkg="com.yammer.metrics"/>
 
   <subpackage name ="log">
+    <allow pkg="org.apache.commons" />
     <allow pkg="com.automq.elasticstream" />
     <allow pkg="com.fasterxml.jackson" />
     <allow pkg="io.netty" />
@@ -82,9 +83,9 @@
   </subpackage>
 
   <subpackage name="server">
+    <allow pkg="org.apache.kafka" />
     <subpackage name="builders">
       <allow pkg="kafka" />
-      <allow pkg="org.apache.kafka" />
     </subpackage>
   </subpackage>
 
@@ -110,5 +111,14 @@
       <allow pkg="org.apache.kafka.clients"/>
       <allow pkg="org.apache.kafka.metadata" />
     </subpackage>
+  </subpackage>
+
+  <subpackage name="metrics">
+    <allow pkg="kafka.metrics.cruisecontrol" />
+    <allow pkg="kafka.server" />
+    <allow pkg="org.apache.kafka.clients" />
+    <allow pkg="kafka.testkit" />
+    <allow pkg="org.apache.kafka.metadata" />
+    <allow pkg="org.apache.directory" />
   </subpackage>
 </import-control>

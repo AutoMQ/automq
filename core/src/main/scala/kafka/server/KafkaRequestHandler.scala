@@ -24,6 +24,7 @@ import kafka.metrics.KafkaMetricsGroup
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
 import com.yammer.metrics.core.Meter
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.utils.{KafkaThread, Time}
 
@@ -152,7 +153,7 @@ class KafkaRequestHandlerPool(val brokerId: Int,
 }
 
 class BrokerTopicMetrics(name: Option[String]) extends KafkaMetricsGroup {
-  val tags: scala.collection.Map[String, String] = name match {
+  lazy val tags: scala.collection.Map[String, String] = name match {
     case None => Map.empty
     case Some(topic) => Map("topic" -> topic)
   }
@@ -267,6 +268,10 @@ class BrokerTopicMetrics(name: Option[String]) extends KafkaMetricsGroup {
   def close(): Unit = metricTypeMap.values.foreach(_.close())
 }
 
+class BrokerTopicPartitionMetrics(tp: TopicPartition) extends BrokerTopicMetrics(Some(tp.topic())) {
+  override lazy val tags: Map[String, String] = Map("topic" -> tp.topic(), "partition" -> tp.partition().toString)
+}
+
 object BrokerTopicStats {
   val MessagesInPerSec = "MessagesInPerSec"
   val BytesInPerSec = "BytesInPerSec"
@@ -290,16 +295,22 @@ object BrokerTopicStats {
   val InvalidOffsetOrSequenceRecordsPerSec = "InvalidOffsetOrSequenceRecordsPerSec"
 
   private val valueFactory = (k: String) => new BrokerTopicMetrics(Some(k))
+  private val partitionValueFactory = (k: TopicPartition) => new BrokerTopicPartitionMetrics(k)
 }
 
 class BrokerTopicStats extends Logging {
   import BrokerTopicStats._
 
   private val stats = new Pool[String, BrokerTopicMetrics](Some(valueFactory))
+  private val partitionStats = new Pool[TopicPartition, BrokerTopicPartitionMetrics](Some(partitionValueFactory))
   val allTopicsStats = new BrokerTopicMetrics(None)
 
   def topicStats(topic: String): BrokerTopicMetrics =
     stats.getAndMaybePut(topic)
+
+  def topicPartitionStats(topicPartition: TopicPartition): BrokerTopicPartitionMetrics = {
+    partitionStats.getAndMaybePut(topicPartition)
+  }
 
   def updateReplicationBytesIn(value: Long): Unit = {
     allTopicsStats.replicationBytesInRate.foreach { metric =>
@@ -362,6 +373,18 @@ class BrokerTopicStats extends Logging {
       updateReplicationBytesOut(value)
     } else {
       topicStats(topic).bytesOutRate.mark(value)
+      allTopicsStats.bytesOutRate.mark(value)
+    }
+  }
+
+  def updateBytesOut(topicIdPartition: TopicPartition, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
+    if (isFollower) {
+      if (isReassignment)
+        updateReassignmentBytesOut(value)
+      updateReplicationBytesOut(value)
+    } else {
+      topicPartitionStats(topicIdPartition).bytesOutRate.mark(value)
+      topicStats(topicIdPartition.topic()).bytesOutRate.mark(value)
       allTopicsStats.bytesOutRate.mark(value)
     }
   }

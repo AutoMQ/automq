@@ -470,24 +470,28 @@ public class KafkaClusterTestKit implements AutoCloseable {
         return clientProperties(new Properties());
     }
 
-    public Properties clientProperties(Properties configOverrides) {
-        if (!brokers.isEmpty()) {
-            StringBuilder bld = new StringBuilder();
-            String prefix = "";
-            for (Entry<Integer, BrokerServer> entry : brokers.entrySet()) {
-                int brokerId = entry.getKey();
-                BrokerServer broker = entry.getValue();
-                ListenerName listenerName = nodes.externalListenerName();
-                int port = broker.boundPort(listenerName);
-                if (port <= 0) {
-                    throw new RuntimeException("Broker " + brokerId + " does not yet " +
+    public String bootstrapServers() {
+        StringBuilder bld = new StringBuilder();
+        String prefix = "";
+        for (Entry<Integer, BrokerServer> entry : brokers.entrySet()) {
+            int brokerId = entry.getKey();
+            BrokerServer broker = entry.getValue();
+            ListenerName listenerName = nodes.externalListenerName();
+            int port = broker.boundPort(listenerName);
+            if (port <= 0) {
+                throw new RuntimeException("Broker " + brokerId + " does not yet " +
                         "have a bound port for " + listenerName + ".  Did you start " +
                         "the cluster yet?");
-                }
-                bld.append(prefix).append("localhost:").append(port);
-                prefix = ",";
             }
-            configOverrides.putIfAbsent(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bld.toString());
+            bld.append(prefix).append("localhost:").append(port);
+            prefix = ",";
+        }
+        return bld.toString();
+    }
+
+    public Properties clientProperties(Properties configOverrides) {
+        if (!brokers.isEmpty()) {
+            configOverrides.putIfAbsent(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
         }
         return configOverrides;
     }

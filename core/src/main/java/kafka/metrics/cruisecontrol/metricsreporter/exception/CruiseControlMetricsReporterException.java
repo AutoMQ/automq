@@ -14,31 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.log.es;
+/*
+ * Copyright 2017 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License"). See License in the project root for license information.
+ */
 
-import io.netty.util.concurrent.FastThreadLocal;
+package kafka.metrics.cruisecontrol.metricsreporter.exception;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+public class CruiseControlMetricsReporterException extends Exception {
 
-public class ReadManualReleaseHint {
-
-    public static final FastThreadLocal<AtomicBoolean> MANUAL_RELEASE = new FastThreadLocal<AtomicBoolean>() {
-        @Override
-        protected AtomicBoolean initialValue() {
-            return new AtomicBoolean(false);
-        }
-    };
-
-    public static boolean isMarked() {
-        return MANUAL_RELEASE.get().get();
+    public CruiseControlMetricsReporterException(String message, Throwable cause) {
+        super(message, cause);
     }
 
-    public static void mark() {
-        MANUAL_RELEASE.get().set(true);
+    public CruiseControlMetricsReporterException(String message) {
+        super(message);
     }
 
-    public static void reset() {
-        MANUAL_RELEASE.get().set(false);
+    public CruiseControlMetricsReporterException(Throwable cause) {
+        super(cause);
     }
-
 }

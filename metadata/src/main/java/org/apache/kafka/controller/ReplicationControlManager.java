@@ -616,17 +616,13 @@ public class ReplicationControlManager {
             // elastic stream inject end
 
             List<ApiMessageAndVersion> configRecords;
-            if (keyToOps != null) {
-                ControllerResult<ApiError> configResult =
-                    configurationControl.incrementalAlterConfig(configResource, keyToOps, true);
-                if (configResult.response().isFailure()) {
-                    topicErrors.put(topic.name(), configResult.response());
-                    continue;
-                } else {
-                    configRecords = configResult.records();
-                }
+            ControllerResult<ApiError> configResult =
+                configurationControl.incrementalAlterConfig(configResource, keyToOps, true);
+            if (configResult.response().isFailure()) {
+                topicErrors.put(topic.name(), configResult.response());
+                continue;
             } else {
-                configRecords = Collections.emptyList();
+                configRecords = configResult.records();
             }
             ApiError error;
             try {
@@ -823,7 +819,7 @@ public class ReplicationControlManager {
         return ApiError.NONE;
     }
 
-    private void maybeCheckCreatePartitionPolicy(CreatePartitionPolicy.RequestMetadata requestMetadata) throws PolicyViolationException{
+    private void maybeCheckCreatePartitionPolicy(CreatePartitionPolicy.RequestMetadata requestMetadata) throws PolicyViolationException {
         createPartitionPolicy.ifPresent(policy -> policy.validate(requestMetadata));
     }
 

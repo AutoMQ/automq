@@ -956,7 +956,7 @@ class KafkaApis(val requestChannel: RequestChannel,
             // If the topic name was not known, we will have no bytes out.
             if (topicResponse.topic != null) {
               val tp = new TopicIdPartition(topicResponse.topicId, new TopicPartition(topicResponse.topic, data.partitionIndex))
-              brokerTopicStats.updateBytesOut(tp.topic, fetchRequest.isFromFollower, reassigningPartitions.contains(tp), FetchResponse.recordsSize(data))
+              brokerTopicStats.updateBytesOut(tp.topicPartition(), fetchRequest.isFromFollower, reassigningPartitions.contains(tp), FetchResponse.recordsSize(data))
             }
           }
         }
