@@ -42,10 +42,13 @@ docker_run_memory_limit="2000m"
 default_num_nodes=14
 
 # The default OpenJDK base image.
-default_jdk="openjdk:8"
+default_jdk="openjdk:11"
 
 # The default ducker-ak image name.
-default_image_name="ducker-ak"
+default_image_name="ducker-ak-esk"
+
+# The default apt/pip mirror URL. By default, no mirror is used.
+default_general_mirror_url=""
 
 # Port to listen on when debugging
 debugpy_port=5678
@@ -64,7 +67,7 @@ help|-h|--help
     Display this help message
 
 up [-n|--num-nodes NUM_NODES] [-f|--force] [docker-image]
-        [-C|--custom-ducktape DIR] [-e|--expose-ports ports]
+        [-C|--custom-ducktape DIR] [-e|--expose-ports ports] [--general-mirror-url URL]
     Bring up a cluster with the specified amount of nodes (defaults to ${default_num_nodes}).
     The docker image name defaults to ${default_image_name}.  If --force is specified, we will
     attempt to bring up an image even some parameters are not valid.
@@ -80,6 +83,8 @@ up [-n|--num-nodes NUM_NODES] [-f|--force] [docker-image]
     
     Note that port 5678 will be automatically exposed for ducker01 node and will be mapped to 5678 
     on your local machine to enable debugging in VS Code.
+
+    If --general-mirror-url is specified then will use the provided URL as the apt/pip mirror URL.
 
 test [-d|--debug] [test-name(s)] [-- [ducktape args]]
     Run a test or set of tests inside the currently active Ducker nodes.
@@ -247,6 +252,7 @@ ducker_build() {
         --build-arg "ducker_creator=${user_name}" \
         --build-arg "jdk_version=${jdk_version}" \
         --build-arg "UID=${UID}" \
+        --build-arg "GENERAL_MIRROR_URL=${GENERAL_MIRROR_URL}" \
         -t "${image_name}" \
         -f "${ducker_dir}/Dockerfile" ${docker_args} -- .
     docker_status=$?
@@ -314,11 +320,13 @@ ducker_up() {
             -n|--num-nodes) set_once num_nodes "${2}" "number of nodes"; shift 2;;
             -j|--jdk) set_once jdk_version "${2}" "the OpenJDK base image"; shift 2;;
             -e|--expose-ports) set_once expose_ports "${2}" "the ports to expose"; shift 2;;
+            --general-mirror-url) set_once GENERAL_MIRROR_URL "${2}" "general mirror url to accelerate package downing for apt and pip"; shift 2;;
             *) set_once image_name "${1}" "docker image name"; shift;;
         esac
     done
     [[ -n "${num_nodes}" ]] || num_nodes="${default_num_nodes}"
     [[ -n "${jdk_version}" ]] || jdk_version="${default_jdk}"
+    [[ -n "${GENERAL_MIRROR_URL}" ]] || GENERAL_MIRROR_URL="${default_general_mirror_url}"
     [[ -n "${image_name}" ]] || image_name="${default_image_name}-${jdk_version/:/-}"
     [[ "${num_nodes}" =~ ^-?[0-9]+$ ]] || \
         die "ducker_up: the number of nodes must be an integer."
@@ -362,6 +370,13 @@ attempting to start new ones."
         must_do -v docker network rm ducknet
     fi
     must_do -v docker network create ducknet
+
+    # elastic stream insert start
+    # must_do -v docker run --network=ducknet --name redis -d redis:7
+    # start es cluster
+    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
+    # elastic stream insert end
+
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
     fi
@@ -380,6 +395,8 @@ attempting to start new ones."
     exec 3>&-
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
+        docker exec --user=root "${node}" \
+            bash -c "cat /opt/kafka-dev/tests/docker/build/node_hosts"
         docker exec --user=root "${node}" \
             bash -c "grep -v ${node} /opt/kafka-dev/tests/docker/build/node_hosts >> /etc/hosts"
         [[ $? -ne 0 ]] && die "failed to append to the /etc/hosts file on ${node}"
@@ -572,6 +589,10 @@ ducker_down() {
         must_do -v docker network rm ducknet
     fi
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
+    # elastic stream insert start
+    # remove es
+    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
+    # elastic stream insert end
 }
 
 ducker_purge() {

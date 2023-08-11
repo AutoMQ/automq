@@ -39,14 +39,6 @@ class ReplicaScaleTest(Test):
             self.zk.start()
         self.kafka.start()
 
-    def teardown(self):
-        # Need to increase the timeout due to partition count
-        for node in self.kafka.nodes:
-            self.kafka.stop_node(node, clean_shutdown=False, timeout_sec=60)
-        self.kafka.stop()
-        if self.zk:
-            self.zk.stop()
-
     @cluster(num_nodes=12)
     @matrix(topic_count=[50], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
     def test_produce_consume(self, topic_count, partition_count, replication_factor, metadata_quorum=quorum.zk):

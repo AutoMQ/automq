@@ -69,10 +69,11 @@ class MiniKdc(KafkaPathResolverMixin, Service):
             MiniKdc.LOCAL_KRB5CONF_FILE = os.path.join(local_scratch_dir, "krb5conf")
         return MiniKdc.LOCAL_KRB5CONF_FILE
 
-    def __init__(self, context, kafka_nodes, extra_principals=""):
+    def __init__(self, context, kafka_nodes, kafka_service=None, extra_principals=""):
         super(MiniKdc, self).__init__(context, 1)
         self.kafka_nodes = kafka_nodes
         self.extra_principals = extra_principals
+        self.kafka = kafka_service
 
         # context.local_scratch_dir uses a ducktape feature:
         # each test_context object has a unique local scratch directory which is available for the duration of the test
@@ -118,6 +119,12 @@ class MiniKdc(KafkaPathResolverMixin, Service):
 
         # KDC is set to bind openly (via 0.0.0.0). Change krb5.conf to hold the specific KDC address
         self.replace_in_file(MiniKdc.LOCAL_KRB5CONF_FILE, '0.0.0.0', node.account.hostname)
+
+    def stop(self, **kwargs):
+        # Since kafka cluster can not be authorized if minikdc service is down, we prefer to delete all topics here.
+        if self.kafka:
+            self.kafka.delete_all_topics()
+        super(MiniKdc, self).stop()
 
     def stop_node(self, node):
         self.logger.info("Stopping %s on %s" % (type(self).__name__, node.account.hostname))

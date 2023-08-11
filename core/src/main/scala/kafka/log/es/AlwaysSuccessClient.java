@@ -213,17 +213,19 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<Void> destroy() {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
-            stream.destroy().whenCompleteAsync((rst, ex) -> {
-                FutureUtil.suppress(() -> {
-                    if (ex != null) {
-                        cf.completeExceptionally(ex);
-                    } else {
-                        cf.complete(rst);
-                    }
-                }, LOGGER);
-            }, APPEND_CALLBACK_EXECUTORS);
-            return cf;
+            // TODO: restore when elastic stream supporting destroy.
+            return CompletableFuture.completedFuture(null);
+//            CompletableFuture<Void> cf = new CompletableFuture<>();
+//            stream.destroy().whenCompleteAsync((rst, ex) -> {
+//                FutureUtil.suppress(() -> {
+//                    if (ex != null) {
+//                        cf.completeExceptionally(ex);
+//                    } else {
+//                        cf.complete(rst);
+//                    }
+//                }, LOGGER);
+//            }, APPEND_CALLBACK_EXECUTORS);
+//            return cf;
         }
     }
 }

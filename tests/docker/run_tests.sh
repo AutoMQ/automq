@@ -17,7 +17,8 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 KAFKA_NUM_CONTAINERS=${KAFKA_NUM_CONTAINERS:-14}
-TC_PATHS=${TC_PATHS:-./kafkatest/}
+TC_PATHS=${TC_PATHS:-${ESK_TEST_YML:-./kafkatest/}}
+TC_GENERAL_MIRROR_URL=${TC_GENERAL_MIRROR_URL:-""}
 REBUILD=${REBUILD:f}
 
 die() {
@@ -30,7 +31,7 @@ if [ "$REBUILD" == "t" ]; then
 fi
 
 if ${SCRIPT_DIR}/ducker-ak ssh | grep -q '(none)'; then
-    ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" || die "ducker-ak up failed"
+    ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --general-mirror-url "${TC_GENERAL_MIRROR_URL}"  || die "ducker-ak up failed"
 fi
 
 [[ -n ${_DUCKTAPE_OPTIONS} ]] && _DUCKTAPE_OPTIONS="-- ${_DUCKTAPE_OPTIONS}"

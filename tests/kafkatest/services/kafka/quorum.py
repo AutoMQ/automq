@@ -21,14 +21,14 @@ remote_kraft = 'REMOTE_KRAFT' # separate Controllers in KRaft mode, used during/
 # How we will parameterize tests that exercise all quorum styles
 #   [“ZK”, “REMOTE_KRAFT”, "COLOCATED_KRAFT"] during the KIP-500 bridge release(s)
 #   [“REMOTE_KRAFT”, "COLOCATED_KRAFT”] after the KIP-500 bridge release(s)
-all = [zk, remote_kraft, colocated_kraft]
+all = [remote_kraft, colocated_kraft]
 # How we will parameterize tests that exercise all KRaft quorum styles
 all_kraft = [remote_kraft, colocated_kraft]
 # How we will parameterize tests that are unrelated to upgrades:
 #   [“ZK”] before the KIP-500 bridge release(s)
 #   [“ZK”, “REMOTE_KRAFT”] during the KIP-500 bridge release(s) and in preview releases
 #   [“REMOTE_KRAFT”] after the KIP-500 bridge release(s)
-all_non_upgrade = [zk, remote_kraft]
+all_non_upgrade = [remote_kraft]
 
 def for_test(test_context):
     # A test uses ZooKeeper if it doesn't specify a metadata quorum or if it explicitly specifies ZooKeeper

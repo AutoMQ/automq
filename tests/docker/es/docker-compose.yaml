@@ -1,0 +1,45 @@
+version: "3"
+services:
+  range-server:
+    image: "elasticstream/elastic-stream:0.2.9"
+    # https://docs.docker.com/compose/compose-file/05-services/#entrypoint
+    entrypoint:
+      - /usr/local/bin/range-server
+      - start
+    environment:
+      - ES_ADDR=0.0.0.0:10911
+      - ES_PD=pd:12378
+    ports:
+      - "10911:10911"
+    # https://docs.docker.com/compose/compose-file/05-services/#depends_on
+    depends_on:
+      pd:
+        condition: service_healthy
+    volumes:
+      - rs_data:/data
+  pd:
+    image: "elasticstream/elastic-stream:0.2.9"
+    entrypoint:
+      - /usr/local/bin/pd
+      - --client-urls=http://0.0.0.0:12379
+      - --pd-addr=0.0.0.0:12378
+    ports:
+      - "12378:12378"
+      - "12379:12379"
+    # https://docs.docker.com/compose/startup-order/
+    # https://docs.docker.com/compose/compose-file/05-services/#healthcheck
+    healthcheck:
+      test: ["CMD-SHELL", "echo -e '\x1dclose\x0d' | telnet localhost 12378"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+# https://docs.docker.com/compose/compose-file/07-volumes/
+volumes:
+  rs_data:
+    driver: local
+
+networks:
+  default:
+    name: ducknet
+    external: true

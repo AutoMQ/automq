@@ -326,6 +326,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 )
                 self.controller_quorum = self.remote_controller_quorum
 
+        if self.quorum_info.using_zk:
+            raise Exception("No need to test ZK mode")
+            
         Service.__init__(self, context, num_nodes)
         JmxMixin.__init__(self, num_nodes=num_nodes, jmx_object_names=jmx_object_names, jmx_attributes=(jmx_attributes or []),
                           root=KafkaService.PERSISTENT_ROOT)
@@ -592,7 +595,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     nodes_for_kdc = self.nodes.copy()
                     if other_service and other_service != self:
                         nodes_for_kdc += other_service.nodes
-                    self.minikdc = MiniKdc(self.context, nodes_for_kdc, extra_principals = add_principals)
+                    self.minikdc = MiniKdc(self.context, nodes_for_kdc, kafka_service=self, extra_principals = add_principals)
                     self.minikdc.start()
         else:
             self.minikdc = None
@@ -935,6 +938,31 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         """
         return math.ceil((1 + self.num_nodes_controller_role) / 2)
 
+    def stop(self, **kwargs):
+        """
+        If minikdc is enabled, topics have been already deleted in minikdc.stop_node().
+        """
+        if not self.minikdc:
+            self.delete_all_topics()
+        super(KafkaService, self).stop()
+
+    def delete_all_topics(self):
+        """
+        Delete all topics on the cluster.
+        Note that this is needed to keep E2E tests isolated from each other.
+        """
+        node = self.nodes[0]
+        force_use_zk_connection = not self.all_nodes_topic_command_supports_bootstrap_server() or \
+                                 not self.all_nodes_topic_command_supports_if_not_exists_with_bootstrap_server()
+        cmd = fix_opts_for_new_jvm(node)
+        cmd += "%(kafka_topics_cmd)s --delete --if-exists --topic %(topic)s " % {
+            'kafka_topics_cmd': self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection),
+            'topic': "\".*\"",
+        }
+
+        self.logger.info("Running topic deletion command...\n%s" % cmd)
+        node.account.ssh(cmd)
+
     def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
         pids = self.pids(node)
         cluster_has_colocated_controllers = self.quorum_info.has_brokers and self.quorum_info.has_controllers
@@ -1170,7 +1198,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         else:
             cmd += " --partitions %(partitions)d --replication-factor %(replication-factor)d" % {
                 'partitions': topic_cfg.get('partitions', 1),
-                'replication-factor': topic_cfg.get('replication-factor', 1)
+                'replication-factor': 1
             }
 
         if topic_cfg.get('if-not-exists', False):

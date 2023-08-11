@@ -1,0 +1,42 @@
+# list all tests that are part of the suite under the test suite name:
+esk_test_suite:
+  included:
+    - kafkatest/sanity_checks
+    - kafkatest/tests/client
+    - kafkatest/tests/core
+    - kafkatest/tests/tools
+
+  # exclude zk tests and other no-needed tests
+  excluded:
+    # zk tests
+    - kafkatest/tests/client/message_format_change_test.py::MessageFormatChangeTest.test_compatibility
+    - kafkatest/tests/core/delegation_token_test.py::DelegationTokenTest.test_delegation_token_lifecycle
+    - kafkatest/tests/core/group_mode_transactions_test.py::GroupModeTransactionsTest.test_transactions
+    - kafkatest/tests/core/transactions_test.py::TransactionsTest.test_transactions
+    - kafkatest/tests/core/zookeeper_migration_test.py
+    - kafkatest/tests/core/zookeeper_security_upgrade_test.py
+    - kafkatest/tests/core/zookeeper_tls_encrypt_only_test.py
+    - kafkatest/tests/core/zookeeper_tls_test.py
+    - kafkatest/tests/core/throttling_test.py::ThrottlingTest.test_throttled_reassignment
+    - kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure
+    - kafkatest/tests/core/security_rolling_upgrade_test.py
+    - kafkatest/tests/core/mirror_maker_test.py
+    - kafkatest/tests/core/produce_bench_test.py::ProduceBenchTest.test_produce_bench_transactions
+    - kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
+    - kafkatest/tests/client/client_compatibility_features_test.py::ClientCompatibilityFeaturesTest.run_compatibility_test
+    - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
+    - kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
+    - kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
+    - kafkatest/sanity_checks/test_console_consumer::ConsoleConsumerTest.py.test_version
+    - "kafkatest/tests/core/security_test.py::SecurityTest.test_quorum_ssl_endpoint_validation_failure@{\"metadata_quorum\": \"ZK\"}"
+    - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-256\"}"
+    - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-512\"}"
+    - "kafkatest/tests/core/authorizer_test.py::AuthorizerTest.test_authorizer@{\"authorizer_class\": \"kafka.security.authorizer.AclAuthorizer\", \"metadata_quorum\": \"ZK\"}"
+
+    # no-needed tests
+    # no lag in esk
+    - kafkatest/tests/tools/replica_verification_test.py::ReplicaVerificationToolTest.test_replica_lags
+    # esk does not support follower fetch
+    - kafkatest/tests/core/fetch_from_follower_test.py
+    # can not reuse since there is only one replica
+    - kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
