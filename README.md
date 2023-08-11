@@ -21,45 +21,48 @@ Compared to Apache Kafka, AutoMQ for Apache Kafka offers the following advantage
 
 
 ## Quick Start
-### Build
-To build AutoMQ for Apache Kafka, you need to install JDK 8/11/17 and Scale 
-2.13
+### Build and Run
+#### Requirements
+- Linux kernel 5.19+
+- JDK 11/17
+- Scala 2.13
 
-Building a binary release gzipped tar ball
+AutoMQ for Apache Kafka requires elastic streams for data storage. If you want to set them up locally, you can initiate them using docker-compose in [Elastic Stream](https://github.com/AutoMQ/elastic-stream/tree/develop/dist/docker-compose), bringing about following requirements:
+- Docker 
+
+#### Build a jar
 ``` shell
-./gradlew clean releaseTarGz
+./gradlew jar -x test
 ```
-The release file can be found inside `./core/build/distributions/`.
 
-### Run
-> Currently, only Linux is supported.
-#### Launch Elastic Stream
-See [Elastic Stream](https://github.com/AutoMQ/elastic-stream).
+#### Run range servers and placement drivers
+In reference to [Elastic Stream](https://github.com/AutoMQ/elastic-stream/tree/develop/dist/docker-compose), run range servers and placement drivers:
+``` shell
+docker compose up -d 
+```
 
 #### Launch AutoMQ for Apache Kafka
 ``` shell
-# unpack the release file
-$ cd core/build/distributions; tar xvf kafka_2.13-3.4.0.tgz; cd kafka_2.13-3.4.0
-
 # start a broker in kraft mode
 $ KAFKA_CLUSTER_ID="$(./bin/kafka-storage.sh random-uuid)"
 
-$ ./bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.
-properties
+$ bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
 
-$ ./bin/kafka-server-start.sh config/kraft/server.properties
+$ bin/kafka-server-start.sh config/kraft/server.properties
 ```
 
-#### Run console pub-sub
+#### Run a console producer and consumer
 1. Create a topic to store your events:
 ``` shell
-$ bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server 
-localhost:9092
+$ bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9092
 ```
 
 2. Run the console producer client to write a few events into your topic. By default, each line you enter will result in a separate event being written to the topic.
 ``` shell
 $ bin/kafka-console-producer.sh --topic quickstart-events --bootstrap-server localhost:9092
+```
+You may input some messages like:
+``` shell
 This is my first event
 This is my second event
 ```
@@ -67,6 +70,9 @@ This is my second event
 3. Open another terminal session and run the console consumer client to read the events you just created:
 ``` shell
 $ bin/kafka-console-consumer.sh --topic quickstart-events --from-beginning --bootstrap-server localhost:9092
+```
+You will see the messages you input in step 2.
+``` shell
 This is my first event
 This is my second event
 ```
