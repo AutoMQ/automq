@@ -83,5 +83,9 @@ After run producer and consumer, you can check Kafka local store path /tmp/kraft
 > the real data is stored in Elastic Stream.
 
 ## Design
+### Architecture
 ![Arch](docs/images/akf_architecture.png)
+
+### Data Mapping
+![Arch](docs/images/akf_data_mapping.png)
 
