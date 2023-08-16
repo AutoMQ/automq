@@ -124,9 +124,9 @@ public class ElasticLogFileRecords {
         return PooledMemoryRecords.of(fetchResults);
     }
 
-    public int append(MemoryRecords records, long lastOffset) {
+    public int append(MemoryRecords records, long lastOffset) throws IOException {
         if (closed) {
-            throw new IllegalStateException("Cannot append to a closed log segment");
+            throw new IOException("Cannot append to a closed log segment");
         }
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +

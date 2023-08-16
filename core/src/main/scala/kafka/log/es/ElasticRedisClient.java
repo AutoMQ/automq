@@ -133,7 +133,11 @@ public class ElasticRedisClient implements Client {
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
-            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(startOffset, endOffset).values());
+            Long floorKey = recordMap.floorKey(startOffset);
+            if (floorKey == null) {
+                return CompletableFuture.completedFuture(ArrayList::new);
+            }
+            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(floorKey, endOffset).values());
             log.info("[stream {}] fetching from startOffset {} with maxSizeHint {}, baseOffset {}, recordsCount {}", streamId, startOffset, maxSizeHint, startOffset, records.size());
             return CompletableFuture.completedFuture(() -> records);
         }

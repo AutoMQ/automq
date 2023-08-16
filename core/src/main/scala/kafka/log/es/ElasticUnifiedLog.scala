@@ -21,9 +21,9 @@ import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, LogOffsetMetadata}
 import kafka.utils.Logging
-import org.apache.kafka.common.Uuid
-import org.apache.kafka.common.record.{RecordBatch, Records}
+import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
+import org.apache.kafka.common.{TopicPartition, Uuid}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -56,6 +56,21 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
   override def initializeTopicId(): Unit = {
     // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
+  }
+
+  // only for testing
+  private[log] def listProducerSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
+    val producerSnapshots: mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = mutable.Map()
+    elasticLog.metaStream.getAllProducerSnapshots.forEach((offset, snapshot) => {
+      producerSnapshots.put(offset.longValue(), snapshot)
+    })
+    producerSnapshots
+  }
+
+  // only for testing
+  private[log] def removeAndDeleteSegments(segmentsToDelete: Iterable[LogSegment],
+      asyncDelete: Boolean): Unit = {
+    elasticLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete, LogDeletion(elasticLog))
   }
 
   override def close(): Unit = {
@@ -115,6 +130,28 @@ object ElasticUnifiedLog extends Logging {
     producerStateManager.takeSnapshot()
     info(s"${logPrefix}Producer state recovery took ${segmentRecoveryStart - producerStateLoadStart}ms for snapshot load " +
       s"and ${time.milliseconds() - segmentRecoveryStart}ms for segment recovery from offset $lastOffset")
+  }
+
+  /**
+   * If the recordVersion is >= RecordVersion.V2, then create and return a LeaderEpochFileCache.
+   * Otherwise, the message format is considered incompatible and return None.
+   *
+   * @param topicPartition        The topic partition
+   * @param recordVersion         The record version
+   * @param leaderEpochCheckpoint The leader epoch checkpoint
+   * @return The new LeaderEpochFileCache instance (if created), none otherwise
+   */
+  private[log] def maybeCreateLeaderEpochCache(topicPartition: TopicPartition,
+      recordVersion: RecordVersion,
+      leaderEpochCheckpoint: ElasticLeaderEpochCheckpoint): Option[LeaderEpochFileCache] = {
+
+    def newLeaderEpochFileCache(): LeaderEpochFileCache = new LeaderEpochFileCache(topicPartition, leaderEpochCheckpoint)
+
+    if (recordVersion.precedes(RecordVersion.V2)) {
+      None
+    } else {
+      Some(newLeaderEpochFileCache())
+    }
   }
 
   private def loadProducersFromRecords(producerStateManager: ProducerStateManager, records: Records): Unit = {

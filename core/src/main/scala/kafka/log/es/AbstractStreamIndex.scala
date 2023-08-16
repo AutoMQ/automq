@@ -19,8 +19,9 @@
 package kafka.log.es
 
 import kafka.common.IndexOffsetOverflowException
-import kafka.log.AbstractIndex.error
+import kafka.log.AbstractIndex.{debug, error}
 import kafka.log.{Index, IndexEntry, IndexSearchType}
+import kafka.utils.CoreUtils.inLock
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.utils.{ByteBufferUnmapper, OperatingSystem}
 
@@ -88,9 +89,23 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
   // TODO:
   def updateParentDir(parentDir: File): Unit = {}
 
+  /**
+   * Note that stream index actually does not need to resize. Here we only change the maxEntries in memory to be
+   * consistent with raw Apache Kafka.
+   */
   def resize(newSize: Int): Boolean = {
     // noop implementation
-    true
+    inLock(lock) {
+      val roundedNewMaxEntries = roundDownToExactMultiple(newSize, entrySize) / entrySize
+
+      if (_maxEntries == roundedNewMaxEntries) {
+        debug(s"Index ${file.getAbsolutePath} was not resized because it already has maxEntries $roundedNewMaxEntries")
+        false
+      } else {
+        _maxEntries = roundedNewMaxEntries
+        true
+      }
+    }
   }
 
   // TODO:
@@ -103,7 +118,9 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
   }
 
   def trimToValidSize(): Unit = {
-    // noop implementation
+    inLock(lock) {
+      resize(entrySize * _entries)
+    }
   }
 
   def sizeInBytes: Int = entrySize * _entries
@@ -202,6 +219,10 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
     }
   }
 
+  /**
+   * Round a number to the greatest exact multiple of the given factor less than the given number.
+   * E.g. roundDownToExactMultiple(67, 8) == 64
+   */
   def roundDownToExactMultiple(number: Int, factor: Int): Int = factor * (number / factor)
 
   protected[log] def forceUnmap(): Unit = {

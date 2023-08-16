@@ -27,7 +27,7 @@ esk_test_suite:
     - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
     - kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
     - kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
-    - kafkatest/sanity_checks/test_console_consumer::ConsoleConsumerTest.py.test_version
+    - kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_version
     - "kafkatest/tests/core/security_test.py::SecurityTest.test_quorum_ssl_endpoint_validation_failure@{\"metadata_quorum\": \"ZK\"}"
     - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-256\"}"
     - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-512\"}"

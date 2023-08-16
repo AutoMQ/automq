@@ -24,7 +24,6 @@ import java.util.Arrays;
  * refers to one snapshot file
  */
 public class ElasticPartitionProducerSnapshotMeta {
-    public static final ElasticPartitionProducerSnapshotMeta EMPTY = new ElasticPartitionProducerSnapshotMeta(-1, null);
     // TODO: lazy load
     /**
      * raw data of the snapshot
@@ -81,7 +80,7 @@ public class ElasticPartitionProducerSnapshotMeta {
 
     public static ElasticPartitionProducerSnapshotMeta decode(ByteBuffer buffer) {
         if (buffer == null || buffer.remaining() == 0) {
-            return EMPTY;
+            return new ElasticPartitionProducerSnapshotMeta(-1, null);
         }
 
         long offset = buffer.getLong();

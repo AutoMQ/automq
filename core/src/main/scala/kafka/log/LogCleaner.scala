@@ -1268,7 +1268,7 @@ private class CleanerStats(time: Time = Time.SYSTEM) {
   * Helper class for a log, its topic/partition, the first cleanable position, the first uncleanable dirty position,
   * and whether it needs compaction immediately.
   */
-private case class LogToClean(topicPartition: TopicPartition,
+private[log] case class LogToClean(topicPartition: TopicPartition,
                               log: UnifiedLog,
                               firstDirtyOffset: Long,
                               uncleanableOffset: Long,

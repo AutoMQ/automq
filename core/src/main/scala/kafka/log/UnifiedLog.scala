@@ -1832,26 +1832,20 @@ object UnifiedLog extends Logging {
             keepPartitionMetadataFile: Boolean,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
             leaderEpoch: Long = 0): UnifiedLog = {
-    // elastic stream inject start
     // create the log directory if it doesn't exist
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
-    val segments = new LogSegments(topicPartition)
 
+    // elastic stream inject start
+    if (!isClusterMetaLogSegment(dir)) {
+      return applyElasticUnifiedLog(topicPartition, dir, config, scheduler, brokerTopicStats, time,
+        maxTransactionTimeoutMs, producerStateManagerConfig, producerIdExpirationCheckIntervalMs, logDirFailureChannel,
+        topicId, leaderEpoch)
+    }
+    // elastic stream inject end
+
+    val segments = new LogSegments(topicPartition)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
-    if (!isClusterMetaLogSegment(dir)) {
-      val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
-      val leaderEpochFileCache = new LeaderEpochFileCache(topicPartition, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
-      // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
-      // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
-      return new ElasticUnifiedLog(localLog.logStartOffset,
-        localLog,
-        brokerTopicStats,
-        producerIdExpirationCheckIntervalMs,
-        _leaderEpochCache = Option(leaderEpochFileCache),
-        localLog.producerStateManager,
-        topicId)
-    }
     Files.createDirectories(dir.toPath)
 
     val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(
@@ -1860,7 +1854,6 @@ object UnifiedLog extends Logging {
       logDirFailureChannel,
       config.recordVersion,
       s"[UnifiedLog partition=$topicPartition, dir=${dir.getParent}] ")
-    // elastic stream inject end
     val offsets = new LogLoader(
       dir,
       topicPartition,
@@ -1886,6 +1879,31 @@ object UnifiedLog extends Logging {
       producerStateManager,
       topicId,
       keepPartitionMetadataFile)
+  }
+
+  def applyElasticUnifiedLog(topicPartition: TopicPartition,
+                             dir: File,
+                             config: LogConfig,
+                             scheduler: Scheduler,
+                             brokerTopicStats: BrokerTopicStats,
+                             time: Time,
+                             maxTransactionTimeoutMs: Int,
+                             producerStateManagerConfig: ProducerStateManagerConfig,
+                             producerIdExpirationCheckIntervalMs: Int,
+                             logDirFailureChannel: LogDirFailureChannel,
+                             topicId: Option[Uuid],
+                             leaderEpoch: Long = 0): UnifiedLog = {
+    val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
+    val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
+    // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
+    // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
+    new ElasticUnifiedLog(localLog.logStartOffset,
+      localLog,
+      brokerTopicStats,
+      producerIdExpirationCheckIntervalMs,
+      _leaderEpochCache = leaderEpochFileCache,
+      localLog.producerStateManager,
+      topicId)
   }
 
   def logFile(dir: File, offset: Long, suffix: String = ""): File = LocalLog.logFile(dir, offset, suffix)

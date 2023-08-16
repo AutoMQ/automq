@@ -23,13 +23,14 @@ import kafka.utils.CoreUtils.inLock
 import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.record.RecordBatch
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.ByteBuffer
 
 class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
   extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
+  private var closed = false
 
   protected def entrySize: Int = 12
 
@@ -97,6 +98,8 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
       if (_entries != 0 && timestamp < lastEntry.timestamp)
         throw new IllegalStateException(s"Attempt to append a timestamp ($timestamp) to slot ${_entries} no larger" +
           s" than the last timestamp appended (${lastEntry.timestamp}) to ${file.getAbsolutePath}.")
+      if (closed)
+        throw new IOException(s"Attempt to append to a closed time index ${file.getAbsolutePath}.")
       // We only append to the time index when the timestamp is greater than the last inserted timestamp.
       // If all the messages are in message format v0, the timestamp will always be NoTimestamp. In that case, the time
       // index will be empty.
@@ -138,6 +141,11 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
 
   def truncate(): Unit = {
     //TODO:
+  }
+
+  override def close(): Unit = {
+    closed = true
+    super.close()
   }
 
   def truncateTo(offset: Long): Unit = {

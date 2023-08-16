@@ -25,8 +25,11 @@ import java.util.Set;
  * refers to all valid snapshot files
  */
 public class ElasticPartitionProducerSnapshotsMeta {
-    public static final ElasticPartitionProducerSnapshotsMeta EMPTY = new ElasticPartitionProducerSnapshotsMeta(new HashSet<>());
     private final Set<Long> snapshots;
+
+    public ElasticPartitionProducerSnapshotsMeta() {
+        this.snapshots = new HashSet<>();
+    }
 
     public ElasticPartitionProducerSnapshotsMeta(Set<Long> snapshots) {
         this.snapshots = snapshots;

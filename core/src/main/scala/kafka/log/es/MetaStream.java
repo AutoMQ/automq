@@ -163,6 +163,22 @@ public class MetaStream implements Stream {
         return getValidMetaMap();
     }
 
+    public Map<Long, ElasticPartitionProducerSnapshotMeta> getAllProducerSnapshots() {
+        if (!metaCache.containsKey(PRODUCER_SNAPSHOTS_META_KEY)) {
+            return Collections.emptyMap();
+        }
+        Map<Long, ElasticPartitionProducerSnapshotMeta> snapshots = new HashMap<>();
+        ElasticPartitionProducerSnapshotsMeta snapshotsMeta = ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate());
+        snapshotsMeta.getSnapshots().forEach(offset -> {
+            String key = PRODUCER_SNAPSHOT_KEY_PREFIX + offset;
+            if (!metaCache.containsKey(key)) {
+                throw new RuntimeException("Missing producer snapshot meta for offset " + offset);
+            }
+            snapshots.put(offset, ElasticPartitionProducerSnapshotMeta.decode(metaCache.get(key).getRight().duplicate()));
+        });
+        return snapshots;
+    }
+
     private Map<String, Object> getValidMetaMap() {
         Map<String, Object> metaMap = new HashMap<>();
         metaCache.forEach((key, pair) -> {

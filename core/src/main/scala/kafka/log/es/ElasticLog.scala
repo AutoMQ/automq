@@ -370,7 +370,7 @@ object ElasticLog extends Logging {
     val producerSnapshotsMetaOpt = metaMap.get(MetaStream.PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta])
     val (producerSnapshotsMeta, snapshotsMap) = if (producerSnapshotsMetaOpt.isEmpty) {
       // No need to persist if not exists
-      (ElasticPartitionProducerSnapshotsMeta.EMPTY, new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
+      (new ElasticPartitionProducerSnapshotsMeta(), new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
     } else {
       (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
     }

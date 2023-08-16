@@ -30,8 +30,11 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
+  private var closed = false
 
   override def append(abortedTxn: AbortedTxn): Unit = {
+    if (closed)
+      throw new IOException(s"Attempt to append to closed transaction index $file")
     lastOffset.foreach { offset =>
       if (offset >= abortedTxn.lastOffset)
         throw new IllegalArgumentException(s"The last offset of appended transactions must increase sequentially, but " +
@@ -65,6 +68,7 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
 
   override def close(): Unit = {
     // TODO: recycle resource
+    closed = true
   }
 
   override def renameTo(f: File): Unit = {

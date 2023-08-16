@@ -158,13 +158,16 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                     minOneMessage: Boolean = false): FetchDataInfo = {
     if (maxSize < 0)
       throw new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log")
+    // Note that relativePositionInSegment here is a fake value. There are no 'position' in elastic streams.
     val offsetMetadata = LogOffsetMetadata(startOffset, this.baseOffset, (startOffset - this.baseOffset).toInt)
     if (maxSize == 0) {
-      return FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY)
+      return FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY, firstEntryIncomplete = true)
     }
     // Note that 'maxPosition' and 'minOneMessage' are not used here. 'maxOffset' is a better alternative to 'maxPosition'.
     // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
     val records = _log.read(startOffset, maxOffset, maxSize)
+    // We keep 'firstEntryIncomplete' false here since real size of records may exceed 'maxSize'. It is some kind of
+    // hack but we don't want to return 'firstEntryIncomplete' as true in that case.
     FetchDataInfo(offsetMetadata, records)
   }
 
@@ -283,6 +286,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
     _log.seal()
     _meta.log(_log.streamSegment.sliceRange)
+    timeIndex.trimToValidSize()
     timeIdx.seal()
     _meta.time(timeIdx.stream.sliceRange)
     txnIndex.seal()

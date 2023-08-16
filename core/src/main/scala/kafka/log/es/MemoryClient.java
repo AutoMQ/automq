@@ -88,7 +88,11 @@ public class MemoryClient implements Client {
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
-            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(startOffset, endOffset).values());
+            Long floorKey = recordMap.floorKey(startOffset);
+            if (floorKey == null) {
+                return CompletableFuture.completedFuture(ArrayList::new);
+            }
+            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(floorKey, endOffset).values());
             return CompletableFuture.completedFuture(() -> records);
         }
 
@@ -105,6 +109,7 @@ public class MemoryClient implements Client {
 
         @Override
         public CompletableFuture<Void> destroy() {
+            recordMap.clear();
             return CompletableFuture.completedFuture(null);
         }
     }
