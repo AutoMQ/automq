@@ -17,6 +17,9 @@
 
 package org.apache.kafka.controller.stream.s3;
 
+import org.apache.kafka.common.metadata.StreamObjectRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+
 public class StreamObject extends S3Object {
 
     private ObjectStreamIndex streamIndex;
@@ -59,5 +62,19 @@ public class StreamObject extends S3Object {
 
     public ObjectStreamIndex getStreamIndex() {
         return streamIndex;
+    }
+
+    public ApiMessageAndVersion toRecord() {
+        return new ApiMessageAndVersion(new StreamObjectRecord()
+            .setObjectId(objectId)
+            .setStreamId(streamIndex.getStreamId())
+            .setObjectState((byte)objectState.ordinal())
+            .setObjectType((byte)objectType.ordinal())
+            .setApplyTimeInMs(applyTimeInMs.get())
+            .setCreateTimeInMs(createTimeInMs.get())
+            .setDestroyTimeInMs(destroyTimeInMs.get())
+            .setObjectSize(objectSize.get())
+            .setStartOffset(streamIndex.getStartOffset())
+            .setEndOffset(streamIndex.getEndOffset()), (short) 0);
     }
 }

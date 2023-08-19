@@ -20,8 +20,11 @@ package org.apache.kafka.controller.stream.s3;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class WALObject extends S3Object {
+
     private Integer brokerId;
     private Map<Long/*streamId*/, ObjectStreamIndex> streamsIndex;
 
@@ -55,5 +58,20 @@ public class WALObject extends S3Object {
             this.streamIndexList = streamIndexList;
             this.brokerId = brokerId;
         }
+    }
+
+    public ApiMessageAndVersion toRecord() {
+        return new ApiMessageAndVersion(new WALObjectRecord()
+            .setObjectId(objectId)
+            .setObjectState((byte) objectState.ordinal())
+            .setObjectType((byte) objectType.ordinal())
+            .setApplyTimeInMs(applyTimeInMs.get())
+            .setCreateTimeInMs(createTimeInMs.get())
+            .setDestroyTimeInMs(destroyTimeInMs.get())
+            .setObjectSize(objectSize.get())
+            .setStreamsIndex(
+                streamsIndex.values().stream()
+                    .map(ObjectStreamIndex::toRecordStreamIndex)
+                    .collect(Collectors.toList())), (short) 0);
     }
 }

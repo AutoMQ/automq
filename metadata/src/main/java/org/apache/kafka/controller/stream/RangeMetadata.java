@@ -18,8 +18,11 @@
 package org.apache.kafka.controller.stream;
 
 import java.util.Optional;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class RangeMetadata implements Comparable<RangeMetadata> {
+    private Long streamId;
     private Integer epoch;
     private Integer rangeIndex;
     private Long startOffset;
@@ -48,5 +51,15 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
 
     public Integer getBrokerId() {
         return brokerId;
+    }
+
+    public ApiMessageAndVersion toRecord() {
+        return new ApiMessageAndVersion(new RangeRecord()
+            .setStreamId(streamId)
+            .setEpoch(epoch)
+            .setBrokerId(brokerId)
+            .setRangeIndex(rangeIndex)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset.get()), (short) 0);
     }
 }
