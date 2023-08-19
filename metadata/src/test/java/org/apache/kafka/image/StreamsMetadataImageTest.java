@@ -28,4 +28,12 @@ public class StreamsMetadataImageTest {
     static final List<ApiMessageAndVersion> DELTA1_RECORDS;
 
     static final StreamsMetadataImage IMAGE2;
+
+    // TODO: complete the test for StreamsMetadataImage
+
+    static {
+        IMAGE1 = null;
+        DELTA1_RECORDS = null;
+        IMAGE2 = null;
+    }
 }
