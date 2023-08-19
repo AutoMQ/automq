@@ -20,12 +20,15 @@ package org.apache.kafka.image;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.StreamRecord;
 import org.apache.kafka.controller.stream.RangeMetadata;
 import org.apache.kafka.controller.stream.s3.StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
 public class StreamMetadataImage {
+
     private final Long streamId;
 
     private final Integer epoch;
@@ -50,7 +53,12 @@ public class StreamMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-
+        writer.write(0, new StreamRecord()
+            .setStreamId(streamId)
+            .setEpoch(epoch)
+            .setStartOffset(startOffset));
+        ranges.values().forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
+        streams.forEach(streamObject -> writer.write(streamObject.toRecord()));
     }
 
     public Map<Integer, RangeMetadata> getRanges() {

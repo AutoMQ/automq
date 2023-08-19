@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 
 import java.util.Objects;
 import java.util.Set;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.controller.stream.s3.WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
@@ -51,7 +52,7 @@ public class BrokerStreamMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-
+        walObjects.forEach(walObject -> writer.write(walObject.toRecord()));
     }
 
     public Set<WALObject> getWalObjects() {

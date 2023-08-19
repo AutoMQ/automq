@@ -45,6 +45,8 @@ public final class StreamsMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
+        streamsMetadata.values().forEach(image -> image.write(writer, options));
+        brokerStreamsMetadata.values().forEach(image -> image.write(writer, options));
     }
 
     @Override
