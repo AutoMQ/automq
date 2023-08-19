@@ -72,6 +72,8 @@ public final class MetadataDelta {
 
     private AclsDelta aclsDelta = null;
 
+    private StreamsMetadataDelta streamsMetadataDelta = null;
+
     public MetadataDelta(MetadataImage image) {
         this.image = image;
     }
@@ -143,6 +145,17 @@ public final class MetadataDelta {
     public AclsDelta getOrCreateAclsDelta() {
         if (aclsDelta == null) aclsDelta = new AclsDelta(image.acls());
         return aclsDelta;
+    }
+
+    public StreamsMetadataDelta streamMetadataDelta() {
+        return streamsMetadataDelta;
+    }
+
+    public StreamsMetadataDelta getOrCreateStreamsMetadataDelta() {
+        if (streamsMetadataDelta == null) {
+            streamsMetadataDelta = new StreamsMetadataDelta(image.streamsMetadata());
+        }
+        return streamsMetadataDelta;
     }
 
     public Optional<MetadataVersion> metadataVersionChanged() {
@@ -341,6 +354,12 @@ public final class MetadataDelta {
         } else {
             newAcls = aclsDelta.apply();
         }
+        StreamsMetadataImage newStreamMetadata;
+        if (streamsMetadataDelta == null) {
+            newStreamMetadata = image.streamsMetadata();
+        } else {
+            newStreamMetadata = streamsMetadataDelta.apply();
+        }
         return new MetadataImage(
             provenance,
             newFeatures,
@@ -349,7 +368,8 @@ public final class MetadataDelta {
             newConfigs,
             newClientQuotas,
             newProducerIds,
-            newAcls
+            newAcls,
+            newStreamMetadata
         );
     }
 
@@ -363,6 +383,7 @@ public final class MetadataDelta {
             ", clientQuotasDelta=" + clientQuotasDelta +
             ", producerIdsDelta=" + producerIdsDelta +
             ", aclsDelta=" + aclsDelta +
+            ", streamMetadataDelta=" + streamsMetadataDelta +
             ')';
     }
 }
