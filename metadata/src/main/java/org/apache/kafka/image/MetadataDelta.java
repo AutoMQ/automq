@@ -27,12 +27,20 @@ import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveStreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.StreamObjectRecord;
+import org.apache.kafka.common.metadata.StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
@@ -222,6 +230,30 @@ public final class MetadataDelta {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
+            case STREAM_RECORD:
+                replay((StreamRecord) record);
+                break;
+            case REMOVE_STREAM_RECORD:
+                replay((RemoveStreamRecord) record);
+                break;
+            case RANGE_RECORD:
+                replay((RangeRecord) record);
+                break;
+            case REMOVE_RANGE_RECORD:
+                replay((RemoveRangeRecord) record);
+                break;
+            case STREAM_OBJECT_RECORD:
+                replay((StreamObjectRecord) record);
+                break;
+            case REMOVE_STREAM_OBJECT_RECORD:
+                replay((RemoveStreamObjectRecord) record);
+                break;
+            case WALOBJECT_RECORD:
+                replay((WALObjectRecord) record);
+                break;
+            case REMOVE_WALOBJECT_RECORD:
+                replay((RemoveWALObjectRecord) record);
+                break;
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }
@@ -295,6 +327,38 @@ public final class MetadataDelta {
 
     public void replay(RemoveAccessControlEntryRecord record) {
         getOrCreateAclsDelta().replay(record);
+    }
+
+    public void replay(StreamRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveStreamRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RangeRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveRangeRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(StreamObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveStreamObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(WALObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveWALObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
     }
 
     /**

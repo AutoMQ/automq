@@ -34,6 +34,24 @@ public class WALObject extends S3Object {
         super(objectId);
     }
 
+    private WALObject(
+        final Long objectId,
+        final Long objectSize,
+        final String objectAddress,
+        final Long applyTimeInMs,
+        final Long createTimeInMs,
+        final Long destroyTimeInMs,
+        final S3ObjectState s3ObjectState,
+        final S3ObjectType objectType,
+        final Integer brokerId,
+        final List<ObjectStreamIndex> streamsIndex) {
+        super(objectId, objectSize, objectAddress, applyTimeInMs, createTimeInMs, destroyTimeInMs, s3ObjectState, objectType);
+        this.objectType = objectType;
+        this.brokerId = brokerId;
+        this.streamsIndex = streamsIndex.stream().collect(
+            Collectors.toMap(ObjectStreamIndex::getStreamId, index -> index));
+    }
+
     @Override
     public void onCreate(S3ObjectCreateContext createContext) {
         super.onCreate(createContext);
@@ -63,7 +81,7 @@ public class WALObject extends S3Object {
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(objectId)
-            .setObjectState((byte) objectState.ordinal())
+            .setObjectState((byte) s3ObjectState.ordinal())
             .setObjectType((byte) objectType.ordinal())
             .setApplyTimeInMs(applyTimeInMs.get())
             .setCreateTimeInMs(createTimeInMs.get())
@@ -73,5 +91,14 @@ public class WALObject extends S3Object {
                 streamsIndex.values().stream()
                     .map(ObjectStreamIndex::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0);
+    }
+
+    public static WALObject of(WALObjectRecord record) {
+        WALObject walObject = new WALObject(
+            record.objectId(), record.objectSize(), null,
+            record.applyTimeInMs(), record.createTimeInMs(), record.destroyTimeInMs(),
+            S3ObjectState.fromByte(record.objectState()), S3ObjectType.fromByte(record.objectType()),
+            record.brokerId(), record.streamsIndex().stream().map(ObjectStreamIndex::of).collect(Collectors.toList()));
+        return walObject;
     }
 }

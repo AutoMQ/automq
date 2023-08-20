@@ -17,11 +17,11 @@
 
 package org.apache.kafka.controller.stream.s3;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
- * S3Object is the base class of object in S3.
- * Manages the lifecycle of S3Object.
+ * S3Object is the base class of object in S3. Manages the lifecycle of S3Object.
  */
 public abstract class S3Object implements Comparable<S3Object> {
 
@@ -37,7 +37,7 @@ public abstract class S3Object implements Comparable<S3Object> {
 
     protected Optional<Long> destroyTimeInMs = Optional.empty();
 
-    protected ObjectState objectState = ObjectState.UNINITIALIZED;
+    protected S3ObjectState s3ObjectState = S3ObjectState.UNINITIALIZED;
 
     protected S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
@@ -45,20 +45,39 @@ public abstract class S3Object implements Comparable<S3Object> {
         this.objectId = objectId;
     }
 
+    protected S3Object(
+        final Long objectId,
+        final Long objectSize,
+        final String objectAddress,
+        final Long applyTimeInMs,
+        final Long createTimeInMs,
+        final Long destroyTimeInMs,
+        final S3ObjectState s3ObjectState,
+        final S3ObjectType objectType) {
+        this.objectId = objectId;
+        this.objectSize = Optional.of(objectSize);
+        this.objectAddress = Optional.of(objectAddress);
+        this.applyTimeInMs = Optional.of(applyTimeInMs);
+        this.createTimeInMs = Optional.of(createTimeInMs);
+        this.destroyTimeInMs = Optional.of(destroyTimeInMs);
+        this.objectType = objectType;
+        this.s3ObjectState = s3ObjectState;
+    }
+
     public void onApply() {
-        if (this.objectState != ObjectState.UNINITIALIZED) {
+        if (this.s3ObjectState != S3ObjectState.UNINITIALIZED) {
             throw new IllegalStateException("Object is not in UNINITIALIZED state");
         }
-        this.objectState = ObjectState.APPLIED;
+        this.s3ObjectState = S3ObjectState.APPLIED;
         this.applyTimeInMs = Optional.of(System.currentTimeMillis());
     }
 
     public void onCreate(S3ObjectCreateContext createContext) {
         // TODO: decide fetch object metadata from S3 or let broker send it to controller
-        if (this.objectState != ObjectState.APPLIED) {
+        if (this.s3ObjectState != S3ObjectState.APPLIED) {
             throw new IllegalStateException("Object is not in APPLIED state");
         }
-        this.objectState = ObjectState.CREATED;
+        this.s3ObjectState = S3ObjectState.CREATED;
         this.createTimeInMs = Optional.of(createContext.createTimeInMs);
         this.objectSize = Optional.of(createContext.objectSize);
         this.objectAddress = Optional.of(createContext.objectAddress);
@@ -66,11 +85,11 @@ public abstract class S3Object implements Comparable<S3Object> {
     }
 
     public void onDestroy() {
-        if (this.objectState != ObjectState.CREATED) {
+        if (this.s3ObjectState != S3ObjectState.CREATED) {
             throw new IllegalStateException("Object is not in CREATED state");
         }
         S3ObjectManager.destroy(this, () -> {
-            this.objectState = ObjectState.DESTROYED;
+            this.s3ObjectState = S3ObjectState.DESTROYED;
             this.destroyTimeInMs = Optional.of(System.currentTimeMillis());
         });
     }
@@ -79,19 +98,29 @@ public abstract class S3Object implements Comparable<S3Object> {
         return objectType;
     }
 
-    enum ObjectState {
+    enum S3ObjectState {
         UNINITIALIZED,
         APPLIED,
         CREATED,
         MARK_DESTROYED,
         DESTROYED;
+
+        public static S3ObjectState fromByte(Byte b) {
+            int ordinal = b.intValue();
+            if (ordinal < 0 || ordinal >= values().length) {
+                throw new IllegalArgumentException("Invalid ObjectState ordinal " + ordinal);
+            }
+            return values()[ordinal];
+        }
     }
 
     public class S3ObjectCreateContext {
+
         private final Long createTimeInMs;
         private final Long objectSize;
         private final String objectAddress;
         private final S3ObjectType objectType;
+
         public S3ObjectCreateContext(
             final Long createTimeInMs,
             final Long objectSize,
@@ -107,5 +136,22 @@ public abstract class S3Object implements Comparable<S3Object> {
     @Override
     public int compareTo(S3Object o) {
         return this.objectId.compareTo(o.objectId);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        S3Object s3Object = (S3Object) o;
+        return Objects.equals(objectId, s3Object.objectId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(objectId);
     }
 }

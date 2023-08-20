@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller.stream.s3;
 
+import java.util.Optional;
 import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -68,7 +69,7 @@ public class StreamObject extends S3Object {
         return new ApiMessageAndVersion(new StreamObjectRecord()
             .setObjectId(objectId)
             .setStreamId(streamIndex.getStreamId())
-            .setObjectState((byte)objectState.ordinal())
+            .setObjectState((byte) s3ObjectState.ordinal())
             .setObjectType((byte)objectType.ordinal())
             .setApplyTimeInMs(applyTimeInMs.get())
             .setCreateTimeInMs(createTimeInMs.get())
@@ -76,5 +77,17 @@ public class StreamObject extends S3Object {
             .setObjectSize(objectSize.get())
             .setStartOffset(streamIndex.getStartOffset())
             .setEndOffset(streamIndex.getEndOffset()), (short) 0);
+    }
+
+    public static StreamObject of(StreamObjectRecord record) {
+        StreamObject streamObject = new StreamObject(record.objectId());
+        streamObject.objectType = S3ObjectType.fromByte(record.objectType());
+        streamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());
+        streamObject.applyTimeInMs = Optional.of(record.applyTimeInMs());
+        streamObject.createTimeInMs = Optional.of(record.createTimeInMs());
+        streamObject.destroyTimeInMs = Optional.of(record.destroyTimeInMs());
+        streamObject.objectSize = Optional.of(record.objectSize());
+        streamObject.streamIndex = new ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
+        return streamObject;
     }
 }

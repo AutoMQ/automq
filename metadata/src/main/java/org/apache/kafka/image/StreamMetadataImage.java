@@ -52,6 +52,12 @@ public class StreamMetadataImage {
         this.streams = streams;
     }
 
+    public StreamMetadataImage(
+        Long streamId,
+        Integer epoch,
+        Long startOffset,
+    )
+
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(0, new StreamRecord()
             .setStreamId(streamId)

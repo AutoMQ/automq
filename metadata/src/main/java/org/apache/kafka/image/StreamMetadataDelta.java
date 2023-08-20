@@ -21,6 +21,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
+import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.controller.stream.RangeMetadata;
 import org.apache.kafka.controller.stream.s3.StreamObject;
 
@@ -37,6 +41,22 @@ public class StreamMetadataDelta {
     public StreamMetadataDelta(StreamMetadataImage image) {
         this.image = image;
         this.newEpoch = image.getEpoch();
+    }
+
+    public void replay(RangeRecord record) {
+        changedRanges.put(record.rangeIndex(), RangeMetadata.of(record));
+    }
+
+    public void replay(RemoveRangeRecord record) {
+        removedRanges.add(record.rangeIndex());
+    }
+
+    public void replay(StreamObjectRecord record) {
+        changedStreamObjects.add(StreamObject.of(record));
+    }
+
+    public void replay(RemoveStreamObjectRecord record) {
+        removedStreamObjects.add(new StreamObject(record.objectId()));
     }
 
     public StreamMetadataImage apply() {

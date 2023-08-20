@@ -19,6 +19,8 @@ package org.apache.kafka.image;
 
 import java.util.HashSet;
 import java.util.Set;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.controller.stream.s3.WALObject;
 
 public class BrokerStreamMetadataDelta {
@@ -26,10 +28,18 @@ public class BrokerStreamMetadataDelta {
     private final BrokerStreamMetadataImage image;
     private final Set<WALObject> changedWALObjects = new HashSet<>();
 
-    private final Set<WALObject> removedWALObjects = new HashSet<>();
+    private final Set<WALObject/*objectId*/> removedWALObjects = new HashSet<>();
 
     public BrokerStreamMetadataDelta(BrokerStreamMetadataImage image) {
         this.image = image;
+    }
+
+    public void replay(WALObjectRecord record) {
+        changedWALObjects.add(WALObject.of(record));
+    }
+
+    public void replay(RemoveWALObjectRecord record) {
+        removedWALObjects.add(new WALObject(record.objectId()));
     }
 
     public BrokerStreamMetadataImage apply() {

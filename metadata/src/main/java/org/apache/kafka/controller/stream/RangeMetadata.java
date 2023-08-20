@@ -62,4 +62,15 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
             .setStartOffset(startOffset)
             .setEndOffset(endOffset.get()), (short) 0);
     }
+
+    public static RangeMetadata of(RangeRecord record) {
+        RangeMetadata rangeMetadata = new RangeMetadata();
+        rangeMetadata.streamId = record.streamId();
+        rangeMetadata.epoch = record.epoch();
+        rangeMetadata.rangeIndex = record.rangeIndex();
+        rangeMetadata.startOffset = record.startOffset();
+        rangeMetadata.endOffset = Optional.ofNullable(record.endOffset());
+        rangeMetadata.brokerId = record.brokerId();
+        return rangeMetadata;
+    }
 }
