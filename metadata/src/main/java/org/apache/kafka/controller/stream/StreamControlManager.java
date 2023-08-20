@@ -18,8 +18,9 @@
 package org.apache.kafka.controller.stream;
 
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.controller.stream.s3.StreamObject;
-import org.apache.kafka.controller.stream.s3.WALObject;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.StreamObject;
+import org.apache.kafka.metadata.stream.WALObject;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
@@ -27,7 +28,7 @@ import org.slf4j.Logger;
 
 public class StreamControlManager {
 
-    class StreamMetadata {
+    static class StreamMetadata {
         private Long streamId;
         private Integer epoch;
         private Long startOffset;
@@ -35,7 +36,7 @@ public class StreamControlManager {
         private TimelineHashSet<StreamObject> streamObjects;
     }
 
-    class BrokerStreamMetadata {
+    static class BrokerStreamMetadata {
         private Integer brokerId;
         private TimelineHashSet<WALObject> walObjects;
     }
