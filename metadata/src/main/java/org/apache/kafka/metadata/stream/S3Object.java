@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -84,34 +84,23 @@ public abstract class S3Object implements Comparable<S3Object> {
         this.objectType = createContext.objectType;
     }
 
+    public void onMarkDestroy() {
+        if (this.s3ObjectState != S3ObjectState.CREATED) {
+            throw new IllegalStateException("Object is not in CREATED state");
+        }
+        this.s3ObjectState = S3ObjectState.MARK_DESTROYED;
+    }
+
     public void onDestroy() {
         if (this.s3ObjectState != S3ObjectState.CREATED) {
             throw new IllegalStateException("Object is not in CREATED state");
         }
-        S3ObjectManager.destroy(this, () -> {
-            this.s3ObjectState = S3ObjectState.DESTROYED;
-            this.destroyTimeInMs = Optional.of(System.currentTimeMillis());
-        });
+        // TODO: trigger destroy
+
     }
 
     public S3ObjectType getObjectType() {
         return objectType;
-    }
-
-    enum S3ObjectState {
-        UNINITIALIZED,
-        APPLIED,
-        CREATED,
-        MARK_DESTROYED,
-        DESTROYED;
-
-        public static S3ObjectState fromByte(Byte b) {
-            int ordinal = b.intValue();
-            if (ordinal < 0 || ordinal >= values().length) {
-                throw new IllegalArgumentException("Invalid ObjectState ordinal " + ordinal);
-            }
-            return values()[ordinal];
-        }
     }
 
     public class S3ObjectCreateContext {
@@ -153,5 +142,33 @@ public abstract class S3Object implements Comparable<S3Object> {
     @Override
     public int hashCode() {
         return Objects.hash(objectId);
+    }
+
+    public Long getObjectId() {
+        return objectId;
+    }
+
+    public Optional<Long> getObjectSize() {
+        return objectSize;
+    }
+
+    public Optional<String> getObjectAddress() {
+        return objectAddress;
+    }
+
+    public Optional<Long> getApplyTimeInMs() {
+        return applyTimeInMs;
+    }
+
+    public Optional<Long> getCreateTimeInMs() {
+        return createTimeInMs;
+    }
+
+    public Optional<Long> getDestroyTimeInMs() {
+        return destroyTimeInMs;
+    }
+
+    public S3ObjectState getS3ObjectState() {
+        return s3ObjectState;
     }
 }

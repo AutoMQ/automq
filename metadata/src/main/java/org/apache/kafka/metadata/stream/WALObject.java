@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
 import java.util.List;
 import java.util.Map;
@@ -55,6 +55,9 @@ public class WALObject extends S3Object {
     @Override
     public void onCreate(S3ObjectCreateContext createContext) {
         super.onCreate(createContext);
+        if (!(createContext instanceof WALObjectCreateContext)) {
+            throw new IllegalArgumentException();
+        }
         WALObjectCreateContext walCreateContext = (WALObjectCreateContext) createContext;
         this.streamsIndex = walCreateContext.streamIndexList.stream().collect(Collectors.toMap(ObjectStreamIndex::getStreamId, index -> index));
         this.brokerId = walCreateContext.brokerId;
@@ -100,5 +103,18 @@ public class WALObject extends S3Object {
             S3ObjectState.fromByte(record.objectState()), S3ObjectType.fromByte(record.objectType()),
             record.brokerId(), record.streamsIndex().stream().map(ObjectStreamIndex::of).collect(Collectors.toList()));
         return walObject;
+    }
+
+    public Integer getBrokerId() {
+        return brokerId;
+    }
+
+    public Map<Long, ObjectStreamIndex> getStreamsIndex() {
+        return streamsIndex;
+    }
+
+    @Override
+    public S3ObjectType getObjectType() {
+        return objectType;
     }
 }

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
 import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 

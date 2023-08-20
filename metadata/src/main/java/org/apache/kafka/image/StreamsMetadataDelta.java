@@ -22,8 +22,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
-import javax.swing.Spring;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
@@ -57,7 +55,7 @@ public final class StreamsMetadataDelta {
         if (!image.getStreamsMetadata().containsKey(record.streamId())) {
             // create a new StreamMetadata with empty ranges and streams if not exist
             delta = new StreamMetadataDelta(
-                new StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), Collections.emptyMap(), Collections.emptySet()));
+                new StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), Collections.emptyMap(), Collections.emptyList()));
         } else {
             // update the epoch if exist
             StreamMetadataImage streamMetadataImage = image.getStreamsMetadata().get(record.streamId());
@@ -112,7 +110,7 @@ public final class StreamsMetadataDelta {
         if (delta == null) {
             delta = new BrokerStreamMetadataDelta(
                 image.getBrokerStreamsMetadata().
-                    getOrDefault(brokerId, new BrokerStreamMetadataImage(brokerId, Collections.emptySet())));
+                    getOrDefault(brokerId, new BrokerStreamMetadataImage(brokerId, Collections.emptyList())));
             changedBrokers.put(brokerId, delta);
         }
         return delta;

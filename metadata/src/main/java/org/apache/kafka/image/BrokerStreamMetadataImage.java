@@ -18,17 +18,17 @@
 
 package org.apache.kafka.image;
 
+import java.util.List;
 import java.util.Objects;
-import java.util.Set;
-import org.apache.kafka.controller.stream.s3.WALObject;
+import org.apache.kafka.metadata.stream.WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
 public class BrokerStreamMetadataImage {
     private final Integer brokerId;
-    private final Set<WALObject> walObjects;
+    private final List<WALObject> walObjects;
 
-    public BrokerStreamMetadataImage(Integer brokerId, Set<WALObject> walObjects) {
+    public BrokerStreamMetadataImage(Integer brokerId, List<WALObject> walObjects) {
         this.brokerId = brokerId;
         this.walObjects = walObjects;
     }
@@ -54,7 +54,7 @@ public class BrokerStreamMetadataImage {
         walObjects.forEach(walObject -> writer.write(walObject.toRecord()));
     }
 
-    public Set<WALObject> getWalObjects() {
+    public List<WALObject> getWalObjects() {
         return walObjects;
     }
 

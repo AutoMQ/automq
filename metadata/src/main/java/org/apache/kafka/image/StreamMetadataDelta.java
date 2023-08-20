@@ -17,16 +17,18 @@
 
 package org.apache.kafka.image;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
 import org.apache.kafka.common.metadata.StreamObjectRecord;
-import org.apache.kafka.controller.stream.RangeMetadata;
-import org.apache.kafka.controller.stream.s3.StreamObject;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.StreamObject;
 
 public class StreamMetadataDelta {
     private final StreamMetadataImage image;
@@ -78,7 +80,7 @@ public class StreamMetadataDelta {
         changedRanges.entrySet().stream().filter(entry -> !newRanges.containsKey(entry.getKey()))
             .forEach(entry -> newRanges.put(entry.getKey(), entry.getValue()));
 
-        Set<StreamObject> newStreamObjects = new HashSet<>(image.getStreams());
+        List<StreamObject> newStreamObjects = new ArrayList<>(image.getStreams());
         // remove all removed stream-objects
         newStreamObjects.removeAll(removedStreamObjects);
         // add all changed stream-objects

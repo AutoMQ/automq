@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream;
+package org.apache.kafka.metadata.stream;
 
 import java.util.Optional;
 import org.apache.kafka.common.metadata.RangeRecord;

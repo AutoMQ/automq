@@ -15,16 +15,39 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
+public enum S3ObjectType {
+    /**
+     * WAL object with loose records
+     */
+    WAL_LOOSE,
 
-import org.apache.kafka.controller.stream.s3.S3Object;
+    /**
+     * WAL object with minor compaction records
+     */
+    WAL_MINOR,
 
-public class S3ObjectManager {
+    /**
+     * WAL object with major compaction records
+     */
+    WAL_MAJOR,
 
-    public static boolean destroy(S3Object object, Runnable successCallback) {
-        // TODO: trigger delete object from S3
-        return false;
+    /**
+     * STREAM object with stream records of one stream
+     */
+    STREAM,
+
+    /**
+     * UNKNOWN object type
+     */
+    UNKNOWN;
+
+    public static S3ObjectType fromByte(Byte b) {
+        int ordinal = b.intValue();
+        if (ordinal < 0 || ordinal >= values().length) {
+            return UNKNOWN;
+        }
+        return values()[ordinal];
     }
-
 }

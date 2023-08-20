@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
 import java.util.Optional;
 import org.apache.kafka.common.metadata.StreamObjectRecord;
@@ -32,6 +32,9 @@ public class StreamObject extends S3Object {
     @Override
     public void onCreate(S3ObjectCreateContext createContext) {
         super.onCreate(createContext);
+        if (!(createContext instanceof StreamObjectCreateContext)) {
+            throw new IllegalArgumentException();
+        }
         this.streamIndex = ((StreamObjectCreateContext) createContext).streamIndex;
     }
 
@@ -70,7 +73,7 @@ public class StreamObject extends S3Object {
             .setObjectId(objectId)
             .setStreamId(streamIndex.getStreamId())
             .setObjectState((byte) s3ObjectState.ordinal())
-            .setObjectType((byte)objectType.ordinal())
+            .setObjectType((byte) objectType.ordinal())
             .setApplyTimeInMs(applyTimeInMs.get())
             .setCreateTimeInMs(createTimeInMs.get())
             .setDestroyTimeInMs(destroyTimeInMs.get())

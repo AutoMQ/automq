@@ -17,13 +17,12 @@
 
 package org.apache.kafka.image;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.StreamRecord;
-import org.apache.kafka.controller.stream.RangeMetadata;
-import org.apache.kafka.controller.stream.s3.StreamObject;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
@@ -37,26 +36,20 @@ public class StreamMetadataImage {
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
 
-    private final Set<StreamObject> streams;
+    private final List<StreamObject> streams;
 
     public StreamMetadataImage(
         Long streamId,
         Integer epoch,
         Long startOffset,
         Map<Integer, RangeMetadata> ranges,
-        Set<StreamObject> streams) {
+        List<StreamObject> streams) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.ranges = ranges;
         this.streams = streams;
     }
-
-    public StreamMetadataImage(
-        Long streamId,
-        Integer epoch,
-        Long startOffset,
-    )
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(0, new StreamRecord()
@@ -71,7 +64,7 @@ public class StreamMetadataImage {
         return ranges;
     }
 
-    public Set<StreamObject> getStreams() {
+    public List<StreamObject> getStreams() {
         return streams;
     }
 

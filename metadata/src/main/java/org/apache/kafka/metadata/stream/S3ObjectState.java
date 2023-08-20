@@ -15,38 +15,19 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream.s3;
+package org.apache.kafka.metadata.stream;
 
-public enum S3ObjectType {
-    /**
-     * WAL object with loose records
-     */
-    WAL_LOOSE,
+public enum S3ObjectState {
+    UNINITIALIZED,
+    APPLIED,
+    CREATED,
+    MARK_DESTROYED,
+    DESTROYED;
 
-    /**
-     * WAL object with minor compaction records
-     */
-    WAL_MINOR,
-
-    /**
-     * WAL object with major compaction records
-     */
-    WAL_MAJOR,
-
-    /**
-     * STREAM object with stream records of one stream
-     */
-    STREAM,
-
-    /**
-     * UNKNOWN object type
-     */
-    UNKNOWN;
-
-    public static S3ObjectType fromByte(Byte b) {
+    public static S3ObjectState fromByte(Byte b) {
         int ordinal = b.intValue();
         if (ordinal < 0 || ordinal >= values().length) {
-            return UNKNOWN;
+            throw new IllegalArgumentException("Invalid ObjectState ordinal " + ordinal);
         }
         return values()[ordinal];
     }
