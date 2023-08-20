@@ -60,4 +60,8 @@ public class ObjectStreamIndex implements Comparable<ObjectStreamIndex> {
             .setStartOffset(startOffset)
             .setEndOffset(endOffset);
     }
+
+    public static ObjectStreamIndex of(StreamIndex index) {
+        return new ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset());
+    }
 }

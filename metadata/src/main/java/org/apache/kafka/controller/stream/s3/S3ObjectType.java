@@ -42,4 +42,12 @@ public enum S3ObjectType {
      * UNKNOWN object type
      */
     UNKNOWN;
+
+    public static S3ObjectType fromByte(Byte b) {
+        int ordinal = b.intValue();
+        if (ordinal < 0 || ordinal >= values().length) {
+            return UNKNOWN;
+        }
+        return values()[ordinal];
+    }
 }
