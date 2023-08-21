@@ -104,7 +104,8 @@ object ElasticLogManager {
           .build())
       INSTANCE = Some(new ElasticLogManager(streamClient))
     } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
-      INSTANCE = Some(new ElasticLogManager(new MemoryClient()))
+      val streamClient = new AlwaysSuccessClient(new MemoryClient())
+      INSTANCE = Some(new ElasticLogManager(streamClient))
     } else if (endpoint.startsWith(REDIS_ENDPOINT_PREFIX)) {
       INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length))))
     } else {

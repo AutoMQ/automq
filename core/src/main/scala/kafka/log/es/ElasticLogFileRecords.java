@@ -21,6 +21,7 @@ import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -94,7 +95,7 @@ public class ElasticLogFileRecords {
         return nextOffset.get() - baseOffset;
     }
 
-    public Records read(long startOffset, long maxOffset, int maxSize) {
+    public Records read(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException {
         if (ReadManualReleaseHint.isMarked()) {
             return readAll0(startOffset, maxOffset, maxSize);
         } else {
@@ -102,7 +103,7 @@ public class ElasticLogFileRecords {
         }
     }
 
-    private Records readAll0(long startOffset, long maxOffset, int maxSize) {
+    private Records readAll0(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException {
         int readSize = 0;
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
