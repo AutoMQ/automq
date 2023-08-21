@@ -28,19 +28,19 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
 import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamObject;
 
-public class StreamMetadataDelta {
-    private final StreamMetadataImage image;
+public class S3StreamMetadataDelta {
+    private final S3StreamMetadataImage image;
 
     private Integer newEpoch;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
-    private final Set<StreamObject> changedStreamObjects = new HashSet<>();
-    private final Set<StreamObject> removedStreamObjects = new HashSet<>();
+    private final Set<S3StreamObject> changedS3StreamObjects = new HashSet<>();
+    private final Set<S3StreamObject> removedS3StreamObjects = new HashSet<>();
 
-    public StreamMetadataDelta(StreamMetadataImage image) {
+    public S3StreamMetadataDelta(S3StreamMetadataImage image) {
         this.image = image;
         this.newEpoch = image.getEpoch();
     }
@@ -54,14 +54,14 @@ public class StreamMetadataDelta {
     }
 
     public void replay(StreamObjectRecord record) {
-        changedStreamObjects.add(StreamObject.of(record));
+        changedS3StreamObjects.add(S3StreamObject.of(record));
     }
 
     public void replay(RemoveStreamObjectRecord record) {
-        removedStreamObjects.add(new StreamObject(record.objectId()));
+        removedS3StreamObjects.add(new S3StreamObject(record.objectId()));
     }
 
-    public StreamMetadataImage apply() {
+    public S3StreamMetadataImage apply() {
         Map<Integer, RangeMetadata> newRanges = new HashMap<>(image.getRanges().size());
         // apply the delta changes of old ranges since the last image
         image.getRanges().forEach((rangeIndex, range) -> {
@@ -80,12 +80,12 @@ public class StreamMetadataDelta {
         changedRanges.entrySet().stream().filter(entry -> !newRanges.containsKey(entry.getKey()))
             .forEach(entry -> newRanges.put(entry.getKey(), entry.getValue()));
 
-        List<StreamObject> newStreamObjects = new ArrayList<>(image.getStreams());
+        List<S3StreamObject> newS3StreamObjects = new ArrayList<>(image.getStreams());
         // remove all removed stream-objects
-        newStreamObjects.removeAll(removedStreamObjects);
+        newS3StreamObjects.removeAll(removedS3StreamObjects);
         // add all changed stream-objects
-        newStreamObjects.addAll(changedStreamObjects);
-        return new StreamMetadataImage(image.getStreamId(), newEpoch, image.getStartOffset(), newRanges, newStreamObjects);
+        newS3StreamObjects.addAll(changedS3StreamObjects);
+        return new S3StreamMetadataImage(image.getStreamId(), newEpoch, image.getStartOffset(), newRanges, newS3StreamObjects);
     }
 
 }

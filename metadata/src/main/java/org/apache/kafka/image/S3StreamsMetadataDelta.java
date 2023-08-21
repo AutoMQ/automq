@@ -31,13 +31,13 @@ import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.common.metadata.StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 
-public final class StreamsMetadataDelta {
+public final class S3StreamsMetadataDelta {
 
-    private final StreamsMetadataImage image;
+    private final S3StreamsMetadataImage image;
 
-    private final Map<Long, StreamMetadataDelta> changedStreams = new HashMap<>();
+    private final Map<Long, S3StreamMetadataDelta> changedStreams = new HashMap<>();
 
-    private final Map<Integer, BrokerStreamMetadataDelta> changedBrokers = new HashMap<>();
+    private final Map<Integer, BrokerS3WALMetadataDelta> changedBrokers = new HashMap<>();
 
     private final Set<Long> deletedStreams = new HashSet<>();
     // TODO: when we recycle the broker's memory data structure
@@ -46,22 +46,22 @@ public final class StreamsMetadataDelta {
     // so we should decide when to recycle the broker's memory data structure
     private final Set<Long> deletedBrokers = new HashSet<>();
 
-    public StreamsMetadataDelta(StreamsMetadataImage image) {
+    public S3StreamsMetadataDelta(S3StreamsMetadataImage image) {
         this.image = image;
     }
 
     public void replay(StreamRecord record) {
-        StreamMetadataDelta delta;
+        S3StreamMetadataDelta delta;
         if (!image.getStreamsMetadata().containsKey(record.streamId())) {
             // create a new StreamMetadata with empty ranges and streams if not exist
-            delta = new StreamMetadataDelta(
-                new StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), Collections.emptyMap(), Collections.emptyList()));
+            delta = new S3StreamMetadataDelta(
+                new S3StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), Collections.emptyMap(), Collections.emptyList()));
         } else {
             // update the epoch if exist
-            StreamMetadataImage streamMetadataImage = image.getStreamsMetadata().get(record.streamId());
-            delta = new StreamMetadataDelta(
-                new StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), streamMetadataImage.getRanges(),
-                    streamMetadataImage.getStreams()));
+            S3StreamMetadataImage s3StreamMetadataImage = image.getStreamsMetadata().get(record.streamId());
+            delta = new S3StreamMetadataDelta(
+                new S3StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), s3StreamMetadataImage.getRanges(),
+                    s3StreamMetadataImage.getStreams()));
         }
         // add the delta to the changedStreams
         changedStreams.put(record.streamId(), delta);
@@ -96,32 +96,32 @@ public final class StreamsMetadataDelta {
         getOrCreateBrokerStreamMetadataDelta(record.brokerId()).replay(record);
     }
 
-    private StreamMetadataDelta getOrCreateStreamMetadataDelta(Long streamId) {
-        StreamMetadataDelta delta = changedStreams.get(streamId);
+    private S3StreamMetadataDelta getOrCreateStreamMetadataDelta(Long streamId) {
+        S3StreamMetadataDelta delta = changedStreams.get(streamId);
         if (delta == null) {
-            delta = new StreamMetadataDelta(image.getStreamsMetadata().get(streamId));
+            delta = new S3StreamMetadataDelta(image.getStreamsMetadata().get(streamId));
             changedStreams.put(streamId, delta);
         }
         return delta;
     }
 
-    private BrokerStreamMetadataDelta getOrCreateBrokerStreamMetadataDelta(Integer brokerId) {
-        BrokerStreamMetadataDelta delta = changedBrokers.get(brokerId);
+    private BrokerS3WALMetadataDelta getOrCreateBrokerStreamMetadataDelta(Integer brokerId) {
+        BrokerS3WALMetadataDelta delta = changedBrokers.get(brokerId);
         if (delta == null) {
-            delta = new BrokerStreamMetadataDelta(
+            delta = new BrokerS3WALMetadataDelta(
                 image.getBrokerStreamsMetadata().
-                    getOrDefault(brokerId, new BrokerStreamMetadataImage(brokerId, Collections.emptyList())));
+                    getOrDefault(brokerId, new BrokerS3WALMetadataImage(brokerId, Collections.emptyList())));
             changedBrokers.put(brokerId, delta);
         }
         return delta;
     }
 
-    StreamsMetadataImage apply() {
-        Map<Long, StreamMetadataImage> newStreams = new HashMap<>(image.getStreamsMetadata().size());
-        Map<Integer, BrokerStreamMetadataImage> newBrokerStreams = new HashMap<>(image.getBrokerStreamsMetadata().size());
+    S3StreamsMetadataImage apply() {
+        Map<Long, S3StreamMetadataImage> newStreams = new HashMap<>(image.getStreamsMetadata().size());
+        Map<Integer, BrokerS3WALMetadataImage> newBrokerStreams = new HashMap<>(image.getBrokerStreamsMetadata().size());
         // apply the delta changes of old streams since the last image
         image.getStreamsMetadata().forEach((streamId, streamMetadataImage) -> {
-            StreamMetadataDelta delta = changedStreams.get(streamId);
+            S3StreamMetadataDelta delta = changedStreams.get(streamId);
             if (delta == null) {
                 // no change, check if deleted
                 if (!deletedStreams.contains(streamId)) {
@@ -129,20 +129,20 @@ public final class StreamsMetadataDelta {
                 }
             } else {
                 // changed, apply the delta
-                StreamMetadataImage newStreamMetadataImage = delta.apply();
-                newStreams.put(streamId, newStreamMetadataImage);
+                S3StreamMetadataImage newS3StreamMetadataImage = delta.apply();
+                newStreams.put(streamId, newS3StreamMetadataImage);
             }
         });
         // apply the new created streams
         changedStreams.entrySet().stream().filter(entry -> !newStreams.containsKey(entry.getKey()))
             .forEach(entry -> {
-                StreamMetadataImage newStreamMetadataImage = entry.getValue().apply();
-                newStreams.put(entry.getKey(), newStreamMetadataImage);
+                S3StreamMetadataImage newS3StreamMetadataImage = entry.getValue().apply();
+                newStreams.put(entry.getKey(), newS3StreamMetadataImage);
             });
 
         // apply the delta changes of old brokers since the last image
         image.getBrokerStreamsMetadata().forEach((brokerId, brokerStreamMetadataImage) -> {
-            BrokerStreamMetadataDelta delta = changedBrokers.get(brokerId);
+            BrokerS3WALMetadataDelta delta = changedBrokers.get(brokerId);
             if (delta == null) {
                 // no change, check if deleted
                 if (!deletedBrokers.contains(brokerId)) {
@@ -150,18 +150,18 @@ public final class StreamsMetadataDelta {
                 }
             } else {
                 // changed, apply the delta
-                BrokerStreamMetadataImage newBrokerStreamMetadataImage = delta.apply();
-                newBrokerStreams.put(brokerId, newBrokerStreamMetadataImage);
+                BrokerS3WALMetadataImage newBrokerS3WALMetadataImage = delta.apply();
+                newBrokerStreams.put(brokerId, newBrokerS3WALMetadataImage);
             }
         });
         // apply the new created streams
         changedBrokers.entrySet().stream().filter(entry -> !newBrokerStreams.containsKey(entry.getKey()))
             .forEach(entry -> {
-                BrokerStreamMetadataImage newBrokerStreamMetadataImage = entry.getValue().apply();
-                newBrokerStreams.put(entry.getKey(), newBrokerStreamMetadataImage);
+                BrokerS3WALMetadataImage newBrokerS3WALMetadataImage = entry.getValue().apply();
+                newBrokerStreams.put(entry.getKey(), newBrokerS3WALMetadataImage);
             });
 
-        return new StreamsMetadataImage(newStreams, newBrokerStreams);
+        return new S3StreamsMetadataImage(newStreams, newBrokerStreams);
     }
 
 }

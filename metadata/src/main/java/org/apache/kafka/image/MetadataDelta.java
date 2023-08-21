@@ -80,7 +80,7 @@ public final class MetadataDelta {
 
     private AclsDelta aclsDelta = null;
 
-    private StreamsMetadataDelta streamsMetadataDelta = null;
+    private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
 
     public MetadataDelta(MetadataImage image) {
         this.image = image;
@@ -155,15 +155,15 @@ public final class MetadataDelta {
         return aclsDelta;
     }
 
-    public StreamsMetadataDelta streamMetadataDelta() {
-        return streamsMetadataDelta;
+    public S3StreamsMetadataDelta streamMetadataDelta() {
+        return s3StreamsMetadataDelta;
     }
 
-    public StreamsMetadataDelta getOrCreateStreamsMetadataDelta() {
-        if (streamsMetadataDelta == null) {
-            streamsMetadataDelta = new StreamsMetadataDelta(image.streamsMetadata());
+    public S3StreamsMetadataDelta getOrCreateStreamsMetadataDelta() {
+        if (s3StreamsMetadataDelta == null) {
+            s3StreamsMetadataDelta = new S3StreamsMetadataDelta(image.streamsMetadata());
         }
-        return streamsMetadataDelta;
+        return s3StreamsMetadataDelta;
     }
 
     public Optional<MetadataVersion> metadataVersionChanged() {
@@ -418,11 +418,11 @@ public final class MetadataDelta {
         } else {
             newAcls = aclsDelta.apply();
         }
-        StreamsMetadataImage newStreamMetadata;
-        if (streamsMetadataDelta == null) {
+        S3StreamsMetadataImage newStreamMetadata;
+        if (s3StreamsMetadataDelta == null) {
             newStreamMetadata = image.streamsMetadata();
         } else {
-            newStreamMetadata = streamsMetadataDelta.apply();
+            newStreamMetadata = s3StreamsMetadataDelta.apply();
         }
         return new MetadataImage(
             provenance,
@@ -447,7 +447,7 @@ public final class MetadataDelta {
             ", clientQuotasDelta=" + clientQuotasDelta +
             ", producerIdsDelta=" + producerIdsDelta +
             ", aclsDelta=" + aclsDelta +
-            ", streamMetadataDelta=" + streamsMetadataDelta +
+            ", streamMetadataDelta=" + s3StreamsMetadataDelta +
             ')';
     }
 }

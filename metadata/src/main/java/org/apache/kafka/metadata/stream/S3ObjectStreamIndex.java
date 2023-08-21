@@ -22,7 +22,7 @@ import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 /**
  * ObjectStreamIndex is the index of a stream range in a WAL object or STREAM object.
  */
-public class ObjectStreamIndex implements Comparable<ObjectStreamIndex> {
+public class S3ObjectStreamIndex implements Comparable<S3ObjectStreamIndex> {
 
     private final Long streamId;
 
@@ -30,7 +30,7 @@ public class ObjectStreamIndex implements Comparable<ObjectStreamIndex> {
 
     private final Long endOffset;
 
-    public ObjectStreamIndex(Long streamId, Long startOffset, Long endOffset) {
+    public S3ObjectStreamIndex(Long streamId, Long startOffset, Long endOffset) {
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
@@ -49,7 +49,7 @@ public class ObjectStreamIndex implements Comparable<ObjectStreamIndex> {
     }
 
     @Override
-    public int compareTo(ObjectStreamIndex o) {
+    public int compareTo(S3ObjectStreamIndex o) {
         int res = this.streamId.compareTo(o.streamId);
         return res == 0 ? this.startOffset.compareTo(o.startOffset) : res;
     }
@@ -61,7 +61,7 @@ public class ObjectStreamIndex implements Comparable<ObjectStreamIndex> {
             .setEndOffset(endOffset);
     }
 
-    public static ObjectStreamIndex of(StreamIndex index) {
-        return new ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset());
+    public static S3ObjectStreamIndex of(StreamIndex index) {
+        return new S3ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset());
     }
 }

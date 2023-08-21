@@ -23,18 +23,18 @@ import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class WALObject extends S3Object {
+public class S3WALObject extends S3Object {
 
     private Integer brokerId;
-    private Map<Long/*streamId*/, ObjectStreamIndex> streamsIndex;
+    private Map<Long/*streamId*/, S3ObjectStreamIndex> streamsIndex;
 
     private S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
-    public WALObject(Long objectId) {
+    public S3WALObject(Long objectId) {
         super(objectId);
     }
 
-    private WALObject(
+    private S3WALObject(
         final Long objectId,
         final Long objectSize,
         final String objectAddress,
@@ -44,12 +44,12 @@ public class WALObject extends S3Object {
         final S3ObjectState s3ObjectState,
         final S3ObjectType objectType,
         final Integer brokerId,
-        final List<ObjectStreamIndex> streamsIndex) {
+        final List<S3ObjectStreamIndex> streamsIndex) {
         super(objectId, objectSize, objectAddress, applyTimeInMs, createTimeInMs, destroyTimeInMs, s3ObjectState, objectType);
         this.objectType = objectType;
         this.brokerId = brokerId;
         this.streamsIndex = streamsIndex.stream().collect(
-            Collectors.toMap(ObjectStreamIndex::getStreamId, index -> index));
+            Collectors.toMap(S3ObjectStreamIndex::getStreamId, index -> index));
     }
 
     @Override
@@ -59,13 +59,13 @@ public class WALObject extends S3Object {
             throw new IllegalArgumentException();
         }
         WALObjectCreateContext walCreateContext = (WALObjectCreateContext) createContext;
-        this.streamsIndex = walCreateContext.streamIndexList.stream().collect(Collectors.toMap(ObjectStreamIndex::getStreamId, index -> index));
+        this.streamsIndex = walCreateContext.streamIndexList.stream().collect(Collectors.toMap(S3ObjectStreamIndex::getStreamId, index -> index));
         this.brokerId = walCreateContext.brokerId;
     }
 
     class WALObjectCreateContext extends S3ObjectCreateContext {
 
-        private final List<ObjectStreamIndex> streamIndexList;
+        private final List<S3ObjectStreamIndex> streamIndexList;
         private final Integer brokerId;
 
         public WALObjectCreateContext(
@@ -73,7 +73,7 @@ public class WALObject extends S3Object {
             final Long objectSize,
             final String objectAddress,
             final S3ObjectType objectType,
-            final List<ObjectStreamIndex> streamIndexList,
+            final List<S3ObjectStreamIndex> streamIndexList,
             final Integer brokerId) {
             super(createTimeInMs, objectSize, objectAddress, objectType);
             this.streamIndexList = streamIndexList;
@@ -92,24 +92,24 @@ public class WALObject extends S3Object {
             .setObjectSize(objectSize.get())
             .setStreamsIndex(
                 streamsIndex.values().stream()
-                    .map(ObjectStreamIndex::toRecordStreamIndex)
+                    .map(S3ObjectStreamIndex::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0);
     }
 
-    public static WALObject of(WALObjectRecord record) {
-        WALObject walObject = new WALObject(
+    public static S3WALObject of(WALObjectRecord record) {
+        S3WALObject s3WalObject = new S3WALObject(
             record.objectId(), record.objectSize(), null,
             record.applyTimeInMs(), record.createTimeInMs(), record.destroyTimeInMs(),
             S3ObjectState.fromByte(record.objectState()), S3ObjectType.fromByte(record.objectType()),
-            record.brokerId(), record.streamsIndex().stream().map(ObjectStreamIndex::of).collect(Collectors.toList()));
-        return walObject;
+            record.brokerId(), record.streamsIndex().stream().map(S3ObjectStreamIndex::of).collect(Collectors.toList()));
+        return s3WalObject;
     }
 
     public Integer getBrokerId() {
         return brokerId;
     }
 
-    public Map<Long, ObjectStreamIndex> getStreamsIndex() {
+    public Map<Long, S3ObjectStreamIndex> getStreamsIndex() {
         return streamsIndex;
     }
 

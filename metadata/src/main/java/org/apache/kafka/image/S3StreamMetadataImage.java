@@ -22,28 +22,28 @@ import java.util.Map;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
-public class StreamMetadataImage {
+public class S3StreamMetadataImage {
 
     private final Long streamId;
 
-    private final Integer epoch;
+    private final Long epoch;
 
     private final Long startOffset;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
 
-    private final List<StreamObject> streams;
+    private final List<S3StreamObject> streams;
 
-    public StreamMetadataImage(
+    public S3StreamMetadataImage(
         Long streamId,
-        Integer epoch,
+        Long epoch,
         Long startOffset,
         Map<Integer, RangeMetadata> ranges,
-        List<StreamObject> streams) {
+        List<S3StreamObject> streams) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -64,11 +64,11 @@ public class StreamMetadataImage {
         return ranges;
     }
 
-    public List<StreamObject> getStreams() {
+    public List<S3StreamObject> getStreams() {
         return streams;
     }
 
-    public Integer getEpoch() {
+    public Long getEpoch() {
         return epoch;
     }
 
@@ -88,7 +88,7 @@ public class StreamMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        StreamMetadataImage that = (StreamMetadataImage) o;
+        S3StreamMetadataImage that = (S3StreamMetadataImage) o;
         return Objects.equals(streamId, that.streamId) && Objects.equals(epoch, that.epoch) && Objects.equals(startOffset,
             that.startOffset) && Objects.equals(ranges, that.ranges) && Objects.equals(streams, that.streams);
     }

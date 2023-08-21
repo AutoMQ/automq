@@ -16,7 +16,7 @@
 {
   "apiKey": 23,
   "type": "metadata",
-  "name": "RemoveStreamRecord",
+  "name": "RemoveS3StreamRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [

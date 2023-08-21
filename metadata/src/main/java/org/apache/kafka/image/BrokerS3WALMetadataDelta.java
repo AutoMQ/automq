@@ -23,34 +23,34 @@ import java.util.List;
 import java.util.Set;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
-import org.apache.kafka.metadata.stream.WALObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
 
-public class BrokerStreamMetadataDelta {
+public class BrokerS3WALMetadataDelta {
 
-    private final BrokerStreamMetadataImage image;
-    private final Set<WALObject> changedWALObjects = new HashSet<>();
+    private final BrokerS3WALMetadataImage image;
+    private final Set<S3WALObject> changedS3WALObjects = new HashSet<>();
 
-    private final Set<WALObject/*objectId*/> removedWALObjects = new HashSet<>();
+    private final Set<S3WALObject/*objectId*/> removedS3WALObjects = new HashSet<>();
 
-    public BrokerStreamMetadataDelta(BrokerStreamMetadataImage image) {
+    public BrokerS3WALMetadataDelta(BrokerS3WALMetadataImage image) {
         this.image = image;
     }
 
     public void replay(WALObjectRecord record) {
-        changedWALObjects.add(WALObject.of(record));
+        changedS3WALObjects.add(S3WALObject.of(record));
     }
 
     public void replay(RemoveWALObjectRecord record) {
-        removedWALObjects.add(new WALObject(record.objectId()));
+        removedS3WALObjects.add(new S3WALObject(record.objectId()));
     }
 
-    public BrokerStreamMetadataImage apply() {
-        List<WALObject> newWALObjects = new ArrayList<>(image.getWalObjects());
+    public BrokerS3WALMetadataImage apply() {
+        List<S3WALObject> newS3WALObjects = new ArrayList<>(image.getWalObjects());
         // remove all removed WAL objects
-        newWALObjects.removeAll(removedWALObjects);
+        newS3WALObjects.removeAll(removedS3WALObjects);
         // add all changed WAL objects
-        newWALObjects.addAll(changedWALObjects);
-        return new BrokerStreamMetadataImage(image.getBrokerId(), newWALObjects);
+        newS3WALObjects.addAll(changedS3WALObjects);
+        return new BrokerS3WALMetadataImage(image.getBrokerId(), newS3WALObjects);
     }
 
 }

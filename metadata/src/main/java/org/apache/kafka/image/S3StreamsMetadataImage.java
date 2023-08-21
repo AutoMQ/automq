@@ -23,18 +23,18 @@ import java.util.Objects;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
-public final class StreamsMetadataImage {
+public final class S3StreamsMetadataImage {
 
-    public static final StreamsMetadataImage EMPTY =
-        new StreamsMetadataImage(Collections.emptyMap(), Collections.emptyMap());
+    public static final S3StreamsMetadataImage EMPTY =
+        new S3StreamsMetadataImage(Collections.emptyMap(), Collections.emptyMap());
 
-    private final Map<Long/*streamId*/, StreamMetadataImage> streamsMetadata;
+    private final Map<Long/*streamId*/, S3StreamMetadataImage> streamsMetadata;
 
-    private final Map<Integer/*brokerId*/, BrokerStreamMetadataImage> brokerStreamsMetadata;
+    private final Map<Integer/*brokerId*/, BrokerS3WALMetadataImage> brokerStreamsMetadata;
 
-    public StreamsMetadataImage(
-        Map<Long, StreamMetadataImage> streamsMetadata,
-        Map<Integer, BrokerStreamMetadataImage> brokerStreamsMetadata) {
+    public S3StreamsMetadataImage(
+        Map<Long, S3StreamMetadataImage> streamsMetadata,
+        Map<Integer, BrokerS3WALMetadataImage> brokerStreamsMetadata) {
         this.streamsMetadata = streamsMetadata;
         this.brokerStreamsMetadata = brokerStreamsMetadata;
     }
@@ -51,8 +51,8 @@ public final class StreamsMetadataImage {
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof StreamsMetadataImage)) return false;
-        StreamsMetadataImage other = (StreamsMetadataImage) obj;
+        if (!(obj instanceof S3StreamsMetadataImage)) return false;
+        S3StreamsMetadataImage other = (S3StreamsMetadataImage) obj;
         return this.streamsMetadata.equals(other.streamsMetadata)
             && this.brokerStreamsMetadata.equals(other.brokerStreamsMetadata);
     }
@@ -62,11 +62,11 @@ public final class StreamsMetadataImage {
         return Objects.hash(streamsMetadata, brokerStreamsMetadata);
     }
 
-    public Map<Integer, BrokerStreamMetadataImage> getBrokerStreamsMetadata() {
+    public Map<Integer, BrokerS3WALMetadataImage> getBrokerStreamsMetadata() {
         return brokerStreamsMetadata;
     }
 
-    public Map<Long, StreamMetadataImage> getStreamsMetadata() {
+    public Map<Long, S3StreamMetadataImage> getStreamsMetadata() {
         return streamsMetadata;
     }
 }

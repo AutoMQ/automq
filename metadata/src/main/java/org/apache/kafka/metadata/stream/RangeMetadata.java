@@ -23,7 +23,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class RangeMetadata implements Comparable<RangeMetadata> {
     private Long streamId;
-    private Integer epoch;
+    private Long epoch;
     private Integer rangeIndex;
     private Long startOffset;
     private Optional<Long> endOffset;
@@ -33,7 +33,7 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         return this.rangeIndex.compareTo(o.rangeIndex);
     }
 
-    public Integer getEpoch() {
+    public Long getEpoch() {
         return epoch;
     }
 

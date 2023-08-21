@@ -16,7 +16,7 @@
 {
   "apiKey": 27,
   "type": "metadata",
-  "name": "StreamObjectRecord",
+  "name": "S3StreamObjectRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [

@@ -39,7 +39,7 @@ public final class MetadataImage {
         ClientQuotasImage.EMPTY,
         ProducerIdsImage.EMPTY,
         AclsImage.EMPTY,
-        StreamsMetadataImage.EMPTY);
+        S3StreamsMetadataImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -57,7 +57,7 @@ public final class MetadataImage {
 
     private final AclsImage acls;
 
-    private final StreamsMetadataImage streamMetadata;
+    private final S3StreamsMetadataImage streamMetadata;
 
     public MetadataImage(
         MetadataProvenance provenance,
@@ -68,7 +68,7 @@ public final class MetadataImage {
         ClientQuotasImage clientQuotas,
         ProducerIdsImage producerIds,
         AclsImage acls,
-        StreamsMetadataImage streamMetadata
+        S3StreamsMetadataImage streamMetadata
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -132,7 +132,7 @@ public final class MetadataImage {
         return acls;
     }
 
-    public StreamsMetadataImage streamsMetadata() {
+    public S3StreamsMetadataImage streamsMetadata() {
         return streamMetadata;
     }
 

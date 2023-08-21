@@ -33,11 +33,11 @@ import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.common.metadata.StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.StreamObject;
-import org.apache.kafka.metadata.stream.WALObject;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -46,7 +46,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
-public class StreamsMetadataImageTest {
+public class S3StreamsMetadataImageTest {
 
     private static final long KB = 1024;
 
@@ -61,11 +61,11 @@ public class StreamsMetadataImageTest {
 
     private static final long STREAM_OBJECT_SIZE = 320 * GB;
 
-    static final StreamsMetadataImage IMAGE1;
+    static final S3StreamsMetadataImage IMAGE1;
 
     static final List<ApiMessageAndVersion> DELTA1_RECORDS;
 
-    static final StreamsMetadataImage IMAGE2;
+    static final S3StreamsMetadataImage IMAGE2;
 
     // TODO: complete the test for StreamsMetadataImage
 
@@ -77,13 +77,13 @@ public class StreamsMetadataImageTest {
 
     @Test
     public void testBasicChange() {
-        List<StreamMetadataImage> streamMetadataImages = new ArrayList<>();
+        List<S3StreamMetadataImage> s3StreamMetadataImages = new ArrayList<>();
         Integer brokerId0 = 0;
         Integer brokerId1 = 1;
         Integer brokerId2 = 2;
 
         // 1. empty image
-        StreamsMetadataImage image0 = StreamsMetadataImage.EMPTY;
+        S3StreamsMetadataImage image0 = S3StreamsMetadataImage.EMPTY;
 
         // 2. create stream and create range
         Long streamId0 = 0L;
@@ -113,27 +113,27 @@ public class StreamsMetadataImageTest {
             .setBrokerId(brokerId1)
             .setEpoch(1);
         records.add(new ApiMessageAndVersion(rangeRecord01, (short) 0));
-        StreamsMetadataDelta delta0 = new StreamsMetadataDelta(image0);
+        S3StreamsMetadataDelta delta0 = new S3StreamsMetadataDelta(image0);
         RecordTestUtils.replayAll(delta0, records);
-        StreamsMetadataImage image1 = delta0.apply();
+        S3StreamsMetadataImage image1 = delta0.apply();
 
         // check the image1
         assertEquals(2, image1.getStreamsMetadata().size());
-        StreamMetadataImage streamMetadataImage1 = image1.getStreamsMetadata().get(streamId0);
-        assertNotNull(streamMetadataImage1);
-        assertEquals(1, streamMetadataImage1.getRanges().size());
-        assertEquals(1, streamMetadataImage1.getEpoch());
-        assertEquals(0, streamMetadataImage1.getStartOffset());
-        RangeMetadata rangeMetadata1 = streamMetadataImage1.getRanges().get(0);
+        S3StreamMetadataImage s3StreamMetadataImage1 = image1.getStreamsMetadata().get(streamId0);
+        assertNotNull(s3StreamMetadataImage1);
+        assertEquals(1, s3StreamMetadataImage1.getRanges().size());
+        assertEquals(1, s3StreamMetadataImage1.getEpoch());
+        assertEquals(0, s3StreamMetadataImage1.getStartOffset());
+        RangeMetadata rangeMetadata1 = s3StreamMetadataImage1.getRanges().get(0);
         assertNotNull(rangeMetadata1);
         assertEquals(RangeMetadata.of(rangeRecord00), rangeMetadata1);
 
-        StreamMetadataImage streamMetadataImage11 = image1.getStreamsMetadata().get(streamId1);
-        assertNotNull(streamMetadataImage11);
-        assertEquals(1, streamMetadataImage11.getRanges().size());
-        assertEquals(1, streamMetadataImage11.getEpoch());
-        assertEquals(0, streamMetadataImage11.getStartOffset());
-        RangeMetadata rangeMetadata11 = streamMetadataImage11.getRanges().get(0);
+        S3StreamMetadataImage s3StreamMetadataImage11 = image1.getStreamsMetadata().get(streamId1);
+        assertNotNull(s3StreamMetadataImage11);
+        assertEquals(1, s3StreamMetadataImage11.getRanges().size());
+        assertEquals(1, s3StreamMetadataImage11.getEpoch());
+        assertEquals(0, s3StreamMetadataImage11.getStartOffset());
+        RangeMetadata rangeMetadata11 = s3StreamMetadataImage11.getRanges().get(0);
         assertNotNull(rangeMetadata11);
         assertEquals(RangeMetadata.of(rangeRecord01), rangeMetadata11);
 
@@ -160,38 +160,38 @@ public class StreamsMetadataImageTest {
         records.add(new ApiMessageAndVersion(walObjectRecord0, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord1, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord2, (short) 0));
-        StreamsMetadataDelta delta1 = new StreamsMetadataDelta(image1);
+        S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
         RecordTestUtils.replayAll(delta1, records);
-        StreamsMetadataImage image2 = delta1.apply();
+        S3StreamsMetadataImage image2 = delta1.apply();
 
         // check the image2
         assertEquals(2, image2.getBrokerStreamsMetadata().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage20 = image2.getBrokerStreamsMetadata().get(brokerId0);
-        assertNotNull(brokerStreamMetadataImage20);
-        assertEquals(1, brokerStreamMetadataImage20.getWalObjects().size());
-        WALObject walObject0 = brokerStreamMetadataImage20.getWalObjects().get(0);
-        assertEquals(brokerId0, walObject0.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject0.getObjectType());
-        assertEquals(S3ObjectState.APPLIED, walObject0.getS3ObjectState());
-        assertEquals(0L, walObject0.getObjectId());
-        BrokerStreamMetadataImage brokerStreamMetadataImage21 = image2.getBrokerStreamsMetadata().get(brokerId1);
-        assertNotNull(brokerStreamMetadataImage21);
-        assertEquals(2, brokerStreamMetadataImage21.getWalObjects().size());
-        WALObject walObject1 = brokerStreamMetadataImage21.getWalObjects().get(0);
-        assertEquals(brokerId1, walObject1.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject1.getObjectType());
-        assertEquals(S3ObjectState.APPLIED, walObject1.getS3ObjectState());
-        assertEquals(1L, walObject1.getObjectId());
-        WALObject walObject2 = brokerStreamMetadataImage21.getWalObjects().get(1);
-        assertEquals(brokerId1, walObject2.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject2.getObjectType());
-        assertEquals(S3ObjectState.APPLIED, walObject2.getS3ObjectState());
-        assertEquals(2L, walObject2.getObjectId());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage20 = image2.getBrokerStreamsMetadata().get(brokerId0);
+        assertNotNull(brokerS3WALMetadataImage20);
+        assertEquals(1, brokerS3WALMetadataImage20.getWalObjects().size());
+        S3WALObject s3WalObject0 = brokerS3WALMetadataImage20.getWalObjects().get(0);
+        assertEquals(brokerId0, s3WalObject0.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject0.getObjectType());
+        assertEquals(S3ObjectState.APPLIED, s3WalObject0.getS3ObjectState());
+        assertEquals(0L, s3WalObject0.getObjectId());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage21 = image2.getBrokerStreamsMetadata().get(brokerId1);
+        assertNotNull(brokerS3WALMetadataImage21);
+        assertEquals(2, brokerS3WALMetadataImage21.getWalObjects().size());
+        S3WALObject s3WalObject1 = brokerS3WALMetadataImage21.getWalObjects().get(0);
+        assertEquals(brokerId1, s3WalObject1.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject1.getObjectType());
+        assertEquals(S3ObjectState.APPLIED, s3WalObject1.getS3ObjectState());
+        assertEquals(1L, s3WalObject1.getObjectId());
+        S3WALObject s3WalObject2 = brokerS3WALMetadataImage21.getWalObjects().get(1);
+        assertEquals(brokerId1, s3WalObject2.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject2.getObjectType());
+        assertEquals(S3ObjectState.APPLIED, s3WalObject2.getS3ObjectState());
+        assertEquals(2L, s3WalObject2.getObjectId());
 
         // 4. create WALObject1, WALObject2, mark delete WALObject0
-        List<ObjectStreamIndex> streamIndicesInWALObject1 = Arrays.asList(
-            new ObjectStreamIndex(streamId0, 0L, 100L),
-            new ObjectStreamIndex(streamId1, 0L, 200L)
+        List<S3ObjectStreamIndex> streamIndicesInWALObject1 = Arrays.asList(
+            new S3ObjectStreamIndex(streamId0, 0L, 100L),
+            new S3ObjectStreamIndex(streamId1, 0L, 200L)
         );
         WALObjectRecord walObjectRecord11 = new WALObjectRecord()
             .setBrokerId(brokerId1)
@@ -199,13 +199,13 @@ public class StreamsMetadataImageTest {
             .setObjectSize(WAL_LOOSE_SIZE)
             .setCreateTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
-            .setStreamsIndex(streamIndicesInWALObject1.stream().map(ObjectStreamIndex::toRecordStreamIndex).collect(
+            .setStreamsIndex(streamIndicesInWALObject1.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()))
             .setObjectState((byte) S3ObjectState.CREATED.ordinal());
 
-        List<ObjectStreamIndex> streamIndicesInWALObject2 = Arrays.asList(
-            new ObjectStreamIndex(streamId0, 101L, 200L),
-            new ObjectStreamIndex(streamId1, 201L, 300L)
+        List<S3ObjectStreamIndex> streamIndicesInWALObject2 = Arrays.asList(
+            new S3ObjectStreamIndex(streamId0, 101L, 200L),
+            new S3ObjectStreamIndex(streamId1, 201L, 300L)
         );
         WALObjectRecord walObjectRecord21 = new WALObjectRecord()
             .setBrokerId(brokerId1)
@@ -213,7 +213,7 @@ public class StreamsMetadataImageTest {
             .setObjectSize(WAL_LOOSE_SIZE)
             .setCreateTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
-            .setStreamsIndex(streamIndicesInWALObject2.stream().map(ObjectStreamIndex::toRecordStreamIndex).collect(
+            .setStreamsIndex(streamIndicesInWALObject2.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()))
             .setObjectState((byte) S3ObjectState.CREATED.ordinal());
         WALObjectRecord walObjectRecord01 = new WALObjectRecord()
@@ -225,37 +225,37 @@ public class StreamsMetadataImageTest {
         records.add(new ApiMessageAndVersion(walObjectRecord11, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord21, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord01, (short) 0));
-        StreamsMetadataDelta delta2 = new StreamsMetadataDelta(image2);
+        S3StreamsMetadataDelta delta2 = new S3StreamsMetadataDelta(image2);
         RecordTestUtils.replayAll(delta2, records);
-        StreamsMetadataImage image3 = delta2.apply();
+        S3StreamsMetadataImage image3 = delta2.apply();
 
         // check the image3
         assertEquals(2, image3.getBrokerStreamsMetadata().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage30 = image3.getBrokerStreamsMetadata().get(brokerId0);
-        assertNotNull(brokerStreamMetadataImage30);
-        assertEquals(1, brokerStreamMetadataImage30.getWalObjects().size());
-        WALObject walObject01 = brokerStreamMetadataImage30.getWalObjects().get(0);
-        assertEquals(brokerId0, walObject01.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject01.getObjectType());
-        assertEquals(S3ObjectState.MARK_DESTROYED, walObject01.getS3ObjectState());
-        BrokerStreamMetadataImage brokerStreamMetadataImage31 = image3.getBrokerStreamsMetadata().get(brokerId1);
-        assertNotNull(brokerStreamMetadataImage31);
-        assertEquals(2, brokerStreamMetadataImage31.getWalObjects().size());
-        WALObject walObject11 = brokerStreamMetadataImage31.getWalObjects().get(0);
-        assertEquals(brokerId1, walObject11.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject11.getObjectType());
-        assertEquals(S3ObjectState.CREATED, walObject11.getS3ObjectState());
-        Map<Long, ObjectStreamIndex> streamIndexVerify1 = walObject11.getStreamsIndex();
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage30 = image3.getBrokerStreamsMetadata().get(brokerId0);
+        assertNotNull(brokerS3WALMetadataImage30);
+        assertEquals(1, brokerS3WALMetadataImage30.getWalObjects().size());
+        S3WALObject s3WalObject01 = brokerS3WALMetadataImage30.getWalObjects().get(0);
+        assertEquals(brokerId0, s3WalObject01.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject01.getObjectType());
+        assertEquals(S3ObjectState.MARK_DESTROYED, s3WalObject01.getS3ObjectState());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage31 = image3.getBrokerStreamsMetadata().get(brokerId1);
+        assertNotNull(brokerS3WALMetadataImage31);
+        assertEquals(2, brokerS3WALMetadataImage31.getWalObjects().size());
+        S3WALObject s3WalObject11 = brokerS3WALMetadataImage31.getWalObjects().get(0);
+        assertEquals(brokerId1, s3WalObject11.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject11.getObjectType());
+        assertEquals(S3ObjectState.CREATED, s3WalObject11.getS3ObjectState());
+        Map<Long, S3ObjectStreamIndex> streamIndexVerify1 = s3WalObject11.getStreamsIndex();
         assertEquals(2, streamIndexVerify1.size());
         assertEquals(0L, streamIndexVerify1.get(streamId0).getStartOffset());
         assertEquals(100L, streamIndexVerify1.get(streamId0).getEndOffset());
         assertEquals(0L, streamIndexVerify1.get(streamId1).getStartOffset());
         assertEquals(200L, streamIndexVerify1.get(streamId1).getEndOffset());
-        WALObject walObject21 = brokerStreamMetadataImage31.getWalObjects().get(1);
-        assertEquals(brokerId1, walObject21.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject21.getObjectType());
-        assertEquals(S3ObjectState.CREATED, walObject21.getS3ObjectState());
-        Map<Long, ObjectStreamIndex> streamIndexVerify2 = walObject21.getStreamsIndex();
+        S3WALObject s3WalObject21 = brokerS3WALMetadataImage31.getWalObjects().get(1);
+        assertEquals(brokerId1, s3WalObject21.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject21.getObjectType());
+        assertEquals(S3ObjectState.CREATED, s3WalObject21.getS3ObjectState());
+        Map<Long, S3ObjectStreamIndex> streamIndexVerify2 = s3WalObject21.getStreamsIndex();
         assertEquals(2, streamIndexVerify2.size());
         assertEquals(101L, streamIndexVerify2.get(streamId0).getStartOffset());
         assertEquals(200L, streamIndexVerify2.get(streamId0).getEndOffset());
@@ -276,9 +276,9 @@ public class StreamsMetadataImageTest {
             .setBrokerId(brokerId1)
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal());
-        List<ObjectStreamIndex> streamIndicesInWALObject3 = Arrays.asList(
-            new ObjectStreamIndex(streamId0, 0L, 200L),
-            new ObjectStreamIndex(streamId1, 0L, 300L)
+        List<S3ObjectStreamIndex> streamIndicesInWALObject3 = Arrays.asList(
+            new S3ObjectStreamIndex(streamId0, 0L, 200L),
+            new S3ObjectStreamIndex(streamId1, 0L, 300L)
         );
         WALObjectRecord walObjectRecord3 = new WALObjectRecord()
             .setObjectId(3L)
@@ -288,39 +288,39 @@ public class StreamsMetadataImageTest {
             .setObjectState((byte) S3ObjectState.CREATED.ordinal())
             .setApplyTimeInMs(System.currentTimeMillis())
             .setObjectSize(WAL_MINOR_COMPACT_SIZE)
-            .setStreamsIndex(streamIndicesInWALObject3.stream().map(ObjectStreamIndex::toRecordStreamIndex).collect(
+            .setStreamsIndex(streamIndicesInWALObject3.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()));
         records.clear();
         records.add(new ApiMessageAndVersion(removeWALObjectRecord0, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord12, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord22, (short) 0));
         records.add(new ApiMessageAndVersion(walObjectRecord3, (short) 0));
-        StreamsMetadataDelta delta3 = new StreamsMetadataDelta(image3);
+        S3StreamsMetadataDelta delta3 = new S3StreamsMetadataDelta(image3);
         RecordTestUtils.replayAll(delta3, records);
-        StreamsMetadataImage image4 = delta3.apply();
+        S3StreamsMetadataImage image4 = delta3.apply();
 
         // check the image4
         assertEquals(2, image4.getBrokerStreamsMetadata().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage40 = image4.getBrokerStreamsMetadata().get(brokerId0);
-        assertNotNull(brokerStreamMetadataImage40);
-        assertEquals(0, brokerStreamMetadataImage40.getWalObjects().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage41 = image4.getBrokerStreamsMetadata().get(brokerId1);
-        assertNotNull(brokerStreamMetadataImage41);
-        assertEquals(3, brokerStreamMetadataImage41.getWalObjects().size());
-        WALObject walObject12 = brokerStreamMetadataImage41.getWalObjects().get(0);
-        assertEquals(brokerId1, walObject12.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject12.getObjectType());
-        assertEquals(S3ObjectState.MARK_DESTROYED, walObject12.getS3ObjectState());
-        WALObject walObject22 = brokerStreamMetadataImage41.getWalObjects().get(1);
-        assertEquals(brokerId1, walObject22.getBrokerId());
-        assertEquals(S3ObjectType.WAL_LOOSE, walObject22.getObjectType());
-        assertEquals(S3ObjectState.MARK_DESTROYED, walObject22.getS3ObjectState());
-        WALObject walObject3 = brokerStreamMetadataImage41.getWalObjects().get(2);
-        assertEquals(brokerId1, walObject3.getBrokerId());
-        assertEquals(S3ObjectType.WAL_MINOR, walObject3.getObjectType());
-        assertEquals(S3ObjectState.CREATED, walObject3.getS3ObjectState());
-        assertEquals(3L, walObject3.getObjectId());
-        Map<Long, ObjectStreamIndex> streamIndexVerify3 = walObject3.getStreamsIndex();
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage40 = image4.getBrokerStreamsMetadata().get(brokerId0);
+        assertNotNull(brokerS3WALMetadataImage40);
+        assertEquals(0, brokerS3WALMetadataImage40.getWalObjects().size());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage41 = image4.getBrokerStreamsMetadata().get(brokerId1);
+        assertNotNull(brokerS3WALMetadataImage41);
+        assertEquals(3, brokerS3WALMetadataImage41.getWalObjects().size());
+        S3WALObject s3WalObject12 = brokerS3WALMetadataImage41.getWalObjects().get(0);
+        assertEquals(brokerId1, s3WalObject12.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject12.getObjectType());
+        assertEquals(S3ObjectState.MARK_DESTROYED, s3WalObject12.getS3ObjectState());
+        S3WALObject s3WalObject22 = brokerS3WALMetadataImage41.getWalObjects().get(1);
+        assertEquals(brokerId1, s3WalObject22.getBrokerId());
+        assertEquals(S3ObjectType.WAL_LOOSE, s3WalObject22.getObjectType());
+        assertEquals(S3ObjectState.MARK_DESTROYED, s3WalObject22.getS3ObjectState());
+        S3WALObject s3WalObject3 = brokerS3WALMetadataImage41.getWalObjects().get(2);
+        assertEquals(brokerId1, s3WalObject3.getBrokerId());
+        assertEquals(S3ObjectType.WAL_MINOR, s3WalObject3.getObjectType());
+        assertEquals(S3ObjectState.CREATED, s3WalObject3.getS3ObjectState());
+        assertEquals(3L, s3WalObject3.getObjectId());
+        Map<Long, S3ObjectStreamIndex> streamIndexVerify3 = s3WalObject3.getStreamsIndex();
         assertEquals(2, streamIndexVerify3.size());
         assertEquals(0L, streamIndexVerify3.get(streamId0).getStartOffset());
         assertEquals(200L, streamIndexVerify3.get(streamId0).getEndOffset());
@@ -328,24 +328,24 @@ public class StreamsMetadataImageTest {
         assertEquals(300L, streamIndexVerify3.get(streamId1).getEndOffset());
 
         // 6. split WALObject3 by streamId to StreamObject4 and StreamObject5
-        ObjectStreamIndex objectStreamIndex4 = new ObjectStreamIndex(streamId0, 0L, 200L);
-        ObjectStreamIndex objectStreamIndex5 = new ObjectStreamIndex(streamId1, 0L, 300L);
+        S3ObjectStreamIndex s3ObjectStreamIndex4 = new S3ObjectStreamIndex(streamId0, 0L, 200L);
+        S3ObjectStreamIndex s3ObjectStreamIndex5 = new S3ObjectStreamIndex(streamId1, 0L, 300L);
         StreamObjectRecord streamObjectRecord4 = new StreamObjectRecord()
             .setObjectId(4L)
             .setStreamId(streamId0)
             .setObjectSize(STREAM_OBJECT_SIZE)
             .setObjectType((byte) S3ObjectType.STREAM.ordinal())
             .setCreateTimeInMs(System.currentTimeMillis())
-            .setStartOffset(objectStreamIndex4.getStartOffset())
-            .setEndOffset(objectStreamIndex4.getEndOffset());
+            .setStartOffset(s3ObjectStreamIndex4.getStartOffset())
+            .setEndOffset(s3ObjectStreamIndex4.getEndOffset());
         StreamObjectRecord streamObjectRecord5 = new StreamObjectRecord()
             .setObjectId(5L)
             .setStreamId(streamId1)
             .setObjectSize(STREAM_OBJECT_SIZE)
             .setObjectType((byte) S3ObjectType.STREAM.ordinal())
             .setCreateTimeInMs(System.currentTimeMillis())
-            .setStartOffset(objectStreamIndex5.getStartOffset())
-            .setEndOffset(objectStreamIndex5.getEndOffset());
+            .setStartOffset(s3ObjectStreamIndex5.getStartOffset())
+            .setEndOffset(s3ObjectStreamIndex5.getEndOffset());
         RemoveWALObjectRecord removeWALObjectRecord3 = new RemoveWALObjectRecord()
             .setObjectId(3L)
             .setBrokerId(brokerId1);
@@ -353,45 +353,45 @@ public class StreamsMetadataImageTest {
         records.add(new ApiMessageAndVersion(streamObjectRecord4, (short) 0));
         records.add(new ApiMessageAndVersion(streamObjectRecord5, (short) 0));
         records.add(new ApiMessageAndVersion(removeWALObjectRecord3, (short) 0));
-        StreamsMetadataDelta delta4 = new StreamsMetadataDelta(image4);
+        S3StreamsMetadataDelta delta4 = new S3StreamsMetadataDelta(image4);
         RecordTestUtils.replayAll(delta4, records);
-        StreamsMetadataImage image5 = delta4.apply();
+        S3StreamsMetadataImage image5 = delta4.apply();
 
         // check the image5
         assertEquals(2, image5.getBrokerStreamsMetadata().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage50 = image5.getBrokerStreamsMetadata().get(brokerId0);
-        assertNotNull(brokerStreamMetadataImage50);
-        assertEquals(0, brokerStreamMetadataImage50.getWalObjects().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage51 = image5.getBrokerStreamsMetadata().get(brokerId1);
-        assertNotNull(brokerStreamMetadataImage51);
-        assertEquals(0, brokerStreamMetadataImage51.getWalObjects().size());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage50 = image5.getBrokerStreamsMetadata().get(brokerId0);
+        assertNotNull(brokerS3WALMetadataImage50);
+        assertEquals(0, brokerS3WALMetadataImage50.getWalObjects().size());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage51 = image5.getBrokerStreamsMetadata().get(brokerId1);
+        assertNotNull(brokerS3WALMetadataImage51);
+        assertEquals(0, brokerS3WALMetadataImage51.getWalObjects().size());
         assertEquals(2, image5.getStreamsMetadata().size());
 
-        StreamMetadataImage streamMetadataImage50 = image5.getStreamsMetadata().get(streamId0);
-        assertNotNull(streamMetadataImage50);
-        assertEquals(1, streamMetadataImage50.getRanges().size());
-        assertEquals(1, streamMetadataImage50.getEpoch());
-        assertEquals(0, streamMetadataImage50.getStartOffset());
-        assertEquals(1, streamMetadataImage50.getStreams());
-        StreamObject streamObject4 = streamMetadataImage50.getStreams().get(0);
-        assertEquals(4L, streamObject4.getObjectId());
-        assertEquals(STREAM_OBJECT_SIZE, streamObject4.getObjectSize());
-        assertEquals(S3ObjectType.STREAM, streamObject4.getObjectType());
-        assertEquals(S3ObjectState.CREATED, streamObject4.getS3ObjectState());
-        assertEquals(objectStreamIndex4, streamObject4.getStreamIndex());
+        S3StreamMetadataImage s3StreamMetadataImage50 = image5.getStreamsMetadata().get(streamId0);
+        assertNotNull(s3StreamMetadataImage50);
+        assertEquals(1, s3StreamMetadataImage50.getRanges().size());
+        assertEquals(1, s3StreamMetadataImage50.getEpoch());
+        assertEquals(0, s3StreamMetadataImage50.getStartOffset());
+        assertEquals(1, s3StreamMetadataImage50.getStreams());
+        S3StreamObject s3StreamObject4 = s3StreamMetadataImage50.getStreams().get(0);
+        assertEquals(4L, s3StreamObject4.getObjectId());
+        assertEquals(STREAM_OBJECT_SIZE, s3StreamObject4.getObjectSize());
+        assertEquals(S3ObjectType.STREAM, s3StreamObject4.getObjectType());
+        assertEquals(S3ObjectState.CREATED, s3StreamObject4.getS3ObjectState());
+        assertEquals(s3ObjectStreamIndex4, s3StreamObject4.getStreamIndex());
 
-        StreamMetadataImage streamMetadataImage51 = image5.getStreamsMetadata().get(streamId1);
-        assertNotNull(streamMetadataImage51);
-        assertEquals(1, streamMetadataImage51.getRanges().size());
-        assertEquals(1, streamMetadataImage51.getEpoch());
-        assertEquals(0, streamMetadataImage51.getStartOffset());
-        assertEquals(1, streamMetadataImage51.getStreams());
-        StreamObject streamObject5 = streamMetadataImage51.getStreams().get(0);
-        assertEquals(5L, streamObject5.getObjectId());
-        assertEquals(STREAM_OBJECT_SIZE, streamObject5.getObjectSize());
-        assertEquals(S3ObjectType.STREAM, streamObject5.getObjectType());
-        assertEquals(S3ObjectState.CREATED, streamObject5.getS3ObjectState());
-        assertEquals(objectStreamIndex5, streamObject5.getStreamIndex());
+        S3StreamMetadataImage s3StreamMetadataImage51 = image5.getStreamsMetadata().get(streamId1);
+        assertNotNull(s3StreamMetadataImage51);
+        assertEquals(1, s3StreamMetadataImage51.getRanges().size());
+        assertEquals(1, s3StreamMetadataImage51.getEpoch());
+        assertEquals(0, s3StreamMetadataImage51.getStartOffset());
+        assertEquals(1, s3StreamMetadataImage51.getStreams());
+        S3StreamObject s3StreamObject5 = s3StreamMetadataImage51.getStreams().get(0);
+        assertEquals(5L, s3StreamObject5.getObjectId());
+        assertEquals(STREAM_OBJECT_SIZE, s3StreamObject5.getObjectSize());
+        assertEquals(S3ObjectType.STREAM, s3StreamObject5.getObjectType());
+        assertEquals(S3ObjectState.CREATED, s3StreamObject5.getS3ObjectState());
+        assertEquals(s3ObjectStreamIndex5, s3StreamObject5.getStreamIndex());
 
         // 7. remove streamObject4 and remove stream1
         RemoveStreamObjectRecord removeStreamObjectRecord4 = new RemoveStreamObjectRecord()
@@ -402,33 +402,33 @@ public class StreamsMetadataImageTest {
         records.clear();
         records.add(new ApiMessageAndVersion(removeStreamObjectRecord4, (short) 0));
         records.add(new ApiMessageAndVersion(removeStreamRecord, (short) 0));
-        StreamsMetadataDelta delta5 = new StreamsMetadataDelta(image5);
+        S3StreamsMetadataDelta delta5 = new S3StreamsMetadataDelta(image5);
         RecordTestUtils.replayAll(delta5, records);
-        StreamsMetadataImage image6 = delta5.apply();
+        S3StreamsMetadataImage image6 = delta5.apply();
 
         // check the image6
         assertEquals(2, image6.getBrokerStreamsMetadata().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage60 = image6.getBrokerStreamsMetadata().get(brokerId0);
-        assertNotNull(brokerStreamMetadataImage60);
-        assertEquals(0, brokerStreamMetadataImage60.getWalObjects().size());
-        BrokerStreamMetadataImage brokerStreamMetadataImage61 = image6.getBrokerStreamsMetadata().get(brokerId1);
-        assertNotNull(brokerStreamMetadataImage61);
-        assertEquals(0, brokerStreamMetadataImage61.getWalObjects().size());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage60 = image6.getBrokerStreamsMetadata().get(brokerId0);
+        assertNotNull(brokerS3WALMetadataImage60);
+        assertEquals(0, brokerS3WALMetadataImage60.getWalObjects().size());
+        BrokerS3WALMetadataImage brokerS3WALMetadataImage61 = image6.getBrokerStreamsMetadata().get(brokerId1);
+        assertNotNull(brokerS3WALMetadataImage61);
+        assertEquals(0, brokerS3WALMetadataImage61.getWalObjects().size());
 
         assertEquals(1, image6.getStreamsMetadata().size());
-        StreamMetadataImage streamMetadataImage60 = image6.getStreamsMetadata().get(streamId0);
-        assertNotNull(streamMetadataImage60);
-        assertEquals(1, streamMetadataImage60.getRanges().size());
-        assertEquals(0, streamMetadataImage60.getStreams().size());
+        S3StreamMetadataImage s3StreamMetadataImage60 = image6.getStreamsMetadata().get(streamId0);
+        assertNotNull(s3StreamMetadataImage60);
+        assertEquals(1, s3StreamMetadataImage60.getRanges().size());
+        assertEquals(0, s3StreamMetadataImage60.getStreams().size());
     }
 
 
-    private void testToImageAndBack(StreamsMetadataImage image) {
+    private void testToImageAndBack(S3StreamsMetadataImage image) {
         RecordListWriter writer = new RecordListWriter();
         image.write(writer, new ImageWriterOptions.Builder().build());
-        StreamsMetadataDelta delta = new StreamsMetadataDelta(StreamsMetadataImage.EMPTY);
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
         RecordTestUtils.replayAll(delta, writer.records());
-        StreamsMetadataImage newImage = delta.apply();
+        S3StreamsMetadataImage newImage = delta.apply();
         assertEquals(image, newImage);
     }
 }

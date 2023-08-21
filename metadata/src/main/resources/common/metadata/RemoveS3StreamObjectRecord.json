@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 22,
+  "apiKey": 28,
   "type": "metadata",
-  "name": "StreamRecord",
+  "name": "RemoveS3StreamObjectRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -24,19 +24,13 @@
       "name": "StreamId",
       "type": "int64",
       "versions": "0+",
-      "about": "The Stream ID"
+      "about": "The Stream ID of the stream in this object"
     },
     {
-      "name": "Epoch",
-      "type": "int32",
-      "versions": "0+",
-      "about": "The epoch"
-    },
-    {
-      "name": "StartOffset",
+      "name": "ObjectId",
       "type": "int64",
       "versions": "0+",
-      "about": "The start offset of the stream"
+      "about": "The object id of this object"
     }
   ]
 }

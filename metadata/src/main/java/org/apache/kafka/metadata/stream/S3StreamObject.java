@@ -21,11 +21,11 @@ import java.util.Optional;
 import org.apache.kafka.common.metadata.StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class StreamObject extends S3Object {
+public class S3StreamObject extends S3Object {
 
-    private ObjectStreamIndex streamIndex;
+    private S3ObjectStreamIndex streamIndex;
 
-    public StreamObject(final Long objectId) {
+    public S3StreamObject(final Long objectId) {
         super(objectId);
     }
 
@@ -40,31 +40,31 @@ public class StreamObject extends S3Object {
 
     @Override
     public int compareTo(S3Object o) {
-        if (!(o instanceof StreamObject)) {
+        if (!(o instanceof S3StreamObject)) {
             throw new IllegalArgumentException("Cannot compare StreamObject with non-StreamObject");
         }
-        StreamObject streamObject = (StreamObject) o;
+        S3StreamObject s3StreamObject = (S3StreamObject) o;
         // order by streamId first, then startOffset
-        int res = this.streamIndex.getStreamId().compareTo(streamObject.streamIndex.getStreamId());
-        return res == 0 ? this.streamIndex.getStartOffset().compareTo(streamObject.streamIndex.getStartOffset()) : res;
+        int res = this.streamIndex.getStreamId().compareTo(s3StreamObject.streamIndex.getStreamId());
+        return res == 0 ? this.streamIndex.getStartOffset().compareTo(s3StreamObject.streamIndex.getStartOffset()) : res;
     }
 
     class StreamObjectCreateContext extends S3ObjectCreateContext {
 
-        private final ObjectStreamIndex streamIndex;
+        private final S3ObjectStreamIndex streamIndex;
 
         public StreamObjectCreateContext(
             final Long createTimeInMs,
             final Long objectSize,
             final String objectAddress,
             final S3ObjectType objectType,
-            final ObjectStreamIndex streamIndex) {
+            final S3ObjectStreamIndex streamIndex) {
             super(createTimeInMs, objectSize, objectAddress, objectType);
             this.streamIndex = streamIndex;
         }
     }
 
-    public ObjectStreamIndex getStreamIndex() {
+    public S3ObjectStreamIndex getStreamIndex() {
         return streamIndex;
     }
 
@@ -82,15 +82,15 @@ public class StreamObject extends S3Object {
             .setEndOffset(streamIndex.getEndOffset()), (short) 0);
     }
 
-    public static StreamObject of(StreamObjectRecord record) {
-        StreamObject streamObject = new StreamObject(record.objectId());
-        streamObject.objectType = S3ObjectType.fromByte(record.objectType());
-        streamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());
-        streamObject.applyTimeInMs = Optional.of(record.applyTimeInMs());
-        streamObject.createTimeInMs = Optional.of(record.createTimeInMs());
-        streamObject.destroyTimeInMs = Optional.of(record.destroyTimeInMs());
-        streamObject.objectSize = Optional.of(record.objectSize());
-        streamObject.streamIndex = new ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
-        return streamObject;
+    public static S3StreamObject of(StreamObjectRecord record) {
+        S3StreamObject s3StreamObject = new S3StreamObject(record.objectId());
+        s3StreamObject.objectType = S3ObjectType.fromByte(record.objectType());
+        s3StreamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());
+        s3StreamObject.applyTimeInMs = Optional.of(record.applyTimeInMs());
+        s3StreamObject.createTimeInMs = Optional.of(record.createTimeInMs());
+        s3StreamObject.destroyTimeInMs = Optional.of(record.destroyTimeInMs());
+        s3StreamObject.objectSize = Optional.of(record.objectSize());
+        s3StreamObject.streamIndex = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
+        return s3StreamObject;
     }
 }

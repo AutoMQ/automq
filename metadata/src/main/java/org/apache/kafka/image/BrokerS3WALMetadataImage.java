@@ -20,17 +20,17 @@ package org.apache.kafka.image;
 
 import java.util.List;
 import java.util.Objects;
-import org.apache.kafka.metadata.stream.WALObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 
-public class BrokerStreamMetadataImage {
+public class BrokerS3WALMetadataImage {
     private final Integer brokerId;
-    private final List<WALObject> walObjects;
+    private final List<S3WALObject> s3WalObjects;
 
-    public BrokerStreamMetadataImage(Integer brokerId, List<WALObject> walObjects) {
+    public BrokerS3WALMetadataImage(Integer brokerId, List<S3WALObject> s3WalObjects) {
         this.brokerId = brokerId;
-        this.walObjects = walObjects;
+        this.s3WalObjects = s3WalObjects;
     }
 
     @Override
@@ -41,21 +41,21 @@ public class BrokerStreamMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        BrokerStreamMetadataImage that = (BrokerStreamMetadataImage) o;
-        return Objects.equals(brokerId, that.brokerId) && Objects.equals(walObjects, that.walObjects);
+        BrokerS3WALMetadataImage that = (BrokerS3WALMetadataImage) o;
+        return Objects.equals(brokerId, that.brokerId) && Objects.equals(s3WalObjects, that.s3WalObjects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(brokerId, walObjects);
+        return Objects.hash(brokerId, s3WalObjects);
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        walObjects.forEach(walObject -> writer.write(walObject.toRecord()));
+        s3WalObjects.forEach(walObject -> writer.write(walObject.toRecord()));
     }
 
-    public List<WALObject> getWalObjects() {
-        return walObjects;
+    public List<S3WALObject> getWalObjects() {
+        return s3WalObjects;
     }
 
     public Integer getBrokerId() {
