@@ -108,7 +108,15 @@ public enum ApiKeys {
     UNREGISTER_BROKER(ApiMessageType.UNREGISTER_BROKER, false, RecordBatch.MAGIC_VALUE_V0, true),
     DESCRIBE_TRANSACTIONS(ApiMessageType.DESCRIBE_TRANSACTIONS),
     LIST_TRANSACTIONS(ApiMessageType.LIST_TRANSACTIONS),
-    ALLOCATE_PRODUCER_IDS(ApiMessageType.ALLOCATE_PRODUCER_IDS, true, true);
+    ALLOCATE_PRODUCER_IDS(ApiMessageType.ALLOCATE_PRODUCER_IDS, true, true),
+
+    // Kafka on S3 inject start
+
+    CREATE_STREAM(ApiMessageType.CREATE_STREAM, false, true),
+    DELETE_STREAM(ApiMessageType.DELETE_STREAM, false, true),
+    OPEN_STREAM(ApiMessageType.OPEN_STREAM, false, true),
+    CLOSE_STREAM(ApiMessageType.CLOSE_STREAM, false, true);
+    // Kafka on S3 inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);

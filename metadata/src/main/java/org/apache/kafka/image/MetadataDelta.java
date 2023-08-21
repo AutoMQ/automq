@@ -27,12 +27,20 @@ import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
@@ -71,6 +79,8 @@ public final class MetadataDelta {
     private ProducerIdsDelta producerIdsDelta = null;
 
     private AclsDelta aclsDelta = null;
+
+    private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
 
     public MetadataDelta(MetadataImage image) {
         this.image = image;
@@ -145,6 +155,17 @@ public final class MetadataDelta {
         return aclsDelta;
     }
 
+    public S3StreamsMetadataDelta streamMetadataDelta() {
+        return s3StreamsMetadataDelta;
+    }
+
+    public S3StreamsMetadataDelta getOrCreateStreamsMetadataDelta() {
+        if (s3StreamsMetadataDelta == null) {
+            s3StreamsMetadataDelta = new S3StreamsMetadataDelta(image.streamsMetadata());
+        }
+        return s3StreamsMetadataDelta;
+    }
+
     public Optional<MetadataVersion> metadataVersionChanged() {
         if (featuresDelta == null) {
             return Optional.empty();
@@ -209,6 +230,32 @@ public final class MetadataDelta {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
+            // Kafka on S3 inject start
+            case S3_STREAM_RECORD:
+                replay((S3StreamRecord) record);
+                break;
+            case REMOVE_S3_STREAM_RECORD:
+                replay((RemoveS3StreamRecord) record);
+                break;
+            case RANGE_RECORD:
+                replay((RangeRecord) record);
+                break;
+            case REMOVE_RANGE_RECORD:
+                replay((RemoveRangeRecord) record);
+                break;
+            case S3_STREAM_OBJECT_RECORD:
+                replay((S3StreamObjectRecord) record);
+                break;
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+                replay((RemoveS3StreamObjectRecord) record);
+                break;
+            case WALOBJECT_RECORD:
+                replay((WALObjectRecord) record);
+                break;
+            case REMOVE_WALOBJECT_RECORD:
+                replay((RemoveWALObjectRecord) record);
+                break;
+            // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }
@@ -284,6 +331,38 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().replay(record);
     }
 
+    public void replay(S3StreamRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveS3StreamRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RangeRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveRangeRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(S3StreamObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveS3StreamObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(WALObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveWALObjectRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
     /**
      * Create removal deltas for anything which was in the base image, but which was not
      * referenced in the snapshot records we just applied.
@@ -341,6 +420,12 @@ public final class MetadataDelta {
         } else {
             newAcls = aclsDelta.apply();
         }
+        S3StreamsMetadataImage newStreamMetadata;
+        if (s3StreamsMetadataDelta == null) {
+            newStreamMetadata = image.streamsMetadata();
+        } else {
+            newStreamMetadata = s3StreamsMetadataDelta.apply();
+        }
         return new MetadataImage(
             provenance,
             newFeatures,
@@ -349,7 +434,8 @@ public final class MetadataDelta {
             newConfigs,
             newClientQuotas,
             newProducerIds,
-            newAcls
+            newAcls,
+            newStreamMetadata
         );
     }
 
@@ -363,6 +449,7 @@ public final class MetadataDelta {
             ", clientQuotasDelta=" + clientQuotasDelta +
             ", producerIdsDelta=" + producerIdsDelta +
             ", aclsDelta=" + aclsDelta +
+            ", streamMetadataDelta=" + s3StreamsMetadataDelta +
             ')';
     }
 }
