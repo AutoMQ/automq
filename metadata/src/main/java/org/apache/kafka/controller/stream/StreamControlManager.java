@@ -26,6 +26,9 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
 import org.slf4j.Logger;
 
+/**
+ * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
+ */
 public class StreamControlManager {
 
     static class StreamMetadata {
@@ -44,6 +47,8 @@ public class StreamControlManager {
     private final SnapshotRegistry snapshotRegistry;
 
     private final Logger log;
+    
+    private final S3ObjectControlManager s3ObjectControlManager;
 
     private final TimelineHashMap<Long/*streamId*/, StreamMetadata> streamsMetadata;
 
@@ -51,9 +56,11 @@ public class StreamControlManager {
 
     public StreamControlManager(
         SnapshotRegistry snapshotRegistry,
-        LogContext logContext) {
+        LogContext logContext,
+        S3ObjectControlManager s3ObjectControlManager) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(StreamControlManager.class);
+        this.s3ObjectControlManager = s3ObjectControlManager;
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
