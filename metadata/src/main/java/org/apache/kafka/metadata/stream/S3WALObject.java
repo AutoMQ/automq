@@ -39,13 +39,14 @@ public class S3WALObject extends S3Object {
         final Long objectSize,
         final String objectAddress,
         final Long applyTimeInMs,
-        final Long createTimeInMs,
+        final Long expiredTimeImMs,
+        final Long commitTimeInMs,
         final Long destroyTimeInMs,
         final S3ObjectState s3ObjectState,
         final S3ObjectType objectType,
         final Integer brokerId,
         final List<S3ObjectStreamIndex> streamsIndex) {
-        super(objectId, objectSize, objectAddress, applyTimeInMs, createTimeInMs, destroyTimeInMs, s3ObjectState, objectType);
+        super(objectId, objectSize, objectAddress, applyTimeInMs, expiredTimeImMs, commitTimeInMs, destroyTimeInMs, s3ObjectState, objectType);
         this.objectType = objectType;
         this.brokerId = brokerId;
         this.streamsIndex = streamsIndex.stream().collect(
@@ -53,22 +54,22 @@ public class S3WALObject extends S3Object {
     }
 
     @Override
-    public void onCreate(S3ObjectCreateContext createContext) {
+    public void onCreate(S3ObjectCommitContext createContext) {
         super.onCreate(createContext);
-        if (!(createContext instanceof WALObjectCreateContext)) {
+        if (!(createContext instanceof WALObjectCommitContext)) {
             throw new IllegalArgumentException();
         }
-        WALObjectCreateContext walCreateContext = (WALObjectCreateContext) createContext;
+        WALObjectCommitContext walCreateContext = (WALObjectCommitContext) createContext;
         this.streamsIndex = walCreateContext.streamIndexList.stream().collect(Collectors.toMap(S3ObjectStreamIndex::getStreamId, index -> index));
         this.brokerId = walCreateContext.brokerId;
     }
 
-    class WALObjectCreateContext extends S3ObjectCreateContext {
+    class WALObjectCommitContext extends S3ObjectCommitContext {
 
         private final List<S3ObjectStreamIndex> streamIndexList;
         private final Integer brokerId;
 
-        public WALObjectCreateContext(
+        public WALObjectCommitContext(
             final Long createTimeInMs,
             final Long objectSize,
             final String objectAddress,
@@ -86,9 +87,10 @@ public class S3WALObject extends S3Object {
             .setObjectId(objectId)
             .setObjectState((byte) s3ObjectState.ordinal())
             .setObjectType((byte) objectType.ordinal())
-            .setApplyTimeInMs(applyTimeInMs.get())
-            .setCreateTimeInMs(createTimeInMs.get())
-            .setDestroyTimeInMs(destroyTimeInMs.get())
+            .setAppliedTimeInMs(appliedTimeInMs.get())
+            .setExpiredTimeInMs(expiredTimeInMs.get())
+            .setCommittedTimeInMs(committedTimeInMs.get())
+            .setDestroyedTimeInMs(destroyedTimeInMs.get())
             .setObjectSize(objectSize.get())
             .setStreamsIndex(
                 streamsIndex.values().stream()
@@ -99,7 +101,7 @@ public class S3WALObject extends S3Object {
     public static S3WALObject of(WALObjectRecord record) {
         S3WALObject s3WalObject = new S3WALObject(
             record.objectId(), record.objectSize(), null,
-            record.applyTimeInMs(), record.createTimeInMs(), record.destroyTimeInMs(),
+            record.appliedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
             S3ObjectState.fromByte(record.objectState()), S3ObjectType.fromByte(record.objectType()),
             record.brokerId(), record.streamsIndex().stream().map(S3ObjectStreamIndex::of).collect(Collectors.toList()));
         return s3WalObject;
