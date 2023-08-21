@@ -141,19 +141,19 @@ public class S3StreamsMetadataImageTest {
         WALObjectRecord walObjectRecord0 = new WALObjectRecord()
             .setBrokerId(brokerId0)
             .setObjectId(0L)
-            .setApplyTimeInMs(System.currentTimeMillis())
+            .setAppliedTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setObjectState((byte) S3ObjectState.APPLIED.ordinal());
         WALObjectRecord walObjectRecord1 = new WALObjectRecord()
             .setBrokerId(brokerId1)
             .setObjectId(1L)
-            .setApplyTimeInMs(System.currentTimeMillis())
+            .setAppliedTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setObjectState((byte) S3ObjectState.APPLIED.ordinal());
         WALObjectRecord walObjectRecord2 = new WALObjectRecord()
             .setBrokerId(brokerId1)
             .setObjectId(2L)
-            .setApplyTimeInMs(System.currentTimeMillis())
+            .setAppliedTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setObjectState((byte) S3ObjectState.APPLIED.ordinal());
         records.clear();
@@ -197,7 +197,7 @@ public class S3StreamsMetadataImageTest {
             .setBrokerId(brokerId1)
             .setObjectId(1L)
             .setObjectSize(WAL_LOOSE_SIZE)
-            .setCreateTimeInMs(System.currentTimeMillis())
+            .setCommittedTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setStreamsIndex(streamIndicesInWALObject1.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()))
@@ -211,7 +211,7 @@ public class S3StreamsMetadataImageTest {
             .setBrokerId(brokerId1)
             .setObjectId(2L)
             .setObjectSize(WAL_LOOSE_SIZE)
-            .setCreateTimeInMs(System.currentTimeMillis())
+            .setCommittedTimeInMs(System.currentTimeMillis())
             .setObjectType((byte) S3ObjectType.WAL_LOOSE.ordinal())
             .setStreamsIndex(streamIndicesInWALObject2.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()))
@@ -284,9 +284,9 @@ public class S3StreamsMetadataImageTest {
             .setObjectId(3L)
             .setBrokerId(brokerId1)
             .setObjectType((byte) S3ObjectType.WAL_MINOR.ordinal())
-            .setCreateTimeInMs(System.currentTimeMillis())
+            .setCommittedTimeInMs(System.currentTimeMillis())
             .setObjectState((byte) S3ObjectState.CREATED.ordinal())
-            .setApplyTimeInMs(System.currentTimeMillis())
+            .setAppliedTimeInMs(System.currentTimeMillis())
             .setObjectSize(WAL_MINOR_COMPACT_SIZE)
             .setStreamsIndex(streamIndicesInWALObject3.stream().map(S3ObjectStreamIndex::toRecordStreamIndex).collect(
                 Collectors.toList()));
@@ -335,7 +335,7 @@ public class S3StreamsMetadataImageTest {
             .setStreamId(streamId0)
             .setObjectSize(STREAM_OBJECT_SIZE)
             .setObjectType((byte) S3ObjectType.STREAM.ordinal())
-            .setCreateTimeInMs(System.currentTimeMillis())
+            .setCommittedTimeInMs(System.currentTimeMillis())
             .setStartOffset(s3ObjectStreamIndex4.getStartOffset())
             .setEndOffset(s3ObjectStreamIndex4.getEndOffset());
         S3StreamObjectRecord streamObjectRecord5 = new S3StreamObjectRecord()
@@ -343,7 +343,7 @@ public class S3StreamsMetadataImageTest {
             .setStreamId(streamId1)
             .setObjectSize(STREAM_OBJECT_SIZE)
             .setObjectType((byte) S3ObjectType.STREAM.ordinal())
-            .setCreateTimeInMs(System.currentTimeMillis())
+            .setCommittedTimeInMs(System.currentTimeMillis())
             .setStartOffset(s3ObjectStreamIndex5.getStartOffset())
             .setEndOffset(s3ObjectStreamIndex5.getEndOffset());
         RemoveWALObjectRecord removeWALObjectRecord3 = new RemoveWALObjectRecord()

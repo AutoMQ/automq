@@ -51,19 +51,25 @@
       "about": "The object size of the S3 object"
     },
     {
-      "name": "ApplyTimeInMs",
+      "name": "AppliedTimeInMs",
       "type": "int64",
       "versions": "0+",
       "about": "The object be applied timestamp"
     },
     {
-      "name": "CreateTimeInMs",
+      "name": "ExpiredTimeInMs",
       "type": "int64",
       "versions": "0+",
-      "about": "The object be created timestamp"
+      "about": "The object be expired timestamp"
     },
     {
-      "name": "DestroyTimeInMs",
+      "name": "CommittedTimeInMs",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The object be committed timestamp"
+    },
+    {
+      "name": "DestroyedTimeInMs",
       "type": "int64",
       "versions": "0+",
       "about": "The object be destroyed timestamp"

@@ -30,12 +30,12 @@ public class S3StreamObject extends S3Object {
     }
 
     @Override
-    public void onCreate(S3ObjectCreateContext createContext) {
+    public void onCreate(S3ObjectCommitContext createContext) {
         super.onCreate(createContext);
-        if (!(createContext instanceof StreamObjectCreateContext)) {
+        if (!(createContext instanceof StreamObjectCommitContext)) {
             throw new IllegalArgumentException();
         }
-        this.streamIndex = ((StreamObjectCreateContext) createContext).streamIndex;
+        this.streamIndex = ((StreamObjectCommitContext) createContext).streamIndex;
     }
 
     @Override
@@ -49,11 +49,11 @@ public class S3StreamObject extends S3Object {
         return res == 0 ? this.streamIndex.getStartOffset().compareTo(s3StreamObject.streamIndex.getStartOffset()) : res;
     }
 
-    class StreamObjectCreateContext extends S3ObjectCreateContext {
+    class StreamObjectCommitContext extends S3ObjectCommitContext {
 
         private final S3ObjectStreamIndex streamIndex;
 
-        public StreamObjectCreateContext(
+        public StreamObjectCommitContext(
             final Long createTimeInMs,
             final Long objectSize,
             final String objectAddress,
@@ -74,9 +74,10 @@ public class S3StreamObject extends S3Object {
             .setStreamId(streamIndex.getStreamId())
             .setObjectState((byte) s3ObjectState.ordinal())
             .setObjectType((byte) objectType.ordinal())
-            .setApplyTimeInMs(applyTimeInMs.get())
-            .setCreateTimeInMs(createTimeInMs.get())
-            .setDestroyTimeInMs(destroyTimeInMs.get())
+            .setAppliedTimeInMs(appliedTimeInMs.get())
+            .setExpiredTimeInMs(expiredTimeInMs.get())
+            .setCommittedTimeInMs(committedTimeInMs.get())
+            .setDestroyedTimeInMs(destroyedTimeInMs.get())
             .setObjectSize(objectSize.get())
             .setStartOffset(streamIndex.getStartOffset())
             .setEndOffset(streamIndex.getEndOffset()), (short) 0);
@@ -86,9 +87,10 @@ public class S3StreamObject extends S3Object {
         S3StreamObject s3StreamObject = new S3StreamObject(record.objectId());
         s3StreamObject.objectType = S3ObjectType.fromByte(record.objectType());
         s3StreamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());
-        s3StreamObject.applyTimeInMs = Optional.of(record.applyTimeInMs());
-        s3StreamObject.createTimeInMs = Optional.of(record.createTimeInMs());
-        s3StreamObject.destroyTimeInMs = Optional.of(record.destroyTimeInMs());
+        s3StreamObject.appliedTimeInMs = Optional.of(record.appliedTimeInMs());
+        s3StreamObject.expiredTimeInMs = Optional.of(record.expiredTimeInMs());
+        s3StreamObject.committedTimeInMs = Optional.of(record.committedTimeInMs());
+        s3StreamObject.destroyedTimeInMs = Optional.of(record.destroyedTimeInMs());
         s3StreamObject.objectSize = Optional.of(record.objectSize());
         s3StreamObject.streamIndex = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
         return s3StreamObject;

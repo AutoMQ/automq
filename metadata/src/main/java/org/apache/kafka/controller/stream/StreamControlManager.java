@@ -65,6 +65,4 @@ public class StreamControlManager {
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
-    
-
 }
