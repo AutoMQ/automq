@@ -27,7 +27,7 @@ import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterEach, Tag, Test}
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.charset.StandardCharsets
 import java.util.regex.Pattern
 import java.util.{Collections, Properties}
@@ -222,7 +222,7 @@ class ElasticLogTest {
         val keyValues = Seq(KeyValue("abc", "ABC"), KeyValue("de", "DE"))
         appendRecords(kvsToRecords(keyValues))
         log.close()
-        assertThrows(classOf[IllegalStateException], () => appendRecords(kvsToRecords(keyValues), initialOffset = 2L))
+        assertThrows(classOf[IOException], () => appendRecords(kvsToRecords(keyValues), initialOffset = 2L))
     }
 
     @Test
@@ -245,7 +245,7 @@ class ElasticLogTest {
         val keyValues = Seq(KeyValue("abc", "ABC"), KeyValue("de", "DE"))
         appendRecords(kvsToRecords(keyValues))
         log.closeHandlers()
-        assertThrows(classOf[IllegalStateException],
+        assertThrows(classOf[IOException],
             () => appendRecords(kvsToRecords(keyValues), initialOffset = 2L))
     }
 
