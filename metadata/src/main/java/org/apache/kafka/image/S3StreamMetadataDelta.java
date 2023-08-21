@@ -80,7 +80,7 @@ public class S3StreamMetadataDelta {
         changedRanges.entrySet().stream().filter(entry -> !newRanges.containsKey(entry.getKey()))
             .forEach(entry -> newRanges.put(entry.getKey(), entry.getValue()));
 
-        List<S3StreamObject> newS3StreamObjects = new ArrayList<>(image.getStreams());
+        List<S3StreamObject> newS3StreamObjects = new ArrayList<>(image.getStreamObjects());
         // remove all removed stream-objects
         newS3StreamObjects.removeAll(removedS3StreamObjects);
         // add all changed stream-objects

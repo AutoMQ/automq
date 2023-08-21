@@ -372,8 +372,8 @@ public class S3StreamsMetadataImageTest {
         assertEquals(1, s3StreamMetadataImage50.getRanges().size());
         assertEquals(1, s3StreamMetadataImage50.getEpoch());
         assertEquals(0, s3StreamMetadataImage50.getStartOffset());
-        assertEquals(1, s3StreamMetadataImage50.getStreams());
-        S3StreamObject s3StreamObject4 = s3StreamMetadataImage50.getStreams().get(0);
+        assertEquals(1, s3StreamMetadataImage50.getStreamObjects());
+        S3StreamObject s3StreamObject4 = s3StreamMetadataImage50.getStreamObjects().get(0);
         assertEquals(4L, s3StreamObject4.getObjectId());
         assertEquals(STREAM_OBJECT_SIZE, s3StreamObject4.getObjectSize());
         assertEquals(S3ObjectType.STREAM, s3StreamObject4.getObjectType());
@@ -385,8 +385,8 @@ public class S3StreamsMetadataImageTest {
         assertEquals(1, s3StreamMetadataImage51.getRanges().size());
         assertEquals(1, s3StreamMetadataImage51.getEpoch());
         assertEquals(0, s3StreamMetadataImage51.getStartOffset());
-        assertEquals(1, s3StreamMetadataImage51.getStreams());
-        S3StreamObject s3StreamObject5 = s3StreamMetadataImage51.getStreams().get(0);
+        assertEquals(1, s3StreamMetadataImage51.getStreamObjects());
+        S3StreamObject s3StreamObject5 = s3StreamMetadataImage51.getStreamObjects().get(0);
         assertEquals(5L, s3StreamObject5.getObjectId());
         assertEquals(STREAM_OBJECT_SIZE, s3StreamObject5.getObjectSize());
         assertEquals(S3ObjectType.STREAM, s3StreamObject5.getObjectType());
@@ -419,7 +419,7 @@ public class S3StreamsMetadataImageTest {
         S3StreamMetadataImage s3StreamMetadataImage60 = image6.getStreamsMetadata().get(streamId0);
         assertNotNull(s3StreamMetadataImage60);
         assertEquals(1, s3StreamMetadataImage60.getRanges().size());
-        assertEquals(0, s3StreamMetadataImage60.getStreams().size());
+        assertEquals(0, s3StreamMetadataImage60.getStreamObjects().size());
     }
 
 

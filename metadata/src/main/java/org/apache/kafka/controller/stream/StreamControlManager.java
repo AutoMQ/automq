@@ -31,17 +31,17 @@ import org.slf4j.Logger;
  */
 public class StreamControlManager {
 
-    static class StreamMetadata {
+    static class S3StreamMetadata {
         private Long streamId;
-        private Integer epoch;
+        private Long epoch;
         private Long startOffset;
         private TimelineHashSet<RangeMetadata> ranges;
-        private TimelineHashSet<S3StreamObject> s3StreamObjects;
+        private TimelineHashSet<S3StreamObject> streamObjects;
     }
 
-    static class BrokerStreamMetadata {
+    static class BrokerS3WALMetadata {
         private Integer brokerId;
-        private TimelineHashSet<S3WALObject> s3WalObjects;
+        private TimelineHashSet<S3WALObject> walObjects;
     }
 
     private final SnapshotRegistry snapshotRegistry;
@@ -50,9 +50,9 @@ public class StreamControlManager {
 
     private final S3ObjectControlManager s3ObjectControlManager;
 
-    private final TimelineHashMap<Long/*streamId*/, StreamMetadata> streamsMetadata;
+    private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
-    private final TimelineHashMap<Integer/*brokerId*/, BrokerStreamMetadata> brokersMetadata;
+    private final TimelineHashMap<Integer/*brokerId*/, BrokerS3WALMetadata> brokersMetadata;
 
     public StreamControlManager(
         SnapshotRegistry snapshotRegistry,

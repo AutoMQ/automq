@@ -29,7 +29,6 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 
 public final class S3StreamsMetadataDelta {
@@ -62,7 +61,7 @@ public final class S3StreamsMetadataDelta {
             S3StreamMetadataImage s3StreamMetadataImage = image.getStreamsMetadata().get(record.streamId());
             delta = new S3StreamMetadataDelta(
                 new S3StreamMetadataImage(record.streamId(), record.epoch(), record.startOffset(), s3StreamMetadataImage.getRanges(),
-                    s3StreamMetadataImage.getStreams()));
+                    s3StreamMetadataImage.getStreamObjects()));
         }
         // add the delta to the changedStreams
         changedStreams.put(record.streamId(), delta);

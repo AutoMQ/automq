@@ -36,19 +36,19 @@ public class S3StreamMetadataImage {
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
 
-    private final List<S3StreamObject> streams;
+    private final List<S3StreamObject> streamObjects;
 
     public S3StreamMetadataImage(
         Long streamId,
         Long epoch,
         Long startOffset,
         Map<Integer, RangeMetadata> ranges,
-        List<S3StreamObject> streams) {
+        List<S3StreamObject> streamObjects) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.ranges = ranges;
-        this.streams = streams;
+        this.streamObjects = streamObjects;
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -57,15 +57,15 @@ public class S3StreamMetadataImage {
             .setEpoch(epoch)
             .setStartOffset(startOffset));
         ranges.values().forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
-        streams.forEach(streamObject -> writer.write(streamObject.toRecord()));
+        streamObjects.forEach(streamObject -> writer.write(streamObject.toRecord()));
     }
 
     public Map<Integer, RangeMetadata> getRanges() {
         return ranges;
     }
 
-    public List<S3StreamObject> getStreams() {
-        return streams;
+    public List<S3StreamObject> getStreamObjects() {
+        return streamObjects;
     }
 
     public Long getEpoch() {
@@ -90,11 +90,11 @@ public class S3StreamMetadataImage {
         }
         S3StreamMetadataImage that = (S3StreamMetadataImage) o;
         return Objects.equals(streamId, that.streamId) && Objects.equals(epoch, that.epoch) && Objects.equals(startOffset,
-            that.startOffset) && Objects.equals(ranges, that.ranges) && Objects.equals(streams, that.streams);
+            that.startOffset) && Objects.equals(ranges, that.ranges) && Objects.equals(streamObjects, that.streamObjects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, epoch, startOffset, ranges, streams);
+        return Objects.hash(streamId, epoch, startOffset, ranges, streamObjects);
     }
 }
