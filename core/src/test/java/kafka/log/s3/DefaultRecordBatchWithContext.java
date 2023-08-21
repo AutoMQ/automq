@@ -15,36 +15,49 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.model;
+package kafka.log.s3;
 
 import com.automq.elasticstream.client.api.RecordBatch;
+import com.automq.elasticstream.client.api.RecordBatchWithContext;
 
-public class StreamRecordBatch {
-    private final long streamId;
-    private final long epoch;
-    private final long startOffset;
+import java.nio.ByteBuffer;
+import java.util.Map;
+
+public class DefaultRecordBatchWithContext implements RecordBatchWithContext {
     private final RecordBatch recordBatch;
+    private final long baseOffset;
 
-    public StreamRecordBatch(long streamId, long epoch, long startOffset, RecordBatch recordBatch) {
-        this.streamId = streamId;
-        this.epoch = epoch;
-        this.startOffset = startOffset;
+    public DefaultRecordBatchWithContext(RecordBatch recordBatch, long baseOffset) {
         this.recordBatch = recordBatch;
+        this.baseOffset = baseOffset;
+    }
+    @Override
+    public long baseOffset() {
+        return baseOffset;
     }
 
-    public long getStreamId() {
-        return streamId;
+    @Override
+    public long lastOffset() {
+        return baseOffset + recordBatch.count();
     }
 
-    public long getEpoch() {
-        return epoch;
+    @Override
+    public int count() {
+        return recordBatch.count();
     }
 
-    public long getStartOffset() {
-        return startOffset;
+    @Override
+    public long baseTimestamp() {
+        return recordBatch.baseTimestamp();
     }
 
-    public RecordBatch getRecordBatch() {
-        return recordBatch;
+    @Override
+    public Map<String, String> properties() {
+        return recordBatch.properties();
+    }
+
+    @Override
+    public ByteBuffer rawPayload() {
+        return recordBatch.rawPayload();
     }
 }
