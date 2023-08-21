@@ -110,13 +110,13 @@ public enum ApiKeys {
     LIST_TRANSACTIONS(ApiMessageType.LIST_TRANSACTIONS),
     ALLOCATE_PRODUCER_IDS(ApiMessageType.ALLOCATE_PRODUCER_IDS, true, true),
 
-    // stream start
+    // Kafka on S3 inject start
 
     CREATE_STREAM(ApiMessageType.CREATE_STREAM, false, true),
     DELETE_STREAM(ApiMessageType.DELETE_STREAM, false, true),
     OPEN_STREAM(ApiMessageType.OPEN_STREAM, false, true),
     CLOSE_STREAM(ApiMessageType.CLOSE_STREAM, false, true);
-    // stream end
+    // Kafka on S3 inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);

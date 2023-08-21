@@ -39,9 +39,10 @@ public enum EntityType {
     @JsonProperty("brokerId")
     BROKER_ID(FieldType.Int32FieldType.INSTANCE),
 
+    // Kafka on S3 inject start
     @JsonProperty("streamId")
     STREAM_ID(Int64FieldType.INSTANCE);
-
+    // Kafka on S3 inject end
     private final FieldType baseType;
 
     EntityType(FieldType baseType) {

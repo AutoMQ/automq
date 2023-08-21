@@ -230,6 +230,7 @@ public final class MetadataDelta {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
+            // Kafka on S3 inject start
             case S3_STREAM_RECORD:
                 replay((S3StreamRecord) record);
                 break;
@@ -254,6 +255,7 @@ public final class MetadataDelta {
             case REMOVE_WALOBJECT_RECORD:
                 replay((RemoveWALObjectRecord) record);
                 break;
+            // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }

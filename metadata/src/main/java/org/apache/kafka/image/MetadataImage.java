@@ -57,7 +57,11 @@ public final class MetadataImage {
 
     private final AclsImage acls;
 
+    // Kafka on S3 inject start
+
     private final S3StreamsMetadataImage streamMetadata;
+
+    // Kafka on S3 inject end
 
     public MetadataImage(
         MetadataProvenance provenance,
