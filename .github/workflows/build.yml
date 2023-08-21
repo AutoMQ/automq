@@ -1,0 +1,42 @@
+name: Build
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches: ["master", "develop"]
+
+jobs:
+  paths-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      es-unit-test: ${{ steps.filter.outputs.es-unit-test }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            es-unit-test:
+              - '.github/workflows/**'
+              - 'core/**'
+              - 'metadata/**'
+  es-unit-test:
+    needs: [paths-filter]
+    if: ${{ needs.paths-filter.outputs.es-unit-test == 'true' || github.event_name == 'push' }}
+    uses: ./.github/workflows/es_unit_tests.yml
+  build-result:
+    runs-on: ubuntu-latest
+    needs: [es-unit-test]
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Collect build result
+        run: |
+          if echo es-unit-test-${{ needs.es-unit-test.result }} | grep -E 'cancelled|failure' -o > null
+          then
+            echo "There are failed/cancelled builds"
+            exit 1
+          else
+            echo "All builds are successful/skipped"
+            exit 0
+          fi
