@@ -26,7 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
 /**
- * Elastic stream slice is a slice from elastic stream, the position of slice is start from 0.
+ * Elastic stream slice is a slice from elastic stream, the offset of slice starts from 0.
  * In the same time, there is only one writable slice in a stream, and the writable slice is always the last slice.
  */
 public interface ElasticStreamSlice {

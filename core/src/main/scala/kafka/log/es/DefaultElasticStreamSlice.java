@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
+import org.apache.kafka.common.utils.Utils;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     /**
@@ -74,8 +75,9 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
     @Override
     public FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException {
+        long fixedStartOffset = Utils.max(startOffset, 0);
         try {
-            return stream.fetch(startOffsetInStream + startOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
+            return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SlowFetchHintException) {
                 throw (SlowFetchHintException)(e.getCause());
