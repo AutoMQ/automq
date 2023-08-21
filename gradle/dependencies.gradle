@@ -127,7 +127,8 @@ versions += [
   zinc: "1.7.2",
   zookeeper: "3.6.3",
   zstd: "1.5.2-1",
-  elasticstream: "1.0-SNAPSHOT"
+  elasticstream: "1.0-SNAPSHOT",
+  s3Client: "2.20.127",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -219,5 +220,6 @@ libs += [
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
-  esClient: "com.automq.elasticstream:client:$versions.elasticstream"
+  esClient: "com.automq.elasticstream:client:$versions.elasticstream",
+  s3Client: "software.amazon.awssdk:s3:$versions.s3Client",
 ]
