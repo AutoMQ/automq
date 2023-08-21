@@ -24,11 +24,12 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
-import org.apache.kafka.common.metadata.RemoveStreamRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
-import org.apache.kafka.common.metadata.StreamObjectRecord;
-import org.apache.kafka.common.metadata.StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 
 public final class S3StreamsMetadataDelta {
@@ -50,7 +51,7 @@ public final class S3StreamsMetadataDelta {
         this.image = image;
     }
 
-    public void replay(StreamRecord record) {
+    public void replay(S3StreamRecord record) {
         S3StreamMetadataDelta delta;
         if (!image.getStreamsMetadata().containsKey(record.streamId())) {
             // create a new StreamMetadata with empty ranges and streams if not exist
@@ -67,7 +68,7 @@ public final class S3StreamsMetadataDelta {
         changedStreams.put(record.streamId(), delta);
     }
 
-    public void replay(RemoveStreamRecord record) {
+    public void replay(RemoveS3StreamRecord record) {
         // add the streamId to the deletedStreams
         deletedStreams.add(record.streamId());
     }
@@ -80,11 +81,11 @@ public final class S3StreamsMetadataDelta {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
     }
 
-    public void replay(StreamObjectRecord record) {
+    public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
     }
 
-    public void replay(RemoveStreamObjectRecord record) {
+    public void replay(RemoveS3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
     }
 
@@ -109,7 +110,7 @@ public final class S3StreamsMetadataDelta {
         BrokerS3WALMetadataDelta delta = changedBrokers.get(brokerId);
         if (delta == null) {
             delta = new BrokerS3WALMetadataDelta(
-                image.getBrokerStreamsMetadata().
+                image.getBrokerWALMetadata().
                     getOrDefault(brokerId, new BrokerS3WALMetadataImage(brokerId, Collections.emptyList())));
             changedBrokers.put(brokerId, delta);
         }
@@ -118,7 +119,7 @@ public final class S3StreamsMetadataDelta {
 
     S3StreamsMetadataImage apply() {
         Map<Long, S3StreamMetadataImage> newStreams = new HashMap<>(image.getStreamsMetadata().size());
-        Map<Integer, BrokerS3WALMetadataImage> newBrokerStreams = new HashMap<>(image.getBrokerStreamsMetadata().size());
+        Map<Integer, BrokerS3WALMetadataImage> newBrokerStreams = new HashMap<>(image.getBrokerWALMetadata().size());
         // apply the delta changes of old streams since the last image
         image.getStreamsMetadata().forEach((streamId, streamMetadataImage) -> {
             S3StreamMetadataDelta delta = changedStreams.get(streamId);
@@ -141,7 +142,7 @@ public final class S3StreamsMetadataDelta {
             });
 
         // apply the delta changes of old brokers since the last image
-        image.getBrokerStreamsMetadata().forEach((brokerId, brokerStreamMetadataImage) -> {
+        image.getBrokerWALMetadata().forEach((brokerId, brokerStreamMetadataImage) -> {
             BrokerS3WALMetadataDelta delta = changedBrokers.get(brokerId);
             if (delta == null) {
                 // no change, check if deleted

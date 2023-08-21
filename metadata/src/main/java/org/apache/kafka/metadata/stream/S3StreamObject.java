@@ -18,7 +18,7 @@
 package org.apache.kafka.metadata.stream;
 
 import java.util.Optional;
-import org.apache.kafka.common.metadata.StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class S3StreamObject extends S3Object {
@@ -69,7 +69,7 @@ public class S3StreamObject extends S3Object {
     }
 
     public ApiMessageAndVersion toRecord() {
-        return new ApiMessageAndVersion(new StreamObjectRecord()
+        return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
             .setStreamId(streamIndex.getStreamId())
             .setObjectState((byte) s3ObjectState.ordinal())
@@ -82,7 +82,7 @@ public class S3StreamObject extends S3Object {
             .setEndOffset(streamIndex.getEndOffset()), (short) 0);
     }
 
-    public static S3StreamObject of(StreamObjectRecord record) {
+    public static S3StreamObject of(S3StreamObjectRecord record) {
         S3StreamObject s3StreamObject = new S3StreamObject(record.objectId());
         s3StreamObject.objectType = S3ObjectType.fromByte(record.objectType());
         s3StreamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());

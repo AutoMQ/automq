@@ -31,12 +31,12 @@ import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
-import org.apache.kafka.common.metadata.RemoveStreamRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
-import org.apache.kafka.common.metadata.StreamObjectRecord;
-import org.apache.kafka.common.metadata.StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
@@ -230,11 +230,11 @@ public final class MetadataDelta {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
-            case STREAM_RECORD:
-                replay((StreamRecord) record);
+            case S3_STREAM_RECORD:
+                replay((S3StreamRecord) record);
                 break;
-            case REMOVE_STREAM_RECORD:
-                replay((RemoveStreamRecord) record);
+            case REMOVE_S3_STREAM_RECORD:
+                replay((RemoveS3StreamRecord) record);
                 break;
             case RANGE_RECORD:
                 replay((RangeRecord) record);
@@ -242,11 +242,11 @@ public final class MetadataDelta {
             case REMOVE_RANGE_RECORD:
                 replay((RemoveRangeRecord) record);
                 break;
-            case STREAM_OBJECT_RECORD:
-                replay((StreamObjectRecord) record);
+            case S3_STREAM_OBJECT_RECORD:
+                replay((S3StreamObjectRecord) record);
                 break;
-            case REMOVE_STREAM_OBJECT_RECORD:
-                replay((RemoveStreamObjectRecord) record);
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+                replay((RemoveS3StreamObjectRecord) record);
                 break;
             case WALOBJECT_RECORD:
                 replay((WALObjectRecord) record);
@@ -329,11 +329,11 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().replay(record);
     }
 
-    public void replay(StreamRecord record) {
+    public void replay(S3StreamRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(RemoveStreamRecord record) {
+    public void replay(RemoveS3StreamRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
@@ -345,11 +345,11 @@ public final class MetadataDelta {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(StreamObjectRecord record) {
+    public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(RemoveStreamObjectRecord record) {
+    public void replay(RemoveS3StreamObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 

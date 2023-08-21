@@ -25,15 +25,15 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveStreamObjectRecord;
-import org.apache.kafka.common.metadata.StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 
 public class S3StreamMetadataDelta {
     private final S3StreamMetadataImage image;
 
-    private Integer newEpoch;
+    private Long newEpoch;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
@@ -53,11 +53,11 @@ public class S3StreamMetadataDelta {
         removedRanges.add(record.rangeIndex());
     }
 
-    public void replay(StreamObjectRecord record) {
+    public void replay(S3StreamObjectRecord record) {
         changedS3StreamObjects.add(S3StreamObject.of(record));
     }
 
-    public void replay(RemoveStreamObjectRecord record) {
+    public void replay(RemoveS3StreamObjectRecord record) {
         removedS3StreamObjects.add(new S3StreamObject(record.objectId()));
     }
 

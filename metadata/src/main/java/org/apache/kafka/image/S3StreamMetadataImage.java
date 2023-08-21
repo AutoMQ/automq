@@ -20,7 +20,7 @@ package org.apache.kafka.image;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.apache.kafka.common.metadata.StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -52,7 +52,7 @@ public class S3StreamMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        writer.write(0, new StreamRecord()
+        writer.write(0, new S3StreamRecord()
             .setStreamId(streamId)
             .setEpoch(epoch)
             .setStartOffset(startOffset));
