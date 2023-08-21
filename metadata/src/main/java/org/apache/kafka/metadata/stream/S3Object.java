@@ -19,17 +19,19 @@ package org.apache.kafka.metadata.stream;
 
 import java.util.Objects;
 import java.util.Optional;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 /**
  * S3Object is the base class of object in S3. Manages the lifecycle of S3Object.
  */
-public abstract class S3Object implements Comparable<S3Object> {
+public class S3Object implements Comparable<S3Object> {
 
     protected final Long objectId;
 
     protected Optional<Long> objectSize = Optional.empty();
 
-    protected Optional<String> objectAddress = Optional.empty();
+    protected Optional<String> objectKey = Optional.empty();
 
     /**
      * The time when broker apply the object
@@ -53,30 +55,26 @@ public abstract class S3Object implements Comparable<S3Object> {
 
     protected S3ObjectState s3ObjectState = S3ObjectState.UNINITIALIZED;
 
-    protected S3ObjectType objectType = S3ObjectType.UNKNOWN;
-
     protected S3Object(final Long objectId) {
         this.objectId = objectId;
     }
 
-    protected S3Object(
+    public S3Object(
         final Long objectId,
         final Long objectSize,
-        final String objectAddress,
+        final String objectKey,
         final Long appliedTimeInMs,
         final Long expiredTimeInMs,
         final Long committedTimeInMs,
         final Long destroyedTimeInMs,
-        final S3ObjectState s3ObjectState,
-        final S3ObjectType objectType) {
+        final S3ObjectState s3ObjectState) {
         this.objectId = objectId;
         this.objectSize = Optional.of(objectSize);
-        this.objectAddress = Optional.of(objectAddress);
+        this.objectKey = Optional.of(objectKey);
         this.appliedTimeInMs = Optional.of(appliedTimeInMs);
         this.expiredTimeInMs = Optional.of(expiredTimeInMs);
         this.committedTimeInMs = Optional.of(committedTimeInMs);
         this.destroyedTimeInMs = Optional.of(destroyedTimeInMs);
-        this.objectType = objectType;
         this.s3ObjectState = s3ObjectState;
     }
 
@@ -93,30 +91,37 @@ public abstract class S3Object implements Comparable<S3Object> {
         if (this.s3ObjectState != S3ObjectState.APPLIED) {
             throw new IllegalStateException("Object is not in APPLIED state");
         }
-        this.s3ObjectState = S3ObjectState.CREATED;
+        this.s3ObjectState = S3ObjectState.COMMITTED;
         this.committedTimeInMs = Optional.of(createContext.committedTimeInMs);
         this.objectSize = Optional.of(createContext.objectSize);
-        this.objectAddress = Optional.of(createContext.objectAddress);
-        this.objectType = createContext.objectType;
+        this.objectKey = Optional.of(createContext.objectAddress);
     }
 
     public void onMarkDestroy() {
-        if (this.s3ObjectState != S3ObjectState.CREATED) {
+        if (this.s3ObjectState != S3ObjectState.COMMITTED) {
             throw new IllegalStateException("Object is not in CREATED state");
         }
         this.s3ObjectState = S3ObjectState.MARK_DESTROYED;
     }
 
     public void onDestroy() {
-        if (this.s3ObjectState != S3ObjectState.CREATED) {
+        if (this.s3ObjectState != S3ObjectState.COMMITTED) {
             throw new IllegalStateException("Object is not in CREATED state");
         }
         // TODO: trigger destroy
 
     }
 
-    public S3ObjectType getObjectType() {
-        return objectType;
+    public ApiMessageAndVersion toRecord() {
+        return new ApiMessageAndVersion(new S3ObjectRecord()
+            .setObjectId(objectId)
+            .setObjectSize(objectSize.orElse(null))
+            .setObjectState((byte) s3ObjectState.ordinal())
+            .setAppliedTimeInMs(appliedTimeInMs.orElse(null))
+            .setExpiredTimeInMs(expiredTimeInMs.orElse(null))
+            .setCommittedTimeInMs(committedTimeInMs.orElse(null))
+            .setDestroyedTimeInMs(destroyedTimeInMs.orElse(null))
+            , (short) 0);
     }
 
     public class S3ObjectCommitContext {
@@ -124,17 +129,14 @@ public abstract class S3Object implements Comparable<S3Object> {
         private final Long committedTimeInMs;
         private final Long objectSize;
         private final String objectAddress;
-        private final S3ObjectType objectType;
 
         public S3ObjectCommitContext(
             final Long committedTimeInMs,
             final Long objectSize,
-            final String objectAddress,
-            final S3ObjectType objectType) {
+            final String objectAddress) {
             this.committedTimeInMs = committedTimeInMs;
             this.objectSize = objectSize;
             this.objectAddress = objectAddress;
-            this.objectType = objectType;
         }
     }
 
@@ -168,8 +170,8 @@ public abstract class S3Object implements Comparable<S3Object> {
         return objectSize;
     }
 
-    public Optional<String> getObjectAddress() {
-        return objectAddress;
+    public Optional<String> getObjectKey() {
+        return objectKey;
     }
 
     public Optional<Long> getAppliedTimeInMs() {

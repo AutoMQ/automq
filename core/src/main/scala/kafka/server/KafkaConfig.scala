@@ -669,6 +669,14 @@ object KafkaConfig {
   val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
   // elastic stream inject end
 
+  // Kafka on S3 inject start
+  val S3RegionProp = "s3.region";
+  val S3BucketProp = "s3.bucket";
+
+  val S3RegionDoc = "Specifies the S3 region, ex. <code>us-east-1</code>.\n"
+  val S3BucketDoc = "Specifies the S3 bucket, ex. <code>my-bucket</code>.\n"
+
+  // Kafka on S3 inject end
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
   val ZkConnectDoc = "Specifies the ZooKeeper connection string in the form <code>hostname:port</code> where host and port are the " +
@@ -1461,6 +1469,11 @@ object KafkaConfig {
       .define(ElasticStreamKvEndpointProp, STRING, null, HIGH, ElasticStreamKvEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
     // elastic stream inject end
+
+    // Kafka on S3 inject start
+      .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
+      .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
+    // Kafka on S3 inject end
   }
 
   /** ********* Remote Log Management Configuration *********/
@@ -1569,7 +1582,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   // We make it part of each instance rather than the object to facilitate testing.
   private val zkClientConfigViaSystemProperties = new ZKClientConfig()
 
-  override def originals: util.Map[String, AnyRef] =
+  override def /** ********* Raft Quorum Configuration *********/originals: util.Map[String, AnyRef] =
     if (this eq currentConfig) super.originals else currentConfig.originals
   override def values: util.Map[String, _] =
     if (this eq currentConfig) super.values else currentConfig.values
@@ -1991,6 +2004,12 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val elasticStreamKvEndpoint = getString(KafkaConfig.ElasticStreamKvEndpointProp)
   val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
   // elastic stream inject end
+
+  // Kafka on S3 inject start
+  /** ********* Kafka on S3 Configuration *********/
+    val s3Region = getString(KafkaConfig.S3RegionProp)
+    val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
     dynamicConfig.addReconfigurable(reconfigurable)

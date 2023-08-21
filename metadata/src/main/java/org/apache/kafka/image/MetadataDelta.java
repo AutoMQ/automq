@@ -31,10 +31,12 @@ import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
@@ -80,7 +82,12 @@ public final class MetadataDelta {
 
     private AclsDelta aclsDelta = null;
 
+    // Kafka on S3 inject start
     private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
+
+    private S3ObjectsDelta s3ObjectsDelta = null;
+
+    // Kafka on S3 inject end
 
     public MetadataDelta(MetadataImage image) {
         this.image = image;
@@ -155,6 +162,8 @@ public final class MetadataDelta {
         return aclsDelta;
     }
 
+
+    // Kafka on S3 inject start
     public S3StreamsMetadataDelta streamMetadataDelta() {
         return s3StreamsMetadataDelta;
     }
@@ -165,6 +174,19 @@ public final class MetadataDelta {
         }
         return s3StreamsMetadataDelta;
     }
+
+    public S3ObjectsDelta objectsMetadataDelta() {
+        return s3ObjectsDelta;
+    }
+
+    public S3ObjectsDelta getOrCreateObjectsMetadataDelta() {
+        if (s3ObjectsDelta == null) {
+            s3ObjectsDelta = new S3ObjectsDelta(image.objectsMetadata());
+        }
+        return s3ObjectsDelta;
+    }
+
+    // Kafka on S3 inject end
 
     public Optional<MetadataVersion> metadataVersionChanged() {
         if (featuresDelta == null) {
@@ -255,6 +277,12 @@ public final class MetadataDelta {
             case REMOVE_WALOBJECT_RECORD:
                 replay((RemoveWALObjectRecord) record);
                 break;
+            case S3_OBJECT_RECORD:
+                replay((S3ObjectRecord) record);
+                break;
+            case REMOVE_S3_OBJECT_RECORD:
+                replay((RemoveS3ObjectRecord) record);
+                break;
             // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -331,6 +359,8 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().replay(record);
     }
 
+    // Kafka on S3 inject start
+
     public void replay(S3StreamRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
@@ -362,6 +392,16 @@ public final class MetadataDelta {
     public void replay(RemoveWALObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
+
+    public void replay(S3ObjectRecord record) {
+        getOrCreateObjectsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveS3ObjectRecord record) {
+        getOrCreateObjectsMetadataDelta().replay(record);
+    }
+
+    // Kafka on S3 inject end
 
     /**
      * Create removal deltas for anything which was in the base image, but which was not
@@ -420,12 +460,21 @@ public final class MetadataDelta {
         } else {
             newAcls = aclsDelta.apply();
         }
+
+        // Kafka on S3 inject start
         S3StreamsMetadataImage newStreamMetadata;
         if (s3StreamsMetadataDelta == null) {
             newStreamMetadata = image.streamsMetadata();
         } else {
             newStreamMetadata = s3StreamsMetadataDelta.apply();
         }
+        S3ObjectsImage newS3ObjectsMetadata;
+        if (s3ObjectsDelta == null) {
+            newS3ObjectsMetadata = image.objectsMetadata();
+        } else {
+            newS3ObjectsMetadata = s3ObjectsDelta.apply();
+        }
+        // Kafka on S3 inject end
         return new MetadataImage(
             provenance,
             newFeatures,
@@ -435,7 +484,8 @@ public final class MetadataDelta {
             newClientQuotas,
             newProducerIds,
             newAcls,
-            newStreamMetadata
+            newStreamMetadata,
+            newS3ObjectsMetadata
         );
     }
 
@@ -450,6 +500,7 @@ public final class MetadataDelta {
             ", producerIdsDelta=" + producerIdsDelta +
             ", aclsDelta=" + aclsDelta +
             ", streamMetadataDelta=" + s3StreamsMetadataDelta +
+            ", objectsMetadataDelta=" + s3ObjectsDelta +
             ')';
     }
 }

@@ -17,82 +17,44 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.Optional;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class S3StreamObject extends S3Object {
+public class S3StreamObject {
 
-    private S3ObjectStreamIndex streamIndex;
+    private final long objectId;
 
-    public S3StreamObject(final Long objectId) {
-        super(objectId);
+    private final S3ObjectStreamIndex streamIndex;
+
+    public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset) {
+        this.objectId = objectId;
+        this.streamIndex = new S3ObjectStreamIndex(streamId, startOffset, endOffset);
     }
 
-    @Override
-    public void onCreate(S3ObjectCommitContext createContext) {
-        super.onCreate(createContext);
-        if (!(createContext instanceof StreamObjectCommitContext)) {
-            throw new IllegalArgumentException();
-        }
-        this.streamIndex = ((StreamObjectCommitContext) createContext).streamIndex;
+    public S3StreamObject(long objectId, S3ObjectStreamIndex streamIndex) {
+        this.objectId = objectId;
+        this.streamIndex = streamIndex;
     }
 
-    @Override
-    public int compareTo(S3Object o) {
-        if (!(o instanceof S3StreamObject)) {
-            throw new IllegalArgumentException("Cannot compare StreamObject with non-StreamObject");
-        }
-        S3StreamObject s3StreamObject = (S3StreamObject) o;
-        // order by streamId first, then startOffset
-        int res = this.streamIndex.getStreamId().compareTo(s3StreamObject.streamIndex.getStreamId());
-        return res == 0 ? this.streamIndex.getStartOffset().compareTo(s3StreamObject.streamIndex.getStartOffset()) : res;
-    }
-
-    class StreamObjectCommitContext extends S3ObjectCommitContext {
-
-        private final S3ObjectStreamIndex streamIndex;
-
-        public StreamObjectCommitContext(
-            final Long createTimeInMs,
-            final Long objectSize,
-            final String objectAddress,
-            final S3ObjectType objectType,
-            final S3ObjectStreamIndex streamIndex) {
-            super(createTimeInMs, objectSize, objectAddress, objectType);
-            this.streamIndex = streamIndex;
-        }
-    }
-
-    public S3ObjectStreamIndex getStreamIndex() {
+    public S3ObjectStreamIndex streamIndex() {
         return streamIndex;
+    }
+
+    public long objectId() {
+        return objectId;
     }
 
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
             .setStreamId(streamIndex.getStreamId())
-            .setObjectState((byte) s3ObjectState.ordinal())
-            .setObjectType((byte) objectType.ordinal())
-            .setAppliedTimeInMs(appliedTimeInMs.get())
-            .setExpiredTimeInMs(expiredTimeInMs.get())
-            .setCommittedTimeInMs(committedTimeInMs.get())
-            .setDestroyedTimeInMs(destroyedTimeInMs.get())
-            .setObjectSize(objectSize.get())
             .setStartOffset(streamIndex.getStartOffset())
             .setEndOffset(streamIndex.getEndOffset()), (short) 0);
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {
-        S3StreamObject s3StreamObject = new S3StreamObject(record.objectId());
-        s3StreamObject.objectType = S3ObjectType.fromByte(record.objectType());
-        s3StreamObject.s3ObjectState = S3ObjectState.fromByte(record.objectState());
-        s3StreamObject.appliedTimeInMs = Optional.of(record.appliedTimeInMs());
-        s3StreamObject.expiredTimeInMs = Optional.of(record.expiredTimeInMs());
-        s3StreamObject.committedTimeInMs = Optional.of(record.committedTimeInMs());
-        s3StreamObject.destroyedTimeInMs = Optional.of(record.destroyedTimeInMs());
-        s3StreamObject.objectSize = Optional.of(record.objectSize());
-        s3StreamObject.streamIndex = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
+        S3ObjectStreamIndex index = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
+        S3StreamObject s3StreamObject = new S3StreamObject(record.objectId(), index);
         return s3StreamObject;
     }
 }

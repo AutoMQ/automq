@@ -15,23 +15,36 @@
  * limitations under the License.
  */
 
-
 package org.apache.kafka.image;
 
-import java.util.List;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
-import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.SimplifiedS3Object;
 
-public class BrokerS3WALMetadataImage {
-    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(-1, List.of());
-    private final Integer brokerId;
-    private final List<S3WALObject> s3WalObjects;
+/**
+ * Represents the S3 objects in the metadata image.
+ *
+ * This class is thread-safe.
+ */
+public final class S3ObjectsImage {
+    public static final S3ObjectsImage EMPTY =
+        new S3ObjectsImage(Collections.emptyMap());
 
-    public BrokerS3WALMetadataImage(Integer brokerId, List<S3WALObject> s3WalObjects) {
-        this.brokerId = brokerId;
-        this.s3WalObjects = s3WalObjects;
+    private final Map<Long/*objectId*/, SimplifiedS3Object> objectsMetadata;
+
+    public S3ObjectsImage(final Map<Long, SimplifiedS3Object> objectsMetadata) {
+        this.objectsMetadata = objectsMetadata;
+    }
+
+    public Map<Long, SimplifiedS3Object> objectsMetadata() {
+        return objectsMetadata;
+    }
+
+    public void write(ImageWriter writer, ImageWriterOptions options) {
+        objectsMetadata.values().stream().map(SimplifiedS3Object::toRecord).forEach(writer::write);
     }
 
     @Override
@@ -42,24 +55,12 @@ public class BrokerS3WALMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        BrokerS3WALMetadataImage that = (BrokerS3WALMetadataImage) o;
-        return Objects.equals(brokerId, that.brokerId) && Objects.equals(s3WalObjects, that.s3WalObjects);
+        S3ObjectsImage that = (S3ObjectsImage) o;
+        return Objects.equals(objectsMetadata, that.objectsMetadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(brokerId, s3WalObjects);
-    }
-
-    public void write(ImageWriter writer, ImageWriterOptions options) {
-        s3WalObjects.forEach(walObject -> writer.write(walObject.toRecord()));
-    }
-
-    public List<S3WALObject> getWalObjects() {
-        return s3WalObjects;
-    }
-
-    public Integer getBrokerId() {
-        return brokerId;
+        return Objects.hash(objectsMetadata);
     }
 }

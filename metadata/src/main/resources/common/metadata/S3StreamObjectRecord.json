@@ -43,48 +43,6 @@
       "type": "int64",
       "versions": "0+",
       "about": "The object id of the S3 object"
-    },
-    {
-      "name": "ObjectSize",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object size of the S3 object"
-    },
-    {
-      "name": "AppliedTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object be applied timestamp"
-    },
-    {
-      "name": "ExpiredTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object be expired timestamp"
-    },
-    {
-      "name": "CommittedTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object be committed timestamp"
-    },
-    {
-      "name": "DestroyedTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object be destroyed timestamp"
-    },
-    {
-      "name": "ObjectState",
-      "type": "int8",
-      "versions": "0+",
-      "about": "The object state"
-    },
-    {
-      "name": "ObjectType",
-      "type": "int8",
-      "versions": "0+",
-      "about": "The object type"
     }
   ]
 }
