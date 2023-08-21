@@ -36,6 +36,7 @@
   <allow pkg="kafka.utils" />
   <allow pkg="kafka.serializer" />
   <allow pkg="org.apache.kafka.common" />
+  <allow pkg="org.mockito" />
 
 
   <!-- see KIP-544 for why KafkaYammerMetrics should be used instead of the global default yammer metrics registry
@@ -50,6 +51,7 @@
     <allow pkg="io.netty" />
     <allow pkg="redis.clients.jedis" />
     <allow pkg="kafka.server" />
+    <allow pkg="kafka.log.s3" />
   </subpackage>
 
   <subpackage name="testkit">

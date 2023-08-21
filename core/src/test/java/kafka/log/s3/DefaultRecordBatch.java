@@ -15,36 +15,45 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.model;
+package kafka.log.s3;
 
 import com.automq.elasticstream.client.api.RecordBatch;
 
-public class StreamRecordBatch {
-    private final long streamId;
-    private final long epoch;
-    private final long startOffset;
-    private final RecordBatch recordBatch;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.Map;
 
-    public StreamRecordBatch(long streamId, long epoch, long startOffset, RecordBatch recordBatch) {
-        this.streamId = streamId;
-        this.epoch = epoch;
-        this.startOffset = startOffset;
-        this.recordBatch = recordBatch;
+public class DefaultRecordBatch implements RecordBatch {
+    int count;
+    ByteBuffer payload;
+
+    public static RecordBatch of(int count, int size) {
+        DefaultRecordBatch record = new DefaultRecordBatch();
+        record.count = count;
+        record.payload = ByteBuffer.allocate(size);
+        record.payload.position(size);
+        record.payload.flip();
+        return record;
     }
 
-    public long getStreamId() {
-        return streamId;
+
+    @Override
+    public int count() {
+        return count;
     }
 
-    public long getEpoch() {
-        return epoch;
+    @Override
+    public long baseTimestamp() {
+        return 0;
     }
 
-    public long getStartOffset() {
-        return startOffset;
+    @Override
+    public Map<String, String> properties() {
+        return Collections.emptyMap();
     }
 
-    public RecordBatch getRecordBatch() {
-        return recordBatch;
+    @Override
+    public ByteBuffer rawPayload() {
+        return payload.duplicate();
     }
 }
