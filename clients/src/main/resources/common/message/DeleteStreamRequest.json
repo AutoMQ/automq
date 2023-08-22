@@ -16,12 +16,20 @@
 {
   "apiKey": 71,
   "type": "request",
-  "listeners": ["controller", "broker"],
+  "listeners": [
+    "controller",
+    "broker"
+  ],
   "name": "DeleteStreamRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "StreamId", "type": "int64", "versions": "0+", "entityType": "streamId",
-      "about": "The id of the requesting stream" }
+    {
+      "name": "StreamId",
+      "type": "int64",
+      "versions": "0+",
+      "entityType": "streamId",
+      "about": "The id of the requesting stream"
+    }
   ]
 }

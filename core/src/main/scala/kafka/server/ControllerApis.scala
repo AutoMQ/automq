@@ -109,6 +109,16 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.DELETE_ACLS => aclApis.handleDeleteAcls(request)
         case ApiKeys.ELECT_LEADERS => handleElectLeaders(request)
         case ApiKeys.UPDATE_FEATURES => handleUpdateFeatures(request)
+        // Kafka on S3 inject start
+        case ApiKeys.CREATE_STREAM => handleCreateStream(request)
+        case ApiKeys.OPEN_STREAM => handleOpenStream(request)
+        case ApiKeys.CLOSE_STREAM => handleCloseStream(request)
+        case ApiKeys.DELETE_STREAM => handleDeleteStream(request)
+        case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Objects(request)
+        case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObjects(request)
+        case ApiKeys.COMMIT_COMPACT_OBJECT => handleCommitCompactObject(request)
+        case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
+        // Kafka on S3 inject end
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -861,4 +871,32 @@ class ControllerApis(val requestChannel: RequestChannel,
         }
       }
   }
+
+  // Kafka on S3 inject start
+
+  // TODO: add acl auth for stream related operations
+
+  def handleCreateStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val createStreamRequest = request.body[CreateStreamRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    val future = createStream(context,
+        createStreamRequest.data,
+        authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false),
+        names => authHelper.filterByAuthorized(request.context, CREATE, TOPIC, names)(identity),
+        names => authHelper.filterByAuthorized(request.context, DESCRIBE_CONFIGS, TOPIC,
+            names, logIfDenied = false)(identity))
+    future.handle[Unit] { (result, exception) =>
+      requestHelper.sendResponseMaybeThrottle(request, throttleTimeMs => {
+        if (exception != null) {
+          createStreamRequest.getErrorResponse(throttleTimeMs, exception)
+        } else {
+          result.setThrottleTimeMs(throttleTimeMs)
+          new CreateStreamResponse(result)
+        }
+      })
+    }
+  }
+
+  // Kafka on S3 inject end
 }
