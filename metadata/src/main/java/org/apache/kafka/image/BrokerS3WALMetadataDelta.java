@@ -28,28 +28,32 @@ import org.apache.kafka.metadata.stream.S3WALObject;
 public class BrokerS3WALMetadataDelta {
 
     private final BrokerS3WALMetadataImage image;
-    private final Set<S3WALObject> changedS3WALObjects = new HashSet<>();
+    private final Set<S3WALObject> addedS3WALObjects = new HashSet<>();
 
-    private final Set<S3WALObject/*objectId*/> removedS3WALObjects = new HashSet<>();
+    private final Set<Long/*objectId*/> removedS3WALObjects = new HashSet<>();
 
     public BrokerS3WALMetadataDelta(BrokerS3WALMetadataImage image) {
         this.image = image;
     }
 
     public void replay(WALObjectRecord record) {
-        changedS3WALObjects.add(S3WALObject.of(record));
+        addedS3WALObjects.add(S3WALObject.of(record));
+        // new add or update, so remove from removedObjects
+        removedS3WALObjects.remove(record.objectId());
     }
 
     public void replay(RemoveWALObjectRecord record) {
-        removedS3WALObjects.add(new S3WALObject(record.objectId()));
+        removedS3WALObjects.add(record.objectId());
+        // new remove, so remove from addedObjects
+        addedS3WALObjects.remove(record.objectId());
     }
 
     public BrokerS3WALMetadataImage apply() {
         List<S3WALObject> newS3WALObjects = new ArrayList<>(image.getWalObjects());
+        // add all changed WAL objects
+        newS3WALObjects.addAll(addedS3WALObjects);
         // remove all removed WAL objects
         newS3WALObjects.removeAll(removedS3WALObjects);
-        // add all changed WAL objects
-        newS3WALObjects.addAll(changedS3WALObjects);
         return new BrokerS3WALMetadataImage(image.getBrokerId(), newS3WALObjects);
     }
 

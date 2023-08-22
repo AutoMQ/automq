@@ -14,49 +14,17 @@
 // limitations under the License.
 
 {
-  "apiKey": 29,
+  "apiKey": 32,
   "type": "metadata",
-  "name": "WALObjectRecord",
+  "name": "RemoveS3ObjectRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    {
-      "name": "BrokerId",
-      "type": "int32",
-      "versions": "0+",
-      "about": "The broker which owns the object"
-    },
     {
       "name": "ObjectId",
       "type": "int64",
       "versions": "0+",
       "about": "The object id of the S3 object"
-    },
-    {
-      "name": "StreamsIndex",
-      "type": "[]StreamIndex",
-      "versions": "0+",
-      "about": "The streams index in this object",
-      "fields": [
-        {
-          "name": "StreamId",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The Stream ID of the stream in this object"
-        },
-        {
-          "name": "StartOffset",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The start offset of the stream in this object"
-        },
-        {
-          "name": "EndOffset",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The end offset of the stream in this object"
-        }
-      ]
     }
   ]
 }

@@ -28,6 +28,19 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
     private Long startOffset;
     private Optional<Long> endOffset;
     private Integer brokerId;
+
+    private RangeMetadata() {
+    }
+
+    public RangeMetadata(Long streamId, Long epoch, Integer rangeIndex, Long startOffset, Optional<Long> endOffset, Integer brokerId) {
+        this.streamId = streamId;
+        this.epoch = epoch;
+        this.rangeIndex = rangeIndex;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+        this.brokerId = brokerId;
+    }
+
     @Override
     public int compareTo(RangeMetadata o) {
         return this.rangeIndex.compareTo(o.rangeIndex);

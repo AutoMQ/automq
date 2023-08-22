@@ -15,38 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.image;
+package org.apache.kafka.metadata.stream;
 
-import java.util.List;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+/**
+ * S3Config contains the configuration of S3, such as the bucket name, the region, etc.
+ */
+public class S3Config {
 
-@Timeout(value = 40)
-public class S3StreamsMetadataImageTest {
+    private final String region;
 
-    private static final long KB = 1024;
+    private final String bucketName;
 
-    private static final long MB = 1024 * KB;
-
-    private static final long GB = 1024 * MB;
-
-    static final S3StreamsMetadataImage IMAGE1;
-
-    static final List<ApiMessageAndVersion> DELTA1_RECORDS;
-
-    static final S3StreamsMetadataImage IMAGE2;
-
-    // TODO: complete the test for StreamsMetadataImage
-
-    static {
-        IMAGE1 = S3StreamsMetadataImage.EMPTY;
-        DELTA1_RECORDS = List.of();
-        IMAGE2 = S3StreamsMetadataImage.EMPTY;
+    public S3Config(final String region, final String bucketName) {
+        this.region = region;
+        this.bucketName = bucketName;
     }
 
-    @Test
-    public void testBasicChange() {
-
+    public String getRegion() {
+        return region;
     }
+
+    public String getBucketName() {
+        return bucketName;
+    }
+
 }

@@ -73,6 +73,8 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -83,6 +85,7 @@ import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
+import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.EventQueue;
 import org.apache.kafka.queue.KafkaEventQueue;
@@ -179,6 +182,12 @@ public final class QuorumController implements Controller {
         private BootstrapMetadata bootstrapMetadata = null;
         private int maxRecordsPerBatch = MAX_RECORDS_PER_BATCH;
         private boolean zkMigrationEnabled = false;
+
+        // Kafka on S3 inject start
+
+        private S3Config s3Config;
+
+        // Kafka on S3 inject end
 
         public Builder(int nodeId, String clusterId) {
             this.nodeId = nodeId;
@@ -299,6 +308,15 @@ public final class QuorumController implements Controller {
             return this;
         }
 
+        // Kafka on S3 inject start
+
+        public Builder setS3Config(S3Config s3Config) {
+            this.s3Config = s3Config;
+            return this;
+        }
+
+        // Kafka on S3 inject end
+
         @SuppressWarnings("unchecked")
         public QuorumController build() throws Exception {
             if (raftClient == null) {
@@ -349,7 +367,8 @@ public final class QuorumController implements Controller {
                     staticConfig,
                     bootstrapMetadata,
                     maxRecordsPerBatch,
-                    zkMigrationEnabled
+                    zkMigrationEnabled,
+                    s3Config
                 );
             } catch (Exception e) {
                 Utils.closeQuietly(queue, "event queue");
@@ -1644,6 +1663,24 @@ public final class QuorumController implements Controller {
      */
     private final int maxRecordsPerBatch;
 
+    // Kafka on S3 inject start
+
+    private final S3Config s3Config;
+
+    /**
+     * An object which stores the controller's view of the S3 objects.
+     * This must be accessed only by the event queue thread.
+     */
+    private final S3ObjectControlManager s3ObjectControlManager;
+
+    /**
+     * An object which stores the controller's view of the Streams.
+     * This must be accessed only by the event queue thread.
+     */
+    private final StreamControlManager streamControlManager;
+
+    // Kafka on S3 inject end
+
     private QuorumController(
         FaultHandler fatalFaultHandler,
         LogContext logContext,
@@ -1668,7 +1705,8 @@ public final class QuorumController implements Controller {
         Map<String, Object> staticConfig,
         BootstrapMetadata bootstrapMetadata,
         int maxRecordsPerBatch,
-        boolean zkMigrationEnabled
+        boolean zkMigrationEnabled,
+        S3Config s3Config
     ) {
         this.fatalFaultHandler = fatalFaultHandler;
         this.logContext = logContext;
@@ -1744,6 +1782,12 @@ public final class QuorumController implements Controller {
         this.curClaimEpoch = -1;
         this.needToCompleteAuthorizerLoad = authorizer.isPresent();
         this.zkRecordConsumer = new MigrationRecordConsumer();
+
+        // Kafka on S3 inject start
+        this.s3Config = s3Config;
+        this.s3ObjectControlManager = new S3ObjectControlManager(snapshotRegistry, logContext, clusterId, s3Config);
+        this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
+        // Kafka on S3 inject end
         updateWriteOffset(-1);
 
         resetToEmptyState();

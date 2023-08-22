@@ -38,7 +38,7 @@ public class S3StreamMetadataDelta {
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
     private final Set<S3StreamObject> changedS3StreamObjects = new HashSet<>();
-    private final Set<S3StreamObject> removedS3StreamObjects = new HashSet<>();
+    private final Set<Long/*objectId*/> removedS3StreamObjectIds = new HashSet<>();
 
     public S3StreamMetadataDelta(S3StreamMetadataImage image) {
         this.image = image;
@@ -47,44 +47,39 @@ public class S3StreamMetadataDelta {
 
     public void replay(RangeRecord record) {
         changedRanges.put(record.rangeIndex(), RangeMetadata.of(record));
+        // new add or update, so remove from removedRanges
+        removedRanges.remove(record.rangeIndex());
     }
 
     public void replay(RemoveRangeRecord record) {
         removedRanges.add(record.rangeIndex());
+        // new remove, so remove from changedRanges
+        changedRanges.remove(record.rangeIndex());
     }
 
     public void replay(S3StreamObjectRecord record) {
         changedS3StreamObjects.add(S3StreamObject.of(record));
+        // new add or update, so remove from removedObjects
+        removedS3StreamObjectIds.remove(record.objectId());
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {
-        removedS3StreamObjects.add(new S3StreamObject(record.objectId()));
+        removedS3StreamObjectIds.add(record.objectId());
+        // new remove, so remove from addedObjects
+        changedS3StreamObjects.remove(record.objectId());
     }
 
     public S3StreamMetadataImage apply() {
-        Map<Integer, RangeMetadata> newRanges = new HashMap<>(image.getRanges().size());
-        // apply the delta changes of old ranges since the last image
-        image.getRanges().forEach((rangeIndex, range) -> {
-            RangeMetadata changedRange = changedRanges.get(rangeIndex);
-            if (changedRange == null) {
-                // no change, check if deleted
-                if (!removedRanges.contains(rangeIndex)) {
-                    newRanges.put(rangeIndex, range);
-                }
-            } else {
-                // changed, apply the delta
-                newRanges.put(rangeIndex, changedRange);
-            }
-        });
-        // apply the new created ranges
-        changedRanges.entrySet().stream().filter(entry -> !newRanges.containsKey(entry.getKey()))
-            .forEach(entry -> newRanges.put(entry.getKey(), entry.getValue()));
-
+        Map<Integer, RangeMetadata> newRanges = new HashMap<>(image.getRanges());
+        // add all new changed ranges
+        newRanges.putAll(image.getRanges());
+        // remove all removed ranges
+        removedRanges.forEach(newRanges::remove);
         List<S3StreamObject> newS3StreamObjects = new ArrayList<>(image.getStreamObjects());
-        // remove all removed stream-objects
-        newS3StreamObjects.removeAll(removedS3StreamObjects);
         // add all changed stream-objects
         newS3StreamObjects.addAll(changedS3StreamObjects);
+        // remove all removed stream-objects
+        newS3StreamObjects.removeIf(removedS3StreamObjectIds::contains);
         return new S3StreamMetadataImage(image.getStreamId(), newEpoch, image.getStartOffset(), newRanges, newS3StreamObjects);
     }
 

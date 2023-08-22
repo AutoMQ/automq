@@ -28,6 +28,9 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 
 public class S3StreamMetadataImage {
 
+    public static final S3StreamMetadataImage EMPTY =
+        new S3StreamMetadataImage(-1L, -1L, -1L, Map.of(), List.of());
+
     private final Long streamId;
 
     private final Long epoch;

@@ -44,7 +44,8 @@ public class MetadataImageTest {
             ClientQuotasImageTest.IMAGE1,
             ProducerIdsImageTest.IMAGE1,
             AclsImageTest.IMAGE1,
-            S3StreamsMetadataImageTest.IMAGE1);
+            S3StreamsMetadataImageTest.IMAGE1,
+            S3ObjectsImageTest.IMAGE1);
 
         DELTA1 = new MetadataDelta.Builder().
                 setImage(IMAGE1).
@@ -67,7 +68,8 @@ public class MetadataImageTest {
             ClientQuotasImageTest.IMAGE2,
             ProducerIdsImageTest.IMAGE2,
             AclsImageTest.IMAGE2,
-            S3StreamsMetadataImageTest.IMAGE2);
+            S3StreamsMetadataImageTest.IMAGE2,
+            S3ObjectsImageTest.IMAGE2);
     }
 
     @Test
