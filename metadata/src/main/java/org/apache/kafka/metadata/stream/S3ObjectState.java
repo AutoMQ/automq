@@ -19,7 +19,7 @@ package org.apache.kafka.metadata.stream;
 
 public enum S3ObjectState {
     UNINITIALIZED,
-    APPLIED,
+    PREPARED,
     COMMITTED,
     MARK_DESTROYED,
     DESTROYED;

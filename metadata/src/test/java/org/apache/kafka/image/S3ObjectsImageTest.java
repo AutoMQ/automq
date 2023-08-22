@@ -47,7 +47,7 @@ public class S3ObjectsImageTest {
     static {
         Map<Long/*objectId*/, SimplifiedS3Object> map = new HashMap<>();
         for (int i = 0; i < 4; i++) {
-            SimplifiedS3Object object = new SimplifiedS3Object(i, S3ObjectState.APPLIED);
+            SimplifiedS3Object object = new SimplifiedS3Object(i, S3ObjectState.PREPARED);
             map.put(object.objectId(), object);
         }
         IMAGE1 = new S3ObjectsImage(map);
@@ -69,7 +69,7 @@ public class S3ObjectsImageTest {
             .setObjectId(3L), (short) 0));
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new S3ObjectRecord().
             setObjectId(4L).
-            setObjectState((byte) S3ObjectState.APPLIED.ordinal()), (short) 0));
+            setObjectState((byte) S3ObjectState.PREPARED.ordinal()), (short) 0));
         DELTA1 = new S3ObjectsDelta(IMAGE1);
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
@@ -77,7 +77,7 @@ public class S3ObjectsImageTest {
         map2.put(0L, new SimplifiedS3Object(0L, S3ObjectState.COMMITTED));
         map2.put(1L, new SimplifiedS3Object(1L, S3ObjectState.COMMITTED));
         map2.put(2L, new SimplifiedS3Object(2L, S3ObjectState.MARK_DESTROYED));
-        map2.put(4L, new SimplifiedS3Object(4L, S3ObjectState.APPLIED));
+        map2.put(4L, new SimplifiedS3Object(4L, S3ObjectState.PREPARED));
 
         IMAGE2 = new S3ObjectsImage(map2);
     }
