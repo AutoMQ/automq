@@ -24,7 +24,9 @@ import java.util.List;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
@@ -67,13 +69,15 @@ public class S3ObjectControlManager {
     private Long nextAssignedObjectId = 0L;
 
     private final Queue<Long/*objectId*/> preparedObjects;
+
+    // TODO: support different deletion policies, based on time dimension or space dimension?
     private final Queue<Long/*objectId*/> markDestroyedObjects;
 
     private final S3Operator operator;
 
     private final List<S3ObjectLifeCycleListener> lifecycleListeners;
 
-    private final Timer lifecycleCheckTimer;
+    private final ScheduledExecutorService lifecycleCheckTimer;
 
     public S3ObjectControlManager(
         QuorumController quorumController,
@@ -91,10 +95,10 @@ public class S3ObjectControlManager {
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
         this.operator = new DefaultS3Operator();
         this.lifecycleListeners = new ArrayList<>();
-        this.lifecycleCheckTimer = new HashedWheelTimer();
-        this.lifecycleCheckTimer.newTimeout(timeout -> {
+        this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor();
+        this.lifecycleCheckTimer.scheduleWithFixedDelay(() -> {
             triggerCheckEvent();
-        }, DEFAULT_INITIAL_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }, DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     private void triggerCheckEvent() {
@@ -103,16 +107,7 @@ public class S3ObjectControlManager {
         this.quorumController.checkS3ObjectsLifecycle(ctx).whenComplete((ignore, exp) -> {
             if (exp != null) {
                 log.error("Failed to check the S3Object's lifecycle", exp);
-                // schedule the next check event now
-                this.lifecycleCheckTimer.newTimeout(timeout -> {
-                    triggerCheckEvent();
-                }, 1, TimeUnit.MILLISECONDS);
-                return;
             }
-            // schedule the next check event with the default interval
-            this.lifecycleCheckTimer.newTimeout(timeout -> {
-                triggerCheckEvent();
-            }, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         });
     }
 
