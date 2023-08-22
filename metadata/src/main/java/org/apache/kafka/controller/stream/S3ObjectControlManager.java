@@ -17,8 +17,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalLong;
