@@ -2151,11 +2151,13 @@ public final class QuorumController implements Controller {
         controllerMetrics.close();
     }
 
+    // Kafka on S3 inject start
     @Override
     public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
         return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
             () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
     }
+    // Kafka on S3 inject end
 
     // VisibleForTesting
     CountDownLatch pause() {
