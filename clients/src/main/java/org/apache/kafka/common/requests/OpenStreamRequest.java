@@ -59,7 +59,7 @@ public class OpenStreamRequest extends AbstractRequest {
     }
 
     @Override
-    public ApiMessage data() {
+    public OpenStreamRequestData data() {
         return data;
     }
 }

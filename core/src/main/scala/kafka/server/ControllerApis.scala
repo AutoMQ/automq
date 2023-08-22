@@ -114,8 +114,8 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.OPEN_STREAM => handleOpenStream(request)
         case ApiKeys.CLOSE_STREAM => handleCloseStream(request)
         case ApiKeys.DELETE_STREAM => handleDeleteStream(request)
-        case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Objects(request)
-        case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObjects(request)
+        case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
+        case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObject(request)
         case ApiKeys.COMMIT_COMPACT_OBJECT => handleCommitCompactObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
         // Kafka on S3 inject end
@@ -880,22 +880,128 @@ class ControllerApis(val requestChannel: RequestChannel,
     val createStreamRequest = request.body[CreateStreamRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    val future = createStream(context,
-        createStreamRequest.data,
-        authHelper.authorize(request.context, CREATE, CLUSTER, CLUSTER_NAME, logIfDenied = false),
-        names => authHelper.filterByAuthorized(request.context, CREATE, TOPIC, names)(identity),
-        names => authHelper.filterByAuthorized(request.context, DESCRIBE_CONFIGS, TOPIC,
-            names, logIfDenied = false)(identity))
-    future.handle[Unit] { (result, exception) =>
-      requestHelper.sendResponseMaybeThrottle(request, throttleTimeMs => {
+    controller.createStream(context, createStreamRequest.data)
+      .handle[Unit] { (result, exception) =>
         if (exception != null) {
-          createStreamRequest.getErrorResponse(throttleTimeMs, exception)
+          requestHelper.handleError(request, exception)
         } else {
-          result.setThrottleTimeMs(throttleTimeMs)
-          new CreateStreamResponse(result)
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new CreateStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
         }
-      })
-    }
+      }
+  }
+
+  def handleOpenStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val openStreamRequest = request.body[OpenStreamRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.openStream(context, openStreamRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new OpenStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleCloseStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val closeStreamRequest = request.body[CloseStreamRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.closeStream(context, closeStreamRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new CloseStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleDeleteStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val deleteStreamRequest = request.body[DeleteStreamRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.deleteStream(context, deleteStreamRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new DeleteStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handlePrepareS3Object(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val prepareS3ObjectRequest = request.body[PrepareS3ObjectRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.prepareObject(context, prepareS3ObjectRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new PrepareS3ObjectResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleCommitWALObject(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val commitWALObjectRequest = request.body[CommitWALObjectRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.commitWALObject(context, commitWALObjectRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new CommitWALObjectResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleCommitCompactObject(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val commitCompactObjectRequest = request.body[CommitCompactObjectRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.commitCompactObject(context, commitCompactObjectRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new CommitCompactObjectResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleCommitStreamObject(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val commitStreamObjectRequest = request.body[CommitStreamObjectRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.commitStreamObject(context, commitStreamObjectRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new CommitStreamObjectResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
   }
 
   // Kafka on S3 inject end
