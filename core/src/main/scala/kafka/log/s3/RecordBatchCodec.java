@@ -68,8 +68,8 @@ public class RecordBatchCodec {
 
         // encode RecordBatchMeta
         RecordBatchMeta.startRecordBatchMeta(metaBuilder);
-        RecordBatchMeta.addBaseOffset(metaBuilder, baseOffset);
         RecordBatchMeta.addStreamId(metaBuilder, streamId);
+        RecordBatchMeta.addBaseOffset(metaBuilder, baseOffset);
         RecordBatchMeta.addLastOffsetDelta(metaBuilder, recordBatch.count());
         RecordBatchMeta.addBaseTimestamp(metaBuilder, recordBatch.baseTimestamp());
         if (null != propsVector) {
