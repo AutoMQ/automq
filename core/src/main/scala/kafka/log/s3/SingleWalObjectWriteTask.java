@@ -44,7 +44,7 @@ public class SingleWalObjectWriteTask {
     private final List<WalWriteRequest> requests;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
-    private final List<ObjectStreamRange> streams;
+    private final List<ObjectStreamRange> streamRanges;
     private ByteBuf objectBuf;
     private CommitWalObjectResponse response;
     private volatile boolean isDone = false;
@@ -52,7 +52,7 @@ public class SingleWalObjectWriteTask {
     public SingleWalObjectWriteTask(List<WalWriteRequest> records, ObjectManager objectManager, S3Operator s3Operator) {
         Collections.sort(records);
         this.requests = records;
-        this.streams = new LinkedList<>();
+        this.streamRanges = new LinkedList<>();
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         parse();
@@ -74,7 +74,7 @@ public class SingleWalObjectWriteTask {
                     CommitWalObjectRequest request = new CommitWalObjectRequest();
                     request.setObjectId(context.objectId);
                     request.setObjectSize(objectBuf.readableBytes());
-                    request.setStreams(streams);
+                    request.setStreamRanges(streamRanges);
                     return objectManager.commitWalObject(request);
                 })
                 .thenApply(resp -> {
@@ -98,7 +98,7 @@ public class SingleWalObjectWriteTask {
             long currentStreamId = record.getStreamId();
             if (streamId != currentStreamId) {
                 if (streamId != -1) {
-                    streams.add(new ObjectStreamRange(streamId, streamEpoch, streamStartOffset, streamEndOffset));
+                    streamRanges.add(new ObjectStreamRange(streamId, streamEpoch, streamStartOffset, streamEndOffset));
                 }
                 streamId = currentStreamId;
                 streamEpoch = record.getEpoch();
@@ -116,7 +116,7 @@ public class SingleWalObjectWriteTask {
         }
         // add last stream range
         if (streamId != -1) {
-            streams.add(new ObjectStreamRange(streamId, streamEpoch, streamStartOffset, streamEndOffset));
+            streamRanges.add(new ObjectStreamRange(streamId, streamEpoch, streamStartOffset, streamEndOffset));
         }
         objectBuf = Unpooled.wrappedBuffer(compressed.buffer().flip());
     }
