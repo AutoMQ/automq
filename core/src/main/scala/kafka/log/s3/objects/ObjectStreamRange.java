@@ -18,39 +18,30 @@
 package kafka.log.s3.objects;
 
 public class ObjectStreamRange {
-    private long streamId;
-    private long epoch;
-    private long startOffset;
-    private long endOffset;
+    private final long streamId;
+    private final long epoch;
+    private final long startOffset;
+    private final long endOffset;
+
+    public ObjectStreamRange(long streamId, long epoch, long startOffset, long endOffset) {
+        this.streamId = streamId;
+        this.epoch = epoch;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+    }
 
     public long getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(long streamId) {
-        this.streamId = streamId;
-    }
-
     public long getEpoch() {
         return epoch;
-    }
-
-    public void setEpoch(long epoch) {
-        this.epoch = epoch;
     }
     public long getStartOffset() {
         return startOffset;
     }
 
-    public void setStartOffset(long startOffset) {
-        this.startOffset = startOffset;
-    }
-
     public long getEndOffset() {
         return endOffset;
-    }
-
-    public void setEndOffset(long endOffset) {
-        this.endOffset = endOffset;
     }
 }

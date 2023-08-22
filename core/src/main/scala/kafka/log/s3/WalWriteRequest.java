@@ -21,17 +21,17 @@ import kafka.log.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Write ahead log for server.
- */
-public interface Wal {
+public class WalWriteRequest implements Comparable<WalWriteRequest> {
+    final StreamRecordBatch record;
+    final CompletableFuture<Void> cf;
 
-    /**
-     * Append stream record to wal.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
+    public WalWriteRequest(StreamRecordBatch record, CompletableFuture<Void> cf) {
+        this.record = record;
+        this.cf = cf;
+    }
 
-    void close();
+    @Override
+    public int compareTo(WalWriteRequest o) {
+        return record.compareTo(o.record);
+    }
 }

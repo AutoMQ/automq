@@ -15,23 +15,18 @@
  * limitations under the License.
  */
 
-package kafka.log.s3;
+package kafka.log.s3.utils;
 
-import kafka.log.s3.model.StreamRecordBatch;
+public class ObjectUtils {
 
-import java.util.concurrent.CompletableFuture;
+    public static String genKey(int version, String clusterName, long objectId) {
+        if (version == 0) {
+            String objectIdHex = String.format("%08x", objectId);
+            String hashPrefix = new StringBuilder(objectIdHex).reverse().toString();
+            return hashPrefix + "/" + clusterName + "/" + objectId;
+        } else {
+            throw new UnsupportedOperationException("Unsupported version: " + version);
+        }
+    }
 
-/**
- * Write ahead log for server.
- */
-public interface Wal {
-
-    /**
-     * Append stream record to wal.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
-
-    void close();
 }

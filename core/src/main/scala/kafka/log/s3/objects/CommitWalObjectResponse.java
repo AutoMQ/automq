@@ -17,6 +17,7 @@
 
 package kafka.log.s3.objects;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -27,6 +28,9 @@ public class CommitWalObjectResponse {
     private List<Long> failedStreamIds;
 
     public List<Long> getFailedStreamIds() {
+        if (failedStreamIds == null) {
+            return Collections.emptyList();
+        }
         return failedStreamIds;
     }
 
