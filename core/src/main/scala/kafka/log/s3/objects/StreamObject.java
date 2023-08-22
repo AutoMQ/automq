@@ -24,6 +24,11 @@ public class StreamObject {
     private long startOffset;
     private long endOffset;
 
+    /**
+     * The source objects' id of the stream object.
+     */
+    private long[] sourceObjectIds;
+
     public long getObjectId() {
         return objectId;
     }
@@ -62,5 +67,13 @@ public class StreamObject {
 
     public void setEndOffset(long endOffset) {
         this.endOffset = endOffset;
+    }
+
+    public long[] getSourceObjectIds() {
+        return sourceObjectIds;
+    }
+
+    public void setSourceObjectIds(long[] sourceObjectIds) {
+        this.sourceObjectIds = sourceObjectIds;
     }
 }

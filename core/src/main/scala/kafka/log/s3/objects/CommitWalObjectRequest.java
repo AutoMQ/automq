@@ -22,7 +22,10 @@ import java.util.List;
 public class CommitWalObjectRequest {
     private long objectId;
     private long objectSize;
-    private List<ObjectStreamRange> streams;
+    /**
+     * The stream ranges of the compacted object.
+     */
+    private List<ObjectStreamRange> streamRanges;
 
     public long getObjectId() {
         return objectId;
@@ -40,11 +43,11 @@ public class CommitWalObjectRequest {
         this.objectSize = objectSize;
     }
 
-    public List<ObjectStreamRange> getStreams() {
-        return streams;
+    public List<ObjectStreamRange> getStreamRanges() {
+        return streamRanges;
     }
 
-    public void setStreams(List<ObjectStreamRange> streams) {
-        this.streams = streams;
+    public void setStreamRanges(List<ObjectStreamRange> streamRanges) {
+        this.streamRanges = streamRanges;
     }
 }

@@ -14,23 +14,52 @@
 // limitations under the License.
 
 {
-  "apiKey": 69,
-  "type": "response",
-  "name": "OpenStreamResponse",
+  "apiKey": 75,
+  "type": "request",
+  "listeners": [
+    "controller",
+    "broker"
+  ],
+  "name": "CommitStreamObjectRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ErrorCode",
-      "type": "int16",
+      "name": "ObjectId",
+      "type": "int64",
       "versions": "0+",
-      "about": "The top level response error code"
+      "about": "The ID of the Stream S3 object to commit"
+    },
+    {
+      "name": "ObjectSize",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The size of the Stream S3 object to commit"
+    },
+    {
+      "name": "StreamId",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The ID of the stream",
+      "entityType": "streamId"
     },
     {
       "name": "StartOffset",
       "type": "int64",
       "versions": "0+",
-      "about": "The start offset of the opened stream"
+      "about": "The start offset of the stream range"
+    },
+    {
+      "name": "EndOffset",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The end offset of the stream range"
+    },
+    {
+      "name": "sourceObjectIds",
+      "type": "[]int64",
+      "versions": "0+",
+      "about": "The IDs of the source S3 objects"
     }
   ]
 }

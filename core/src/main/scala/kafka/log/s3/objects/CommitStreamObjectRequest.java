@@ -23,7 +23,10 @@ public class CommitStreamObjectRequest {
     private long streamId;
     private long startOffset;
     private long endOffset;
-    private long sourceObjectId;
+    /**
+     * The source objects' id of the stream object.
+     */
+    private long[] sourceObjectIds;
 
     public long getObjectId() {
         return objectId;
@@ -65,11 +68,11 @@ public class CommitStreamObjectRequest {
         this.endOffset = endOffset;
     }
 
-    public long getSourceObjectId() {
-        return sourceObjectId;
+    public long[] getSourceObjectIds() {
+        return sourceObjectIds;
     }
 
-    public void setSourceObjectId(long sourceObjectId) {
-        this.sourceObjectId = sourceObjectId;
+    public void setSourceObjectIds(long[] sourceObjectIds) {
+        this.sourceObjectIds = sourceObjectIds;
     }
 }

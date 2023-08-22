@@ -16,14 +16,34 @@
 {
   "apiKey": 69,
   "type": "request",
-  "listeners": ["controller", "broker"],
+  "listeners": [
+    "controller",
+    "broker"
+  ],
   "name": "OpenStreamRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    { "name": "BrokerId", "type": "int32", "versions": "0+", "entityType": "brokerId",
-      "about": "The ID of the requesting broker" },
-    { "name": "StreamId", "type": "int64", "versions": "0+", "entityType": "streamId",
-      "about": "The id of the requesting stream" }
+    {
+      "name": "StreamId",
+      "type": "int64",
+      "versions": "0+",
+      "entityType": "streamId",
+      "about": "The id of the requesting stream"
+    },
+    {
+      "name": "BrokerId",
+      "type": "int32",
+      "versions": "0+",
+      "entityType": "brokerId",
+      "about": "The ID of the requesting broker"
+    },
+    {
+      "name": "StreamEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "entityType": "streamEpoch",
+      "about": "The epoch of the requesting stream in the requesting broker"
+    }
   ]
 }
