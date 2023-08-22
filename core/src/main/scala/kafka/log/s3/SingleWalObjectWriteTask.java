@@ -74,7 +74,7 @@ public class SingleWalObjectWriteTask {
                     CommitWalObjectRequest request = new CommitWalObjectRequest();
                     request.setObjectId(context.objectId);
                     request.setObjectSize(objectBuf.readableBytes());
-                    request.setStreams(streams);
+                    request.setStreamRanges(streams);
                     return objectManager.commitWalObject(request);
                 })
                 .thenApply(resp -> {

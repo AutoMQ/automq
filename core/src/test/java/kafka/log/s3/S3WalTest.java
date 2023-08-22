@@ -70,7 +70,7 @@ public class S3WalTest {
         verify(objectManager).commitWalObject(commitArg.capture());
         CommitWalObjectRequest commitReq = commitArg.getValue();
         assertEquals(16L, commitReq.getObjectId());
-        List<ObjectStreamRange> streams = commitReq.getStreams();
+        List<ObjectStreamRange> streams = commitReq.getStreamRanges();
         assertEquals(2, streams.size());
         assertEquals(233, streams.get(0).getStreamId());
         assertEquals(10, streams.get(0).getStartOffset());
