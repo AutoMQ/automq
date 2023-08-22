@@ -44,12 +44,12 @@ public class S3ObjectControlManager {
     private final S3Config config;
 
     /**
-     * The objectId of the next object to be applied. (start from 0)
+     * The objectId of the next object to be prepared. (start from 0)
      */
-    private Long nextApplyObjectId = 0L;
+    private Long nextAssignedObjectId = 0L;
     
     // TODO: add timer task to periodically check if there are objects to be destroyed or expired
-    private final Queue<Long/*objectId*/> appliedObjects;
+    private final Queue<Long/*objectId*/> preparedObjects;
     private final Queue<Long/*objectId*/> markDestroyedObjects;
     
     public S3ObjectControlManager(
@@ -62,12 +62,12 @@ public class S3ObjectControlManager {
         this.clusterId = clusterId;
         this.config = config;
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
-        this.appliedObjects = new LinkedList<>();
+        this.preparedObjects = new LinkedList<>();
         this.markDestroyedObjects = new LinkedList<>();
     }
-    
-    public Long appliedObjectNum() {
-        return nextApplyObjectId;
+
+    public Long nextAssignedObjectId() {
+        return nextAssignedObjectId;
     }
 
     public void replay(S3ObjectRecord record) {
@@ -76,6 +76,7 @@ public class S3ObjectControlManager {
         S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
             record.appliedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(), S3ObjectState.fromByte(record.objectState()));
         objectsMetadata.put(record.objectId(), object);
+        nextAssignedObjectId = Math.max(nextAssignedObjectId, record.objectId() + 1);
     }
 
     public void replay(RemoveS3ObjectRecord record) {

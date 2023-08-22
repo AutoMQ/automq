@@ -82,13 +82,13 @@ public class S3Object implements Comparable<S3Object> {
         if (this.s3ObjectState != S3ObjectState.UNINITIALIZED) {
             throw new IllegalStateException("Object is not in UNINITIALIZED state");
         }
-        this.s3ObjectState = S3ObjectState.APPLIED;
+        this.s3ObjectState = S3ObjectState.PREPARED;
         this.appliedTimeInMs = Optional.of(System.currentTimeMillis());
     }
 
     public void onCreate(S3ObjectCommitContext createContext) {
         // TODO: decide fetch object metadata from S3 or let broker send it to controller
-        if (this.s3ObjectState != S3ObjectState.APPLIED) {
+        if (this.s3ObjectState != S3ObjectState.PREPARED) {
             throw new IllegalStateException("Object is not in APPLIED state");
         }
         this.s3ObjectState = S3ObjectState.COMMITTED;
