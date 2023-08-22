@@ -21,4 +21,6 @@ import java.util.concurrent.CompletableFuture;
 
 public interface S3Operator {
     CompletableFuture<Boolean> delete(String objectKey);
+
+    CompletableFuture<Boolean> delele(String[] objectKeys);
 }
