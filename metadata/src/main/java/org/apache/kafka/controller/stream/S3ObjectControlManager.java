@@ -51,6 +51,8 @@ public class S3ObjectControlManager {
     // TODO: add timer task to periodically check if there are objects to be destroyed or expired
     private final Queue<Long/*objectId*/> preparedObjects;
     private final Queue<Long/*objectId*/> markDestroyedObjects;
+
+    private final S3Operator operator;
     
     public S3ObjectControlManager(
         SnapshotRegistry snapshotRegistry,
@@ -64,6 +66,7 @@ public class S3ObjectControlManager {
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new LinkedList<>();
         this.markDestroyedObjects = new LinkedList<>();
+        this.operator = new DefaultS3Operator();
     }
 
     public Long nextAssignedObjectId() {
