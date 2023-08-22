@@ -1785,7 +1785,7 @@ public final class QuorumController implements Controller {
 
         // Kafka on S3 inject start
         this.s3Config = s3Config;
-        this.s3ObjectControlManager = new S3ObjectControlManager(snapshotRegistry, logContext, clusterId, s3Config);
+        this.s3ObjectControlManager = new S3ObjectControlManager(this, snapshotRegistry, logContext, clusterId, s3Config);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         // Kafka on S3 inject end
         updateWriteOffset(-1);
@@ -2149,6 +2149,12 @@ public final class QuorumController implements Controller {
     public void close() throws InterruptedException {
         queue.close();
         controllerMetrics.close();
+    }
+
+    @Override
+    public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
+        return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
+            () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
     }
 
     // VisibleForTesting

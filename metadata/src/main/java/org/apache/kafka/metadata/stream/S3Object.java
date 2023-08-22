@@ -186,7 +186,15 @@ public class S3Object implements Comparable<S3Object> {
         return destroyedTimeInMs;
     }
 
+    public Optional<Long> getExpiredTimeInMs() {
+        return expiredTimeInMs;
+    }
+
     public S3ObjectState getS3ObjectState() {
         return s3ObjectState;
+    }
+
+    public boolean isExpired() {
+        return System.currentTimeMillis() > expiredTimeInMs.get();
     }
 }

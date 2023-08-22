@@ -353,4 +353,9 @@ public interface Controller extends AclMutator, AutoCloseable {
      * Blocks until we have shut down and freed all resources.
      */
     void close() throws InterruptedException;
+
+    /**
+     * Check the lifecycle of the S3 objects.
+     */
+    CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context);
 }
