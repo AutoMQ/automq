@@ -52,6 +52,7 @@
     <allow pkg="redis.clients.jedis" />
     <allow pkg="kafka.server" />
     <allow pkg="kafka.log.s3" />
+    <allow pkg="com.google.flatbuffers" />
   </subpackage>
 
   <subpackage name="testkit">

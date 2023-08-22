@@ -19,16 +19,16 @@ package kafka.log.s3.model;
 
 import com.automq.elasticstream.client.api.RecordBatch;
 
-public class StreamRecordBatch {
+public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
     private final long streamId;
     private final long epoch;
-    private final long startOffset;
+    private final long baseOffset;
     private final RecordBatch recordBatch;
 
-    public StreamRecordBatch(long streamId, long epoch, long startOffset, RecordBatch recordBatch) {
+    public StreamRecordBatch(long streamId, long epoch, long baseOffset, RecordBatch recordBatch) {
         this.streamId = streamId;
         this.epoch = epoch;
-        this.startOffset = startOffset;
+        this.baseOffset = baseOffset;
         this.recordBatch = recordBatch;
     }
 
@@ -40,11 +40,20 @@ public class StreamRecordBatch {
         return epoch;
     }
 
-    public long getStartOffset() {
-        return startOffset;
+    public long getBaseOffset() {
+        return baseOffset;
     }
 
     public RecordBatch getRecordBatch() {
         return recordBatch;
+    }
+
+    @Override
+    public int compareTo(StreamRecordBatch o) {
+        int rst = Long.compare(streamId, o.streamId);
+        if (rst != 0) {
+            return rst;
+        }
+        return Long.compare(baseOffset, o.baseOffset);
     }
 }

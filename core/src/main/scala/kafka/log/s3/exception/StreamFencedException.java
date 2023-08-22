@@ -15,23 +15,7 @@
  * limitations under the License.
  */
 
-package kafka.log.s3;
+package kafka.log.s3.exception;
 
-import kafka.log.s3.model.StreamRecordBatch;
-
-import java.util.concurrent.CompletableFuture;
-
-/**
- * Write ahead log for server.
- */
-public interface Wal {
-
-    /**
-     * Append stream record to wal.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
-
-    void close();
+public class StreamFencedException extends Exception {
 }
