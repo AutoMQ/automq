@@ -454,4 +454,11 @@ public class MockController implements Controller {
     public void close() {
         beginShutdown();
     }
+
+    // Kafka on S3 inject start
+    @Override
+    public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
+        throw new UnsupportedOperationException();
+    }
+    // Kafka on S3 inject end
 }
