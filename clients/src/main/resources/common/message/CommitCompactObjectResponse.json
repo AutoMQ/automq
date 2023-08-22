@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 69,
+  "apiKey": 74,
   "type": "response",
-  "name": "OpenStreamResponse",
+  "name": "CommitCompactObjectResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -25,12 +25,6 @@
       "type": "int16",
       "versions": "0+",
       "about": "The top level response error code"
-    },
-    {
-      "name": "StartOffset",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The start offset of the opened stream"
     }
   ]
 }

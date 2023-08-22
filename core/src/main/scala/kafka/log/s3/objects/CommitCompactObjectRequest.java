@@ -22,7 +22,19 @@ import java.util.List;
 public class CommitCompactObjectRequest {
     private long objectId;
     private long objectSize;
+    /**
+     * The stream ranges of the compacted object.
+     */
+    private List<ObjectStreamRange> streamRanges;
+
+    /**
+     * The stream objects which split from the compacted object.
+     */
     private List<StreamObject> streamObjects;
+
+    /**
+     * The object ids which are compacted by the compacted object.
+     */
     private List<Long> compactedObjectIds;
 
     public long getObjectId() {
@@ -55,5 +67,13 @@ public class CommitCompactObjectRequest {
 
     public void setCompactedObjectIds(List<Long> compactedObjectIds) {
         this.compactedObjectIds = compactedObjectIds;
+    }
+
+    public List<ObjectStreamRange> getStreamRanges() {
+        return streamRanges;
+    }
+
+    public void setStreamRanges(List<ObjectStreamRange> streamRanges) {
+        this.streamRanges = streamRanges;
     }
 }

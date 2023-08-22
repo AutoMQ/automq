@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 69,
+  "apiKey": 73,
   "type": "response",
-  "name": "OpenStreamResponse",
+  "name": "CommitWALObjectResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -27,10 +27,10 @@
       "about": "The top level response error code"
     },
     {
-      "name": "StartOffset",
-      "type": "int64",
+      "name": "FailedStreamIds",
+      "type": "[]int64",
       "versions": "0+",
-      "about": "The start offset of the opened stream"
+      "about": "Failed to commit WAL objects' id"
     }
   ]
 }

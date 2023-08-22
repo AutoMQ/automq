@@ -14,23 +14,34 @@
 // limitations under the License.
 
 {
-  "apiKey": 69,
-  "type": "response",
-  "name": "OpenStreamResponse",
+  "apiKey": 72,
+  "type": "request",
+  "listeners": [
+    "controller",
+    "broker"
+  ],
+  "name": "PrepareS3ObjectRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ErrorCode",
-      "type": "int16",
+      "name": "BrokerId",
+      "type": "int32",
       "versions": "0+",
-      "about": "The top level response error code"
+      "entityType": "brokerId",
+      "about": "The ID of the requesting broker"
     },
     {
-      "name": "StartOffset",
+      "name": "PreparedCount",
+      "type": "int32",
+      "versions": "0+",
+      "about": "The S3 object count to prepare"
+    },
+    {
+      "name": "TimeToLiveInMs",
       "type": "int64",
       "versions": "0+",
-      "about": "The start offset of the opened stream"
+      "about": "The time to live in milliseconds for the prepared S3 object"
     }
   ]
 }
