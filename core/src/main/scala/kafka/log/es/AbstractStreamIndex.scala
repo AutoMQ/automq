@@ -49,7 +49,7 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
   protected var _maxEntries: Int = adjustedMaxIndexSize / entrySize
 
   @volatile
-  protected var _entries: Int = (stream.nextOffset() / entrySize).toInt
+  protected var _entries: Int = stream.nextOffset().toInt
 
   @volatile
   protected var cache: MappedByteBuffer = {

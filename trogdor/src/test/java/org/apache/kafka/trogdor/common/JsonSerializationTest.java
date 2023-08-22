@@ -19,6 +19,7 @@ package org.apache.kafka.trogdor.common;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.lang.reflect.Modifier;
 import org.apache.kafka.trogdor.fault.FilesUnreadableFaultSpec;
 import org.apache.kafka.trogdor.fault.Kibosh;
 import org.apache.kafka.trogdor.fault.NetworkPartitionFaultSpec;
@@ -73,9 +74,11 @@ public class JsonSerializationTest {
         Class<T> clazz = (Class<T>) val1.getClass();
         T val2 = JsonUtil.JSON_SERDE.readValue(bytes, clazz);
         for (Field field : clazz.getDeclaredFields()) {
-            boolean wasAccessible = field.isAccessible();
+            // for static filed, we have to pass null to field.canAccess()
+            T maybeNullObject = Modifier.isStatic(field.getModifiers()) ? null : val2;
+            boolean wasAccessible = field.canAccess(maybeNullObject);
             field.setAccessible(true);
-            assertNotNull(field.get(val2), "Field " + field + " was null.");
+            assertNotNull(field.get(maybeNullObject), "Field " + field + " was null.");
             field.setAccessible(wasAccessible);
         }
     }

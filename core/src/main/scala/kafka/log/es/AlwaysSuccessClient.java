@@ -26,6 +26,10 @@ import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,6 +127,8 @@ public class AlwaysSuccessClient implements Client {
     static class StreamImpl implements Stream {
         private final Stream stream;
         private volatile boolean closed = false;
+        private final Map<String, Boolean> slowFetchingOffsetMap = new ConcurrentHashMap<>();
+        private final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -160,22 +166,47 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+            String slowFetchKey = startOffset + "-" + endOffset;
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            fetch0(startOffset, endOffset, maxBytesHint, cf);
+            // If it is recorded as slowFetching, then skip timeout check.
+            if (slowFetchingOffsetMap.containsKey(slowFetchKey)) {
+                fetch0(startOffset, endOffset, maxBytesHint, cf, slowFetchKey);
+            } else {
+                // Try to have a quick stream. If fetching is timeout, then complete with SlowFetchHintException.
+                stream.fetch(startOffset, endOffset, maxBytesHint)
+                    .orTimeout(SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
+                        if (ex != null) {
+                            if (closed) {
+                                cf.completeExceptionally(new IllegalStateException("stream already closed"));
+                            } else if (ex instanceof TimeoutException){
+                                LOGGER.info("Fetch stream[{}] [{},{}) timeout for {} ms, retry with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
+                                cf.completeExceptionally(new SlowFetchHintException("fetch data too slowly, retry with slow fetching"));
+                                slowFetchingOffsetMap.put(slowFetchKey, true);
+                            } else {
+                                cf.completeExceptionally(ex);
+                            }
+                        } else {
+                            slowFetchingOffsetMap.remove(slowFetchKey);
+                            cf.complete(rst);
+                        }
+                    }, LOGGER));
+            }
             return cf;
         }
 
-        private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
+        private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf, String slowFetchKey) {
             stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
                         LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
                         if (!closed) {
-                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
+                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf, slowFetchKey), 3, TimeUnit.SECONDS);
                         } else {
                             cf.completeExceptionally(new IllegalStateException("stream already closed"));
                         }
                     } else {
+                        slowFetchingOffsetMap.remove(slowFetchKey);
                         cf.complete(rst);
                     }
                 }, LOGGER);

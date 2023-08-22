@@ -70,7 +70,7 @@ import org.apache.kafka.common.resource.ResourceType._
 import org.apache.kafka.common.resource.{Resource, ResourceType}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.common.security.token.delegation.{DelegationToken, TokenInformation}
-import org.apache.kafka.common.utils.{ProducerIdAndEpoch, Time}
+import org.apache.kafka.common.utils.{ProducerIdAndEpoch, ThreadUtils, Time}
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.server.authorizer._
 import org.apache.kafka.server.common.MetadataVersion
@@ -79,7 +79,7 @@ import org.apache.kafka.server.common.MetadataVersion.{IBP_0_11_0_IV0, IBP_2_3_I
 import java.lang.{Long => JLong}
 import java.nio.ByteBuffer
 import java.util
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -121,6 +121,9 @@ class KafkaApis(val requestChannel: RequestChannel,
   val requestHelper = new RequestHandlerHelper(requestChannel, quotas, time)
   val aclApis = new AclApis(authHelper, authorizer, requestHelper, "broker", config)
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
+  // These two executors separate the handling of `produce` and `fetch` requests in case of throttling.
+  val appendingExecutors = Executors.newFixedThreadPool(2, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
+  val fetchingExecutors = Executors.newFixedThreadPool(2, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
 
   def close(): Unit = {
     aclApis.close()
@@ -743,21 +746,28 @@ class KafkaApis(val requestChannel: RequestChannel,
     else {
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
 
-      // call the replica manager to append messages to the replicas
-      replicaManager.appendRecords(
-        timeout = produceRequest.timeout.toLong,
-        requiredAcks = produceRequest.acks,
-        internalTopicsAllowed = internalTopicsAllowed,
-        origin = AppendOrigin.Client,
-        entriesPerPartition = authorizedRequestInfo,
-        requestLocal = requestLocal,
-        responseCallback = sendResponseCallback,
-        recordConversionStatsCallback = processingStatsCallback)
+      // elastic stream inject start
+      // The appending is done is a separate thread pool to avoid blocking io thread
+      appendingExecutors.submit(new Runnable {
+        override def run(): Unit = {
+          // call the replica manager to append messages to the replicas
+          replicaManager.appendRecords(
+            timeout = produceRequest.timeout.toLong,
+            requiredAcks = produceRequest.acks,
+            internalTopicsAllowed = internalTopicsAllowed,
+            origin = AppendOrigin.Client,
+            entriesPerPartition = authorizedRequestInfo,
+            requestLocal = requestLocal,
+            responseCallback = sendResponseCallback,
+            recordConversionStatsCallback = processingStatsCallback)
 
-      // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
-      // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
-      produceRequest.clearPartitionRecords()
-      PRODUCE_TIMER.update(System.nanoTime() - startNanos)
+          // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
+          // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
+          produceRequest.clearPartitionRecords()
+          PRODUCE_TIMER.update(System.nanoTime() - startNanos)
+        }
+      })
+      // elastic stream inject end
     }
   }
 
@@ -1058,15 +1068,20 @@ class KafkaApis(val requestChannel: RequestChannel,
       )
 
       // elastic stream inject start
-      ReadManualReleaseHint.mark()
-      // call the replica manager to fetch messages from the local replica
-      replicaManager.fetchMessages(
-        params = params,
-        fetchInfos = interesting,
-        quota = replicationQuota(fetchRequest),
-        responseCallback = processResponseCallback,
-      )
-      ReadManualReleaseHint.reset()
+      // The fetching is done is a separate thread pool to avoid blocking io thread.
+      fetchingExecutors.submit(new Runnable {
+        override def run(): Unit = {
+          ReadManualReleaseHint.mark()
+          // call the replica manager to fetch messages from the local replica
+          replicaManager.fetchMessages(
+            params = params,
+            fetchInfos = interesting,
+            quota = replicationQuota(fetchRequest),
+            responseCallback = processResponseCallback,
+          )
+          ReadManualReleaseHint.reset()
+        }
+      })
       // elastic stream inject end
     }
   }

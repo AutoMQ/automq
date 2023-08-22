@@ -137,6 +137,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
     stream = streamSliceSupplier.reset()
     _entries = 0
     _lastEntry = lastEntryFromIndexFile
+    resize(maxIndexSize)
   }
 
   def truncate(): Unit = {
