@@ -1047,7 +1047,7 @@ class ReplicaManager(val config: KafkaConfig,
     logReadResults.foreach { case (topicIdPartition, logReadResult) =>
       brokerTopicStats.topicStats(topicIdPartition.topicPartition.topic).totalFetchRequestRate.mark()
       brokerTopicStats.allTopicsStats.totalFetchRequestRate.mark()
-      if (logReadResult.exception.isDefined && logReadResult.exception.get.isInstanceOf[KafkaStorageException]) {
+      if (logReadResult.exception.isDefined && logReadResult.exception.get.isInstanceOf[SlowFetchHintException]) {
         containsSlowFetchHint = true
       }
       if (logReadResult.error != Errors.NONE)

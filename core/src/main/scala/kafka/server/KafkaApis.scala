@@ -24,7 +24,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint}
+import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
 import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIMER, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
@@ -1072,6 +1072,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       fetchingExecutors.submit(new Runnable {
         override def run(): Unit = {
           ReadManualReleaseHint.mark()
+          SeparateSlowAndQuickFetchHint.mark()
           // call the replica manager to fetch messages from the local replica
           replicaManager.fetchMessages(
             params = params,
@@ -1079,6 +1080,7 @@ class KafkaApis(val requestChannel: RequestChannel,
             quota = replicationQuota(fetchRequest),
             responseCallback = processResponseCallback,
           )
+          SeparateSlowAndQuickFetchHint.reset()
           ReadManualReleaseHint.reset()
         }
       })
