@@ -18,7 +18,6 @@
 package org.apache.kafka.metadata.stream;
 
 import java.util.Objects;
-import java.util.Optional;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 

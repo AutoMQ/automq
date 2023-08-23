@@ -20,6 +20,7 @@ package org.apache.kafka.controller.stream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.Set;
@@ -122,6 +123,7 @@ public class S3ObjectControlManager {
     }
 
     public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData request) {
+        // TODO: support batch prepare objects
         List<ApiMessageAndVersion> records = new ArrayList<>();
         PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData();
         int count = request.preparedCount();
@@ -231,6 +233,14 @@ public class S3ObjectControlManager {
                 new RemoveS3ObjectRecord().setObjectId(objectId), (short) 0));
         });
         return ControllerResult.of(records, null);
+    }
+
+    public Queue<Long> preparedObjects() {
+        return preparedObjects;
+    }
+
+    public Map<Long, S3Object> objectsMetadata() {
+        return objectsMetadata;
     }
 
     /**
