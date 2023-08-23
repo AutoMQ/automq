@@ -498,6 +498,36 @@ subprojects {
     }
   }
 
+  tasks.register('S3UnitTest', Test) {
+    description = 'Runs unit tests for Kafka on S3.'
+    dependsOn compileJava
+
+    maxParallelForks = maxTestForks
+    ignoreFailures = userIgnoreFailures
+
+    maxHeapSize = defaultMaxHeapSize
+    jvmArgs = defaultJvmArgs
+
+    testLogging {
+      events = userTestLoggingEvents ?: testLoggingEvents
+      showStandardStreams = userShowStandardStreams ?: testShowStandardStreams
+      exceptionFormat = testExceptionFormat
+      displayGranularity = 0
+    }
+    logTestStdout.rehydrate(delegate, owner, this)()
+
+    exclude testsToExclude
+
+    useJUnitPlatform {
+      includeTags 'S3Unit'
+    }
+
+    retry {
+      maxRetries = userMaxTestRetries
+      maxFailures = userMaxTestRetryFailures
+    }
+  }
+
   tasks.register('esIntegrationTest', Test) {
     description = 'Runs integration tests for elastic stream storage.'
     dependsOn compileJava
