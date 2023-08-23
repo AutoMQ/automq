@@ -156,7 +156,8 @@ public class StreamControlManager {
     }
 
     // TODO: refactor to return next offset of stream in response
-
+    // TODO: lazy update range's end offset
+    // TODO: controller allocate the stream id
     public ControllerResult<CreateStreamResponseData> createStream(CreateStreamRequestData data) {
         long streamId = data.streamId();
         CreateStreamResponseData resp = new CreateStreamResponseData();
