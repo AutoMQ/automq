@@ -382,6 +382,16 @@ public interface Controller extends AclMutator, AutoCloseable {
      */
     CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context);
 
+
+    /**
+     * Notify the S3Object is really deleted. Call when S3 object deletion is confirmed.
+     */
+    CompletableFuture<Void> notifyS3ObjectDeleted(
+        ControllerRequestContext context,
+        Set<Long/*objectId*/> deletedObjectIds
+    );
+
+
     /**
      * Create a stream
      */

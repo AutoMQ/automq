@@ -477,6 +477,11 @@ public class MockController implements Controller {
         throw new UnsupportedOperationException();
     }
 
+    public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
+        Set<Long/*objectId*/> deletedObjectIds) {
+        throw new UnsupportedOperationException();
+    }
+
     @Override
     public CompletableFuture<CreateStreamResponseData> createStream(ControllerRequestContext context, CreateStreamRequestData request) {
         throw new UnsupportedOperationException();
