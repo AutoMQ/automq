@@ -28,6 +28,10 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.message.CreateStreamRequestData;
+import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.utils.LogContext;
@@ -117,6 +121,10 @@ public class S3ObjectControlManager {
 
     public Long nextAssignedObjectId() {
         return nextAssignedObjectId;
+    }
+
+    public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData data) {
+
     }
 
     public void replay(S3ObjectRecord record) {

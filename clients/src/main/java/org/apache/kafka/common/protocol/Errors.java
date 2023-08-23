@@ -127,6 +127,9 @@ import org.apache.kafka.common.errors.UnsupportedCompressionTypeException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.errors.s3.StreamExistException;
+import org.apache.kafka.common.errors.s3.StreamFencedException;
+import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -370,7 +373,16 @@ public enum Errors {
     TRANSACTIONAL_ID_NOT_FOUND(105, "The transactionalId could not be found", TransactionalIdNotFoundException::new),
     FETCH_SESSION_TOPIC_ID_ERROR(106, "The fetch session encountered inconsistent topic ID usage", FetchSessionTopicIdException::new),
     INELIGIBLE_REPLICA(107, "The new ISR contains at least one ineligible replica.", IneligibleReplicaException::new),
-    NEW_LEADER_ELECTED(108, "The AlterPartition request successfully updated the partition state but the leader has changed.", NewLeaderElectedException::new);
+    NEW_LEADER_ELECTED(108, "The AlterPartition request successfully updated the partition state but the leader has changed.", NewLeaderElectedException::new),
+
+    // Kafka on S3 inject start
+
+    STREAM_EXIST(109, "The stream already exists.", StreamExistException::new),
+    STREAM_NOT_EXIST(110, "The stream does not exist.", StreamNotExistException::new),
+    STREAM_FENCED(111, "The stream is fenced.", StreamFencedException::new);
+
+
+    // Kafka on S3 inject end
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 
