@@ -38,14 +38,30 @@ import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamRequestData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CommitCompactObjectRequestData;
+import org.apache.kafka.common.message.CommitCompactObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamRequestData;
+import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamRequestData;
+import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
@@ -2156,6 +2172,48 @@ public final class QuorumController implements Controller {
     public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
         return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
             () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
+    }
+
+    @Override
+    public CompletableFuture<CreateStreamResponseData> createStream(ControllerRequestContext context, CreateStreamRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<OpenStreamResponseData> openStream(ControllerRequestContext context, OpenStreamRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData response) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<DeleteStreamResponseData> deleteStream(ControllerRequestContext context, DeleteStreamRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<PrepareS3ObjectResponseData> prepareObject(ControllerRequestContext context, PrepareS3ObjectRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<CommitWALObjectResponseData> commitWALObject(ControllerRequestContext context, CommitWALObjectRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<CommitCompactObjectResponseData> commitCompactObject(ControllerRequestContext context,
+        CommitCompactObjectRequestData request) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
+        CommitStreamObjectRequestData request) {
+        return null;
     }
     // Kafka on S3 inject end
 

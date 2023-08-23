@@ -28,19 +28,40 @@ import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamRequestData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CommitCompactObjectRequestData;
+import org.apache.kafka.common.message.CommitCompactObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamRequestData;
+import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamRequestData;
+import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.CloseStreamRequest;
+import org.apache.kafka.common.requests.CloseStreamResponse;
+import org.apache.kafka.common.requests.CommitCompactObjectRequest;
+import org.apache.kafka.common.requests.CommitStreamObjectRequest;
+import org.apache.kafka.common.requests.PrepareS3ObjectRequest;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -360,6 +381,71 @@ public interface Controller extends AclMutator, AutoCloseable {
      * Check the lifecycle of the S3 objects.
      */
     CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context);
+
+    /**
+     * Create a stream
+     */
+    CompletableFuture<CreateStreamResponseData> createStream(
+        ControllerRequestContext context,
+        CreateStreamRequestData request
+    );
+
+    /**
+     * Broker trys to open a stream with its epoch
+     */
+    CompletableFuture<OpenStreamResponseData> openStream(
+        ControllerRequestContext context,
+        OpenStreamRequestData request
+    );
+
+    /**
+     * Broker trys to close a stream. (unused now)
+     */
+    CompletableFuture<CloseStreamResponseData> closeStream(
+        ControllerRequestContext context,
+        CloseStreamRequestData response
+    );
+
+    /**
+     * Delete a stream.
+     */
+    CompletableFuture<DeleteStreamResponseData> deleteStream(
+        ControllerRequestContext context,
+        DeleteStreamRequestData request
+    );
+
+    /**
+     * Broker trys to get prepared S3 objects for future upload.
+     */
+    CompletableFuture<PrepareS3ObjectResponseData> prepareObject(
+        ControllerRequestContext context,
+        PrepareS3ObjectRequestData request
+    );
+
+    /**
+     * Broker trys to commit a WAL object.
+     */
+    CompletableFuture<CommitWALObjectResponseData> commitWALObject(
+        ControllerRequestContext context,
+        CommitWALObjectRequestData request
+    );
+
+    /**
+     * Broker trys to commit a compact object.
+     */
+    CompletableFuture<CommitCompactObjectResponseData> commitCompactObject(
+        ControllerRequestContext context,
+        CommitCompactObjectRequestData request
+    );
+
+    /**
+     * Broker trys to commit a stream object
+     */
+    CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(
+        ControllerRequestContext context,
+        CommitStreamObjectRequestData request
+    );
+
 
     // Kafka on S3 inject end
 }
