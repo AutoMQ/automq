@@ -377,9 +377,9 @@ public enum Errors {
 
     // Kafka on S3 inject start
 
-    STREAM_EXIST(109, "The stream already exists.", StreamExistException::new),
-    STREAM_NOT_EXIST(110, "The stream does not exist.", StreamNotExistException::new),
-    STREAM_FENCED(111, "The stream is fenced.", StreamFencedException::new);
+    STREAM_EXIST(501, "The stream already exists.", StreamExistException::new),
+    STREAM_NOT_EXIST(502, "The stream does not exist.", StreamNotExistException::new),
+    STREAM_FENCED(503, "The stream is fenced.", StreamFencedException::new);
 
 
     // Kafka on S3 inject end
