@@ -20,6 +20,7 @@ package org.apache.kafka.controller.stream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.Set;
@@ -121,15 +122,33 @@ public class S3ObjectControlManager {
         return nextAssignedObjectId;
     }
 
-    public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData data) {
-        throw new UnsupportedOperationException();
+    public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData request) {
+        // TODO: support batch prepare objects
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData();
+        int count = request.preparedCount();
+        List<Long> prepareObjectIds = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            Long objectId = nextAssignedObjectId + i;
+            prepareObjectIds.add(objectId);
+            long preparedTs = System.currentTimeMillis();
+            long expiredTs = preparedTs + request.timeToLiveInMs();
+            S3ObjectRecord record = new S3ObjectRecord()
+                .setObjectId(objectId)
+                .setObjectState((byte) S3ObjectState.PREPARED.ordinal())
+                .setPreparedTimeInMs(preparedTs)
+                .setExpiredTimeInMs(expiredTs);
+            records.add(new ApiMessageAndVersion(record, (short) 0));
+        }
+        response.setS3ObjectIds(prepareObjectIds);
+        return ControllerResult.of(records, response);
     }
 
     public void replay(S3ObjectRecord record) {
         GenerateContextV0 ctx = new GenerateContextV0(clusterId, record.objectId());
         String objectKey = S3ObjectKeyGeneratorManager.getByVersion(0).generate(ctx);
         S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
-            record.appliedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
+            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
             S3ObjectState.fromByte(record.objectState()));
         objectsMetadata.put(record.objectId(), object);
         // TODO: recover the prepared objects and mark destroyed objects when restart the controller
@@ -161,11 +180,11 @@ public class S3ObjectControlManager {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
                     .setObjectState((byte) S3ObjectState.DESTROYED.ordinal())
-                    .setObjectSize(obj.getObjectSize().get())
-                    .setAppliedTimeInMs(obj.getAppliedTimeInMs().get())
-                    .setExpiredTimeInMs(obj.getExpiredTimeInMs().get())
-                    .setCommittedTimeInMs(obj.getCommittedTimeInMs().get())
-                    .setDestroyedTimeInMs(obj.getDestroyedTimeInMs().get());
+                    .setObjectSize(obj.getObjectSize())
+                    .setPreparedTimeInMs(obj.getPreparedTimeInMs())
+                    .setExpiredTimeInMs(obj.getExpiredTimeInMs())
+                    .setCommittedTimeInMs(obj.getCommittedTimeInMs())
+                    .setDestroyedTimeInMs(obj.getDestroyedTimeInMs());
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, (short) 0));
                 // generate the records which listener reply for the object-destroy events
@@ -177,7 +196,7 @@ public class S3ObjectControlManager {
         // check the mark destroyed objects
         ObjectPair[] destroyedObjects = this.markDestroyedObjects.stream()
             // must guarantee that the objects in markDestroyedObjects also exist in objectsMetadata
-            .map(id -> new ObjectPair(id, objectsMetadata.get(id).getObjectKey().get()))
+            .map(id -> new ObjectPair(id, objectsMetadata.get(id).getObjectKey()))
             .toArray(ObjectPair[]::new);
         String[] destroyedObjectKeys = Arrays.stream(destroyedObjects).map(ObjectPair::objectKey).toArray(String[]::new);
         Set<Long> destroyedObjectIds = Arrays.stream(destroyedObjects).map(ObjectPair::objectId).collect(Collectors.toSet());
@@ -203,6 +222,7 @@ public class S3ObjectControlManager {
 
     /**
      * Generate RemoveS3ObjectRecord for the deleted S3Objects.
+     *
      * @param deletedObjectIds the deleted S3Objects' ids
      * @return the result of the generation, contains the records which should be applied to the raft.
      */
@@ -213,6 +233,14 @@ public class S3ObjectControlManager {
                 new RemoveS3ObjectRecord().setObjectId(objectId), (short) 0));
         });
         return ControllerResult.of(records, null);
+    }
+
+    public Queue<Long> preparedObjects() {
+        return preparedObjects;
+    }
+
+    public Map<Long, S3Object> objectsMetadata() {
+        return objectsMetadata;
     }
 
     /**
@@ -230,6 +258,7 @@ public class S3ObjectControlManager {
     }
 
     static class ObjectPair {
+
         private final Long objectId;
         private final String objectKey;
 

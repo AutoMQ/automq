@@ -33,10 +33,10 @@
       "about": "The object size of the S3 object"
     },
     {
-      "name": "AppliedTimeInMs",
+      "name": "PreparedTimeInMs",
       "type": "int64",
       "versions": "0+",
-      "about": "The object be applied timestamp"
+      "about": "The object be prepared timestamp"
     },
     {
       "name": "ExpiredTimeInMs",
