@@ -26,7 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
 /**
- * Elastic stream slice is a slice from elastic stream, the offset of slice starts from 0.
+ * Elastic stream slice is a slice from elastic stream, <strong> the startOffset of a slice is 0. </strong>
  * In the same time, there is only one writable slice in a stream, and the writable slice is always the last slice.
  */
 public interface ElasticStreamSlice {
@@ -43,6 +43,7 @@ public interface ElasticStreamSlice {
      * Fetch record batch from stream slice.
      *
      * @param startOffset  start offset.
+     * @param endOffset    end offset.
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
      * @return {@link FetchResult}
      */
@@ -69,11 +70,6 @@ public interface ElasticStreamSlice {
      * @return {@link SliceRange}
      */
     SliceRange sliceRange();
-
-    /**
-     * Destroy stream slice.
-     */
-    void destroy();
 
     /**
      * Seal slice, forbid future append.

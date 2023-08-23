@@ -23,18 +23,18 @@ import kafka.log.AbstractIndex.{debug, error}
 import kafka.log.{Index, IndexEntry, IndexSearchType}
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.{CoreUtils, Logging}
-import org.apache.kafka.common.utils.{ByteBufferUnmapper, OperatingSystem}
+import org.apache.kafka.common.utils.{ByteBufferUnmapper, OperatingSystem, Utils}
 
 import java.io.{File, RandomAccessFile}
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import java.nio.file.Files
+import java.nio.file.{Files, NoSuchFileException}
 import java.util.concurrent.locks.{Lock, ReentrantLock}
 
 /**
  * Implementation ref. AbstractIndex
  */
-abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
+abstract class AbstractStreamIndex(@volatile private var _file: File, val streamSliceSupplier: StreamSliceSupplier, val baseOffset: Long, val maxIndexSize: Int = -1) extends Index {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
 
@@ -77,7 +77,6 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
    */
   def isFull: Boolean = _entries >= _maxEntries
 
-  // TODO: check
   def file: File = _file
 
   def maxEntries: Int = _maxEntries
@@ -86,8 +85,9 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
 
   def length: Long = adjustedMaxIndexSize
 
-  // TODO:
-  def updateParentDir(parentDir: File): Unit = {}
+  def updateParentDir(parentDir: File): Unit = {
+    _file = new File(parentDir, file.getName)
+  }
 
   /**
    * Note that stream index actually does not need to resize. Here we only change the maxEntries in memory to be
@@ -108,10 +108,15 @@ abstract class AbstractStreamIndex(_file: File, val streamSliceSupplier: StreamS
     }
   }
 
-  // TODO:
-  def renameTo(f: File): Unit = {}
+  def renameTo(f: File): Unit = {
+    try Utils.atomicMoveWithFallback(file.toPath, f.toPath, false)
+    catch {
+      case _: NoSuchFileException if !file.exists => ()
+    }
+    finally _file = f
+  }
 
-  // TODO:
+  // Deleting index is actually implemented in ElasticLogSegment.deleteIfExists. We implement it here for tests.
   def deleteIfExists(): Boolean = {
     close()
     true

@@ -771,7 +771,6 @@ object LogSegment {
   }
 
   def dir2TopicPartition(dir: File): TopicPartition = {
-    // TODO: impl, reuse LocalLog#parseTopicPartitionName
     LocalLog.parseTopicPartitionName(dir)
   }
   // elastic stream inject end

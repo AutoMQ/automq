@@ -43,7 +43,6 @@ class ElasticLogManager(val client: Client) {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
              leaderEpoch: Long): ElasticLog = {
-    // TODO: add log close hook, remove closed elastic log
     elasticLogs.computeIfAbsent(topicPartition, _ => ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
       numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch))
   }

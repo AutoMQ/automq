@@ -44,11 +44,6 @@ import java.util.concurrent.TimeUnit;
 
 public class AlwaysSuccessClient implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
-
-    // cause of rust frontend is single thread, so we use thread executor free callback overhead.
-    // caution: it should call another stream method in one method callback to avoid deadlock, if these method callback
-    // executor is same.
-    // TODO: change some api to sync call to avoid deadlock.
     private static final ScheduledExecutorService STREAM_MANAGER_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private static final ExecutorService STREAM_MANAGER_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(1,
@@ -223,7 +218,7 @@ public class AlwaysSuccessClient implements Client {
                             if (closed) {
                                 cf.completeExceptionally(new IllegalStateException("stream already closed"));
                             } else if (ex instanceof SlowFetchHintException){
-                                LOGGER.info("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
+                                LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
                                 cf.completeExceptionally(ex);
                             } else {
                                 cf.completeExceptionally(ex);

@@ -383,7 +383,7 @@ object ElasticLog extends Logging {
     def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
       val key = MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX + meta.getOffset
       if (meta.isEmpty) {
-        // TODO: delete the snapshot
+        // The real deletion of this snapshot is done in metaStream's compaction.
         producerSnapshotsMeta.remove(meta.getOffset)
       } else {
         producerSnapshotsMeta.add(meta.getOffset)
