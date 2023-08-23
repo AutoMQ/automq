@@ -158,7 +158,7 @@ public class StreamControlManagerTest {
         assertEquals(EPOCH2, rangeRecord.epoch());
         assertEquals(1, rangeRecord.rangeIndex());
         assertEquals(0L, rangeRecord.startOffset());
-        assertEquals(-1L, rangeRecord.endOffset());
+        assertEquals(0L, rangeRecord.endOffset());
 
         // verify that stream_0's epoch update to epoch2, and range index update to 1
         streamMetadata0 = manager.streamsMetadata().get(STREAM0);
@@ -171,7 +171,7 @@ public class StreamControlManagerTest {
         assertEquals(EPOCH2, rangeMetadata0.epoch());
         assertEquals(1, rangeMetadata0.rangeIndex());
         assertEquals(0L, rangeMetadata0.startOffset());
-        assertEquals(-1L, rangeMetadata0.endOffset());
+        assertEquals(0L, rangeMetadata0.endOffset());
 
         // 5. broker_0 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponseData> result6 = manager.openStream(
@@ -215,7 +215,7 @@ public class StreamControlManagerTest {
         assertEquals(expectedEpoch, rangeRecord0.epoch());
         assertEquals(0, rangeRecord0.rangeIndex());
         assertEquals(0L, rangeRecord0.startOffset());
-        assertEquals(-1L, rangeRecord0.endOffset());
+        assertEquals(0L, rangeRecord0.endOffset());
     }
 
     private void verifyFirstRange(S3StreamMetadata streamMetadata, long expectedEpoch, int expectedBrokerId) {
@@ -229,6 +229,6 @@ public class StreamControlManagerTest {
         assertEquals(expectedEpoch, rangeMetadata0.epoch());
         assertEquals(0, rangeMetadata0.rangeIndex());
         assertEquals(0L, rangeMetadata0.startOffset());
-        assertEquals(-1L, rangeMetadata0.endOffset());
+        assertEquals(0L, rangeMetadata0.endOffset());
     }
 }

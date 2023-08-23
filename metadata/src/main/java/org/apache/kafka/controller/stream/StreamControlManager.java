@@ -155,6 +155,8 @@ public class StreamControlManager {
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
+    // TODO: refactor to return next offset of stream in response
+
     public ControllerResult<CreateStreamResponseData> createStream(CreateStreamRequestData data) {
         long streamId = data.streamId();
         CreateStreamResponseData resp = new CreateStreamResponseData();
@@ -201,7 +203,7 @@ public class StreamControlManager {
         }
         // now the request in valid, update the stream's epoch and create a new range for this broker
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        long newEpoch = epoch + 1;
+        long newEpoch = epoch;
         int newRangeIndex = streamMetadata.currentRangeIndex + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
@@ -215,15 +217,14 @@ public class StreamControlManager {
         if (newRangeIndex > 0) {
             // means that the new range is not the first range in stream, get the last range's end offset
             RangeMetadata lastRangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex);
-            startOffset = lastRangeMetadata.endOffset() + 1;
+            startOffset = lastRangeMetadata.endOffset();
         }
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
             .setBrokerId(brokerId)
             .setStartOffset(startOffset)
-            // default end offset set to (startOffset - 1)
-            .setEndOffset(startOffset - 1)
+            .setEndOffset(startOffset)
             .setEpoch(newEpoch)
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(startOffset);

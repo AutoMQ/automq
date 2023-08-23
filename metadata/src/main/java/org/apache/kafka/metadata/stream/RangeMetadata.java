@@ -24,7 +24,13 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
     private long streamId;
     private long epoch;
     private int rangeIndex;
+    /**
+     * Inclusive
+     */
     private long startOffset;
+    /**
+     * Exclusive
+     */
     private long endOffset;
     private int brokerId;
 
