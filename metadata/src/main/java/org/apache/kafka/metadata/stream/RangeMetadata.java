@@ -17,22 +17,24 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.Optional;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class RangeMetadata implements Comparable<RangeMetadata> {
-    private Long streamId;
-    private Long epoch;
-    private Integer rangeIndex;
-    private Long startOffset;
-    private Optional<Long> endOffset;
-    private Integer brokerId;
+    private long streamId;
+    private long epoch;
+    private int rangeIndex;
+    /**
+     * Inclusive
+     */
+    private long startOffset;
+    /**
+     * Exclusive
+     */
+    private long endOffset;
+    private int brokerId;
 
-    private RangeMetadata() {
-    }
-
-    public RangeMetadata(Long streamId, Long epoch, Integer rangeIndex, Long startOffset, Optional<Long> endOffset, Integer brokerId) {
+    public RangeMetadata(long streamId, long epoch, int rangeIndex, long startOffset, long endOffset, int brokerId) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.rangeIndex = rangeIndex;
@@ -43,26 +45,26 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
 
     @Override
     public int compareTo(RangeMetadata o) {
-        return this.rangeIndex.compareTo(o.rangeIndex);
+        return this.rangeIndex - o.rangeIndex;
     }
 
-    public Long getEpoch() {
+    public long epoch() {
         return epoch;
     }
 
-    public Integer getRangeIndex() {
+    public int rangeIndex() {
         return rangeIndex;
     }
 
-    public Long getStartOffset() {
+    public long startOffset() {
         return startOffset;
     }
 
-    public Optional<Long> getEndOffset() {
+    public long endOffset() {
         return endOffset;
     }
 
-    public Integer getBrokerId() {
+    public int brokerId() {
         return brokerId;
     }
 
@@ -73,17 +75,14 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
             .setBrokerId(brokerId)
             .setRangeIndex(rangeIndex)
             .setStartOffset(startOffset)
-            .setEndOffset(endOffset.get()), (short) 0);
+            .setEndOffset(endOffset), (short) 0);
     }
 
     public static RangeMetadata of(RangeRecord record) {
-        RangeMetadata rangeMetadata = new RangeMetadata();
-        rangeMetadata.streamId = record.streamId();
-        rangeMetadata.epoch = record.epoch();
-        rangeMetadata.rangeIndex = record.rangeIndex();
-        rangeMetadata.startOffset = record.startOffset();
-        rangeMetadata.endOffset = Optional.ofNullable(record.endOffset());
-        rangeMetadata.brokerId = record.brokerId();
+        RangeMetadata rangeMetadata = new RangeMetadata(
+            record.streamId(), record.epoch(), record.rangeIndex(),
+            record.startOffset(), record.endOffset(), record.brokerId()
+        );
         return rangeMetadata;
     }
 }

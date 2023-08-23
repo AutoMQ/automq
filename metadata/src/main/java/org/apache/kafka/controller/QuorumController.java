@@ -2186,44 +2186,52 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<CreateStreamResponseData> createStream(ControllerRequestContext context, CreateStreamRequestData request) {
-        return null;
+        return appendWriteEvent("creatStream", context.deadlineNs(),
+            () -> streamControlManager.createStream(request));
     }
 
     @Override
     public CompletableFuture<OpenStreamResponseData> openStream(ControllerRequestContext context, OpenStreamRequestData request) {
-        return null;
+        return appendWriteEvent("openStream", context.deadlineNs(),
+            () -> streamControlManager.openStream(request));
     }
 
     @Override
     public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData response) {
-        return null;
+        return appendWriteEvent("closeStream", context.deadlineNs(),
+            () -> streamControlManager.closeStream(response));
     }
 
     @Override
     public CompletableFuture<DeleteStreamResponseData> deleteStream(ControllerRequestContext context, DeleteStreamRequestData request) {
-        return null;
+        return appendWriteEvent("deleteStream", context.deadlineNs(),
+            () -> streamControlManager.deleteStream(request));
     }
 
     @Override
     public CompletableFuture<PrepareS3ObjectResponseData> prepareObject(ControllerRequestContext context, PrepareS3ObjectRequestData request) {
-        return null;
+        return appendWriteEvent("prepareObject", context.deadlineNs(),
+            () -> s3ObjectControlManager.prepareObject(request));
     }
 
     @Override
     public CompletableFuture<CommitWALObjectResponseData> commitWALObject(ControllerRequestContext context, CommitWALObjectRequestData request) {
-        return null;
+        return appendWriteEvent("commitWALObject", context.deadlineNs(),
+            () -> streamControlManager.commitWALObject(request));
     }
 
     @Override
     public CompletableFuture<CommitCompactObjectResponseData> commitCompactObject(ControllerRequestContext context,
         CommitCompactObjectRequestData request) {
-        return null;
+        return appendWriteEvent("commitCompactObject", context.deadlineNs(),
+            () -> streamControlManager.commitCompactObject(request));
     }
 
     @Override
     public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
         CommitStreamObjectRequestData request) {
-        return null;
+        return appendWriteEvent("commitStreamObject", context.deadlineNs(),
+            () -> streamControlManager.commitStreamObject(request));
     }
     // Kafka on S3 inject end
 

@@ -20,7 +20,6 @@ package org.apache.kafka.common.requests;
 import java.util.Map;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 
 public class OpenStreamResponse extends AbstractResponse {

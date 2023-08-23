@@ -60,7 +60,7 @@ public final class S3ObjectsDelta {
     public void replay(RemoveS3ObjectRecord record) {
         removedObjectIds.add(record.objectId());
         // new remove, so remove from addedObjects
-        addedObjects.remove(record.objectId());
+        addedObjects.removeIf(obj -> obj.objectId() == record.objectId());
     }
 
     public S3ObjectsImage apply() {

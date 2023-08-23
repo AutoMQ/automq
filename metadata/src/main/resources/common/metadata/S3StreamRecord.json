@@ -33,6 +33,12 @@
       "about": "The epoch"
     },
     {
+      "name": "rangeIndex",
+      "type": "int32",
+      "versions": "0+",
+      "about": "The range index"
+    },
+    {
       "name": "StartOffset",
       "type": "int64",
       "versions": "0+",

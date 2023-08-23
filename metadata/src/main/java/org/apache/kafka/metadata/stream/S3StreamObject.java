@@ -17,6 +17,7 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.Objects;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -56,5 +57,22 @@ public class S3StreamObject {
         S3ObjectStreamIndex index = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
         S3StreamObject s3StreamObject = new S3StreamObject(record.objectId(), index);
         return s3StreamObject;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        S3StreamObject that = (S3StreamObject) o;
+        return objectId == that.objectId;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(objectId);
     }
 }

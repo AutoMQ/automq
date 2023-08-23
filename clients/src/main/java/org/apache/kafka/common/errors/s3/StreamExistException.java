@@ -14,29 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.common.errors.es;
 
-import org.apache.kafka.common.errors.RetriableException;
+package org.apache.kafka.common.errors.s3;
 
-/**
- * Indicates that the fetch request was too slow to be served. The request should be served in separated thread pool.
- */
-public class SlowFetchHintException extends RetriableException {
-    private static final long serialVersionUID = 1L;
-    public SlowFetchHintException() {
-        super();
-    }
+import org.apache.kafka.common.errors.ApiException;
 
-    public SlowFetchHintException(String message) {
+public class StreamExistException extends ApiException {
+    public StreamExistException(String message) {
         super(message);
     }
-
-    public SlowFetchHintException(Throwable cause) {
-        super(cause);
-    }
-
-    public SlowFetchHintException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
 }
