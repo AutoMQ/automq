@@ -2174,6 +2174,16 @@ public final class QuorumController implements Controller {
             () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
     }
 
+
+    @Override
+    public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
+        Set<Long/*objectId*/> deletedObjectIds) {
+        return appendWriteEvent("notifyS3ObjectDeleted", context.deadlineNs(),
+            () -> s3ObjectControlManager.notifyS3ObjectDeleted(deletedObjectIds));
+    }
+
+
+
     @Override
     public CompletableFuture<CreateStreamResponseData> createStream(ControllerRequestContext context, CreateStreamRequestData request) {
         return null;
