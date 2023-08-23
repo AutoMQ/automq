@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -80,7 +79,7 @@ public class S3StreamMetadataImageTest {
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
-            STREAM0, 1L, 0L, Map.of(0, new RangeMetadata(STREAM0, 1L, 0, 0L, Optional.empty(), BROKER0)), List.of());
+            STREAM0, 1L, 0L, Map.of(0, new RangeMetadata(STREAM0, 1L, 0, 0L, -1L, BROKER0)), List.of());
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
 
@@ -108,8 +107,8 @@ public class S3StreamMetadataImageTest {
         // verify delta and check image's write
         S3StreamMetadataImage image3 = new S3StreamMetadataImage(
             STREAM0, 2L, 0L, Map.of(
-                0, new RangeMetadata(STREAM0, 1L, 0, 0L, Optional.of(100L), BROKER0),
-                1, new RangeMetadata(STREAM0, 2L, 1, 101L, Optional.empty(), BROKER1)), List.of());
+                0, new RangeMetadata(STREAM0, 1L, 0, 0L, 100, BROKER0),
+                1, new RangeMetadata(STREAM0, 2L, 1, 101L, 100, BROKER1)), List.of());
         assertEquals(image3, delta2.apply());
         testToImageAndBack(image3);
 
@@ -127,7 +126,7 @@ public class S3StreamMetadataImageTest {
         // verify delta and check image's write
         S3StreamMetadataImage image4 = new S3StreamMetadataImage(
             STREAM0, 2L, 101L, Map.of(
-                1, new RangeMetadata(STREAM0, 2L, 1, 101L, Optional.empty(), BROKER1)), List.of());
+                1, new RangeMetadata(STREAM0, 2L, 1, 101L, 100L, BROKER1)), List.of());
     }
 
     @Test

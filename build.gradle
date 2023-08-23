@@ -224,7 +224,10 @@ if (file('.git').exists()) {
         'streams/streams-scala/logs/*',
         'licenses/*',
         '**/generated/**',
-        'clients/src/test/resources/serializedData/*'
+        'clients/src/test/resources/serializedData/*',
+        '.github/**',
+        'tests/docker/es/docker-compose.yaml',
+        'tests/esk_test_suite.yml'
     ])
   }
 } else {

@@ -462,18 +462,8 @@ public final class MetadataDelta {
         }
 
         // Kafka on S3 inject start
-        S3StreamsMetadataImage newStreamMetadata;
-        if (s3StreamsMetadataDelta == null) {
-            newStreamMetadata = image.streamsMetadata();
-        } else {
-            newStreamMetadata = s3StreamsMetadataDelta.apply();
-        }
-        S3ObjectsImage newS3ObjectsMetadata;
-        if (s3ObjectsDelta == null) {
-            newS3ObjectsMetadata = image.objectsMetadata();
-        } else {
-            newS3ObjectsMetadata = s3ObjectsDelta.apply();
-        }
+        S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
+        S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
         // Kafka on S3 inject end
         return new MetadataImage(
             provenance,
@@ -488,6 +478,20 @@ public final class MetadataDelta {
             newS3ObjectsMetadata
         );
     }
+
+    // Kafka on S3 inject start
+
+    private S3StreamsMetadataImage getNewS3StreamsMetadataImage() {
+        return s3StreamsMetadataDelta == null ?
+            image.streamsMetadata() : s3StreamsMetadataDelta.apply();
+    }
+
+    private S3ObjectsImage getNewS3ObjectsMetadataImage() {
+        return s3ObjectsDelta == null ?
+            image.objectsMetadata() : s3ObjectsDelta.apply();
+    }
+
+    // Kafka on S3 inject end
 
     @Override
     public String toString() {

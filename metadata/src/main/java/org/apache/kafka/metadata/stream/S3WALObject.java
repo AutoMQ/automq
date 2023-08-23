@@ -18,6 +18,7 @@
 package org.apache.kafka.metadata.stream;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
@@ -63,4 +64,34 @@ public class S3WALObject {
         return streamsIndex;
     }
 
+    public Long objectId() {
+        return objectId;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        S3WALObject that = (S3WALObject) o;
+        return objectId == that.objectId;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(objectId);
+    }
+
+    @Override
+    public String toString() {
+        return "S3WALObject{" +
+            "objectId=" + objectId +
+            ", brokerId=" + brokerId +
+            ", streamsIndex=" + streamsIndex +
+            ", objectType=" + objectType +
+            '}';
+    }
 }

@@ -40,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+@SuppressWarnings("uncheck")
 public class AlwaysSuccessClient implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
 
@@ -128,7 +129,7 @@ public class AlwaysSuccessClient implements Client {
         private final Stream stream;
         private volatile boolean closed = false;
         private final Map<String, Boolean> slowFetchingOffsetMap = new ConcurrentHashMap<>();
-        private final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
+        private static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -179,7 +180,7 @@ public class AlwaysSuccessClient implements Client {
                         if (ex != null) {
                             if (closed) {
                                 cf.completeExceptionally(new IllegalStateException("stream already closed"));
-                            } else if (ex instanceof TimeoutException){
+                            } else if (ex instanceof TimeoutException) {
                                 LOGGER.info("Fetch stream[{}] [{},{}) timeout for {} ms, retry with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
                                 cf.completeExceptionally(new SlowFetchHintException("fetch data too slowly, retry with slow fetching"));
                                 slowFetchingOffsetMap.put(slowFetchKey, true);

@@ -120,11 +120,10 @@ public class S3Object implements Comparable<S3Object> {
             .setAppliedTimeInMs(appliedTimeInMs.orElse(null))
             .setExpiredTimeInMs(expiredTimeInMs.orElse(null))
             .setCommittedTimeInMs(committedTimeInMs.orElse(null))
-            .setDestroyedTimeInMs(destroyedTimeInMs.orElse(null))
-            , (short) 0);
+            .setDestroyedTimeInMs(destroyedTimeInMs.orElse(null)), (short) 0);
     }
 
-    public class S3ObjectCommitContext {
+    static public class S3ObjectCommitContext {
 
         private final Long committedTimeInMs;
         private final Long objectSize;
