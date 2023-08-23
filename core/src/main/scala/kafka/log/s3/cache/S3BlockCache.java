@@ -26,6 +26,6 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface S3BlockCache {
 
-    CompletableFuture<ReadDataBlock> read(long objectId, long streamId, long startOffset, long endOffset, int maxBytes);
+    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
 
 }

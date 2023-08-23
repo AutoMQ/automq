@@ -17,40 +17,33 @@
 
 package kafka.log.s3.objects;
 
-public class ObjectStreamRange {
-    private long streamId;
-    private long epoch;
-    private long startOffset;
-    private long endOffset;
+import kafka.log.s3.utils.ObjectUtils;
+import org.apache.kafka.metadata.stream.S3ObjectType;
 
-    public long getStreamId() {
-        return streamId;
+public class S3ObjectMetadata {
+    private final long objectId;
+    private final long objectSize;
+    private final S3ObjectType type;
+
+    public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
+        this.objectId = objectId;
+        this.objectSize = objectSize;
+        this.type = type;
     }
 
-    public long getEpoch() {
-        return epoch;
-    }
-    public long getStartOffset() {
-        return startOffset;
+    public long getObjectId() {
+        return objectId;
     }
 
-    public long getEndOffset() {
-        return endOffset;
+    public long getObjectSize() {
+        return objectSize;
     }
 
-    public void setStreamId(long streamId) {
-        this.streamId = streamId;
+    public S3ObjectType getType() {
+        return type;
     }
 
-    public void setEpoch(long epoch) {
-        this.epoch = epoch;
-    }
-
-    public void setStartOffset(long startOffset) {
-        this.startOffset = startOffset;
-    }
-
-    public void setEndOffset(long endOffset) {
-        this.endOffset = endOffset;
+    public String key() {
+        return ObjectUtils.genKey(0, "todocluster", objectId);
     }
 }

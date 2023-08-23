@@ -22,7 +22,7 @@ import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
-import kafka.log.s3.operator.S3Operator;
+import kafka.log.s3.operator.MemoryS3Operator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -41,14 +41,12 @@ import static org.mockito.Mockito.when;
 
 public class S3WalTest {
     ObjectManager objectManager;
-    S3Operator s3Operator;
     S3Wal s3Wal;
 
     @BeforeEach
     public void setup() {
         objectManager = mock(ObjectManager.class);
-        s3Operator = mock(S3Operator.class);
-        s3Wal = new S3Wal(objectManager, s3Operator);
+        s3Wal = new S3Wal(objectManager, new MemoryS3Operator());
     }
 
     @Test
@@ -56,7 +54,6 @@ public class S3WalTest {
         when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
         CommitWalObjectResponse resp = new CommitWalObjectResponse();
         when(objectManager.commitWalObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
-        when(s3Operator.write(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         CompletableFuture<Void> cf1 = s3Wal.append(new StreamRecordBatch(233, 1, 10, DefaultRecordBatch.of(1, 100)));
         CompletableFuture<Void> cf2 = s3Wal.append(new StreamRecordBatch(233, 1, 11, DefaultRecordBatch.of(2, 100)));
