@@ -22,6 +22,7 @@ import com.automq.elasticstream.client.api.RecordBatch;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Random;
 
 public class DefaultRecordBatch implements RecordBatch {
     int count;
@@ -30,9 +31,9 @@ public class DefaultRecordBatch implements RecordBatch {
     public static RecordBatch of(int count, int size) {
         DefaultRecordBatch record = new DefaultRecordBatch();
         record.count = count;
-        record.payload = ByteBuffer.allocate(size);
-        record.payload.position(size);
-        record.payload.flip();
+        byte[] bytes = new byte[size];
+        new Random().nextBytes(bytes);
+        record.payload = ByteBuffer.wrap(bytes);
         return record;
     }
 

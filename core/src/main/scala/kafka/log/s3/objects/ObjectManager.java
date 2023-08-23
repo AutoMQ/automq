@@ -66,7 +66,12 @@ public interface ObjectManager {
     /**
      * Get objects by stream range.
      */
-    List<Long> getObjects(long streamId, long startOffset, long endOffset, int maxBytes);
+    List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int maxBytes);
 
+    /**
+     * Get current server wal objects.
+     * When server is starting, wal need server wal objects to recover.
+     */
+    List<S3ObjectMetadata> getServerObjects();
 }
 

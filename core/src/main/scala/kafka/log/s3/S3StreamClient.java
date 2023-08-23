@@ -51,6 +51,6 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        return streamController.openStream(streamId, epoch).thenApply(metadata -> new S3Stream(metadata, wal, blockCache, streamController, objectManager));
+        return streamController.openStream(streamId, epoch).thenApply(metadata -> new S3Stream(metadata, wal, blockCache, streamController));
     }
 }
