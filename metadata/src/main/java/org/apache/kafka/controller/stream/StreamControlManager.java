@@ -201,7 +201,7 @@ public class StreamControlManager {
         }
         // now the request in valid, update the stream's epoch and create a new range for this broker
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        long newEpoch = streamMetadata.currentEpoch + 1;
+        long newEpoch = epoch + 1;
         int newRangeIndex = streamMetadata.currentRangeIndex + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
