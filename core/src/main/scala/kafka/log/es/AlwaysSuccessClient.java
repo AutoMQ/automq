@@ -181,8 +181,8 @@ public class AlwaysSuccessClient implements Client {
                 throw new NullPointerException();
             }
 
-            final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             if (!rawFuture.isDone()) {
+                final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
                 rawFuture.whenComplete(new Canceller(Delayer.delay(() -> {
                         if (rawFuture == null) {
                             return;
@@ -195,8 +195,9 @@ public class AlwaysSuccessClient implements Client {
                         }
                     },
                     timeout, unit)));
+                return cf;
             }
-            return cf;
+            return rawFuture;
         }
 
         @Override
