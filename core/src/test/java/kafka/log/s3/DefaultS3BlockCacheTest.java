@@ -38,7 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@Tag("s3Unit")
+@Tag("S3Unit")
 public class DefaultS3BlockCacheTest {
     ObjectManager objectManager;
     S3Operator s3Operator;

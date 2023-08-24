@@ -34,7 +34,7 @@ import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class ObjectWriterTest {
 
     @Test

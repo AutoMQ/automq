@@ -40,7 +40,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class S3WalTest {
     ObjectManager objectManager;
     S3Wal s3Wal;

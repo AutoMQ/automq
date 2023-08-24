@@ -38,7 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class S3StreamTest {
     Wal wal;
     S3BlockCache blockCache;
