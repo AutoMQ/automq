@@ -19,13 +19,14 @@ package kafka.log.s3;
 
 import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.RangeMetadata;
 import kafka.log.s3.model.StreamMetadata;
+import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 public class S3StreamTest {
     Wal wal;
     S3BlockCache blockCache;
@@ -68,7 +70,7 @@ public class S3StreamTest {
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
         RecordBatch recordBatch = DefaultRecordBatch.of((int) (end - start), size);
-        RecordBatchWithContext recordBatchWithContext = new DefaultRecordBatchWithContext(recordBatch, start);
-        return new ReadDataBlock(List.of(recordBatchWithContext));
+        StreamRecordBatch record = new StreamRecordBatch(0, 0, start, recordBatch);
+        return new ReadDataBlock(List.of(record));
     }
 }

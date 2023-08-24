@@ -65,8 +65,13 @@ public interface ObjectManager {
 
     /**
      * Get objects by stream range.
+     * @param streamId stream id.
+     * @param startOffset get range start offset.
+     * @param endOffset get range end offset.
+     * @param limit max object count. Why use limit instead of maxBytes? Because we cannot get stream size from object metadata.
+     * @return {@link S3ObjectMetadata}
      */
-    List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int maxBytes);
+    List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
      * Get current server wal objects.

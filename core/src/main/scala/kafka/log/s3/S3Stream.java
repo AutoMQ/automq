@@ -23,6 +23,7 @@ import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
+import kafka.log.es.RecordBatchWithContextWrapper;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.StreamMetadata;
 import kafka.log.s3.model.StreamRecordBatch;
@@ -31,6 +32,7 @@ import kafka.log.s3.streams.StreamManager;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 public class S3Stream implements Stream {
     private final StreamMetadata metadata;
@@ -76,7 +78,10 @@ public class S3Stream implements Stream {
     @Override
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
         //TODO: bound check
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> new DefaultFetchResult(dataBlock.getRecords()));
+        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
+            List<RecordBatchWithContext> records = dataBlock.getRecords().stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+            return new DefaultFetchResult(records);
+        });
     }
 
     @Override

@@ -44,6 +44,10 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
         return baseOffset;
     }
 
+    public long getLastOffset() {
+        return baseOffset + recordBatch.count();
+    }
+
     public RecordBatch getRecordBatch() {
         return recordBatch;
     }
