@@ -24,12 +24,5 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
-    {
-      "name": "StreamId",
-      "type": "int64",
-      "versions": "0+",
-      "entityType": "streamId",
-      "about": "The id of the requesting stream"
-    }
   ]
 }
