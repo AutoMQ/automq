@@ -140,6 +140,11 @@ public class StreamControlManager {
 
     private final S3ObjectControlManager s3ObjectControlManager;
 
+    /**
+     * The next stream id to be assigned.
+     */
+    private Long nextAssignedStreamId = 0L;
+
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
     private final TimelineHashMap<Integer/*brokerId*/, BrokerS3WALMetadata> brokersMetadata;
@@ -159,19 +164,15 @@ public class StreamControlManager {
     // TODO: lazy update range's end offset
     // TODO: controller allocate the stream id
     public ControllerResult<CreateStreamResponseData> createStream(CreateStreamRequestData data) {
-        long streamId = data.streamId();
         CreateStreamResponseData resp = new CreateStreamResponseData();
-        if (this.streamsMetadata.containsKey(streamId)) {
-            // already exist
-            resp.setErrorCode(Errors.STREAM_EXIST.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
+        long streamId = nextAssignedStreamId;
         // create stream
         ApiMessageAndVersion record = new ApiMessageAndVersion(new S3StreamRecord()
             .setStreamId(streamId)
             .setEpoch(0)
             .setStartOffset(0L)
             .setRangeIndex(-1), (short) 0);
+        resp.setStreamId(streamId);
         return ControllerResult.of(Arrays.asList(record), resp);
     }
 
@@ -267,6 +268,7 @@ public class StreamControlManager {
         S3StreamMetadata streamMetadata = new S3StreamMetadata(record.epoch(), record.rangeIndex(),
             record.startOffset(), this.snapshotRegistry);
         this.streamsMetadata.put(streamId, streamMetadata);
+        this.nextAssignedStreamId = Math.max(this.nextAssignedStreamId, streamId + 1);
     }
 
     public void replay(RemoveS3StreamRecord record) {
@@ -303,6 +305,10 @@ public class StreamControlManager {
 
     public Map<Integer, BrokerS3WALMetadata> brokersMetadata() {
         return brokersMetadata;
+    }
+
+    public Long nextAssignedStreamId() {
+        return nextAssignedStreamId;
     }
 
     @Override

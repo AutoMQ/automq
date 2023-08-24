@@ -37,10 +37,12 @@ import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
+@Tag("S3Unit")
 public class StreamControlManagerTest {
 
     private final static long STREAM0 = 0;
@@ -67,10 +69,12 @@ public class StreamControlManagerTest {
     @Test
     public void testBasicCreateStream() {
         // 1. create stream_0 success
-        CreateStreamRequestData request0 = new CreateStreamRequestData().setStreamId(STREAM0);
+        CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
         List<ApiMessageAndVersion> records0 = result0.records();
         CreateStreamResponseData response0 = result0.response();
+        assertEquals(Errors.NONE.code(), response0.errorCode());
+        assertEquals(STREAM0, response0.streamId());
         assertEquals(1, records0.size());
         ApiMessageAndVersion record0 = records0.get(0);
         assertInstanceOf(S3StreamRecord.class, record0.message());
@@ -79,7 +83,6 @@ public class StreamControlManagerTest {
         assertEquals(0, streamRecord0.epoch());
         assertEquals(-1, streamRecord0.rangeIndex());
         assertEquals(0L, streamRecord0.startOffset());
-        assertEquals(0, response0.errorCode());
 
         // replay records_0
         manager.replay(streamRecord0);
@@ -88,23 +91,41 @@ public class StreamControlManagerTest {
             manager.streamsMetadata();
         assertEquals(1, streamsMetadata.size());
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM0));
+        assertEquals(1, manager.nextAssignedStreamId());
 
-        // 2. create stream_0 with exception
-        CreateStreamRequestData request1 = new CreateStreamRequestData().setStreamId(STREAM0);
+        // 2. create stream_1
+        CreateStreamRequestData request1 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result1 = manager.createStream(request1);
         List<ApiMessageAndVersion> records1 = result1.records();
         CreateStreamResponseData response1 = result1.response();
-        assertEquals(0, records1.size());
-        assertEquals(Errors.STREAM_EXIST.code(), response1.errorCode());
+        assertEquals(Errors.NONE.code(), response1.errorCode());
+        assertEquals(STREAM1, response1.streamId());
+        assertEquals(1, records1.size());
+        ApiMessageAndVersion record1 = records1.get(0);
+        assertInstanceOf(S3StreamRecord.class, record1.message());
+        S3StreamRecord streamRecord1 = (S3StreamRecord) record1.message();
+        assertEquals(STREAM1, streamRecord1.streamId());
+        assertEquals(0, streamRecord1.epoch());
+        assertEquals(-1, streamRecord1.rangeIndex());
+        assertEquals(0L, streamRecord1.startOffset());
+
+        // replay records_1
+        manager.replay(streamRecord1);
+        // verify the stream_2 is created
+        streamsMetadata =
+            manager.streamsMetadata();
+        assertEquals(2, streamsMetadata.size());
+        verifyInitializedStreamMetadata(streamsMetadata.get(STREAM1));
+        assertEquals(2, manager.nextAssignedStreamId());
     }
 
     @Test
     public void testBasicOpenStream() {
         // 1. create stream_0 and stream_1
-        CreateStreamRequestData request0 = new CreateStreamRequestData().setStreamId(STREAM0);
+        CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
         result0.records().stream().map(x -> (S3StreamRecord) x.message()).forEach(manager::replay);
-        CreateStreamRequestData request1 = new CreateStreamRequestData().setStreamId(STREAM1);
+        CreateStreamRequestData request1 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result1 = manager.createStream(request1);
         result1.records().stream().map(x -> (S3StreamRecord) x.message()).forEach(manager::replay);
 

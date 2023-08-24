@@ -26,6 +26,7 @@ import kafka.log.s3.model.RangeMetadata;
 import kafka.log.s3.model.StreamMetadata;
 import kafka.log.s3.streams.StreamManager;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 public class S3StreamTest {
     Wal wal;
     S3BlockCache blockCache;

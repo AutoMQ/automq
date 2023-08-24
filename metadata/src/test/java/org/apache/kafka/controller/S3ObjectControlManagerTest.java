@@ -32,11 +32,13 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 @Timeout(40)
+@Tag("S3Unit")
 public class S3ObjectControlManagerTest {
     private static final int BROKER0 = 0;
     private static final int BROKER1 = 1;
