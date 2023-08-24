@@ -24,6 +24,7 @@ import kafka.log.s3.objects.S3ObjectMetadata;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.metadata.stream.S3ObjectType;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Iterator;
@@ -33,6 +34,7 @@ import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+@Tag("esUnit")
 public class ObjectWriterTest {
 
     @Test

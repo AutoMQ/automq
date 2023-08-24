@@ -17,23 +17,23 @@
 
 package kafka.log.s3.cache;
 
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
+import kafka.log.s3.model.StreamRecordBatch;
 
 import java.util.List;
 import java.util.OptionalLong;
 
 public class ReadDataBlock {
-    private List<RecordBatchWithContext> records;
+    private List<StreamRecordBatch> records;
 
-    public ReadDataBlock(List<RecordBatchWithContext> records) {
+    public ReadDataBlock(List<StreamRecordBatch> records) {
         this.records = records;
     }
 
-    public List<RecordBatchWithContext> getRecords() {
+    public List<StreamRecordBatch> getRecords() {
         return records;
     }
 
-    public void setRecords(List<RecordBatchWithContext> records) {
+    public void setRecords(List<StreamRecordBatch> records) {
         this.records = records;
     }
 
@@ -41,7 +41,7 @@ public class ReadDataBlock {
         if (records.isEmpty()) {
             return OptionalLong.empty();
         } else {
-            return OptionalLong.of(records.get(0).baseOffset());
+            return OptionalLong.of(records.get(0).getBaseOffset());
         }
     }
 
@@ -49,11 +49,11 @@ public class ReadDataBlock {
         if (records.isEmpty()) {
             return OptionalLong.empty();
         } else {
-            return OptionalLong.of(records.get(records.size() - 1).lastOffset());
+            return OptionalLong.of(records.get(records.size() - 1).getLastOffset());
         }
     }
 
     public int sizeInBytes() {
-        return records.stream().mapToInt(r -> r.rawPayload().remaining()).sum();
+        return records.stream().mapToInt(r -> r.getRecordBatch().rawPayload().remaining()).sum();
     }
 }
