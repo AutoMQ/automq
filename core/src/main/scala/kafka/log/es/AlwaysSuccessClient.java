@@ -202,33 +202,8 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-            String holdUpKey = startOffset + "-" + endOffset + "-" + maxBytesHint;
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            // If this thread is not marked, then just fetch data.
-            if (!SeparateSlowAndQuickFetchHint.isMarked()) {
-                if (holdUpFetchingFutureMap.containsKey(holdUpKey)) {
-                    holdUpFetchingFutureMap.remove(holdUpKey).thenAccept(cf::complete);
-                } else {
-                    fetch0(startOffset, endOffset, maxBytesHint, cf);
-                }
-            } else {
-                // Try to have a quick fetch. If fetching is timeout, then complete with SlowFetchHintException.
-                timeoutAndStoreFuture(holdUpKey, stream.fetch(startOffset, endOffset, maxBytesHint), SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
-                        if (ex != null) {
-                            if (closed) {
-                                cf.completeExceptionally(new IllegalStateException("stream already closed"));
-                            } else if (ex instanceof SlowFetchHintException){
-                                LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
-                                cf.completeExceptionally(ex);
-                            } else {
-                                cf.completeExceptionally(ex);
-                            }
-                        } else {
-                            cf.complete(rst);
-                        }
-                    }, LOGGER));
-            }
+            fetch0(startOffset, endOffset, maxBytesHint, cf);
             return cf;
         }
 
