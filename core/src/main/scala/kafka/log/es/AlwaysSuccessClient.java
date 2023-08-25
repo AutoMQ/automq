@@ -26,12 +26,13 @@ import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.BiConsumer;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
+
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +57,7 @@ public class AlwaysSuccessClient implements Client {
     private static final ExecutorService FETCH_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private static final ScheduledExecutorService DELAY_FETCH_SCHEDULER = Executors.newScheduledThreadPool(1,
-        ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
+            ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
     private final StreamClient streamClient;
     private final KVClient kvClient;
 
@@ -128,7 +129,7 @@ public class AlwaysSuccessClient implements Client {
         private final Stream stream;
         private volatile boolean closed = false;
         private final Map<String, CompletableFuture<FetchResult>> holdUpFetchingFutureMap = new ConcurrentHashMap<>();
-        private final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
+        private static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -161,44 +162,6 @@ public class AlwaysSuccessClient implements Client {
                         }
                     }, LOGGER));
             return cf;
-        }
-
-        /**
-         * Get a new CompletableFuture with
-         * a {@link SlowFetchHintException} if not otherwise completed
-         * before the given timeout.
-         * @param id the id of rawFuture in holdUpFetchingFutureMap
-         * @param rawFuture the raw future
-         * @param timeout how long to wait before completing exceptionally
-         *        with a SlowFetchHintException, in units of {@code unit}
-         * @param unit a {@code TimeUnit} determining how to interpret the
-         *        {@code timeout} parameter
-         * @return a new CompletableFuture with completed results of the rawFuture if the raw future is done before timeout,
-         *        otherwise a new CompletableFuture with a {@link SlowFetchHintException}
-         */
-        private CompletableFuture<FetchResult> timeoutAndStoreFuture(String id, CompletableFuture<FetchResult> rawFuture, long timeout,
-            TimeUnit unit) {
-            if (unit == null) {
-                throw new NullPointerException();
-            }
-
-            if (!rawFuture.isDone()) {
-                final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-                rawFuture.whenComplete(new Canceller(Delayer.delay(() -> {
-                        if (rawFuture == null) {
-                            return;
-                        }
-                        if (rawFuture.isDone()) {
-                            rawFuture.thenAccept(cf::complete);
-                        } else {
-                            holdUpFetchingFutureMap.putIfAbsent(id, rawFuture);
-                            cf.completeExceptionally(new SlowFetchHintException());
-                        }
-                    },
-                    timeout, unit)));
-                return cf;
-            }
-            return rawFuture;
         }
 
         @Override
@@ -274,7 +237,7 @@ public class AlwaysSuccessClient implements Client {
 
     static final class Delayer {
         static ScheduledFuture<?> delay(Runnable command, long delay,
-            TimeUnit unit) {
+                                        TimeUnit unit) {
             return DELAY_FETCH_SCHEDULER.schedule(command, delay, unit);
         }
     }
