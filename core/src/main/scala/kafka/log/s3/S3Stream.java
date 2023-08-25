@@ -28,7 +28,6 @@ import com.automq.elasticstream.client.flatc.header.ErrorCode;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;
 import kafka.log.s3.cache.S3BlockCache;
-import kafka.log.s3.model.StreamMetadata;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.slf4j.Logger;
@@ -42,10 +41,10 @@ import java.util.stream.Collectors;
 
 public class S3Stream implements Stream {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
-    private final StreamMetadata metadata;
     private final String logIdent;
     private final long streamId;
     private final long epoch;
+    private long startOffset;
     final AtomicLong confirmOffset;
     private final AtomicLong nextOffset;
     private final Wal wal;
@@ -53,27 +52,28 @@ public class S3Stream implements Stream {
     private final StreamManager streamManager;
     private final Status status;
 
-    public S3Stream(StreamMetadata metadata, Wal wal, S3BlockCache blockCache, StreamManager streamManager) {
-        this.metadata = metadata;
-        this.logIdent = "[Stream id=" + metadata.getStreamId() + " epoch" + metadata.getEpoch() + "]";
-        this.streamId = metadata.getStreamId();
-        this.epoch = metadata.getEpoch();
-        this.nextOffset = new AtomicLong(metadata.getRanges().get(metadata.getRanges().size() - 1).getStartOffset());
-        this.confirmOffset = new AtomicLong(nextOffset.get());
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Wal wal, S3BlockCache blockCache, StreamManager streamManager) {
+        this.streamId = streamId;
+        this.epoch = epoch;
+        this.startOffset = startOffset;
+        this.logIdent = "[Stream id=" + streamId + " epoch" + epoch + "]";
+        this.nextOffset = new AtomicLong(nextOffset);
+        this.confirmOffset = new AtomicLong(nextOffset);
         this.status = new Status();
         this.wal = wal;
         this.blockCache = blockCache;
         this.streamManager = streamManager;
     }
 
+
     @Override
     public long streamId() {
-        return metadata.getStreamId();
+        return this.streamId;
     }
 
     @Override
     public long startOffset() {
-        return metadata.getStartOffset();
+        return this.startOffset;
     }
 
     @Override
@@ -112,11 +112,11 @@ public class S3Stream implements Stream {
             return FutureUtil.failedFuture(new ElasticStreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is already closed"));
         }
         long confirmOffset = this.confirmOffset.get();
-        if (startOffset < metadata.getStartOffset() || endOffset > confirmOffset) {
+        if (startOffset < startOffset() || endOffset > confirmOffset) {
             return FutureUtil.failedFuture(
                     new ElasticStreamClientException(
                             ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS,
-                            String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, metadata.getStartOffset(), confirmOffset)
+                            String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
                     ));
         }
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
@@ -127,12 +127,12 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<Void> trim(long newStartOffset) {
-        if (newStartOffset < metadata.getStartOffset()) {
+        if (newStartOffset < this.startOffset) {
             throw new IllegalArgumentException("newStartOffset[" + newStartOffset + "] cannot be less than current start offset["
-                    + metadata.getStartOffset() + "]");
+                    + this.startOffset + "]");
         }
-        metadata.setStartOffset(newStartOffset);
-        return streamManager.trimStream(metadata.getStreamId(), metadata.getEpoch(), newStartOffset);
+        this.startOffset = newStartOffset;
+        return streamManager.trimStream(streamId, epoch, newStartOffset);
     }
 
     @Override
@@ -144,14 +144,14 @@ public class S3Stream implements Stream {
     @Override
     public CompletableFuture<Void> destroy() {
         status.markDestroy();
-        metadata.setStartOffset(this.confirmOffset.get());
+        startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);
     }
 
     private void updateConfirmOffset(long newOffset) {
         for (; ; ) {
             long oldConfirmOffset = confirmOffset.get();
-            if (oldConfirmOffset <= newOffset) {
+            if (oldConfirmOffset >= newOffset) {
                 break;
             }
             if (confirmOffset.compareAndSet(oldConfirmOffset, newOffset)) {

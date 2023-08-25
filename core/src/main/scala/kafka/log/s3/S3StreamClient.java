@@ -28,6 +28,7 @@ import kafka.log.s3.streams.StreamManager;
 import java.util.concurrent.CompletableFuture;
 
 public class S3StreamClient implements StreamClient {
+
     private final StreamManager streamController;
     private final Wal wal;
     private final S3BlockCache blockCache;
@@ -51,6 +52,10 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        return streamController.openStream(streamId, epoch).thenApply(metadata -> new S3Stream(metadata, wal, blockCache, streamController));
+        return streamController.openStream(streamId, epoch).
+            thenApply(metadata -> new S3Stream(
+                metadata.getStreamId(), metadata.getEpoch(),
+                metadata.getStartOffset(), metadata.getNextOffset(),
+                wal, blockCache, streamController));
     }
 }

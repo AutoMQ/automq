@@ -58,6 +58,8 @@ import org.slf4j.Logger;
  */
 public class StreamControlManager {
 
+    // TODO: assigned record
+    // TODO: timeline check
     public static class S3StreamMetadata {
         // current epoch, when created but not open, use 0 represent
         private long currentEpoch;

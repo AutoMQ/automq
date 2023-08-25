@@ -15,63 +15,34 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.model;
+package kafka.log.s3.objects;
 
-import java.util.List;
+public class OpenStreamMetadata {
+    private final long streamId;
+    private final long epoch;
+    private final long startOffset;
+    private final long nextOffset;
 
-public class StreamMetadata {
-    private long streamId;
-    private long epoch;
-    private int rangeIndex;
-    private long startOffset;
-
-    private List<RangeMetadata> ranges;
-
-    public StreamMetadata(long streamId, long epoch, int rangeIndex, long startOffset, List<RangeMetadata> ranges) {
+    public OpenStreamMetadata(long streamId, long epoch, long startOffset, long nextOffset) {
         this.streamId = streamId;
         this.epoch = epoch;
-        this.rangeIndex = rangeIndex;
         this.startOffset = startOffset;
-        this.ranges = ranges;
+        this.nextOffset = nextOffset;
     }
 
     public long getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(long streamId) {
-        this.streamId = streamId;
-    }
-
     public long getEpoch() {
         return epoch;
-    }
-
-    public void setEpoch(long epoch) {
-        this.epoch = epoch;
     }
 
     public long getStartOffset() {
         return startOffset;
     }
 
-    public void setStartOffset(long startOffset) {
-        this.startOffset = startOffset;
-    }
-
-    public List<RangeMetadata> getRanges() {
-        return ranges;
-    }
-
-    public void setRanges(List<RangeMetadata> ranges) {
-        this.ranges = ranges;
-    }
-
-    public int getRangeIndex() {
-        return rangeIndex;
-    }
-
-    public void setRangeIndex(int rangeIndex) {
-        this.rangeIndex = rangeIndex;
+    public long getNextOffset() {
+        return nextOffset;
     }
 }

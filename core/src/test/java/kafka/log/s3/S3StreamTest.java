@@ -22,8 +22,6 @@ import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.cache.S3BlockCache;
-import kafka.log.s3.model.RangeMetadata;
-import kafka.log.s3.model.StreamMetadata;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,12 +51,7 @@ public class S3StreamTest {
         wal = mock(Wal.class);
         blockCache = mock(S3BlockCache.class);
         streamManager = mock(StreamManager.class);
-        StreamMetadata metadata = new StreamMetadata();
-        metadata.setStreamId(233);
-        metadata.setEpoch(1);
-        metadata.setStartOffset(100);
-        metadata.setRanges(List.of(new RangeMetadata(1, 50, -1, 10)));
-        stream = new S3Stream(metadata, wal, blockCache, streamManager);
+        stream = new S3Stream(233, 1, 100, 233, wal, blockCache, streamManager);
     }
 
     @Test
@@ -74,7 +67,7 @@ public class S3StreamTest {
         boolean isException = false;
         try {
             stream.fetch(120, 140, 100).get();
-        }catch (ExecutionException e) {
+        } catch (ExecutionException e) {
             if (e.getCause() instanceof ElasticStreamClientException) {
                 isException = true;
             }
