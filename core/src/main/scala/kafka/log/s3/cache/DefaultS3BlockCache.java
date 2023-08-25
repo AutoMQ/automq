@@ -40,7 +40,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        if (startOffset >= endOffset || maxBytes == 0) {
+        if (startOffset >= endOffset || maxBytes <= 0) {
             return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList()));
         }
         List<S3ObjectMetadata> objects = objectManager.getObjects(streamId, startOffset, endOffset, 2);
