@@ -17,9 +17,8 @@
 
 package kafka.log.s3.streams;
 
-import kafka.log.s3.model.StreamMetadata;
-
 import java.util.concurrent.CompletableFuture;
+import kafka.log.s3.objects.OpenStreamMetadata;
 
 public interface StreamManager {
 
@@ -38,9 +37,9 @@ public interface StreamManager {
      *
      * @param streamId stream id.
      * @param epoch    stream epoch.
-     * @return {@link StreamMetadata}
+     * @return {@link OpenStreamMetadata}
      */
-    CompletableFuture<StreamMetadata> openStream(long streamId, long epoch);
+    CompletableFuture<OpenStreamMetadata> openStream(long streamId, long epoch);
 
     /**
      * Trim stream to new start offset.

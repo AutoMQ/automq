@@ -29,14 +29,25 @@ public class S3WALObject {
     private final long objectId;
 
     private final int brokerId;
-    private Map<Long/*streamId*/, S3ObjectStreamIndex> streamsIndex;
+    private final Map<Long/*streamId*/, S3ObjectStreamIndex> streamsIndex;
 
-    private S3ObjectType objectType = S3ObjectType.UNKNOWN;
+    private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
     public S3WALObject(long objectId, int brokerId, final Map<Long, S3ObjectStreamIndex> streamsIndex) {
         this.objectId = objectId;
         this.brokerId = brokerId;
         this.streamsIndex = streamsIndex;
+    }
+
+    public boolean intersect(long streamId, long startOffset, long endOffset) {
+        S3ObjectStreamIndex streamIndex = streamsIndex.get(streamId);
+        if (streamIndex == null) {
+            return false;
+        }
+        if (endOffset <= streamIndex.getStartOffset() || startOffset >= streamIndex.getEndOffset()) {
+            return false;
+        }
+        return true;
     }
 
     public ApiMessageAndVersion toRecord() {
@@ -66,6 +77,10 @@ public class S3WALObject {
 
     public Long objectId() {
         return objectId;
+    }
+
+    public S3ObjectType objectType() {
+        return objectType;
     }
 
     @Override

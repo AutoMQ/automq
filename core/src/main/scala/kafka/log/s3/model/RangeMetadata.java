@@ -17,20 +17,19 @@
 
 package kafka.log.s3.model;
 
-import java.util.OptionalLong;
 
 public class RangeMetadata {
     private static final long NOOP_OFFSET = -1;
     private int index;
     private long startOffset;
     private long endOffset;
-    private long serverId;
+    private int brokerId;
 
-    public RangeMetadata(int index, long startOffset, long endOffset, long serverId) {
+    public RangeMetadata(int index, long startOffset, long endOffset, int serverId) {
         this.index = index;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
-        this.serverId = serverId;
+        this.brokerId = serverId;
     }
 
     public int getIndex() {
@@ -49,23 +48,19 @@ public class RangeMetadata {
         this.startOffset = startOffset;
     }
 
-    public OptionalLong getEndOffset() {
-        if (endOffset == NOOP_OFFSET) {
-            return OptionalLong.empty();
-        } else {
-            return OptionalLong.of(endOffset);
-        }
+    public long getEndOffset() {
+        return endOffset;
     }
 
     public void setEndOffset(long endOffset) {
         this.endOffset = endOffset;
     }
 
-    public long getServerId() {
-        return serverId;
+    public int getBrokerId() {
+        return brokerId;
     }
 
-    public void setServerId(long serverId) {
-        this.serverId = serverId;
+    public void setBrokerId(int brokerId) {
+        this.brokerId = brokerId;
     }
 }
