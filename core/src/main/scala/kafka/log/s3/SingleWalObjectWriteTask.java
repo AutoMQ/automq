@@ -17,7 +17,8 @@
 
 package kafka.log.s3;
 
-import kafka.log.s3.exception.StreamFencedException;
+import com.automq.elasticstream.client.api.ElasticStreamClientException;
+import com.automq.elasticstream.client.flatc.header.ErrorCode;
 import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
@@ -87,7 +88,7 @@ public class SingleWalObjectWriteTask {
         for (WalWriteRequest request : requests) {
             long streamId = request.record.getStreamId();
             if (failedStreamId.contains(streamId)) {
-                request.cf.completeExceptionally(new StreamFencedException());
+                request.cf.completeExceptionally(new ElasticStreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH, "Stream " + streamId + " epoch expired"));
             } else {
                 request.cf.complete(null);
             }

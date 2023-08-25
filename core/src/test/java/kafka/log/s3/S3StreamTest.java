@@ -17,6 +17,7 @@
 
 package kafka.log.s3;
 
+import com.automq.elasticstream.client.api.ElasticStreamClientException;
 import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.cache.ReadDataBlock;
@@ -31,9 +32,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -60,12 +63,23 @@ public class S3StreamTest {
 
     @Test
     public void testFetch() throws Throwable {
+        stream.confirmOffset.set(120L);
         when(blockCache.read(eq(233L), eq(110L), eq(120L), eq(100)))
                 .thenReturn(CompletableFuture.completedFuture(newReadDataBlock(110, 115, 110)));
         FetchResult rst = stream.fetch(110, 120, 100).get(1, TimeUnit.SECONDS);
         assertEquals(1, rst.recordBatchList().size());
         assertEquals(110, rst.recordBatchList().get(0).baseOffset());
         assertEquals(115, rst.recordBatchList().get(0).lastOffset());
+
+        boolean isException = false;
+        try {
+            stream.fetch(120, 140, 100).get();
+        }catch (ExecutionException e) {
+            if (e.getCause() instanceof ElasticStreamClientException) {
+                isException = true;
+            }
+        }
+        assertTrue(isException);
     }
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
