@@ -22,7 +22,7 @@ import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.common.RecordValidationException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.es.ReadManualReleaseHint
+import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
@@ -465,13 +465,17 @@ class ReplicaManager(val config: KafkaConfig,
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               maybeRemoveTopicMetrics(topicPartition.topic)
               // elastic stream inject start
-              if (logManager.cleaner != null) {
-                logManager.cleaner.abortCleaning(topicPartition)
+              if (ElasticLogManager.enabled()) {
+                if (logManager.cleaner != null) {
+                  logManager.cleaner.abortCleaning(topicPartition)
+                }
+                // For elastic stream, partition leader alter is triggered by setting isr/replicas.
+                // When broker is not response for the partition, we need to close the partition
+                // instead of delete the partition.
+                hostedPartition.partition.close()
+              } else {
+                hostedPartition.partition.delete()
               }
-              // For elastic stream, partition leader alter is triggered by setting isr/replicas.
-              // When broker is not response for the partition, we need to close the partition
-              // instead of delete the partition.
-              hostedPartition.partition.close()
               // elastic stream inject end
             }
 
@@ -489,7 +493,9 @@ class ReplicaManager(val config: KafkaConfig,
     if (partitionsToDelete.nonEmpty) {
       // Delete the logs and checkpoint.
       // elastic stream inject start
-//            logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
+      if (!ElasticLogManager.enabled()) {
+        logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
+      }
       // elastic stream inject end
     }
     errorMap
@@ -1047,7 +1053,7 @@ class ReplicaManager(val config: KafkaConfig,
     logReadResults.foreach { case (topicIdPartition, logReadResult) =>
       brokerTopicStats.topicStats(topicIdPartition.topicPartition.topic).totalFetchRequestRate.mark()
       brokerTopicStats.allTopicsStats.totalFetchRequestRate.mark()
-      if (logReadResult.exception.isDefined && logReadResult.exception.get.isInstanceOf[KafkaStorageException]) {
+      if (logReadResult.exception.isDefined && logReadResult.exception.get.isInstanceOf[SlowFetchHintException]) {
         containsSlowFetchHint = true
       }
       if (logReadResult.error != Errors.NONE)
@@ -2137,20 +2143,30 @@ class ReplicaManager(val config: KafkaConfig,
       // create new partitions with the same names as the ones we are deleting here.
       if (!localChanges.deletes.isEmpty) {
         val deletes = localChanges.deletes.asScala.map(tp => (tp, true)).toMap
-        partitionOpenCloseExecutors.submit(new Runnable {
-          override def run(): Unit = {
-            stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
-            stopPartitions(deletes).forKeyValue { (topicPartition, e) =>
-              if (e.isInstanceOf[KafkaStorageException]) {
-                stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                    "the local replica for the partition is in an offline log directory")
-              } else {
-                stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                    s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
-              }
+
+        def doPartitionDeletion(): Unit = {
+          stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
+          stopPartitions(deletes).forKeyValue { (topicPartition, e) =>
+            if (e.isInstanceOf[KafkaStorageException]) {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                  "the local replica for the partition is in an offline log directory")
+            } else {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                  s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
             }
           }
-        })
+        }
+
+        if (ElasticLogManager.enabled()) {
+          partitionOpenCloseExecutors.submit(new Runnable {
+            override def run(): Unit = {
+              doPartitionDeletion()
+            }
+          })
+        } else {
+          doPartitionDeletion()
+        }
+
       }
 
       // Handle partitions which we are now the leader or follower for.
@@ -2158,11 +2174,20 @@ class ReplicaManager(val config: KafkaConfig,
         val lazyOffsetCheckpoints = new LazyOffsetCheckpoints(this.highWatermarkCheckpoints)
         val changedPartitions = new mutable.HashSet[Partition]
         if (!localChanges.leaders.isEmpty) {
-          partitionOpenCloseExecutors.submit(new Runnable {
-            override def run(): Unit = {
-              applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala)
-            }
-          })
+          def doPartitionLeading(): Unit = {
+            applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala)
+          }
+
+          if (ElasticLogManager.enabled()) {
+            partitionOpenCloseExecutors.submit(new Runnable {
+              override def run(): Unit = {
+                doPartitionLeading()
+              }
+            })
+          } else {
+            doPartitionLeading()
+          }
+
         }
         if (!localChanges.followers.isEmpty) {
           applyLocalFollowersDelta(changedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala)

@@ -765,31 +765,32 @@ class Partition(val topicPartition: TopicPartition,
       )
 
       // elastic stream inject start
-      // only create log when partition is leader
-//      try {
-//        createLogIfNotExists(partitionState.isNew, isFutureReplica = false, highWatermarkCheckpoints, topicId)
-//      } catch {
-//        case e: ZooKeeperClientException =>
-//          stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
-//            s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
-//          return false
-//      }
-//
-//      val followerLog = localLogOrException
-      // elastic stream inject end
       val isNewLeaderEpoch = partitionState.leaderEpoch > leaderEpoch
+      if (!ElasticLogManager.enabled()) {
+        // only create log when partition is leader
+        try {
+          createLogIfNotExists(partitionState.isNew, isFutureReplica = false, highWatermarkCheckpoints, topicId)
+        } catch {
+          case e: ZooKeeperClientException =>
+            stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
+                s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
+            return false
+        }
 
-      // elastic stream inject start
-//      if (isNewLeaderEpoch) {
-//        val leaderEpochEndOffset = followerLog.logEndOffset
-//        stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
-//          s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
-//          s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
-//          s"Previous leader epoch was $leaderEpoch.")
-//      } else {
-//        stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
-//          s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
-//      }
+        val followerLog = localLogOrException
+
+        if (isNewLeaderEpoch) {
+          val leaderEpochEndOffset = followerLog.logEndOffset
+          stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
+              s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
+              s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
+              s"Previous leader epoch was $leaderEpoch.")
+        } else {
+          stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
+              s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
+        }
+      }
+
       // elastic stream inject end
 
       leaderReplicaIdOpt = Option(partitionState.leader)

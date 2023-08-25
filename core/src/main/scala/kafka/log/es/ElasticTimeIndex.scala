@@ -25,11 +25,13 @@ import org.apache.kafka.common.record.RecordBatch
 
 import java.io.{File, IOException}
 import java.nio.ByteBuffer
+import java.util.concurrent.CompletableFuture
 
 class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
   extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = lastEntryFromIndexFile
+  @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
   private var closed = false
 
   protected def entrySize: Int = 12
@@ -111,7 +113,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
         val relatedOffset = relativeOffset(offset)
         buffer.putInt(relatedOffset)
         buffer.flip()
-        stream.append(RawPayloadRecordBatch.of(buffer))
+        lastAppend = stream.append(RawPayloadRecordBatch.of(buffer))
 
         // put time index to cache
         cache.putLong(_entries * entrySize, timestamp)
@@ -141,7 +143,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   }
 
   def truncate(): Unit = {
-    //TODO:
+    throw new UnsupportedOperationException("truncate() is not supported in ElasticTimeIndex")
   }
 
   override def close(): Unit = {
@@ -150,7 +152,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   }
 
   def truncateTo(offset: Long): Unit = {
-    // TODO:
+    throw new UnsupportedOperationException("truncateTo() is not supported in ElasticTimeIndex")
   }
 
   def sanityCheck(): Unit = {
@@ -158,7 +160,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   }
 
   override def flush(): Unit = {
-    // TODO: wait all in-flight append complete
+    lastAppend.get()
   }
 
   def seal(): Unit = {

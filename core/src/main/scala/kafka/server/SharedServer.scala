@@ -22,6 +22,7 @@ import kafka.server.KafkaRaftServer.{BrokerRole, ControllerRole}
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
 import kafka.utils.{CoreUtils, Logging}
+import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.utils.{AppInfoParser, LogContext, Time}
 import org.apache.kafka.controller.QuorumControllerMetrics
@@ -97,6 +98,9 @@ class SharedServer(
   private var usedByController: Boolean = false
   val brokerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
+  // elastic stream injection start
+  ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
+  // elastic stream injection end
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _

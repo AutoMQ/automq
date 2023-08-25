@@ -24,7 +24,6 @@ import java.util.Arrays;
  * refers to one snapshot file
  */
 public class ElasticPartitionProducerSnapshotMeta {
-    // TODO: lazy load
     /**
      * raw data of the snapshot
      */

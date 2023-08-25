@@ -18,6 +18,7 @@
 package kafka.log
 
 import kafka.log.LogConfig.MessageFormatVersion
+import kafka.log.es.ElasticLogManager
 
 import java.io._
 import java.nio.file.Files
@@ -37,7 +38,6 @@ import scala.collection._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.{Failure, Success, Try}
 import kafka.utils.Implicits._
-import org.apache.kafka.common.internals.Topic
 
 import java.util.Properties
 import org.apache.kafka.server.common.MetadataVersion
@@ -392,16 +392,18 @@ class LogManager(logDirs: Seq[File],
         // elastic stream inject start
         var logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
           logDir.isDirectory && UnifiedLog.parseTopicPartitionName(logDir).topic != KafkaRaftServer.MetadataTopic)
-        try{
-          logsToLoad.foreach(logDir => {
-            warn(s"Unexpected partition directory $logDir. It may be due to an unclean shutdown.")
-            Utils.delete(logDir)
-          })
-        } catch {
+        if (ElasticLogManager.enabled()) {
+          try {
+            logsToLoad.foreach(logDir => {
+              warn(s"Unexpected partition directory $logDir. It may be due to an unclean shutdown.")
+              Utils.delete(logDir)
+            })
+          } catch {
             case e: IOException =>
-                warn(s"Error occurred while cleaning $logDirAbsolutePath", e)
+              warn(s"Error occurred while cleaning $logDirAbsolutePath", e)
+          }
+          logsToLoad = Array()
         }
-        logsToLoad = Array()
         // elastic stream inject end
 
         numTotalLogs += logsToLoad.length
@@ -618,19 +620,20 @@ class LogManager(logDirs: Seq[File],
         if (waitForAllToComplete(dirJobs,
           e => warn(s"There was an error in one of the threads during LogManager shutdown: ${e.getCause}"))) {
           // elastic stream inject start
-//          val logs = logsInDir(localLogsByDir, dir)
-
           // No need for updating recovery points, updating log start offsets or writing clean shutdown marker Since they have all been done in log.close()
+          if (ElasticLogManager.enabled()) return
+          val logs = logsInDir(localLogsByDir, dir)
+
           // update the last flush point
-//          debug(s"Updating recovery points at $dir")
-//          checkpointRecoveryOffsetsInDir(dir, logs)
-//
-//          debug(s"Updating log start offsets at $dir")
-//          checkpointLogStartOffsetsInDir(dir, logs)
-//
-//          // mark that the shutdown was clean by creating marker file
-//          debug(s"Writing clean shutdown marker at $dir")
-//          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+          debug(s"Updating recovery points at $dir")
+          checkpointRecoveryOffsetsInDir(dir, logs)
+
+          debug(s"Updating log start offsets at $dir")
+          checkpointLogStartOffsetsInDir(dir, logs)
+
+          // mark that the shutdown was clean by creating marker file
+          debug(s"Writing clean shutdown marker at $dir")
+          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
           // elastic stream inject end
         }
       }
@@ -1410,12 +1413,5 @@ object LogManager {
       keepPartitionMetadataFile = keepPartitionMetadataFile,
       interBrokerProtocolVersion = config.interBrokerProtocolVersion)
   }
-
-  // elastic stream inject start
-  def isClusterMetaPath(dirName: String): Boolean = {
-    // FIXME: check file path topic part
-    dirName.contains(Topic.CLUSTER_METADATA_TOPIC_NAME)
-  }
-  // elastic stream inject end
 
 }

@@ -28,7 +28,9 @@ import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
+import java.util.function.BiConsumer;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -43,11 +45,6 @@ import java.util.concurrent.TimeUnit;
 @SuppressWarnings("uncheck")
 public class AlwaysSuccessClient implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
-
-    // cause of rust frontend is single thread, so we use thread executor free callback overhead.
-    // caution: it should call another stream method in one method callback to avoid deadlock, if these method callback
-    // executor is same.
-    // TODO: change some api to sync call to avoid deadlock.
     private static final ScheduledExecutorService STREAM_MANAGER_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private static final ExecutorService STREAM_MANAGER_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(1,
@@ -58,6 +55,8 @@ public class AlwaysSuccessClient implements Client {
             ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
     private static final ExecutorService FETCH_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
+    private static final ScheduledExecutorService DELAY_FETCH_SCHEDULER = Executors.newScheduledThreadPool(1,
+        ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
     private final StreamClient streamClient;
     private final KVClient kvClient;
 
@@ -128,8 +127,8 @@ public class AlwaysSuccessClient implements Client {
     static class StreamImpl implements Stream {
         private final Stream stream;
         private volatile boolean closed = false;
-        private final Map<String, Boolean> slowFetchingOffsetMap = new ConcurrentHashMap<>();
-        private static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
+        private final Map<String, CompletableFuture<FetchResult>> holdUpFetchingFutureMap = new ConcurrentHashMap<>();
+        private final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -164,50 +163,62 @@ public class AlwaysSuccessClient implements Client {
             return cf;
         }
 
+        /**
+         * Get a new CompletableFuture with
+         * a {@link SlowFetchHintException} if not otherwise completed
+         * before the given timeout.
+         * @param id the id of rawFuture in holdUpFetchingFutureMap
+         * @param rawFuture the raw future
+         * @param timeout how long to wait before completing exceptionally
+         *        with a SlowFetchHintException, in units of {@code unit}
+         * @param unit a {@code TimeUnit} determining how to interpret the
+         *        {@code timeout} parameter
+         * @return a new CompletableFuture with completed results of the rawFuture if the raw future is done before timeout,
+         *        otherwise a new CompletableFuture with a {@link SlowFetchHintException}
+         */
+        private CompletableFuture<FetchResult> timeoutAndStoreFuture(String id, CompletableFuture<FetchResult> rawFuture, long timeout,
+            TimeUnit unit) {
+            if (unit == null) {
+                throw new NullPointerException();
+            }
+
+            if (!rawFuture.isDone()) {
+                final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
+                rawFuture.whenComplete(new Canceller(Delayer.delay(() -> {
+                        if (rawFuture == null) {
+                            return;
+                        }
+                        if (rawFuture.isDone()) {
+                            rawFuture.thenAccept(cf::complete);
+                        } else {
+                            holdUpFetchingFutureMap.putIfAbsent(id, rawFuture);
+                            cf.completeExceptionally(new SlowFetchHintException());
+                        }
+                    },
+                    timeout, unit)));
+                return cf;
+            }
+            return rawFuture;
+        }
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-            String slowFetchKey = startOffset + "-" + endOffset;
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            // If it is recorded as slowFetching, then skip timeout check.
-            if (slowFetchingOffsetMap.containsKey(slowFetchKey)) {
-                fetch0(startOffset, endOffset, maxBytesHint, cf, slowFetchKey);
-            } else {
-                // Try to have a quick stream. If fetching is timeout, then complete with SlowFetchHintException.
-                stream.fetch(startOffset, endOffset, maxBytesHint)
-                    .orTimeout(SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
-                        if (ex != null) {
-                            if (closed) {
-                                cf.completeExceptionally(new IllegalStateException("stream already closed"));
-                            } else if (ex instanceof TimeoutException) {
-                                LOGGER.info("Fetch stream[{}] [{},{}) timeout for {} ms, retry with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
-                                cf.completeExceptionally(new SlowFetchHintException("fetch data too slowly, retry with slow fetching"));
-                                slowFetchingOffsetMap.put(slowFetchKey, true);
-                            } else {
-                                cf.completeExceptionally(ex);
-                            }
-                        } else {
-                            slowFetchingOffsetMap.remove(slowFetchKey);
-                            cf.complete(rst);
-                        }
-                    }, LOGGER));
-            }
+            fetch0(startOffset, endOffset, maxBytesHint, cf);
             return cf;
         }
 
-        private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf, String slowFetchKey) {
+        private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
             stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
                         LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
                         if (!closed) {
-                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf, slowFetchKey), 3, TimeUnit.SECONDS);
+                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
                         } else {
                             cf.completeExceptionally(new IllegalStateException("stream already closed"));
                         }
                     } else {
-                        slowFetchingOffsetMap.remove(slowFetchKey);
                         cf.complete(rst);
                     }
                 }, LOGGER);
@@ -258,6 +269,26 @@ public class AlwaysSuccessClient implements Client {
 //                }, LOGGER);
 //            }, APPEND_CALLBACK_EXECUTORS);
 //            return cf;
+        }
+    }
+
+    static final class Delayer {
+        static ScheduledFuture<?> delay(Runnable command, long delay,
+            TimeUnit unit) {
+            return DELAY_FETCH_SCHEDULER.schedule(command, delay, unit);
+        }
+    }
+
+    static final class Canceller implements BiConsumer<Object, Throwable> {
+        final Future<?> f;
+
+        Canceller(Future<?> f) {
+            this.f = f;
+        }
+
+        public void accept(Object ignore, Throwable ex) {
+            if (ex == null && f != null && !f.isDone())
+                f.cancel(false);
         }
     }
 }

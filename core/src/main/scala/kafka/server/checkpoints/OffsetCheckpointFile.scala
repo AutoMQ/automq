@@ -17,7 +17,7 @@
 package kafka.server.checkpoints
 
 import kafka.log.LogManager.{LogStartOffsetCheckpointFile, RecoveryPointCheckpointFile}
-import kafka.log.es.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, LogStartOffsetCheckpoint, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
+import kafka.log.es.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, ElasticLogManager, LogStartOffsetCheckpoint, RawKafkaMeta, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
 import kafka.server.LogDirFailureChannel
 import kafka.server.ReplicaManager.HighWatermarkFilename
 import kafka.server.epoch.EpochEntry
@@ -34,11 +34,16 @@ object OffsetCheckpointFile {
   private[checkpoints] val CurrentVersion = 0
   private val offsetCheckpointFile = "cleaner-offset-checkpoint"
 
-  private val moveToMetaMap = Map(
-    offsetCheckpointFile -> CleanerOffsetCheckpoint,
-    LogStartOffsetCheckpointFile -> LogStartOffsetCheckpoint,
-    RecoveryPointCheckpointFile -> RecoveryPointCheckpoint,
-    HighWatermarkFilename -> ReplicationOffsetCheckpoint)
+  private def moveToMetaMap = {
+    if (ElasticLogManager.enabled())
+      Map(
+        offsetCheckpointFile -> CleanerOffsetCheckpoint,
+        LogStartOffsetCheckpointFile -> LogStartOffsetCheckpoint,
+        RecoveryPointCheckpointFile -> RecoveryPointCheckpoint,
+        HighWatermarkFilename -> ReplicationOffsetCheckpoint)
+    else
+      Map.empty[String, RawKafkaMeta]
+  }
 
   object Formatter extends EntryFormatter[(TopicPartition, Long)] {
     override def toString(entry: (TopicPartition, Long)): String = {

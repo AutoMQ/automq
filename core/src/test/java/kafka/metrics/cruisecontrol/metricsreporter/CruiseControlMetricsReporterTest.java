@@ -37,6 +37,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -70,6 +71,7 @@ import static kafka.metrics.cruisecontrol.metricsreporter.metric.RawMetricType.B
 import static kafka.metrics.cruisecontrol.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_IN;
 import static kafka.metrics.cruisecontrol.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
 
+@Tag("esUnit")
 public class CruiseControlMetricsReporterTest extends CCKafkaClientsIntegrationTestHarness {
     protected static final String TOPIC = "CruiseControlMetricsReporterTest";
 

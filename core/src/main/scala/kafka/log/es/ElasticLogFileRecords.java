@@ -59,7 +59,7 @@ public class ElasticLogFileRecords {
     protected final AtomicInteger size;
     protected final Iterable<RecordBatch> batches;
     private final ElasticStreamSlice streamSegment;
-    // logic offset instead of physical offset
+    // This is The base offset of the corresponding segment.
     private final long baseOffset;
     private final AtomicLong nextOffset;
     private final AtomicLong committedOffset;
@@ -71,8 +71,13 @@ public class ElasticLogFileRecords {
     public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset, int size) {
         this.baseOffset = baseOffset;
         this.streamSegment = streamSegment;
-        // TODO: init size when recover, all is size matter anymore?
         long nextOffset = streamSegment.nextOffset();
+        // Note that size is generally used to
+        // 1) show the physical size of a segment. In these cases, size is refered to decide whether to roll a new
+        // segment, or calculate the cleaned size in a cleaning task, etc. If size is not correctly recorded for any
+        // reason, the worst thing will be just a bigger segment than configured.
+        // 2) show whether this segment is empty, i.e., size == 0.
+        // Therefore, it is fine to use the nextOffset as a backoff value.
         this.size = new AtomicInteger(size == 0 ? (int) nextOffset : size);
         this.nextOffset = new AtomicLong(baseOffset + nextOffset);
         this.committedOffset = new AtomicLong(baseOffset + nextOffset);
@@ -105,6 +110,7 @@ public class ElasticLogFileRecords {
 
     private Records readAll0(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException {
         int readSize = 0;
+        // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         List<FetchResult> fetchResults = new LinkedList<>();
@@ -199,9 +205,26 @@ public class ElasticLogFileRecords {
                 Optional.empty() : Optional.of(leaderEpoch);
     }
 
+    /**
+     * Return the largest timestamp of the messages after a given offset
+     * @param startOffset The starting offset.
+     * @return The largest timestamp of the messages after the given position.
+     */
     public FileRecords.TimestampAndOffset largestTimestampAfter(long startOffset) {
-        // TODO: implement
-        return new FileRecords.TimestampAndOffset(0, 0, Optional.empty());
+        long maxTimestamp = RecordBatch.NO_TIMESTAMP;
+        long offsetOfMaxTimestamp = -1L;
+        int leaderEpochOfMaxTimestamp = RecordBatch.NO_PARTITION_LEADER_EPOCH;
+
+        for (RecordBatch batch : batchesFrom(startOffset)) {
+            long timestamp = batch.maxTimestamp();
+            if (timestamp > maxTimestamp) {
+                maxTimestamp = timestamp;
+                offsetOfMaxTimestamp = batch.lastOffset();
+                leaderEpochOfMaxTimestamp = batch.partitionLeaderEpoch();
+            }
+        }
+        return new FileRecords.TimestampAndOffset(maxTimestamp, offsetOfMaxTimestamp,
+            maybeLeaderEpoch(leaderEpochOfMaxTimestamp));
     }
 
     public ElasticStreamSlice streamSegment() {
@@ -333,6 +356,7 @@ public class ElasticLogFileRecords {
 
     public static class BatchIteratorRecordsAdaptor extends AbstractRecords {
         private final ElasticLogFileRecords elasticLogFileRecords;
+        // This is the offset in Kafka layer.
         private final long startOffset;
         private final long maxOffset;
         private final int fetchSize;
@@ -391,11 +415,11 @@ public class ElasticLogFileRecords {
             if (sizeInBytes != -1) {
                 return;
             }
-            // TODO: direct fetch and composite to a large memoryRecords
+            Records records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize);
             sizeInBytes = 0;
             CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
             RecordBatch lastBatch = null;
-            for (RecordBatch batch : batches()) {
+            for (RecordBatch batch : records.batches()) {
                 sizeInBytes += batch.sizeInBytes();
                 ByteBuffer buffer = ((DefaultRecordBatch) batch).buffer().duplicate();
                 allRecordsBuf.addComponent(true, Unpooled.wrappedBuffer(buffer));

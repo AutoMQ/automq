@@ -114,8 +114,8 @@ class ElasticProducerStateManager(
         }
     }
 
-    // TODO: check. maybe need to implement this method
-//    override def updateParentDir(parentDir: File): Unit = {}
+    // do nothing
+    override def updateParentDir(parentDir: File): Unit = {}
 
     override protected def removeAndDeleteSnapshot(snapshotOffset: Long): Unit = {
         deleteSnapshot(snapshotOffset)

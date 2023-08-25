@@ -200,7 +200,13 @@ class BrokerServer(
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
       // elastic stream inject start
-      ElasticLogManager.init(config, clusterId)
+      if (config.elasticStreamEnabled) {
+        if (!ElasticLogManager.init(config, clusterId)) {
+          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
+        }
+      } else {
+        warn("Elastic stream is disabled. This node will store data locally.")
+      }
       // elastic stream inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery

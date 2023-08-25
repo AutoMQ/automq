@@ -30,11 +30,14 @@ import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Lazy stream, create stream when append record.
  */
 public class LazyStream implements Stream {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LazyStream.class);
     public static final long NOOP_STREAM_ID = -1L;
     private static final Stream NOOP_STREAM = new NoopStream();
     private final String name;
@@ -118,7 +121,7 @@ public class LazyStream implements Stream {
         try {
             Optional.ofNullable(eventListener).ifPresent(listener -> listener.onEvent(inner.streamId(), event));
         } catch (Throwable e) {
-            //TODO: log unexpected exception
+            LOGGER.error("got notify listener error", e);
         }
     }
 
