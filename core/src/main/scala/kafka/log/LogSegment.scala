@@ -742,7 +742,7 @@ object LogSegment {
 
   def open(dir: File, baseOffset: Long, config: LogConfig, time: Time, fileAlreadyExists: Boolean = false,
            initFileSize: Int = 0, preallocate: Boolean = false, fileSuffix: String = ""): LogSegment = {
-    if (!isClusterMetaLogSegment(dir) && ElasticLogManager.INSTANCE.isDefined) {
+    if (!isClusterMetaLogSegment(dir) && ElasticLogManager.enabled()) {
       return ElasticLogManager.newSegment(dir2TopicPartition(dir), baseOffset, time, fileSuffix)
     }
     val maxIndexSize = config.maxIndexSize
@@ -771,7 +771,6 @@ object LogSegment {
   }
 
   def dir2TopicPartition(dir: File): TopicPartition = {
-    // TODO: impl, reuse LocalLog#parseTopicPartitionName
     LocalLog.parseTopicPartitionName(dir)
   }
   // elastic stream inject end

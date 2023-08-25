@@ -26,8 +26,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-// TODO: save meta to stream periodically. save meta when broker shutdown.
-
 /**
  * logical meta data for a Kafka topicPartition.
  */

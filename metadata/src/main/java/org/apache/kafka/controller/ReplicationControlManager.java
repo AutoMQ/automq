@@ -41,6 +41,7 @@ import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicIdException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.es.ElasticStreamSwitch;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.AlterPartitionRequestData;
 import org.apache.kafka.common.message.AlterPartitionResponseData;
@@ -602,16 +603,18 @@ public class ReplicationControlManager {
             Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
             // First, we pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
-                    defaultReplicationFactor : topic.replicationFactor();
-            // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
-            keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
-            // We reuse the passed replicationFactor to config elastic stream settings.
-            keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
+                defaultReplicationFactor : topic.replicationFactor();
+            if (ElasticStreamSwitch.isEnabled()) {
+                // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
+                keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
+                // We reuse the passed replicationFactor to config elastic stream settings.
+                keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
 
-            // Then, we force replication factor to 1 here since "replicas" on broker layer can only be 1.
-            if (replicationFactor != 1) {
-                topic.setReplicationFactor((short) 1);
-                log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
+                // Then, we force replication factor to 1 here since "replicas" on broker layer can only be 1.
+                if (replicationFactor != 1) {
+                    topic.setReplicationFactor((short) 1);
+                    log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
+                }
             }
             // elastic stream inject end
 
@@ -1031,11 +1034,15 @@ public class ReplicationControlManager {
                 }
 
                 // elastic stream inject start
-                List<Integer> newIsr = partitionData.newIsr();
-                if (newIsr.size() != 1) {
-                    throw new InvalidReplicaAssignmentException("elastic stream not support isr != 1");
+                if (ElasticStreamSwitch.isEnabled()) {
+                    List<Integer> newIsr = partitionData.newIsr();
+                    if (newIsr.size() != 1) {
+                        throw new InvalidReplicaAssignmentException("elastic stream not support isr != 1");
+                    }
+                    builder.setTargetNode(newIsr.get(0));
+                } else {
+                    builder.setTargetIsr(partitionData.newIsr());
                 }
-                builder.setTargetNode(newIsr.get(0));
                 // elastic stream inject end
 
                 builder.setTargetLeaderRecoveryState(
@@ -1320,7 +1327,7 @@ public class ReplicationControlManager {
                 (short) 1));
         }
         generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId), true);
+            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId), ElasticStreamSwitch.isEnabled());
     }
 
     ControllerResult<ElectLeadersResponseData> electLeaders(ElectLeadersRequestData request) {
@@ -1645,7 +1652,9 @@ public class ReplicationControlManager {
 
             // elastic stream inject start
             // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
-            maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(replicas, isr));
+            if (ElasticStreamSwitch.isEnabled()) {
+                maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(replicas, isr));
+            }
             // elastic stream inject end
 
             records.add(new ApiMessageAndVersion(new PartitionRecord().
@@ -1784,24 +1793,25 @@ public class ReplicationControlManager {
             // target ISR will be the same as the old one).
 
             // elastic stream inject start
-            // builder.setTargetIsr(Replicas.toList(
-            //    Replicas.copyWithout(partition.isr, brokerToRemove)));
-            // TODO: change builder args set and build func logic => 目前逻辑符合预期，需要添加单测确保后续也一致
-            if (brokerToAdd != -1) {
-                // new broker is unfenced(available), then the broker take no leader partition
-                builder.setTargetNode(brokerToAdd);
-            } else {
-                if (partitionLeaderSelector == null) {
-                    partitionLeaderSelector = new RandomPartitionLeaderSelector(clusterControl.getActiveBrokers());
-                }
-                partitionLeaderSelector
+            if (ElasticStreamSwitch.isEnabled()) {
+                if (brokerToAdd != -1) {
+                    // new broker is unfenced(available), then the broker take no leader partition
+                    builder.setTargetNode(brokerToAdd);
+                } else {
+                    if (partitionLeaderSelector == null) {
+                        partitionLeaderSelector = new RandomPartitionLeaderSelector(clusterControl.getActiveBrokers());
+                    }
+                    partitionLeaderSelector
                         .select(partition, br -> br.id() != brokerToRemove)
                         .ifPresent(broker -> builder.setTargetNode(broker.id()));
-            }
-
-            if (fencing) {
-                TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
-                addPartitionToReElectTimeouts(topicPartition);
+                }
+                if (fencing) {
+                    TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
+                    addPartitionToReElectTimeouts(topicPartition);
+                }
+            } else {
+                builder.setTargetIsr(Replicas.toList(
+                    Replicas.copyWithout(partition.isr, brokerToRemove)));
             }
             // elastic stream inject end
 
@@ -1881,8 +1891,10 @@ public class ReplicationControlManager {
         Optional<ApiMessageAndVersion> record;
         if (target.replicas() == null) {
             record = cancelPartitionReassignment(topicName, tp, part);
-        } else {
+        } else if (ElasticStreamSwitch.isEnabled()) {
             record = changePartitionReassignment(tp, part, target);
+        } else {
+            record = changePartitionReassignment0(tp, part, target);
         }
         record.ifPresent(records::add);
     }

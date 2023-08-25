@@ -57,8 +57,8 @@ public class ElasticStreamSliceManager {
      * - when startOffset != NOOP_OFFSET, then load slice.
      */
     public ElasticStreamSlice loadOrCreateSlice(String streamName, SliceRange sliceRange) {
-        check(sliceRange.start() >= Offsets.NOOP_OFFSET, "startOffset must be >= 0 or == NOOP_OFFSET -1");
-        check(sliceRange.end() >= Offsets.NOOP_OFFSET, "endOffset must be >= 0 or == NOOP_OFFSET -1");
+        check(sliceRange.start() >= Offsets.NOOP_OFFSET, "startOffset must be >= NOOP_OFFSET");
+        check(sliceRange.end() >= Offsets.NOOP_OFFSET, "endOffset must be >= NOOP_OFFSET");
         if (sliceRange.start() == Offsets.NOOP_OFFSET) {
             return newSlice(streamName);
         }

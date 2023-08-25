@@ -109,11 +109,6 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public void destroy() {
-        // TODO: update ElasticLogMeta and persist meta
-    }
-
-    @Override
     public void seal() {
         this.sealed = true;
     }
@@ -125,10 +120,9 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
     @Override
     public String toString() {
-        // TODO: stream info
         return "DefaultElasticStreamSlice{" +
                 "startOffsetInStream=" + startOffsetInStream +
-                ", stream=" + stream +
+                ", stream=[id=" + stream.streamId() + ", startOffset=" + stream.startOffset() + ", nextOffset=" + stream.nextOffset() + "]" +
                 ", nextOffset=" + nextOffset +
                 ", sealed=" + sealed +
                 '}';

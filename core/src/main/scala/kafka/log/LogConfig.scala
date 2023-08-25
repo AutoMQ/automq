@@ -279,7 +279,7 @@ object LogConfig {
 
   private[log] val ServerDefaultHeaderName = "Server Default Property"
 
-  val configsWithNoServerDefaults: Set[String] = Set(RemoteLogStorageEnableProp, LocalLogRetentionMsProp, LocalLogRetentionBytesProp)
+  val configsWithNoServerDefaults: Set[String] = Set(RemoteLogStorageEnableProp, LocalLogRetentionMsProp, LocalLogRetentionBytesProp, ReplicationFactorProp)
 
   // Package private for testing
   private[log] class LogConfigDef(base: ConfigDef) extends ConfigDef(base) {
@@ -401,7 +401,7 @@ object LogConfig {
 
     // elastic stream inject start
     logConfigDef
-      .define(ReplicationFactorProp, INT, 1, HIGH, ReplicationFactorDoc)
+      .define(ReplicationFactorProp, INT, 1, atLeast(1), HIGH, ReplicationFactorDoc)
     // elastic stream inject end
 
     logConfigDef

@@ -63,7 +63,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   def sanityCheck(timeIndexFileNewlyCreated: Boolean): Unit = {
-    // TODO: check LogLoader logic
+    // do nothing since it will not be called.
   }
 
   private val created = time.milliseconds
@@ -270,7 +270,8 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def updateParentDir(dir: File): Unit = {
-    // TODO: check
+    timeIdx.updateParentDir(dir)
+    txnIndex.updateParentDir(dir)
   }
 
   // Do nothing here.
@@ -330,7 +331,9 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
    * Close this log segment
    */
   override def close(): Unit = {
-    // TODO: timestamp insert
+    if (_maxTimestampAndOffsetSoFar != TimestampOffset.Unknown)
+      CoreUtils.swallow(timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar,
+        skipFullCheck = true), this)
     CoreUtils.swallow(timeIdx.close(), this)
     CoreUtils.swallow(_log.close(), this)
     CoreUtils.swallow(txnIndex.close(), this)

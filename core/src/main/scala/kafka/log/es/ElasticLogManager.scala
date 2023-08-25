@@ -43,7 +43,6 @@ class ElasticLogManager(val client: Client) {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
              leaderEpoch: Long): ElasticLog = {
-    // TODO: add log close hook, remove closed elastic log
     elasticLogs.computeIfAbsent(topicPartition, _ => ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
       numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch))
   }
@@ -88,10 +87,13 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
 
-  def init(config: KafkaConfig, clusterId: String): Unit = {
+  def init(config: KafkaConfig, clusterId: String): Boolean = {
+    if (!config.elasticStreamEnabled) {
+      return false
+    }
     val endpoint = config.elasticStreamEndpoint
     if (endpoint == null) {
-      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+      return false
     }
     if (endpoint.startsWith(ES_ENDPOINT_PREFIX)) {
       val kvEndpoint = config.elasticStreamKvEndpoint;
@@ -109,7 +111,7 @@ object ElasticLogManager {
     } else if (endpoint.startsWith(REDIS_ENDPOINT_PREFIX)) {
       INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length))))
     } else {
-      throw new IllegalArgumentException(s"Unsupported elastic stream endpoint: $endpoint")
+      return false
     }
 
     val namespace = config.elasticStreamNamespace
@@ -118,7 +120,10 @@ object ElasticLogManager {
     } else {
       namespace
     }
+    true
   }
+
+  def enabled(): Boolean = INSTANCE.isDefined
 
   def removeLog(topicPartition: TopicPartition): Unit = {
     INSTANCE.get.removeLog(topicPartition)

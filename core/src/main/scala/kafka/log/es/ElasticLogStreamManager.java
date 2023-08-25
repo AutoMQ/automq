@@ -79,9 +79,8 @@ public class ElasticLogStreamManager {
         this.outerListener = listener;
     }
 
-    public void close() {
-        // TODO: close stream recycle resource.
-    }
+    // no operation.
+    public void close() {}
 
     class LazyStreamStreamEventListener implements ElasticStreamEventListener {
         @Override

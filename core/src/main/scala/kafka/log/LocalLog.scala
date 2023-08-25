@@ -458,7 +458,6 @@ class LocalLog(@volatile private var _dir: File,
     val fetchSize = fetchInfo.records.sizeInBytes
     val startOffsetPosition = OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
       fetchInfo.fetchOffsetMetadata.relativePositionInSegment)
-    // TODO: modify it don't need fetch upper bound
     val upperBoundOffset = upperBoundOffsetOpt match {
       case Some(x) => x
       case None => segment.fetchUpperBoundOffset(startOffsetPosition, fetchSize).getOrElse {

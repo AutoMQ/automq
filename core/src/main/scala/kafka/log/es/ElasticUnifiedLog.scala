@@ -74,7 +74,21 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   override def close(): Unit = {
-    super.close()
+    info("Closing log")
+    lock synchronized {
+      maybeFlushMetadataFile()
+      elasticLog.checkIfMemoryMappedBufferClosed()
+      producerExpireCheck.cancel(true)
+      maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
+        // We take a snapshot at the last written offset to hopefully avoid the need to scan the log
+        // after restarting and to ensure that we cannot inadvertently hit the upgrade optimization
+        // (the clean shutdown file is written after the logs are all closed).
+        producerStateManager.takeSnapshot()
+      }
+      // flush all inflight data/index
+      flush(true)
+      elasticLog.close()
+    }
     elasticLog.segments.clear()
     elasticLog.isMemoryMappedBufferClosed = true
     elasticLog.deleteEmptyDir()

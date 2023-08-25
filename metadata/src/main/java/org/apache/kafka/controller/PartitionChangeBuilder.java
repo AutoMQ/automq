@@ -303,7 +303,6 @@ public class PartitionChangeBuilder {
     }
 
     public Optional<ApiMessageAndVersion> build() {
-        // TODO: 强制校验 + 外层逻辑适配，禁止多 ISR，多 REPLICA
         PartitionChangeRecord record = new PartitionChangeRecord().
             setTopicId(topicId).
             setPartitionId(partitionId);

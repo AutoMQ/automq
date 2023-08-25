@@ -23,13 +23,15 @@ import org.apache.kafka.common.KafkaException
 
 import java.io.{File, IOException}
 import java.nio.ByteBuffer
+import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
+class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
   extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
+  @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
   private var closed = false
 
   override def append(abortedTxn: AbortedTxn): Unit = {
@@ -41,23 +43,22 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
           s"${abortedTxn.lastOffset} is not greater than current last offset $offset of index ${file.getAbsolutePath}")
     }
     lastOffset = Some(abortedTxn.lastOffset)
-    stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer.duplicate()))
+    lastAppend = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer.duplicate()))
   }
 
   override def flush(): Unit = {
-    // TODO: await all inflight
+    lastAppend.get()
   }
 
   override def file: File = new File("mock")
 
-  // TODO:
   override def updateParentDir(parentDir: File): Unit = {
-    throw new UnsupportedOperationException()
+    _file = new File(parentDir, file.getName)
   }
 
+  // Deleting index is actually implemented in ElasticLogSegment.deleteIfExists. We implement it here for tests.
   override def deleteIfExists(): Boolean = {
     close()
-    // TODO: delete
     true
   }
 
@@ -67,7 +68,6 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   }
 
   override def close(): Unit = {
-    // TODO: recycle resource
     closed = true
   }
 
@@ -76,7 +76,6 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   }
 
   override def truncateTo(offset: Long): Unit = {
-    // TODO: check
     throw new UnsupportedOperationException()
   }
 
