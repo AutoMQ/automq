@@ -18,6 +18,8 @@
 package org.apache.kafka.image;
 
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
@@ -283,6 +285,12 @@ public final class MetadataDelta {
             case REMOVE_S3_OBJECT_RECORD:
                 replay((RemoveS3ObjectRecord) record);
                 break;
+            case ASSIGNED_S3_OBJECT_ID_RECORD:
+                replay((AssignedS3ObjectIdRecord) record);
+                break;
+            case ASSIGNED_STREAM_ID_RECORD:
+                replay((AssignedStreamIdRecord) record);
+                break;
             // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -401,6 +409,13 @@ public final class MetadataDelta {
         getOrCreateObjectsMetadataDelta().replay(record);
     }
 
+    public void replay(AssignedS3ObjectIdRecord record) {
+        getOrCreateObjectsMetadataDelta().replay(record);
+    }
+
+    public void replay(AssignedStreamIdRecord record) {
+    }
+
     // Kafka on S3 inject end
 
     /**
@@ -490,6 +505,7 @@ public final class MetadataDelta {
         return s3ObjectsDelta == null ?
             image.objectsMetadata() : s3ObjectsDelta.apply();
     }
+
 
     // Kafka on S3 inject end
 
