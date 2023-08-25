@@ -242,6 +242,7 @@
     <allow pkg="org.apache.kafka.snapshot" />
     <allow pkg="org.apache.kafka.test" />
     <allow pkg="org.apache.kafka.timeline" />
+    <allow pkg="org.apache.kafka.common.es" />
   </subpackage>
 
   <subpackage name="image">

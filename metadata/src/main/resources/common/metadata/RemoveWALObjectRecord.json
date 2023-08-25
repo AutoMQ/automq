@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 30,
+  "apiKey": 508,
   "type": "metadata",
   "name": "RemoveWALObjectRecord",
   "validVersions": "0",

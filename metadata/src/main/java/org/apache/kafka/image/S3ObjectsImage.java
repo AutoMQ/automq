@@ -20,31 +20,44 @@ package org.apache.kafka.image;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.metadata.stream.SimplifiedS3Object;
+import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 /**
  * Represents the S3 objects in the metadata image.
- *
+ * <p>
  * This class is thread-safe.
  */
 public final class S3ObjectsImage {
+
     public static final S3ObjectsImage EMPTY =
-        new S3ObjectsImage(Collections.emptyMap());
+        new S3ObjectsImage(-1, Collections.emptyMap());
 
-    private final Map<Long/*objectId*/, SimplifiedS3Object> objectsMetadata;
+    private long nextAssignedObjectId;
 
-    public S3ObjectsImage(final Map<Long, SimplifiedS3Object> objectsMetadata) {
+    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
+
+    public S3ObjectsImage(long assignedObjectId, final Map<Long, S3Object> objectsMetadata) {
+        this.nextAssignedObjectId = assignedObjectId + 1;
         this.objectsMetadata = objectsMetadata;
     }
 
-    public Map<Long, SimplifiedS3Object> objectsMetadata() {
+    public Map<Long, S3Object> objectsMetadata() {
         return objectsMetadata;
     }
 
+    public long nextAssignedObjectId() {
+        return nextAssignedObjectId;
+    }
+
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        objectsMetadata.values().stream().map(SimplifiedS3Object::toRecord).forEach(writer::write);
+        writer.write(
+            new ApiMessageAndVersion(
+                new AssignedS3ObjectIdRecord().setAssignedS3ObjectId(nextAssignedObjectId - 1), (short) 0));
+        objectsMetadata.values().stream().map(S3Object::toRecord).forEach(writer::write);
     }
 
     @Override
@@ -56,11 +69,12 @@ public final class S3ObjectsImage {
             return false;
         }
         S3ObjectsImage that = (S3ObjectsImage) o;
-        return Objects.equals(objectsMetadata, that.objectsMetadata);
+        return this.nextAssignedObjectId == that.nextAssignedObjectId &&
+            objectsMetadata.equals(that.objectsMetadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(objectsMetadata);
+        return Objects.hash(nextAssignedObjectId, objectsMetadata);
     }
 }

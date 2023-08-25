@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 28,
+  "apiKey": 506,
   "type": "metadata",
   "name": "RemoveS3StreamObjectRecord",
   "validVersions": "0",

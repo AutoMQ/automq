@@ -21,19 +21,23 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
-import org.apache.kafka.metadata.stream.SimplifiedS3Object;
+import org.apache.kafka.metadata.stream.S3Object;
 
 /**
  * Represents changes to a S3 object in the metadata image.
  */
 public final class S3ObjectsDelta {
+
     private final S3ObjectsImage image;
 
-    private final Set<SimplifiedS3Object> addedObjects = new HashSet<>();
+    private final Map<Long/*objectId*/, S3Object> changedObjects = new HashMap<>();
 
     private final Set<Long/*objectId*/> removedObjectIds = new HashSet<>();
+
+    private long currentAssignedObjectId;
 
     public S3ObjectsDelta(S3ObjectsImage image) {
         this.image = image;
@@ -43,16 +47,20 @@ public final class S3ObjectsDelta {
         return image;
     }
 
-    public Set<SimplifiedS3Object> addedObjects() {
-        return addedObjects;
+    public Map<Long, S3Object> changedObjects() {
+        return changedObjects;
     }
 
     public Set<Long> removedObjects() {
         return removedObjectIds;
     }
 
+    public void replay(AssignedS3ObjectIdRecord record) {
+        currentAssignedObjectId = record.assignedS3ObjectId();
+    }
+
     public void replay(S3ObjectRecord record) {
-        addedObjects.add(SimplifiedS3Object.of(record));
+        changedObjects.put(record.objectId(), S3Object.of(record));
         // new add or update, so remove from removedObjects
         removedObjectIds.remove(record.objectId());
     }
@@ -60,17 +68,17 @@ public final class S3ObjectsDelta {
     public void replay(RemoveS3ObjectRecord record) {
         removedObjectIds.add(record.objectId());
         // new remove, so remove from addedObjects
-        addedObjects.removeIf(obj -> obj.objectId() == record.objectId());
+        changedObjects.remove(record.objectId());
     }
 
     public S3ObjectsImage apply() {
         // get original objects first
-        Map<Long, SimplifiedS3Object> newObjectsMetadata = new HashMap<>(image.objectsMetadata());
-        // put all new added objects
-        addedObjects.forEach(obj -> newObjectsMetadata.put(obj.objectId(), obj));
+        Map<Long, S3Object> newObjectsMetadata = new HashMap<>(image.objectsMetadata());
+        // put all new changed objects
+        newObjectsMetadata.putAll(changedObjects);
         // remove all removed objects
         removedObjectIds.forEach(newObjectsMetadata::remove);
-        return new S3ObjectsImage(newObjectsMetadata);
+        return new S3ObjectsImage(currentAssignedObjectId, newObjectsMetadata);
     }
 
 }
