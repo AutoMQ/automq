@@ -266,6 +266,7 @@ object TestUtils extends Logging {
                                  kvEndpoint: String = "",
                                  namespace: String = "__esk_test__"): Properties = {
     val props = createBrokerConfig(nodeId, "")
+    props.put(KafkaConfig.ElasticStreamEnableProp, true)
     props.put(KafkaConfig.ElasticStreamEndpointProp, endpoint)
     props.put(KafkaConfig.ElasticStreamKvEndpointProp, kvEndpoint)
     props.put(KafkaConfig.ElasticStreamNamespaceProp, namespace)

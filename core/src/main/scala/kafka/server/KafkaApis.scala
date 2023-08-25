@@ -747,26 +747,34 @@ class KafkaApis(val requestChannel: RequestChannel,
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
 
       // elastic stream inject start
-      // The appending is done is a separate thread pool to avoid blocking io thread
-      appendingExecutors.submit(new Runnable {
-        override def run(): Unit = {
-          // call the replica manager to append messages to the replicas
-          replicaManager.appendRecords(
-            timeout = produceRequest.timeout.toLong,
-            requiredAcks = produceRequest.acks,
-            internalTopicsAllowed = internalTopicsAllowed,
-            origin = AppendOrigin.Client,
-            entriesPerPartition = authorizedRequestInfo,
-            requestLocal = requestLocal,
-            responseCallback = sendResponseCallback,
-            recordConversionStatsCallback = processingStatsCallback)
+      def doAppendRecords(): Unit = {
+        // call the replica manager to append messages to the replicas
+        replicaManager.appendRecords(
+          timeout = produceRequest.timeout.toLong,
+          requiredAcks = produceRequest.acks,
+          internalTopicsAllowed = internalTopicsAllowed,
+          origin = AppendOrigin.Client,
+          entriesPerPartition = authorizedRequestInfo,
+          requestLocal = requestLocal,
+          responseCallback = sendResponseCallback,
+          recordConversionStatsCallback = processingStatsCallback)
 
-          // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
-          // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
-          produceRequest.clearPartitionRecords()
-          PRODUCE_TIMER.update(System.nanoTime() - startNanos)
-        }
-      })
+        // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
+        // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
+        produceRequest.clearPartitionRecords()
+        PRODUCE_TIMER.update(System.nanoTime() - startNanos)
+      }
+
+      if (ElasticLogManager.enabled()) {
+        // The appending is done is a separate thread pool to avoid blocking io thread
+        appendingExecutors.submit(new Runnable {
+          override def run(): Unit = {
+            doAppendRecords()
+          }
+        })
+      } else {
+        doAppendRecords()
+      }
       // elastic stream inject end
     }
   }
@@ -1068,22 +1076,31 @@ class KafkaApis(val requestChannel: RequestChannel,
       )
 
       // elastic stream inject start
-      // The fetching is done is a separate thread pool to avoid blocking io thread.
-      fetchingExecutors.submit(new Runnable {
-        override def run(): Unit = {
-          ReadManualReleaseHint.mark()
-          SeparateSlowAndQuickFetchHint.mark()
-          // call the replica manager to fetch messages from the local replica
-          replicaManager.fetchMessages(
-            params = params,
-            fetchInfos = interesting,
-            quota = replicationQuota(fetchRequest),
-            responseCallback = processResponseCallback,
-          )
-          SeparateSlowAndQuickFetchHint.reset()
-          ReadManualReleaseHint.reset()
-        }
-      })
+      def doFetchingRecords(): Unit = {
+        // call the replica manager to fetch messages from the local replica
+        replicaManager.fetchMessages(
+          params = params,
+          fetchInfos = interesting,
+          quota = replicationQuota(fetchRequest),
+          responseCallback = processResponseCallback,
+        )
+      }
+
+      if (ElasticLogManager.enabled()) {
+        // The fetching is done is a separate thread pool to avoid blocking io thread.
+        fetchingExecutors.submit(new Runnable {
+          override def run(): Unit = {
+            ReadManualReleaseHint.mark()
+            SeparateSlowAndQuickFetchHint.mark()
+            doFetchingRecords()
+            SeparateSlowAndQuickFetchHint.reset()
+            ReadManualReleaseHint.reset()
+          }
+        })
+      } else {
+        doFetchingRecords()
+      }
+
       // elastic stream inject end
     }
   }

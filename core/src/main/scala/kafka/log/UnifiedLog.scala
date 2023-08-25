@@ -583,7 +583,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
   }
 
-  private def maybeFlushMetadataFile(): Unit = {
+  protected def maybeFlushMetadataFile(): Unit = {
     partitionMetadataFile.foreach(_.maybeFlush())
   }
 
@@ -692,7 +692,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
    */
   def close(): Unit = {
-    info("Closing log")
     lock synchronized {
       maybeFlushMetadataFile()
       localLog.checkIfMemoryMappedBufferClosed()
@@ -703,8 +702,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // (the clean shutdown file is written after the logs are all closed).
         producerStateManager.takeSnapshot()
       }
-      // flush all inflight data/index
-      flush(true)
       localLog.close()
     }
   }
@@ -1836,7 +1833,7 @@ object UnifiedLog extends Logging {
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
 
     // elastic stream inject start
-    if (!isClusterMetaLogSegment(dir)) {
+    if (!isClusterMetaLogSegment(dir) && ElasticLogManager.enabled()) {
       return applyElasticUnifiedLog(topicPartition, dir, config, scheduler, brokerTopicStats, time,
         maxTransactionTimeoutMs, producerStateManagerConfig, producerIdExpirationCheckIntervalMs, logDirFailureChannel,
         topicId, leaderEpoch)

@@ -1,9 +1,12 @@
 package org.apache.kafka.controller;
 
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.es.ElasticStreamSwitch;
 import org.apache.kafka.metadata.LeaderRecoveryState;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.Replicas;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +14,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Tag("esUnit")
 public class PartitionChangeBuilderESTest {
+    @BeforeEach
+    public void setUp() {
+        ElasticStreamSwitch.setSwitch(true);
+    }
+
+    @AfterEach
+    public void tearDown() {
+        ElasticStreamSwitch.setSwitch(false);
+    }
+
     @Test
     public void testElectLeader() {
         // elect the targetNode regardless of the election type

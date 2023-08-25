@@ -949,6 +949,12 @@ class KafkaConfigTest {
 
         case KafkaConfig.SaslServerMaxReceiveSizeProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
 
+        // elastic stream inject start
+        case KafkaConfig.ElasticStreamEndpointProp => // ignore string
+        case KafkaConfig.ElasticStreamKvEndpointProp => // ignore string
+        case KafkaConfig.ElasticStreamNamespaceProp => // ignore string
+        // elastic stream inject end
+
         // Raft Quorum Configs
         case RaftConfig.QUORUM_VOTERS_CONFIG => // ignore string
         case RaftConfig.QUORUM_ELECTION_TIMEOUT_MS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number")

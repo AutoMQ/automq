@@ -55,6 +55,7 @@ public abstract class CCKafkaIntegrationTestHarness {
             int[] port = CCKafkaTestUtils.findLocalPorts(1);
             propOverrides.put(KafkaConfig.ListenersProp(), "EXTERNAL://" + HOST + ":" + port[0]);
             propOverrides.put(CruiseControlMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG), HOST + ":" + port[0]);
+            propOverrides.put(KafkaConfig.ElasticStreamEnableProp(), "true");
             propOverrides.put(KafkaConfig.ElasticStreamEndpointProp(), "memory://");
 
             for (Map.Entry<Object, Object> entry : overridingProps().entrySet()) {

@@ -21,10 +21,12 @@
 package kafka.metrics.cruisecontrol.metricsreporter.metric;
 
 import kafka.metrics.cruisecontrol.metricsreporter.exception.UnknownVersionException;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("esUnit")
 public class MetricSerdeTest {
     private static final long TIME = 123L;
     private static final int BROKER_ID = 0;
