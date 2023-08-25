@@ -17,14 +17,14 @@
 
 package kafka.log.es
 
-import com.automq.elasticstream.client.DefaultClientBuilder
-import kafka.log._
+import com.automq.elasticstream.client.api.Client
+import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
+import kafka.log.es.client.{ClientFactoryProxy, Context}
 import kafka.server.{KafkaConfig, LogDirFailureChannel}
 import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
-import com.automq.elasticstream.client.api.Client
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -80,10 +80,6 @@ class ElasticLogManager(val client: Client) {
 }
 
 object ElasticLogManager {
-  private val ES_ENDPOINT_PREFIX = "es://"
-  private val MEMORY_ENDPOINT_PREFIX = "memory://"
-  private val REDIS_ENDPOINT_PREFIX = "redis://"
-
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
 
@@ -105,24 +101,9 @@ object ElasticLogManager {
     if (endpoint == null) {
       return false
     }
-    if (endpoint.startsWith(ES_ENDPOINT_PREFIX)) {
-      val kvEndpoint = config.elasticStreamKvEndpoint;
-      if (!kvEndpoint.startsWith(ES_ENDPOINT_PREFIX)) {
-        throw new IllegalArgumentException(s"Elastic stream endpoint and kvEndpoint must be the same protocol: $endpoint $kvEndpoint")
-      }
-      val streamClient = new AlwaysSuccessClient(new DefaultClientBuilder()
-          .endpoint(endpoint.substring(ES_ENDPOINT_PREFIX.length))
-          .kvEndpoint(kvEndpoint.substring(ES_ENDPOINT_PREFIX.length))
-          .build())
-      INSTANCE = Some(new ElasticLogManager(streamClient))
-    } else if (endpoint.startsWith(MEMORY_ENDPOINT_PREFIX)) {
-      val streamClient = new AlwaysSuccessClient(new MemoryClient())
-      INSTANCE = Some(new ElasticLogManager(streamClient))
-    } else if (endpoint.startsWith(REDIS_ENDPOINT_PREFIX)) {
-      INSTANCE = Some(new ElasticLogManager(new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length))))
-    } else {
-      return false
-    }
+    val context = new Context()
+    context.config = config
+    INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context))) 
 
     val namespace = config.elasticStreamNamespace
     NAMESPACE = if (namespace == null || namespace.isEmpty) {

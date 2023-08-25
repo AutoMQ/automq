@@ -51,8 +51,8 @@
     <allow pkg="io.netty" />
     <allow pkg="redis.clients.jedis" />
     <allow pkg="kafka.server" />
-    <allow pkg="kafka.log.s3" />
     <allow pkg="kafka.log.es" />
+    <allow pkg="kafka.log.s3" />
     <allow pkg="com.google.flatbuffers" />
     <allow pkg="org.apache.kafka.metadata" />
   </subpackage>

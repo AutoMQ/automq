@@ -20,6 +20,7 @@ package kafka.log.s3.memory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -62,7 +63,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
 
     private static class MemoryStreamMetadata {
-        private long streamId;
+        private final long streamId;
         private long epoch;
         private long startOffset;
         private long endOffset;
@@ -76,6 +77,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
 
         public void addStreamObject(S3StreamObject object) {
+            if (streamObjects == null) {
+                streamObjects = new LinkedList<>();
+            }
             streamObjects.add(object);
         }
     }
