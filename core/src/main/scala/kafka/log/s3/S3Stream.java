@@ -38,6 +38,7 @@ public class S3Stream implements Stream {
     private final StreamMetadata metadata;
     private final long streamId;
     private final long epoch;
+    private final AtomicLong confirmOffset;
     private final AtomicLong nextOffset;
     private final Wal wal;
     private final S3BlockCache blockCache;
@@ -48,6 +49,7 @@ public class S3Stream implements Stream {
         this.streamId = metadata.getStreamId();
         this.epoch = metadata.getEpoch();
         this.nextOffset = new AtomicLong(metadata.getRanges().get(metadata.getRanges().size() - 1).getStartOffset());
+        this.confirmOffset = new AtomicLong(nextOffset.get());
         this.wal = wal;
         this.blockCache = blockCache;
         this.streamManager = streamManager;
