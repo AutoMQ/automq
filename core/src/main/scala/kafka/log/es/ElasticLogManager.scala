@@ -91,6 +91,16 @@ object ElasticLogManager {
     if (!config.elasticStreamEnabled) {
       return false
     }
+
+    // TODO: modify kafka on es repo to support SPI
+    // FIXME: S3Client will cause ElasticLogSegmentTest fail
+    //    if (true) {
+    //      val streamClient = new AlwaysSuccessClient(new S3Client());
+    //      INSTANCE = Some(new ElasticLogManager(streamClient))
+    //      return true
+    //    }
+
+
     val endpoint = config.elasticStreamEndpoint
     if (endpoint == null) {
       return false

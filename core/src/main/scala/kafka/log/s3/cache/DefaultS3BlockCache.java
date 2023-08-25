@@ -24,6 +24,7 @@ import kafka.log.s3.objects.S3ObjectMetadata;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.CloseableIterator;
 
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -39,6 +40,9 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+        if (startOffset >= endOffset || maxBytes <= 0) {
+            return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList()));
+        }
         List<S3ObjectMetadata> objects = objectManager.getObjects(streamId, startOffset, endOffset, 2);
         ReadContext context = new ReadContext(objects, startOffset, maxBytes);
         return read0(streamId, endOffset, context);

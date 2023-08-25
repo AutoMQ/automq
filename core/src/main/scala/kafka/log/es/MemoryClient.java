@@ -128,7 +128,7 @@ public class MemoryClient implements Client {
         }
     }
 
-    static class KVClientImpl implements KVClient {
+    public static class KVClientImpl implements KVClient {
         private final Map<String, ByteBuffer> store = new ConcurrentHashMap<>();
 
         @Override

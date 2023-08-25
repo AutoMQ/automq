@@ -269,6 +269,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<OpenStreamMetadata> openStream(long streamId, long epoch) {
         return this.submitEvent(() -> {
+            // TODO: all task should wrapped with try catch to avoid future is forgot to complete
             // verify stream exist
             if (!this.streamsMetadata.containsKey(streamId)) {
                 throw new StreamNotExistException("Stream " + streamId + " does not exist");
@@ -280,7 +281,13 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             if (streamMetadata.getEpoch() == epoch) {
                 // get active range
-                long endOffset = streamMetadata.getRanges().get(streamMetadata.getRanges().size() - 1).getEndOffset();
+                int rangesCount = streamMetadata.getRanges().size();
+                long endOffset = 0;
+                if (rangesCount != 0) {
+                    endOffset = streamMetadata.getRanges().get(streamMetadata.getRanges().size() - 1).getEndOffset();
+                } else {
+                    streamMetadata.getRanges().add(new RangeMetadata(0, 0, 0, MOCK_BROKER_ID));
+                }
                 return new OpenStreamMetadata(streamId, epoch, streamMetadata.getStartOffset(), endOffset);
             }
             // create new range

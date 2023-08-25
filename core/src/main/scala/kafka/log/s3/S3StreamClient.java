@@ -29,13 +29,13 @@ import java.util.concurrent.CompletableFuture;
 
 public class S3StreamClient implements StreamClient {
 
-    private final StreamManager streamController;
+    private final StreamManager streamManager;
     private final Wal wal;
     private final S3BlockCache blockCache;
     private final ObjectManager objectManager;
 
-    public S3StreamClient(StreamManager streamController, Wal wal, S3BlockCache blockCache, ObjectManager objectManager) {
-        this.streamController = streamController;
+    public S3StreamClient(StreamManager streamManager, Wal wal, S3BlockCache blockCache, ObjectManager objectManager) {
+        this.streamManager = streamManager;
         this.wal = wal;
         this.blockCache = blockCache;
         this.objectManager = objectManager;
@@ -43,7 +43,7 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        return streamController.createStream().thenCompose(streamId -> openStream0(streamId, options.epoch()));
+        return streamManager.createStream().thenCompose(streamId -> openStream0(streamId, options.epoch()));
     }
 
     @Override
@@ -52,10 +52,10 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        return streamController.openStream(streamId, epoch).
+        return streamManager.openStream(streamId, epoch).
             thenApply(metadata -> new S3Stream(
                 metadata.getStreamId(), metadata.getEpoch(),
                 metadata.getStartOffset(), metadata.getNextOffset(),
-                wal, blockCache, streamController));
+                wal, blockCache, streamManager));
     }
 }
