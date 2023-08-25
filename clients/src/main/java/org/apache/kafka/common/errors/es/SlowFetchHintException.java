@@ -22,13 +22,23 @@ import org.apache.kafka.common.errors.RetriableException;
  * Indicates that the fetch request was too slow to be served. The request should be served in separated thread pool.
  */
 public class SlowFetchHintException extends RetriableException {
+
     private static final long serialVersionUID = 1L;
-    public SlowFetchHintException() { super();}
 
-    public SlowFetchHintException(String message) { super(message); }
+    public SlowFetchHintException() {
+        super();
+    }
 
-    public SlowFetchHintException(Throwable cause) { super(cause); }
+    public SlowFetchHintException(String message) {
+        super(message);
+    }
 
-    public SlowFetchHintException(String message, Throwable cause) { super(message, cause); }
+    public SlowFetchHintException(Throwable cause) {
+        super(cause);
+    }
+
+    public SlowFetchHintException(String message, Throwable cause) {
+        super(message, cause);
+    }
 
 }

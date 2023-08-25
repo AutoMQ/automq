@@ -31,5 +31,7 @@ jobs:
           distribution: "zulu"
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
+      - name: Checkstyle and Spotbugs
+        run: ./gradlew checkstyleMain checkstyleTest spotbugsMain spotbugsTest
       - name: Execute Gradle build
         run: ./gradlew metadata:esUnitTest core:esUnitTest

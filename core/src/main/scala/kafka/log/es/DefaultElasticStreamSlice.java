@@ -80,7 +80,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
             return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SlowFetchHintException) {
-                throw (SlowFetchHintException)(e.getCause());
+                throw (SlowFetchHintException) (e.getCause());
             } else {
                 throw new RuntimeException(e.getCause());
             }
