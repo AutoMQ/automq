@@ -151,7 +151,7 @@ public class S3Stream implements Stream {
     private void updateConfirmOffset(long newOffset) {
         for (; ; ) {
             long oldConfirmOffset = confirmOffset.get();
-            if (oldConfirmOffset <= newOffset) {
+            if (oldConfirmOffset >= newOffset) {
                 break;
             }
             if (confirmOffset.compareAndSet(oldConfirmOffset, newOffset)) {
