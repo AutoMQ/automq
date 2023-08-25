@@ -25,7 +25,6 @@ import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
 import com.automq.elasticstream.client.api.Client
-import kafka.log.s3.S3Client
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -94,11 +93,12 @@ object ElasticLogManager {
     }
 
     // TODO: modify kafka on es repo to support SPI
-    if (true) {
-      val streamClient = new AlwaysSuccessClient(new S3Client());
-      INSTANCE = Some(new ElasticLogManager(streamClient))
-      return true
-    }
+    // FIXME: S3Client will cause ElasticLogSegmentTest fail
+    //    if (true) {
+    //      val streamClient = new AlwaysSuccessClient(new S3Client());
+    //      INSTANCE = Some(new ElasticLogManager(streamClient))
+    //      return true
+    //    }
 
 
     val endpoint = config.elasticStreamEndpoint
