@@ -75,6 +75,13 @@ public class ObjectWriter {
         }
     }
 
+    public void closeCurrentBlock() {
+        if (dataBlock != null) {
+            dataBlock.close();
+            dataBlock = null;
+        }
+    }
+
     private void tryUploadPart() {
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(DataBlock::size).sum();
         if (waitingUploadSize >= partSizeThreshold) {

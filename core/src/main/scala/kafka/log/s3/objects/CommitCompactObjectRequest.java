@@ -17,6 +17,7 @@
 
 package kafka.log.s3.objects;
 
+import java.util.LinkedList;
 import java.util.List;
 
 public class CommitCompactObjectRequest {
@@ -61,6 +62,13 @@ public class CommitCompactObjectRequest {
         this.streamObjects = streamObjects;
     }
 
+    public void addStreamObject(StreamObject streamObject) {
+        if (streamObject == null) {
+            this.streamObjects = new LinkedList<>();
+        }
+        streamObjects.add(streamObject);
+    }
+
     public List<Long> getCompactedObjectIds() {
         return compactedObjectIds;
     }
@@ -69,11 +77,25 @@ public class CommitCompactObjectRequest {
         this.compactedObjectIds = compactedObjectIds;
     }
 
+    public void addCompactedObjectId(long compactedObjectId) {
+        if (compactedObjectIds == null) {
+            this.compactedObjectIds = new LinkedList<>();
+        }
+        compactedObjectIds.add(compactedObjectId);
+    }
+
     public List<ObjectStreamRange> getStreamRanges() {
         return streamRanges;
     }
 
     public void setStreamRanges(List<ObjectStreamRange> streamRanges) {
         this.streamRanges = streamRanges;
+    }
+
+    public void addStreamRange(ObjectStreamRange streamRange) {
+        if (this.streamRanges == null) {
+            this.streamRanges = new LinkedList<>();
+        }
+        streamRanges.add(streamRange);
     }
 }

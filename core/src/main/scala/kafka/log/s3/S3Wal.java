@@ -20,20 +20,27 @@ package kafka.log.s3;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
+import kafka.log.s3.utils.ObjectUtils;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TransferQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class S3Wal implements Wal {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Wal.class);
@@ -59,7 +66,7 @@ public class S3Wal implements Wal {
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        //TODO: copy to pooled bytebuffer to reduce gc
+        //TODO: copy to pooled bytebuffer to reduce gc, convert to flat record
         try {
             writeBuffer.put(new WalWriteRequest(streamRecord, cf));
         } catch (InterruptedException e) {
