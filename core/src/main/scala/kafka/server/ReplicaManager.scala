@@ -64,7 +64,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.{Executors, ThreadPoolExecutor, TimeUnit}
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
@@ -223,7 +223,8 @@ class ReplicaManager(val config: KafkaConfig,
   // This threadPool is used to separate slow fetches from quick fetches.
   val slowFetchExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("slow-fetch-executor-%d", true))
   // This threadPool is used to handle partition open/close in case of throttling metadata replay.
-  val partitionOpenCloseExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("partition-open-close-executor-%d", true))
+  val partitionOpenCloseExecutors = new ThreadPoolExecutor(4, 32, 30, TimeUnit.SECONDS, new util.concurrent.LinkedBlockingQueue[Runnable](32),
+    ThreadUtils.createThreadFactory("partition-open-close-executor-%d", true))
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
