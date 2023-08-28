@@ -21,7 +21,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import kafka.log.s3.model.StreamRecordBatch;
-import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
@@ -37,15 +36,13 @@ import java.util.concurrent.CompletableFuture;
 
 // TODO: memory optimization
 public class ObjectWriter {
-    private int blockSizeThreshold;
-    private int partSizeThreshold;
-    private final S3Operator s3Operator;
+    private final int blockSizeThreshold;
+    private final int partSizeThreshold;
     private final List<DataBlock> waitingUploadBlocks;
     private final List<DataBlock> completedBlocks;
     private IndexBlock indexBlock;
     private final Writer writer;
     private final long objectId;
-    private final String objectKey;
     private long nextDataBlockPosition;
 
     private long size;
@@ -54,8 +51,7 @@ public class ObjectWriter {
 
     public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
         this.objectId = objectId;
-        this.objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
-        this.s3Operator = s3Operator;
+        String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.blockSizeThreshold = blockSizeThreshold;
         this.partSizeThreshold = partSizeThreshold;
         waitingUploadBlocks = new LinkedList<>();

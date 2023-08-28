@@ -24,7 +24,6 @@ import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
-import kafka.log.s3.utils.ObjectUtils;
 
 import java.util.Collections;
 import java.util.HashSet;

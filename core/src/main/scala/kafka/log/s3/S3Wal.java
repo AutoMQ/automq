@@ -48,8 +48,7 @@ public class S3Wal implements Wal {
     public S3Wal(ObjectManager objectManager, S3Operator s3Operator) {
         writeBuffer = new ArrayBlockingQueue<>(16384);
         walBatchWriteTask = new WalBatchWriteTask(objectManager, s3Operator);
-        minorCompactTask = new MinorCompactTask(5L * 1024 * 1024 * 1024, 60, 16 * 1024 * 1024
-                , objectManager, s3Operator);
+        minorCompactTask = new MinorCompactTask(5L * 1024 * 1024 * 1024, 60, 16 * 1024 * 1024, objectManager, s3Operator);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
     }
