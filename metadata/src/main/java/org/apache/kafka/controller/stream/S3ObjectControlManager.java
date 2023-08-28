@@ -19,6 +19,7 @@ package org.apache.kafka.controller.stream;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -153,6 +154,23 @@ public class S3ObjectControlManager {
         return ControllerResult.atomicOf(records, response);
     }
 
+    public ControllerResult<Boolean> commitObject(long objectId, long objectSize) {
+        S3Object object = this.objectsMetadata.get(objectId);
+        if (object == null) {
+            log.error("object {} not exist when commit wal object", objectId);
+            return ControllerResult.of(Collections.emptyList(), false);
+        }
+        S3ObjectRecord record = new S3ObjectRecord()
+            .setObjectId(objectId)
+            .setObjectSize(objectSize)
+            .setObjectState(S3ObjectState.COMMITTED.toByte())
+            .setPreparedTimeInMs(object.getPreparedTimeInMs())
+            .setExpiredTimeInMs(object.getExpiredTimeInMs())
+            .setCommittedTimeInMs(System.currentTimeMillis());
+        return ControllerResult.of(Collections.singletonList(
+            new ApiMessageAndVersion(record, (short) 0)), true);
+    }
+
     public void replay(AssignedS3ObjectIdRecord record) {
         nextAssignedObjectId.set(record.assignedS3ObjectId() + 1);
     }
@@ -253,6 +271,10 @@ public class S3ObjectControlManager {
 
     public Map<Long, S3Object> objectsMetadata() {
         return objectsMetadata;
+    }
+
+    public S3Object getObject(Long objectId) {
+        return this.objectsMetadata.get(objectId);
     }
 
     /**
