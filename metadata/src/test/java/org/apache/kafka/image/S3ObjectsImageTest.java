@@ -23,19 +23,23 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
+import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.SimplifiedS3Object;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-@Timeout(value = 40)
+@Timeout(40)
+@Tag("S3Unit")
 public class S3ObjectsImageTest {
+
     final static S3ObjectsImage IMAGE1;
 
     final static List<ApiMessageAndVersion> DELTA1_RECORDS;
@@ -45,12 +49,15 @@ public class S3ObjectsImageTest {
     final static S3ObjectsImage IMAGE2;
 
     static {
-        Map<Long/*objectId*/, SimplifiedS3Object> map = new HashMap<>();
+        Map<Long/*objectId*/, S3Object> map = new HashMap<>();
         for (int i = 0; i < 4; i++) {
-            SimplifiedS3Object object = new SimplifiedS3Object(i, S3ObjectState.PREPARED);
-            map.put(object.objectId(), object);
+            S3Object object = new S3Object(
+                i, -1, null,
+                -1, -1, -1, -1,
+                S3ObjectState.PREPARED);
+            map.put(object.getObjectId(), object);
         }
-        IMAGE1 = new S3ObjectsImage(map);
+        IMAGE1 = new S3ObjectsImage(3, map);
         DELTA1_RECORDS = new ArrayList<>();
         // try to update object0 and object1 to committed
         // try to make object2 expired and mark it to be destroyed
@@ -67,19 +74,33 @@ public class S3ObjectsImageTest {
             setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal()), (short) 0));
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new RemoveS3ObjectRecord()
             .setObjectId(3L), (short) 0));
+        DELTA1_RECORDS.add(new ApiMessageAndVersion(new AssignedS3ObjectIdRecord()
+            .setAssignedS3ObjectId(4L), (short) 0));
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new S3ObjectRecord().
             setObjectId(4L).
             setObjectState((byte) S3ObjectState.PREPARED.ordinal()), (short) 0));
         DELTA1 = new S3ObjectsDelta(IMAGE1);
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
-        Map<Long/*objectId*/, SimplifiedS3Object> map2 = new HashMap<>();
-        map2.put(0L, new SimplifiedS3Object(0L, S3ObjectState.COMMITTED));
-        map2.put(1L, new SimplifiedS3Object(1L, S3ObjectState.COMMITTED));
-        map2.put(2L, new SimplifiedS3Object(2L, S3ObjectState.MARK_DESTROYED));
-        map2.put(4L, new SimplifiedS3Object(4L, S3ObjectState.PREPARED));
+        Map<Long/*objectId*/, S3Object> map2 = new HashMap<>();
+        map2.put(0L, new S3Object(
+            0L, -1, null,
+            -1, -1, -1, -1,
+            S3ObjectState.COMMITTED));
+        map2.put(1L, new S3Object(
+            1L, -1, null,
+            -1, -1, -1, -1,
+            S3ObjectState.COMMITTED));
+        map2.put(2L, new S3Object(
+            2L, -1, null,
+            -1, -1, -1, -1,
+            S3ObjectState.MARK_DESTROYED));
+        map2.put(4L, new S3Object(
+            4L, -1, null,
+            -1, -1, -1, -1,
+            S3ObjectState.PREPARED));
 
-        IMAGE2 = new S3ObjectsImage(map2);
+        IMAGE2 = new S3ObjectsImage(4L, map2);
     }
 
     @Test

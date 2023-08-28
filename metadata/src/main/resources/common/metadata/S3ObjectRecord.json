@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 31,
+  "apiKey": 509,
   "type": "metadata",
   "name": "S3ObjectRecord",
   "validVersions": "0",

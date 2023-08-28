@@ -77,65 +77,22 @@ public class S3Object implements Comparable<S3Object> {
         this.s3ObjectState = s3ObjectState;
     }
 
-    public void onApply() {
-        if (this.s3ObjectState != S3ObjectState.UNINITIALIZED) {
-            throw new IllegalStateException("Object is not in UNINITIALIZED state");
-        }
-        this.s3ObjectState = S3ObjectState.PREPARED;
-        this.preparedTimeInMs = System.currentTimeMillis();
-    }
-
-    public void onCreate(S3ObjectCommitContext createContext) {
-        // TODO: decide fetch object metadata from S3 or let broker send it to controller
-        if (this.s3ObjectState != S3ObjectState.PREPARED) {
-            throw new IllegalStateException("Object is not in APPLIED state");
-        }
-        this.s3ObjectState = S3ObjectState.COMMITTED;
-        this.committedTimeInMs = createContext.committedTimeInMs;
-        this.objectSize = createContext.objectSize;
-        this.objectKey = createContext.objectAddress;
-    }
-
-    public void onMarkDestroy() {
-        if (this.s3ObjectState != S3ObjectState.COMMITTED) {
-            throw new IllegalStateException("Object is not in CREATED state");
-        }
-        this.s3ObjectState = S3ObjectState.MARK_DESTROYED;
-    }
-
-    public void onDestroy() {
-        if (this.s3ObjectState != S3ObjectState.COMMITTED) {
-            throw new IllegalStateException("Object is not in CREATED state");
-        }
-        // TODO: trigger destroy
-
-    }
-
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3ObjectRecord()
             .setObjectId(objectId)
             .setObjectSize(objectSize)
-            .setObjectState((byte) s3ObjectState.ordinal())
+            .setObjectState(s3ObjectState.toByte())
             .setPreparedTimeInMs(preparedTimeInMs)
             .setExpiredTimeInMs(expiredTimeInMs)
             .setCommittedTimeInMs(committedTimeInMs)
             .setDestroyedTimeInMs(destroyedTimeInMs), (short) 0);
     }
 
-    static public class S3ObjectCommitContext {
-
-        private final long committedTimeInMs;
-        private final long objectSize;
-        private final String objectAddress;
-
-        public S3ObjectCommitContext(
-            final long committedTimeInMs,
-            final long objectSize,
-            final String objectAddress) {
-            this.committedTimeInMs = committedTimeInMs;
-            this.objectSize = objectSize;
-            this.objectAddress = objectAddress;
-        }
+    public static S3Object of(S3ObjectRecord record) {
+        return new S3Object(
+            record.objectId(), record.objectSize(), null,
+            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
+            S3ObjectState.fromByte(record.objectState()));
     }
 
     @Override

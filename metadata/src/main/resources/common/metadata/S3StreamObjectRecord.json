@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 27,
+  "apiKey": 505,
   "type": "metadata",
   "name": "S3StreamObjectRecord",
   "validVersions": "0",

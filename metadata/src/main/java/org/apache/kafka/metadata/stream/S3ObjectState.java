@@ -24,6 +24,10 @@ public enum S3ObjectState {
     MARK_DESTROYED,
     DESTROYED;
 
+    public byte toByte() {
+        return (byte) ordinal();
+    }
+
     public static S3ObjectState fromByte(Byte b) {
         int ordinal = b.intValue();
         if (ordinal < 0 || ordinal >= values().length) {

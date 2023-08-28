@@ -14,17 +14,17 @@
 // limitations under the License.
 
 {
-  "apiKey": 510,
+  "apiKey": 511,
   "type": "metadata",
-  "name": "RemoveS3ObjectRecord",
+  "name": "AssignedStreamIdRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ObjectId",
+      "name": "AssignedStreamId",
       "type": "int64",
       "versions": "0+",
-      "about": "The object id of the S3 object"
+      "about": "The last assigned stream's id"
     }
   ]
 }
