@@ -54,7 +54,6 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 context.objects = objectManager.getObjects(streamId, context.nextStartOffset, endOffset, 2);
                 context.objectIndex = 0;
             }
-            // TODO: handle minor/major compact object may contain non-continuous stream records.
             // previous object is completed read o or is the first object.
             context.reader = new ObjectReader(context.objects.get(context.objectIndex), s3Operator);
             context.objectIndex++;

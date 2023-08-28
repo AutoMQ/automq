@@ -115,7 +115,13 @@ public class ObjectReader {
                 long rangeStartOffset = streamRanges.getLong(i + 8);
                 long rangeEndOffset = rangeStartOffset + streamRanges.getInt(i + 16);
                 int rangeBlockId = streamRanges.getInt(i + 20);
-                if (rangeStreamId == streamId && rangeStartOffset < endOffset && rangeEndOffset > nextStartOffset) {
+                if (rangeStreamId == streamId) {
+                    if (nextStartOffset < rangeStartOffset) {
+                        break;
+                    }
+                    if (rangeEndOffset <= nextStartOffset) {
+                        continue;
+                    }
                     nextStartOffset = rangeEndOffset;
                     long blockPosition = blocks.getLong(rangeBlockId * 16);
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
@@ -142,6 +148,7 @@ public class ObjectReader {
 
 
     public static class DataBlockIndex {
+        public static final int BLOCK_INDEX_SIZE = 8 + 4 + 4;
         private final int blockId;
         private final long startPosition;
         private final int size;
