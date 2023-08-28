@@ -672,11 +672,13 @@ object KafkaConfig {
   // elastic stream inject end
 
   // Kafka on S3 inject start
-  val S3RegionProp = "s3.region";
-  val S3BucketProp = "s3.bucket";
+  val S3EndpointProp = "s3.endpoint"
+  val S3RegionProp = "s3.region"
+  val S3BucketProp = "s3.bucket"
 
-  val S3RegionDoc = "Specifies the S3 region, ex. <code>us-east-1</code>.\n"
-  val S3BucketDoc = "Specifies the S3 bucket, ex. <code>my-bucket</code>.\n"
+  val S3EndpointDoc = "Specifies the S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
+  val S3RegionDoc = "Specifies the S3 region, ex. <code>us-east-1</code>."
+  val S3BucketDoc = "Specifies the S3 bucket, ex. <code>my-bucket</code>."
 
   // Kafka on S3 inject end
   /* Documentation */
@@ -1474,6 +1476,7 @@ object KafkaConfig {
     // elastic stream inject end
 
     // Kafka on S3 inject start
+      .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
     // Kafka on S3 inject end
@@ -2011,8 +2014,9 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
 
   // Kafka on S3 inject start
   /** ********* Kafka on S3 Configuration *********/
-    val s3Region = getString(KafkaConfig.S3RegionProp)
-    val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
+  val s3Region = getString(KafkaConfig.S3RegionProp)
+  val s3Bucket = getString(KafkaConfig.S3BucketProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
