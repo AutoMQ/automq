@@ -41,6 +41,7 @@ public final class S3ObjectsDelta {
 
     public S3ObjectsDelta(S3ObjectsImage image) {
         this.image = image;
+        this.currentAssignedObjectId = image.nextAssignedObjectId() - 1;
     }
 
     public S3ObjectsImage image() {

@@ -17,23 +17,24 @@
 
 package org.apache.kafka.image;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 
 public class S3StreamMetadataDelta {
     private final S3StreamMetadataImage image;
 
-    private Long newEpoch;
+    private long streamId;
+    private long newStartOffset;
+    private long newEpoch;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
@@ -43,6 +44,13 @@ public class S3StreamMetadataDelta {
     public S3StreamMetadataDelta(S3StreamMetadataImage image) {
         this.image = image;
         this.newEpoch = image.getEpoch();
+        this.streamId = image.getStreamId();
+        this.newStartOffset = image.getStartOffset();
+    }
+    public void replay(S3StreamRecord record) {
+        this.streamId = record.streamId();
+        this.newEpoch = record.epoch();
+        this.newStartOffset = record.startOffset();
     }
 
     public void replay(RangeRecord record) {
@@ -72,15 +80,15 @@ public class S3StreamMetadataDelta {
     public S3StreamMetadataImage apply() {
         Map<Integer, RangeMetadata> newRanges = new HashMap<>(image.getRanges());
         // add all new changed ranges
-        newRanges.putAll(image.getRanges());
+        newRanges.putAll(changedRanges);
         // remove all removed ranges
         removedRanges.forEach(newRanges::remove);
-        List<S3StreamObject> newS3StreamObjects = new ArrayList<>(image.getStreamObjects());
+        Map<Long, S3StreamObject> newS3StreamObjects = new HashMap<>(image.getStreamObjects());
         // add all changed stream-objects
-        newS3StreamObjects.addAll(changedS3StreamObjects.values());
+        newS3StreamObjects.putAll(changedS3StreamObjects);
         // remove all removed stream-objects
-        newS3StreamObjects.removeIf(removedS3StreamObjectIds::contains);
-        return new S3StreamMetadataImage(image.getStreamId(), newEpoch, image.getStartOffset(), newRanges, newS3StreamObjects);
+        removedS3StreamObjectIds.forEach(newS3StreamObjects::remove);
+        return new S3StreamMetadataImage(streamId, newEpoch, newStartOffset, newRanges, newS3StreamObjects);
     }
 
 }

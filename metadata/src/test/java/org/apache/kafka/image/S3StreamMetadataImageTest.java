@@ -33,10 +33,12 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
+@Tag("S3Unit")
 public class S3StreamMetadataImageTest {
 
     private static final long STREAM0 = 0L;
@@ -58,7 +60,7 @@ public class S3StreamMetadataImageTest {
         RecordTestUtils.replayAll(delta0, delta0Records);
         // verify delta and check image's write
         S3StreamMetadataImage image1 = new S3StreamMetadataImage(
-            STREAM0, 0L, 0L, Map.of(), List.of());
+            STREAM0, 0L, 0L, Map.of(), Map.of());
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -79,7 +81,9 @@ public class S3StreamMetadataImageTest {
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
-            STREAM0, 1L, 0L, Map.of(0, new RangeMetadata(STREAM0, 1L, 0, 0L, -1L, BROKER0)), List.of());
+            STREAM0, 1L, 0L,
+            Map.of(0, new RangeMetadata(STREAM0, 1L, 0, 0L, 0L, BROKER0)), Map.of());
+        S3StreamMetadataImage image = delta1.apply();
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
 
@@ -102,13 +106,14 @@ public class S3StreamMetadataImageTest {
             .setRangeIndex(1)
             .setEpoch(2L)
             .setBrokerId(BROKER1)
-            .setStartOffset(101L), (short) 0));
+            .setStartOffset(100L)
+            .setEndOffset(100L), (short) 0));
         RecordTestUtils.replayAll(delta2, delta2Records);
         // verify delta and check image's write
         S3StreamMetadataImage image3 = new S3StreamMetadataImage(
             STREAM0, 2L, 0L, Map.of(
-                0, new RangeMetadata(STREAM0, 1L, 0, 0L, 100, BROKER0),
-                1, new RangeMetadata(STREAM0, 2L, 1, 101L, 100, BROKER1)), List.of());
+            0, new RangeMetadata(STREAM0, 1L, 0, 0, 100, BROKER0),
+            1, new RangeMetadata(STREAM0, 2L, 1, 100, 100, BROKER1)), Map.of());
         assertEquals(image3, delta2.apply());
         testToImageAndBack(image3);
 
@@ -118,21 +123,22 @@ public class S3StreamMetadataImageTest {
         delta3Records.add(new ApiMessageAndVersion(new S3StreamRecord()
             .setStreamId(STREAM0)
             .setEpoch(2L)
-            .setStartOffset(101L), (short) 0));
+            .setStartOffset(100L), (short) 0));
         delta3Records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
             .setStreamId(STREAM0)
             .setRangeIndex(0), (short) 0));
         RecordTestUtils.replayAll(delta3, delta3Records);
         // verify delta and check image's write
         S3StreamMetadataImage image4 = new S3StreamMetadataImage(
-            STREAM0, 2L, 101L, Map.of(
-                1, new RangeMetadata(STREAM0, 2L, 1, 101L, 100L, BROKER1)), List.of());
+            STREAM0, 2L, 100L, Map.of(
+            1, new RangeMetadata(STREAM0, 2L, 1, 100L, 100L, BROKER1)), Map.of());
+        assertEquals(image4, delta3.apply());
     }
 
     @Test
     public void testStreamObjects() {
         S3StreamMetadataImage image0 = new S3StreamMetadataImage(
-            STREAM0, 0L, 0L, Map.of(), List.of());
+            STREAM0, 0L, 0L, Map.of(), Map.of());
         List<ApiMessageAndVersion> delta0Records = new ArrayList<>();
         S3StreamMetadataDelta delta0 = new S3StreamMetadataDelta(image0);
         // 1. create streamObject0 and streamObject1
@@ -144,14 +150,14 @@ public class S3StreamMetadataImageTest {
         delta0Records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(1L)
             .setStreamId(STREAM0)
-            .setStartOffset(101L)
+            .setStartOffset(100L)
             .setEndOffset(200L), (short) 0));
         RecordTestUtils.replayAll(delta0, delta0Records);
         // verify delta and check image's write
         S3StreamMetadataImage image1 = new S3StreamMetadataImage(
-            STREAM0, 0L, 0L, Map.of(), List.of(
-                new S3StreamObject(0L, STREAM0, 0L, 100L),
-                new S3StreamObject(1L, STREAM0, 101L, 200L)));
+            STREAM0, 0L, 0L, Map.of(), Map.of(
+            0L, new S3StreamObject(0L, STREAM0, 0L, 100L),
+            1L, new S3StreamObject(1L, STREAM0, 100L, 200L)));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -163,8 +169,8 @@ public class S3StreamMetadataImageTest {
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
-            STREAM0, 0L, 0L, Map.of(), List.of(
-                new S3StreamObject(1L, STREAM0, 101L, 200L)));
+            STREAM0, 0L, 0L, Map.of(), Map.of(
+            1L, new S3StreamObject(1L, STREAM0, 100L, 200L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
     }
@@ -173,9 +179,9 @@ public class S3StreamMetadataImageTest {
         RecordListWriter writer = new RecordListWriter();
         ImageWriterOptions options = new ImageWriterOptions.Builder().build();
         image.write(writer, options);
-        S3ObjectsDelta delta = new S3ObjectsDelta(S3ObjectsImage.EMPTY);
+        S3StreamMetadataDelta delta = new S3StreamMetadataDelta(S3StreamMetadataImage.EMPTY);
         RecordTestUtils.replayAll(delta, writer.records());
-        S3ObjectsImage newImage = delta.apply();
+        S3StreamMetadataImage newImage = delta.apply();
         assertEquals(image, newImage);
     }
 

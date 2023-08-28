@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
@@ -30,11 +31,13 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
-public class BrokerS3WALMetadataTest {
+@Tag("S3Unit")
+public class BrokerS3WALMetadataImageTest {
 
     private static final int BROKER0 = 0;
 
@@ -48,6 +51,8 @@ public class BrokerS3WALMetadataTest {
         List<ApiMessageAndVersion> delta0Records = new ArrayList<>();
         BrokerS3WALMetadataDelta delta0 = new BrokerS3WALMetadataDelta(image0);
         // 1. create WALObject0 and WALObject1
+        delta0Records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
+            .setBrokerId(BROKER0), (short) 0));
         delta0Records.add(new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(0L)
             .setBrokerId(BROKER0)
@@ -97,9 +102,9 @@ public class BrokerS3WALMetadataTest {
         RecordListWriter writer = new RecordListWriter();
         ImageWriterOptions options = new ImageWriterOptions.Builder().build();
         image.write(writer, options);
-        S3ObjectsDelta delta = new S3ObjectsDelta(S3ObjectsImage.EMPTY);
+        BrokerS3WALMetadataDelta delta = new BrokerS3WALMetadataDelta(BrokerS3WALMetadataImage.EMPTY);
         RecordTestUtils.replayAll(delta, writer.records());
-        S3ObjectsImage newImage = delta.apply();
+        BrokerS3WALMetadataImage newImage = delta.apply();
         assertEquals(image, newImage);
     }
 

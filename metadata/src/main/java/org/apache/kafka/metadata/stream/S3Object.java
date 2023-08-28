@@ -109,7 +109,7 @@ public class S3Object implements Comparable<S3Object> {
             return false;
         }
         S3Object s3Object = (S3Object) o;
-        return Objects.equals(objectId, s3Object.objectId);
+        return objectId == s3Object.objectId;
     }
 
     @Override

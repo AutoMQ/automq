@@ -20,16 +20,19 @@ package org.apache.kafka.image;
 
 import java.util.List;
 import java.util.Objects;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class BrokerS3WALMetadataImage {
+
     public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(-1, List.of());
-    private final Integer brokerId;
+    private final int brokerId;
     private final List<S3WALObject> s3WalObjects;
 
-    public BrokerS3WALMetadataImage(Integer brokerId, List<S3WALObject> s3WalObjects) {
+    public BrokerS3WALMetadataImage(int brokerId, List<S3WALObject> s3WalObjects) {
         this.brokerId = brokerId;
         this.s3WalObjects = s3WalObjects;
     }
@@ -43,7 +46,7 @@ public class BrokerS3WALMetadataImage {
             return false;
         }
         BrokerS3WALMetadataImage that = (BrokerS3WALMetadataImage) o;
-        return Objects.equals(brokerId, that.brokerId) && Objects.equals(s3WalObjects, that.s3WalObjects);
+        return brokerId == that.brokerId && Objects.equals(s3WalObjects, that.s3WalObjects);
     }
 
     @Override
@@ -52,6 +55,8 @@ public class BrokerS3WALMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
+        writer.write(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
+            .setBrokerId(brokerId), (short) 0));
         s3WalObjects.forEach(walObject -> writer.write(walObject.toRecord()));
     }
 
@@ -59,7 +64,7 @@ public class BrokerS3WALMetadataImage {
         return s3WalObjects;
     }
 
-    public Integer getBrokerId() {
+    public int getBrokerId() {
         return brokerId;
     }
 }
