@@ -45,6 +45,7 @@ import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,12 +66,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         private long epoch;
         private long startOffset;
         private long endOffset;
+        private List<S3StreamObject> streamObjects;
 
         public MemoryStreamMetadata(long streamId, long epoch, long startOffset, long endOffset) {
             this.streamId = streamId;
             this.epoch = epoch;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
+        }
+
+        public void addStreamObject(S3StreamObject object) {
+            streamObjects.add(object);
         }
     }
 
@@ -152,12 +158,12 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
                 k -> new MemoryBrokerWALMetadata(k));
-            Map<Long, S3ObjectStreamIndex> index = new HashMap<>();
+            Map<Long, List<S3ObjectStreamIndex>> index = new HashMap<>();
             streamRanges.stream().forEach(range -> {
                 long streamId = range.getStreamId();
                 long startOffset = range.getStartOffset();
                 long endOffset = range.getEndOffset();
-                index.put(streamId, new S3ObjectStreamIndex(streamId, startOffset, endOffset));
+                index.put(streamId, List.of(new S3ObjectStreamIndex(streamId, startOffset, endOffset)));
                 // update range endOffset
                 MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
                 streamMetadata.endOffset = endOffset;
