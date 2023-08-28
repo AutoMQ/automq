@@ -65,6 +65,9 @@ public interface ObjectManager {
 
     /**
      * Get objects by stream range.
+     * When obj1 contains stream0 <code>[0, 100) [200, 300)</code> and obj2 contains stream1 <code>[100, 200)</code>,
+     * expect getObjects(streamId, 0, 300) return <code>[obj1, obj2, obj1]</code>
+     *
      * @param streamId stream id.
      * @param startOffset get range start offset.
      * @param endOffset get range end offset.
