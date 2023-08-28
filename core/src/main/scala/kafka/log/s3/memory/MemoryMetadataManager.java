@@ -30,8 +30,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import kafka.log.s3.model.RangeMetadata;
-import kafka.log.s3.model.StreamMetadata;
 import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectRequest;
@@ -56,16 +54,27 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private static final int MOCK_BROKER_ID = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(MemoryMetadataManager.class);
     private final EventDriver eventDriver;
-    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
-
     private volatile long nextAssignedObjectId = 0;
+    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
+    private volatile long nextAssignedStreamId = 0;
+    private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
+    private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
 
-    private final Map<Long, StreamMetadata> streamsMetadata;
+    private static class MemoryStreamMetadata {
+        private long streamId;
+        private long epoch;
+        private long startOffset;
+        private long endOffset;
 
-    private final Map<Integer, MemoryBrokerWALMetadata> brokerWALMetadata;
+        public MemoryStreamMetadata(long streamId, long epoch, long startOffset, long endOffset) {
+            this.streamId = streamId;
+            this.epoch = epoch;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+        }
+    }
 
     private static class MemoryBrokerWALMetadata {
-
         private final int brokerId;
         private final List<S3WALObject> walObjects;
 
@@ -74,8 +83,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             this.walObjects = new ArrayList<>();
         }
     }
-
-    private volatile long nextAssignedStreamId = 0;
 
     public MemoryMetadataManager() {
         this.eventDriver = new EventDriver();
@@ -152,8 +159,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 long endOffset = range.getEndOffset();
                 index.put(streamId, new S3ObjectStreamIndex(streamId, startOffset, endOffset));
                 // update range endOffset
-                StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-                streamMetadata.getRanges().get(streamMetadata.getRanges().size() - 1).setEndOffset(endOffset);
+                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+                streamMetadata.endOffset = endOffset;
             });
             S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index);
             walMetadata.walObjects.add(walObject);
@@ -165,15 +172,15 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         long streamId = range.getStreamId();
         long epoch = range.getEpoch();
         // verify
-        StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata == null) {
             return false;
         }
         // compare epoch
-        if (streamMetadata.getEpoch() > epoch) {
+        if (streamMetadata.epoch > epoch) {
             return false;
         }
-        if (streamMetadata.getEpoch() < epoch) {
+        if (streamMetadata.epoch < epoch) {
             return false;
         }
         return true;
@@ -216,35 +223,26 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         CompletableFuture<List<S3ObjectMetadata>> future = this.submitEvent(() -> {
             int need = limit;
             List<S3ObjectMetadata> objs = new ArrayList<>();
-            StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            if (endOffset <= streamMetadata.getStartOffset()) {
+            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+            if (endOffset <= streamMetadata.startOffset) {
                 return objs;
             }
-            List<RangeMetadata> ranges = streamMetadata.getRanges();
-            for (RangeMetadata range : ranges) {
-                if (endOffset < range.getStartOffset() || need <= 0) {
+            MemoryBrokerWALMetadata metadata = this.brokerWALMetadata.get(MOCK_BROKER_ID);
+            if (metadata == null) {
+                return objs;
+            }
+            for (S3WALObject walObject : metadata.walObjects) {
+                if (need <= 0) {
                     break;
                 }
-                if (startOffset >= range.getEndOffset()) {
+                if (!walObject.intersect(streamId, startOffset, endOffset)) {
                     continue;
                 }
-                // find range, get wal objects
-                int brokerId = range.getBrokerId();
-                MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.get(brokerId);
-                for (S3WALObject walObject : walMetadata.walObjects) {
-                    if (need <= 0) {
-                        break;
-                    }
-                    // TODO: speed up query
-                    if (!walObject.intersect(streamId, startOffset, endOffset)) {
-                        continue;
-                    }
-                    // find stream index, get object
-                    S3Object object = this.objectsMetadata.get(walObject.objectId());
-                    S3ObjectMetadata obj = new S3ObjectMetadata(walObject.objectId(), object.getObjectSize(), walObject.objectType());
-                    objs.add(obj);
-                    need--;
-                }
+                // find stream index, get object
+                S3Object object = this.objectsMetadata.get(walObject.objectId());
+                S3ObjectMetadata obj = new S3ObjectMetadata(walObject.objectId(), object.getObjectSize(), walObject.objectType());
+                objs.add(obj);
+                need--;
             }
             return objs;
         });
@@ -261,7 +259,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         return this.submitEvent(() -> {
             long streamId = this.nextAssignedStreamId++;
             this.streamsMetadata.put(streamId,
-                new StreamMetadata(streamId, 0, -1, 0, new ArrayList<>()));
+                new MemoryStreamMetadata(streamId, 0, 0, 0));
             return streamId;
         });
     }
@@ -275,34 +273,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 throw new StreamNotExistException("Stream " + streamId + " does not exist");
             }
             // verify epoch match
-            StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            if (streamMetadata.getEpoch() > epoch) {
+            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+            if (streamMetadata.epoch > epoch) {
                 throw new StreamFencedException("Stream " + streamId + " is fenced");
             }
-            if (streamMetadata.getEpoch() == epoch) {
-                // get active range
-                int rangesCount = streamMetadata.getRanges().size();
-                long endOffset = 0;
-                if (rangesCount != 0) {
-                    endOffset = streamMetadata.getRanges().get(streamMetadata.getRanges().size() - 1).getEndOffset();
-                } else {
-                    streamMetadata.getRanges().add(new RangeMetadata(0, 0, 0, MOCK_BROKER_ID));
-                }
-                return new OpenStreamMetadata(streamId, epoch, streamMetadata.getStartOffset(), endOffset);
+            if (streamMetadata.epoch == epoch) {
+                return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
             }
-            // create new range
-            long newEpoch = epoch;
-            int newRangeIndex = streamMetadata.getRangeIndex() + 1;
-            long startOffset = 0;
-            if (newRangeIndex > 0) {
-                startOffset = streamMetadata.getRanges().get(streamMetadata.getRanges().size() - 1).getEndOffset();
-            }
-            RangeMetadata rangeMetadata = new RangeMetadata(newRangeIndex, startOffset, startOffset, MOCK_BROKER_ID);
-            streamMetadata.getRanges().add(rangeMetadata);
+            // update epoch
             // update epoch and rangeIndex
-            streamMetadata.setRangeIndex(newRangeIndex);
-            streamMetadata.setEpoch(newEpoch);
-            return new OpenStreamMetadata(streamId, newEpoch, startOffset, startOffset);
+            streamMetadata.epoch = epoch;
+            return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
         });
     }
 
@@ -380,7 +361,13 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
 
         public void done() {
-            cb.complete(eventHandler.get());
+            try {
+                T value = eventHandler.get();
+                cb.complete(value);
+            } catch (Exception e) {
+                LOGGER.error("Failed to execute event", e);
+                cb.completeExceptionally(e);
+            }
         }
     }
 }
