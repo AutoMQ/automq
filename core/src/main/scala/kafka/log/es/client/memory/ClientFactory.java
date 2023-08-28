@@ -14,31 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.common.errors.es;
 
-import org.apache.kafka.common.errors.RetriableException;
+package kafka.log.es.client.memory;
 
-/**
- * Indicates that the fetch request was too slow to be served. The request should be served in separated thread pool.
- */
-public class SlowFetchHintException extends RetriableException {
+import com.automq.elasticstream.client.api.Client;
+import kafka.log.es.client.Context;
+import kafka.log.es.AlwaysSuccessClient;
+import kafka.log.es.MemoryClient;
 
-    private static final long serialVersionUID = 1L;
+public class ClientFactory {
 
-    public SlowFetchHintException() {
-        super();
-    }
-
-    public SlowFetchHintException(String message) {
-        super(message);
-    }
-
-    public SlowFetchHintException(Throwable cause) {
-        super(cause);
-    }
-
-    public SlowFetchHintException(String message, Throwable cause) {
-        super(message, cause);
+    public static Client get(Context context) {
+        return new AlwaysSuccessClient(new MemoryClient());
     }
 
 }

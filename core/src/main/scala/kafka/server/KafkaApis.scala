@@ -122,8 +122,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   val aclApis = new AclApis(authHelper, authorizer, requestHelper, "broker", config)
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
   // These two executors separate the handling of `produce` and `fetch` requests in case of throttling.
-  val appendingExecutors = Executors.newFixedThreadPool(2, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
-  val fetchingExecutors = Executors.newFixedThreadPool(2, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
+  val appendingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
+  val fetchingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
 
   def close(): Unit = {
     aclApis.close()

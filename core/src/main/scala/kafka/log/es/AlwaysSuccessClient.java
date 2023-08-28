@@ -28,34 +28,36 @@ import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Future;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings("uncheck")
 public class AlwaysSuccessClient implements Client {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
+    public static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
     private static final ScheduledExecutorService STREAM_MANAGER_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private static final ExecutorService STREAM_MANAGER_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
     private static final ScheduledExecutorService FETCH_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
     private static final ExecutorService APPEND_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
     private static final ExecutorService FETCH_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private static final ScheduledExecutorService DELAY_FETCH_SCHEDULER = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
     private final StreamClient streamClient;
@@ -78,6 +80,7 @@ public class AlwaysSuccessClient implements Client {
 
     // TODO: do not retry when stream closed.
     static class StreamClientImpl implements StreamClient {
+
         private final StreamClient streamClient;
 
         public StreamClientImpl(StreamClient streamClient) {
@@ -126,10 +129,10 @@ public class AlwaysSuccessClient implements Client {
     }
 
     static class StreamImpl implements Stream {
+
         private final Stream stream;
         private volatile boolean closed = false;
         private final Map<String, CompletableFuture<FetchResult>> holdUpFetchingFutureMap = new ConcurrentHashMap<>();
-        private static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -154,20 +157,89 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             CompletableFuture<AppendResult> cf = new CompletableFuture<>();
             stream.append(recordBatch)
-                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
-                        if (ex != null) {
-                            cf.completeExceptionally(ex);
+                .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
+                    if (ex != null) {
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(rst);
+                    }
+                }, LOGGER));
+            return cf;
+        }
+
+        /**
+         * Get a new CompletableFuture with a {@link SlowFetchHintException} if not otherwise completed before the given timeout.
+         *
+         * @param id        the id of rawFuture in holdUpFetchingFutureMap
+         * @param rawFuture the raw future
+         * @param timeout   how long to wait before completing exceptionally with a SlowFetchHintException, in units of {@code unit}
+         * @param unit      a {@code TimeUnit} determining how to interpret the {@code timeout} parameter
+         * @return a new CompletableFuture with completed results of the rawFuture if the raw future is done before timeout, otherwise a new
+         * CompletableFuture with a {@link SlowFetchHintException}
+         */
+        private CompletableFuture<FetchResult> timeoutAndStoreFuture(String id,
+            CompletableFuture<FetchResult> rawFuture, long timeout,
+            TimeUnit unit) {
+            if (unit == null) {
+                throw new NullPointerException();
+            }
+
+            if (rawFuture.isDone()) {
+                return rawFuture;
+            }
+
+            final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
+            rawFuture.whenComplete(new CompleteFetchingFutureAndCancelTimeoutCheck(Delayer.delay(() -> {
+                if (rawFuture == null) {
+                    return;
+                }
+
+                // If rawFuture is done, then complete the cf with the result of rawFuture.
+                if (rawFuture.isDone()) {
+                    rawFuture.whenComplete((result, exception) -> {
+                        if (exception != null) {
+                            cf.completeExceptionally(exception);
                         } else {
-                            cf.complete(rst);
+                            cf.complete(result);
                         }
-                    }, LOGGER));
+                    });
+                } else { // else, complete the cf with a SlowFetchHintException and store the rawFuture for slow fetching.
+                    holdUpFetchingFutureMap.putIfAbsent(id, rawFuture);
+                    cf.completeExceptionally(new SlowFetchHintException());
+                }
+            }, timeout, unit), cf));
             return cf;
         }
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+            String holdUpKey = startOffset + "-" + endOffset + "-" + maxBytesHint;
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            fetch0(startOffset, endOffset, maxBytesHint, cf);
+            // If this thread is not marked, then just fetch data.
+            if (!SeparateSlowAndQuickFetchHint.isMarked()) {
+                if (holdUpFetchingFutureMap.containsKey(holdUpKey)) {
+                    holdUpFetchingFutureMap.remove(holdUpKey).thenAccept(cf::complete);
+                } else {
+                    fetch0(startOffset, endOffset, maxBytesHint, cf);
+                }
+            } else {
+                // Try to have a quick fetch. If fetching is timeout, then complete with SlowFetchHintException.
+                timeoutAndStoreFuture(holdUpKey, stream.fetch(startOffset, endOffset, maxBytesHint), SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
+                        if (ex != null) {
+                            if (closed) {
+                                cf.completeExceptionally(new IllegalStateException("stream already closed"));
+                            } else if (ex instanceof SlowFetchHintException) {
+                                LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
+                                cf.completeExceptionally(ex);
+                            } else {
+                                cf.completeExceptionally(ex);
+                            }
+                        } else {
+                            cf.complete(rst);
+                        }
+                    }, LOGGER));
+            }
             return cf;
         }
 
@@ -236,22 +308,42 @@ public class AlwaysSuccessClient implements Client {
     }
 
     static final class Delayer {
+
         static ScheduledFuture<?> delay(Runnable command, long delay,
                                         TimeUnit unit) {
             return DELAY_FETCH_SCHEDULER.schedule(command, delay, unit);
         }
     }
 
-    static final class Canceller implements BiConsumer<Object, Throwable> {
-        final Future<?> f;
+    /**
+     * A BiConsumer that completes the FetchResult future and cancels the timeout check task.
+     */
+    static final class CompleteFetchingFutureAndCancelTimeoutCheck implements BiConsumer<FetchResult, Throwable> {
+        /**
+         * A ScheduledFuture that represents the timeout check task.
+         */
+        final ScheduledFuture<?> f;
+        /**
+         * A CompletableFuture waiting for the fetching result.
+         */
+        final CompletableFuture<FetchResult> waitingFuture;
 
-        Canceller(Future<?> f) {
+        CompleteFetchingFutureAndCancelTimeoutCheck(ScheduledFuture<?> f, CompletableFuture<FetchResult> waitingFuture) {
             this.f = f;
+            this.waitingFuture = waitingFuture;
         }
 
-        public void accept(Object ignore, Throwable ex) {
+        public void accept(FetchResult result, Throwable ex) {
+            // cancels the timeout check task.
             if (ex == null && f != null && !f.isDone())
                 f.cancel(false);
+
+            // completes the waiting future right now.
+            if (ex == null) {
+                waitingFuture.complete(result);
+            } else {
+                waitingFuture.completeExceptionally(ex);
+            }
         }
     }
 }
