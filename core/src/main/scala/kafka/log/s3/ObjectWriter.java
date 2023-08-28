@@ -21,9 +21,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import kafka.log.s3.model.StreamRecordBatch;
+import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
+import kafka.log.s3.utils.ObjectUtils;
 import org.apache.kafka.common.compress.ZstdFactory;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 
@@ -42,6 +44,7 @@ public class ObjectWriter {
     private final List<DataBlock> completedBlocks;
     private IndexBlock indexBlock;
     private final Writer writer;
+    private final long objectId;
     private final String objectKey;
     private long nextDataBlockPosition;
 
@@ -49,8 +52,9 @@ public class ObjectWriter {
 
     private DataBlock dataBlock;
 
-    public ObjectWriter(String objectKey, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
-        this.objectKey = objectKey;
+    public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
+        this.objectId = objectId;
+        this.objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.s3Operator = s3Operator;
         this.blockSizeThreshold = blockSizeThreshold;
         this.partSizeThreshold = partSizeThreshold;
@@ -59,8 +63,8 @@ public class ObjectWriter {
         writer = s3Operator.writer(objectKey);
     }
 
-    public ObjectWriter(String objectKey, S3Operator s3Operator) {
-        this(objectKey, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
+    public ObjectWriter(long objectId, S3Operator s3Operator) {
+        this(objectId, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
     }
 
     public void write(StreamRecordBatch record) {
@@ -132,6 +136,10 @@ public class ObjectWriter {
             }
         }
         return streamRanges;
+    }
+
+    public long objectId() {
+        return objectId;
     }
 
     public long size() {

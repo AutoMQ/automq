@@ -20,33 +20,27 @@ package kafka.log.s3;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
-import kafka.log.s3.utils.ObjectUtils;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TransferQueue;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class S3Wal implements Wal {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Wal.class);
     private final int batchIntervalMs = 200;
     private final BlockingQueue<WalWriteRequest> writeBuffer;
     private final WalBatchWriteTask walBatchWriteTask;
+    private final MinorCompactTask minorCompactTask;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
 
@@ -54,6 +48,8 @@ public class S3Wal implements Wal {
     public S3Wal(ObjectManager objectManager, S3Operator s3Operator) {
         writeBuffer = new ArrayBlockingQueue<>(16384);
         walBatchWriteTask = new WalBatchWriteTask(objectManager, s3Operator);
+        minorCompactTask = new MinorCompactTask(5L * 1024 * 1024 * 1024, 60, 16 * 1024 * 1024
+                , objectManager, s3Operator);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
     }
@@ -131,6 +127,7 @@ public class S3Wal implements Wal {
                 if (task.isDone()) {
                     writeTasks.poll();
                     task.ack();
+                    minorCompactTask.tryCompact(new MinorCompactTask.MinorCompactPart(task.objectId(), task.records()));
                 } else {
                     return;
                 }

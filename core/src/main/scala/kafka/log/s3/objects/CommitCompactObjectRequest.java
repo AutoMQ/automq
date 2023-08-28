@@ -63,8 +63,8 @@ public class CommitCompactObjectRequest {
     }
 
     public void addStreamObject(StreamObject streamObject) {
-        if (streamObject == null) {
-            this.streamObjects = new LinkedList<>();
+        if (streamObjects == null) {
+            streamObjects = new LinkedList<>();
         }
         streamObjects.add(streamObject);
     }
@@ -79,7 +79,7 @@ public class CommitCompactObjectRequest {
 
     public void addCompactedObjectId(long compactedObjectId) {
         if (compactedObjectIds == null) {
-            this.compactedObjectIds = new LinkedList<>();
+            compactedObjectIds = new LinkedList<>();
         }
         compactedObjectIds.add(compactedObjectId);
     }
@@ -93,8 +93,8 @@ public class CommitCompactObjectRequest {
     }
 
     public void addStreamRange(ObjectStreamRange streamRange) {
-        if (this.streamRanges == null) {
-            this.streamRanges = new LinkedList<>();
+        if (streamRanges == null) {
+            streamRanges = new LinkedList<>();
         }
         streamRanges.add(streamRange);
     }
