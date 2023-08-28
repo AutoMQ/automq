@@ -17,6 +17,7 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.Objects;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -84,5 +85,23 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
             record.startOffset(), record.endOffset(), record.brokerId()
         );
         return rangeMetadata;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        RangeMetadata that = (RangeMetadata) o;
+        return streamId == that.streamId && epoch == that.epoch && rangeIndex == that.rangeIndex && startOffset == that.startOffset
+            && endOffset == that.endOffset && brokerId == that.brokerId;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(streamId, epoch, rangeIndex, startOffset, endOffset, brokerId);
     }
 }

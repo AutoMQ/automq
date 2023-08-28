@@ -17,12 +17,21 @@
 
 package org.apache.kafka.image;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.Collections;
 import java.util.List;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.image.writer.RecordListWriter;
+import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
+@Tag("S3Unit")
 public class S3StreamsMetadataImageTest {
 
     private static final long KB = 1024;
@@ -46,7 +55,31 @@ public class S3StreamsMetadataImageTest {
     }
 
     @Test
-    public void testBasicChange() {
+    public void testAssignedChange() {
+        S3StreamsMetadataImage image0 = S3StreamsMetadataImage.EMPTY;
+        ApiMessageAndVersion record0 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
+            .setAssignedStreamId(0), (short) 0);
+        S3StreamsMetadataDelta delta0 = new S3StreamsMetadataDelta(image0);
+        RecordTestUtils.replayAll(delta0, List.of(record0));
+        S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, Collections.emptyMap(), Collections.emptyMap());
+        assertEquals(image1, delta0.apply());
+        testToImageAndBack(image1);
 
+        ApiMessageAndVersion record1 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
+            .setAssignedStreamId(10), (short) 0);
+        S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
+        RecordTestUtils.replayAll(delta1, List.of(record1));
+        S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, Collections.emptyMap(), Collections.emptyMap());
+        assertEquals(image2, delta1.apply());
+    }
+
+    private void testToImageAndBack(S3StreamsMetadataImage image) {
+        RecordListWriter writer = new RecordListWriter();
+        ImageWriterOptions options = new ImageWriterOptions.Builder().build();
+        image.write(writer, options);
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(delta, writer.records());
+        S3StreamsMetadataImage newImage = delta.apply();
+        assertEquals(image, newImage);
     }
 }

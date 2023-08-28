@@ -20,21 +20,27 @@ package org.apache.kafka.image;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public final class S3StreamsMetadataImage {
 
     public static final S3StreamsMetadataImage EMPTY =
-        new S3StreamsMetadataImage(Collections.emptyMap(), Collections.emptyMap());
+        new S3StreamsMetadataImage(-1, Collections.emptyMap(), Collections.emptyMap());
+
+    private long nextAssignedStreamId;
 
     private final Map<Long/*streamId*/, S3StreamMetadataImage> streamsMetadata;
 
     private final Map<Integer/*brokerId*/, BrokerS3WALMetadataImage> brokerWALMetadata;
 
     public S3StreamsMetadataImage(
+        long assignedStreamId,
         Map<Long, S3StreamMetadataImage> streamsMetadata,
         Map<Integer, BrokerS3WALMetadataImage> brokerWALMetadata) {
+        this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamsMetadata = streamsMetadata;
         this.brokerWALMetadata = brokerWALMetadata;
     }
@@ -45,28 +51,41 @@ public final class S3StreamsMetadataImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
+        writer.write(
+            new ApiMessageAndVersion(
+                new AssignedStreamIdRecord().setAssignedStreamId(nextAssignedStreamId - 1), (short) 0));
         streamsMetadata.values().forEach(image -> image.write(writer, options));
         brokerWALMetadata.values().forEach(image -> image.write(writer, options));
     }
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof S3StreamsMetadataImage)) return false;
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
         S3StreamsMetadataImage other = (S3StreamsMetadataImage) obj;
-        return this.streamsMetadata.equals(other.streamsMetadata)
+        return this.nextAssignedStreamId == other.nextAssignedStreamId
+            && this.streamsMetadata.equals(other.streamsMetadata)
             && this.brokerWALMetadata.equals(other.brokerWALMetadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamsMetadata, brokerWALMetadata);
+        return Objects.hash(nextAssignedStreamId, streamsMetadata, brokerWALMetadata);
     }
 
-    public Map<Integer, BrokerS3WALMetadataImage> getBrokerWALMetadata() {
+    public Map<Integer, BrokerS3WALMetadataImage> brokerWALMetadata() {
         return brokerWALMetadata;
     }
 
-    public Map<Long, S3StreamMetadataImage> getStreamsMetadata() {
+    public Map<Long, S3StreamMetadataImage> streamsMetadata() {
         return streamsMetadata;
+    }
+
+    public long nextAssignedStreamId() {
+        return nextAssignedStreamId;
     }
 }

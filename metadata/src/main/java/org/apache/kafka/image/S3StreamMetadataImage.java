@@ -17,7 +17,6 @@
 
 package org.apache.kafka.image;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -29,24 +28,24 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 public class S3StreamMetadataImage {
 
     public static final S3StreamMetadataImage EMPTY =
-        new S3StreamMetadataImage(-1L, -1L, -1L, Map.of(), List.of());
+        new S3StreamMetadataImage(-1L, -1L, -1L, Map.of(), Map.of());
 
-    private final Long streamId;
+    private final long streamId;
 
-    private final Long epoch;
+    private final long epoch;
 
-    private final Long startOffset;
+    private final long startOffset;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
 
-    private final List<S3StreamObject> streamObjects;
+    private final Map<Long/*objectId*/, S3StreamObject> streamObjects;
 
     public S3StreamMetadataImage(
-        Long streamId,
-        Long epoch,
-        Long startOffset,
+        long streamId,
+        long epoch,
+        long startOffset,
         Map<Integer, RangeMetadata> ranges,
-        List<S3StreamObject> streamObjects) {
+        Map<Long, S3StreamObject> streamObjects) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -60,26 +59,26 @@ public class S3StreamMetadataImage {
             .setEpoch(epoch)
             .setStartOffset(startOffset));
         ranges.values().forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
-        streamObjects.forEach(streamObject -> writer.write(streamObject.toRecord()));
+        streamObjects.values().forEach(streamObject -> writer.write(streamObject.toRecord()));
     }
 
     public Map<Integer, RangeMetadata> getRanges() {
         return ranges;
     }
 
-    public List<S3StreamObject> getStreamObjects() {
+    public Map<Long, S3StreamObject> getStreamObjects() {
         return streamObjects;
     }
 
-    public Long getEpoch() {
+    public long getEpoch() {
         return epoch;
     }
 
-    public Long getStartOffset() {
+    public long getStartOffset() {
         return startOffset;
     }
 
-    public Long getStreamId() {
+    public long getStreamId() {
         return streamId;
     }
 
@@ -92,8 +91,11 @@ public class S3StreamMetadataImage {
             return false;
         }
         S3StreamMetadataImage that = (S3StreamMetadataImage) o;
-        return Objects.equals(streamId, that.streamId) && Objects.equals(epoch, that.epoch) && Objects.equals(startOffset,
-            that.startOffset) && Objects.equals(ranges, that.ranges) && Objects.equals(streamObjects, that.streamObjects);
+        return this.streamId == that.streamId &&
+            this.epoch == that.epoch &&
+            this.startOffset == that.startOffset &&
+            this.ranges.equals(that.ranges) &&
+            this.streamObjects.equals(that.streamObjects);
     }
 
     @Override
