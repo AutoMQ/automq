@@ -37,6 +37,12 @@
       "type": "int64",
       "versions": "0+",
       "about": "The start offset of the opened stream"
+    },
+    {
+      "name": "NextOffset",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The next offset of the opened stream"
     }
   ]
 }

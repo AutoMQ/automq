@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
@@ -40,6 +41,7 @@ import org.mockito.Mockito;
 @Timeout(40)
 @Tag("S3Unit")
 public class S3ObjectControlManagerTest {
+
     private static final int BROKER0 = 0;
     private static final int BROKER1 = 1;
     private static final String CLUSTER = "kafka-on-S3_cluster";
@@ -67,11 +69,16 @@ public class S3ObjectControlManagerTest {
             .setPreparedCount(3)
             .setTimeToLiveInMs(1000));
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
-        assertEquals(3, result0.records().size());
+        assertEquals(4, result0.records().size());
+        ApiMessage message = result0.records().get(0).message();
+        assertInstanceOf(AssignedS3ObjectIdRecord.class, message);
+        AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
+        assertEquals(2, assignedRecord.assignedS3ObjectId());
         for (int i = 0; i < 3; i++) {
-            verifyPrepareObjectRecord(result0.records().get(i), i, 1000);
+            verifyPrepareObjectRecord(result0.records().get(i + 1), i, 1000);
         }
-        result0.records().stream().map(ApiMessageAndVersion::message).forEach(record -> manager.replay((S3ObjectRecord) record));
+        manager.replay(assignedRecord);
+        result0.records().stream().skip(1).map(ApiMessageAndVersion::message).forEach(record -> manager.replay((S3ObjectRecord) record));
 
         // verify the 3 objects are prepared
         assertEquals(3, manager.objectsMetadata().size());

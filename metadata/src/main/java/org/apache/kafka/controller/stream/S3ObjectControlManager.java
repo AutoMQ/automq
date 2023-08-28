@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.utils.LogContext;
@@ -44,6 +45,7 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+import org.apache.kafka.timeline.TimelineLong;
 import org.slf4j.Logger;
 
 /**
@@ -69,7 +71,7 @@ public class S3ObjectControlManager {
     /**
      * The objectId of the next object to be prepared. (start from 0)
      */
-    private Long nextAssignedObjectId = 0L;
+    private TimelineLong nextAssignedObjectId;
 
     private final Queue<Long/*objectId*/> preparedObjects;
 
@@ -93,6 +95,7 @@ public class S3ObjectControlManager {
         this.log = logContext.logger(S3ObjectControlManager.class);
         this.clusterId = clusterId;
         this.config = config;
+        this.nextAssignedObjectId = new TimelineLong(snapshotRegistry);
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new LinkedBlockingDeque<>();
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
@@ -119,17 +122,23 @@ public class S3ObjectControlManager {
     }
 
     public Long nextAssignedObjectId() {
-        return nextAssignedObjectId;
+        return nextAssignedObjectId.get();
     }
 
     public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData request) {
-        // TODO: support batch prepare objects
+        // TODO: pre assigned a batch of objectIds in controller
         List<ApiMessageAndVersion> records = new ArrayList<>();
         PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData();
         int count = request.preparedCount();
         List<Long> prepareObjectIds = new ArrayList<>(count);
+
+        // update assigned stream id
+        long newAssignedObjectId = nextAssignedObjectId.get() + count - 1;
+        records.add(new ApiMessageAndVersion(new AssignedS3ObjectIdRecord()
+            .setAssignedS3ObjectId(newAssignedObjectId), (short) 0));
+
         for (int i = 0; i < count; i++) {
-            Long objectId = nextAssignedObjectId + i;
+            Long objectId = nextAssignedObjectId.get() + i;
             prepareObjectIds.add(objectId);
             long preparedTs = System.currentTimeMillis();
             long expiredTs = preparedTs + request.timeToLiveInMs();
@@ -141,7 +150,11 @@ public class S3ObjectControlManager {
             records.add(new ApiMessageAndVersion(record, (short) 0));
         }
         response.setS3ObjectIds(prepareObjectIds);
-        return ControllerResult.of(records, response);
+        return ControllerResult.atomicOf(records, response);
+    }
+
+    public void replay(AssignedS3ObjectIdRecord record) {
+        nextAssignedObjectId.set(record.assignedS3ObjectId() + 1);
     }
 
     public void replay(S3ObjectRecord record) {
@@ -157,7 +170,6 @@ public class S3ObjectControlManager {
         } else if (object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
             markDestroyedObjects.add(object.getObjectId());
         }
-        nextAssignedObjectId = Math.max(nextAssignedObjectId, record.objectId() + 1);
     }
 
     public void replay(RemoveS3ObjectRecord record) {

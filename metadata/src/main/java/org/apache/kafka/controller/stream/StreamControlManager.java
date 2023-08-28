@@ -37,6 +37,7 @@ import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
@@ -51,6 +52,8 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
+import org.apache.kafka.timeline.TimelineInteger;
+import org.apache.kafka.timeline.TimelineLong;
 import org.slf4j.Logger;
 
 /**
@@ -62,32 +65,35 @@ public class StreamControlManager {
     // TODO: timeline check
     public static class S3StreamMetadata {
         // current epoch, when created but not open, use 0 represent
-        private long currentEpoch;
+        private TimelineLong currentEpoch;
         // rangeIndex, when created but not open, there is no range, use -1 represent
-        private int currentRangeIndex = -1;
-        private long startOffset;
+        private TimelineInteger currentRangeIndex;
+        private TimelineLong startOffset;
         private TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
         private TimelineHashSet<S3StreamObject> streamObjects;
 
         public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
             SnapshotRegistry registry) {
-            this.currentEpoch = currentEpoch;
-            this.currentRangeIndex = currentRangeIndex;
-            this.startOffset = startOffset;
+            this.currentEpoch = new TimelineLong(registry);
+            this.currentEpoch.set(currentEpoch);
+            this.currentRangeIndex = new TimelineInteger(registry);
+            this.currentRangeIndex.set(currentRangeIndex);
+            this.startOffset = new TimelineLong(registry);
+            this.startOffset.set(startOffset);
             this.ranges = new TimelineHashMap<>(registry, 0);
             this.streamObjects = new TimelineHashSet<>(registry, 0);
         }
 
         public long currentEpoch() {
-            return currentEpoch;
+            return currentEpoch.get();
         }
 
         public int currentRangeIndex() {
-            return currentRangeIndex;
+            return currentRangeIndex.get();
         }
 
         public long startOffset() {
-            return startOffset;
+            return startOffset.get();
         }
 
         public Map<Integer, RangeMetadata> ranges() {
@@ -145,7 +151,7 @@ public class StreamControlManager {
     /**
      * The next stream id to be assigned.
      */
-    private Long nextAssignedStreamId = 0L;
+    private final TimelineLong nextAssignedStreamId;
 
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
@@ -158,16 +164,19 @@ public class StreamControlManager {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(StreamControlManager.class);
         this.s3ObjectControlManager = s3ObjectControlManager;
+        this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
-    // TODO: refactor to return next offset of stream in response
     // TODO: lazy update range's end offset
-    // TODO: controller allocate the stream id
     public ControllerResult<CreateStreamResponseData> createStream(CreateStreamRequestData data) {
+        // TODO: pre assigned a batch of stream id in controller
         CreateStreamResponseData resp = new CreateStreamResponseData();
-        long streamId = nextAssignedStreamId;
+        long streamId = nextAssignedStreamId.get();
+        // update assigned id
+        ApiMessageAndVersion record0 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
+            .setAssignedStreamId(streamId), (short) 0);
         // create stream
         ApiMessageAndVersion record = new ApiMessageAndVersion(new S3StreamRecord()
             .setStreamId(streamId)
@@ -175,7 +184,7 @@ public class StreamControlManager {
             .setStartOffset(0L)
             .setRangeIndex(-1), (short) 0);
         resp.setStreamId(streamId);
-        return ControllerResult.of(Arrays.asList(record), resp);
+        return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
     public ControllerResult<OpenStreamResponseData> openStream(OpenStreamRequestData data) {
@@ -190,37 +199,40 @@ public class StreamControlManager {
         }
         // verify epoch match
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-        if (streamMetadata.currentEpoch > epoch) {
+        if (streamMetadata.currentEpoch.get() > epoch) {
             resp.setErrorCode(Errors.STREAM_FENCED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        if (streamMetadata.currentEpoch == epoch) {
+        if (streamMetadata.currentEpoch.get() == epoch) {
             // epoch equals, verify broker
-            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex);
-            if (rangeMetadata == null || rangeMetadata.brokerId() != brokerId) {
-                resp.setErrorCode(Errors.STREAM_FENCED.code());
+            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+            if (rangeMetadata != null) {
+                if (rangeMetadata.brokerId() != brokerId) {
+                    resp.setErrorCode(Errors.STREAM_FENCED.code());
+                    return ControllerResult.of(Collections.emptyList(), resp);
+                }
+                // epoch equals, broker equals, regard it as redundant open operation, just return success
+                resp.setStartOffset(streamMetadata.startOffset.get());
+                resp.setNextOffset(rangeMetadata.endOffset());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
-            // epoch equals, broker equals, regard it as redundant open operation, just return success
-            resp.setStartOffset(streamMetadata.startOffset);
-            return ControllerResult.of(Collections.emptyList(), resp);
         }
         // now the request in valid, update the stream's epoch and create a new range for this broker
         List<ApiMessageAndVersion> records = new ArrayList<>();
         long newEpoch = epoch;
-        int newRangeIndex = streamMetadata.currentRangeIndex + 1;
+        int newRangeIndex = streamMetadata.currentRangeIndex.get() + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
             .setStreamId(streamId)
             .setEpoch(newEpoch)
             .setRangeIndex(newRangeIndex)
-            .setStartOffset(streamMetadata.startOffset), (short) 0));
+            .setStartOffset(streamMetadata.startOffset.get()), (short) 0));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
         long startOffset = 0;
         if (newRangeIndex > 0) {
             // means that the new range is not the first range in stream, get the last range's end offset
-            RangeMetadata lastRangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex);
+            RangeMetadata lastRangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
             startOffset = lastRangeMetadata.endOffset();
         }
         // range create record
@@ -232,7 +244,8 @@ public class StreamControlManager {
             .setEpoch(newEpoch)
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(startOffset);
-        return ControllerResult.of(records, resp);
+        resp.setNextOffset(startOffset);
+        return ControllerResult.atomicOf(records, resp);
     }
 
     public ControllerResult<CloseStreamResponseData> closeStream(CloseStreamRequestData data) {
@@ -255,22 +268,24 @@ public class StreamControlManager {
         throw new UnsupportedOperationException();
     }
 
+    public void replay(AssignedStreamIdRecord record) {
+        this.nextAssignedStreamId.set(record.assignedStreamId() + 1);
+    }
 
     public void replay(S3StreamRecord record) {
         long streamId = record.streamId();
         // already exist, update the stream's self metadata
         if (this.streamsMetadata.containsKey(streamId)) {
             S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            streamMetadata.startOffset = record.startOffset();
-            streamMetadata.currentEpoch = record.epoch();
-            streamMetadata.currentRangeIndex = record.rangeIndex();
+            streamMetadata.startOffset.set(record.startOffset());
+            streamMetadata.currentEpoch.set(record.epoch());
+            streamMetadata.currentRangeIndex.set(record.rangeIndex());
             return;
         }
         // not exist, create a new stream
         S3StreamMetadata streamMetadata = new S3StreamMetadata(record.epoch(), record.rangeIndex(),
             record.startOffset(), this.snapshotRegistry);
         this.streamsMetadata.put(streamId, streamMetadata);
-        this.nextAssignedStreamId = Math.max(this.nextAssignedStreamId, streamId + 1);
     }
 
     public void replay(RemoveS3StreamRecord record) {
@@ -310,7 +325,7 @@ public class StreamControlManager {
     }
 
     public Long nextAssignedStreamId() {
-        return nextAssignedStreamId;
+        return nextAssignedStreamId.get();
     }
 
     @Override
