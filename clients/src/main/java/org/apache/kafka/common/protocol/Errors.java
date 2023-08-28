@@ -127,6 +127,7 @@ import org.apache.kafka.common.errors.UnsupportedCompressionTypeException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.errors.s3.ObjectNotExistException;
 import org.apache.kafka.common.errors.s3.StreamExistException;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.common.errors.s3.StreamNotExistException;
@@ -379,8 +380,8 @@ public enum Errors {
 
     STREAM_EXIST(501, "The stream already exists.", StreamExistException::new),
     STREAM_NOT_EXIST(502, "The stream does not exist.", StreamNotExistException::new),
-    STREAM_FENCED(503, "The stream is fenced.", StreamFencedException::new);
-
+    STREAM_FENCED(503, "The stream is fenced.", StreamFencedException::new),
+    OBJECT_NOT_EXIST(504, "The object does not exist.", ObjectNotExistException::new);
 
     // Kafka on S3 inject end
 
