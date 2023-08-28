@@ -21,6 +21,7 @@ import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -32,6 +33,7 @@ import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -55,7 +57,9 @@ import java.util.Optional;
  * A change to the broker metadata image.
  */
 public final class MetadataDelta {
+
     public static class Builder {
+
         private MetadataImage image = MetadataImage.EMPTY;
 
         public Builder setImage(MetadataImage image) {
@@ -104,7 +108,9 @@ public final class MetadataDelta {
     }
 
     public FeaturesDelta getOrCreateFeaturesDelta() {
-        if (featuresDelta == null) featuresDelta = new FeaturesDelta(image.features());
+        if (featuresDelta == null) {
+            featuresDelta = new FeaturesDelta(image.features());
+        }
         return featuresDelta;
     }
 
@@ -113,7 +119,9 @@ public final class MetadataDelta {
     }
 
     public ClusterDelta getOrCreateClusterDelta() {
-        if (clusterDelta == null) clusterDelta = new ClusterDelta(image.cluster());
+        if (clusterDelta == null) {
+            clusterDelta = new ClusterDelta(image.cluster());
+        }
         return clusterDelta;
     }
 
@@ -122,7 +130,9 @@ public final class MetadataDelta {
     }
 
     public TopicsDelta getOrCreateTopicsDelta() {
-        if (topicsDelta == null) topicsDelta = new TopicsDelta(image.topics());
+        if (topicsDelta == null) {
+            topicsDelta = new TopicsDelta(image.topics());
+        }
         return topicsDelta;
     }
 
@@ -131,7 +141,9 @@ public final class MetadataDelta {
     }
 
     public ConfigurationsDelta getOrCreateConfigsDelta() {
-        if (configsDelta == null) configsDelta = new ConfigurationsDelta(image.configs());
+        if (configsDelta == null) {
+            configsDelta = new ConfigurationsDelta(image.configs());
+        }
         return configsDelta;
     }
 
@@ -140,7 +152,9 @@ public final class MetadataDelta {
     }
 
     public ClientQuotasDelta getOrCreateClientQuotasDelta() {
-        if (clientQuotasDelta == null) clientQuotasDelta = new ClientQuotasDelta(image.clientQuotas());
+        if (clientQuotasDelta == null) {
+            clientQuotasDelta = new ClientQuotasDelta(image.clientQuotas());
+        }
         return clientQuotasDelta;
     }
 
@@ -160,7 +174,9 @@ public final class MetadataDelta {
     }
 
     public AclsDelta getOrCreateAclsDelta() {
-        if (aclsDelta == null) aclsDelta = new AclsDelta(image.acls());
+        if (aclsDelta == null) {
+            aclsDelta = new AclsDelta(image.acls());
+        }
         return aclsDelta;
     }
 
@@ -291,7 +307,13 @@ public final class MetadataDelta {
             case ASSIGNED_STREAM_ID_RECORD:
                 replay((AssignedStreamIdRecord) record);
                 break;
-            // Kafka on S3 inject end
+            case BROKER_WALMETADATA_RECORD:
+                replay((BrokerWALMetadataRecord) record);
+                break;
+            case REMOVE_BROKER_WALMETADATA_RECORD:
+                replay((RemoveBrokerWALMetadataRecord) record);
+                break;
+                // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }
@@ -414,13 +436,21 @@ public final class MetadataDelta {
     }
 
     public void replay(AssignedStreamIdRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(BrokerWALMetadataRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    public void replay(RemoveBrokerWALMetadataRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
     }
 
     // Kafka on S3 inject end
 
     /**
-     * Create removal deltas for anything which was in the base image, but which was not
-     * referenced in the snapshot records we just applied.
+     * Create removal deltas for anything which was in the base image, but which was not referenced in the snapshot records we just applied.
      */
     public void finishSnapshot() {
         getOrCreateFeaturesDelta().finishSnapshot();
@@ -505,7 +535,6 @@ public final class MetadataDelta {
         return s3ObjectsDelta == null ?
             image.objectsMetadata() : s3ObjectsDelta.apply();
     }
-
 
     // Kafka on S3 inject end
 
