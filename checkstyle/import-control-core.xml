@@ -50,6 +50,7 @@
     <allow pkg="io.netty" />
     <allow pkg="redis.clients.jedis" />
     <allow pkg="kafka.server" />
+    <allow pkg="kafka.log.es" />
   </subpackage>
 
   <subpackage name="testkit">
