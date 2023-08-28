@@ -77,10 +77,10 @@ public class BrokerS3WALMetadataImageTest {
         // verify delta and check image's write
         BrokerS3WALMetadataImage image1 = new BrokerS3WALMetadataImage(BROKER0, List.of(
             new S3WALObject(0L, BROKER0, Map.of(
-                STREAM0, new S3ObjectStreamIndex(STREAM0, 0L, 100L),
-                STREAM1, new S3ObjectStreamIndex(STREAM1, 0L, 200L))),
+                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 0L, 100L)),
+                STREAM1, List.of(new S3ObjectStreamIndex(STREAM1, 0L, 200L)))),
             new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, new S3ObjectStreamIndex(STREAM0, 101L, 200L)))));
+                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 101L, 200L))))));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -93,7 +93,7 @@ public class BrokerS3WALMetadataImageTest {
         // verify delta and check image's write
         BrokerS3WALMetadataImage image2 = new BrokerS3WALMetadataImage(BROKER0, List.of(
             new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, new S3ObjectStreamIndex(STREAM0, 101L, 200L)))));
+                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 101L, 200L))))));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
     }
