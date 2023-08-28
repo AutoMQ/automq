@@ -23,6 +23,15 @@ public class ObjectStreamRange {
     private long startOffset;
     private long endOffset;
 
+    public ObjectStreamRange() {}
+
+    public ObjectStreamRange(long streamId, long epoch, long startOffset, long endOffset) {
+        this.streamId = streamId;
+        this.epoch = epoch;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+    }
+
     public long getStreamId() {
         return streamId;
     }

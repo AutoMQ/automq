@@ -58,6 +58,10 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
         if (rst != 0) {
             return rst;
         }
+        rst = Long.compare(epoch, o.epoch);
+        if (rst != 0) {
+            return rst;
+        }
         return Long.compare(baseOffset, o.baseOffset);
     }
 }

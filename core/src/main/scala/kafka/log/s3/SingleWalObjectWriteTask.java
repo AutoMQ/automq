@@ -19,11 +19,11 @@ package kafka.log.s3;
 
 import com.automq.elasticstream.client.api.ElasticStreamClientException;
 import com.automq.elasticstream.client.flatc.header.ErrorCode;
+import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
-import kafka.log.s3.utils.ObjectUtils;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class SingleWalObjectWriteTask {
     private final List<WalWriteRequest> requests;
@@ -39,6 +40,7 @@ public class SingleWalObjectWriteTask {
     private ObjectWriter objectWriter;
     private CommitWalObjectResponse response;
     private volatile boolean isDone = false;
+
 
     public SingleWalObjectWriteTask(List<WalWriteRequest> records, ObjectManager objectManager, S3Operator s3Operator) {
         Collections.sort(records);
@@ -57,8 +59,7 @@ public class SingleWalObjectWriteTask {
         CompletableFuture<Void> writeCf = objectIdCf.thenCompose(objectId -> {
             context.objectId = objectId;
             // TODO: fill cluster name
-            String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
-            objectWriter = new ObjectWriter(objectKey, s3Operator);
+            objectWriter = new ObjectWriter(objectId, s3Operator);
             for (WalWriteRequest request : requests) {
                 objectWriter.write(request.record);
             }
@@ -93,6 +94,14 @@ public class SingleWalObjectWriteTask {
                 request.cf.complete(null);
             }
         }
+    }
+
+    public long objectId() {
+        return objectWriter.objectId();
+    }
+
+    public List<StreamRecordBatch> records() {
+        return requests.stream().map(r -> r.record).collect(Collectors.toList());
     }
 
     static class UploadContext {

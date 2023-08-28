@@ -40,6 +40,7 @@ public class S3Wal implements Wal {
     private final int batchIntervalMs = 200;
     private final BlockingQueue<WalWriteRequest> writeBuffer;
     private final WalBatchWriteTask walBatchWriteTask;
+    private final MinorCompactTask minorCompactTask;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
 
@@ -47,6 +48,7 @@ public class S3Wal implements Wal {
     public S3Wal(ObjectManager objectManager, S3Operator s3Operator) {
         writeBuffer = new ArrayBlockingQueue<>(16384);
         walBatchWriteTask = new WalBatchWriteTask(objectManager, s3Operator);
+        minorCompactTask = new MinorCompactTask(5L * 1024 * 1024 * 1024, 60, 16 * 1024 * 1024, objectManager, s3Operator);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
     }
@@ -59,7 +61,7 @@ public class S3Wal implements Wal {
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        //TODO: copy to pooled bytebuffer to reduce gc
+        //TODO: copy to pooled bytebuffer to reduce gc, convert to flat record
         try {
             writeBuffer.put(new WalWriteRequest(streamRecord, cf));
         } catch (InterruptedException e) {
@@ -124,6 +126,7 @@ public class S3Wal implements Wal {
                 if (task.isDone()) {
                     writeTasks.poll();
                     task.ack();
+                    minorCompactTask.tryCompact(new MinorCompactTask.MinorCompactPart(task.objectId(), task.records()));
                 } else {
                     return;
                 }

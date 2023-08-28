@@ -24,6 +24,7 @@ import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
+import kafka.log.s3.utils.ObjectUtils;
 import org.apache.kafka.common.compress.ZstdFactory;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 
@@ -35,23 +36,22 @@ import java.util.concurrent.CompletableFuture;
 
 // TODO: memory optimization
 public class ObjectWriter {
-    private int blockSizeThreshold;
-    private int partSizeThreshold;
-    private final S3Operator s3Operator;
+    private final int blockSizeThreshold;
+    private final int partSizeThreshold;
     private final List<DataBlock> waitingUploadBlocks;
     private final List<DataBlock> completedBlocks;
     private IndexBlock indexBlock;
     private final Writer writer;
-    private final String objectKey;
+    private final long objectId;
     private long nextDataBlockPosition;
 
     private long size;
 
     private DataBlock dataBlock;
 
-    public ObjectWriter(String objectKey, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
-        this.objectKey = objectKey;
-        this.s3Operator = s3Operator;
+    public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
+        this.objectId = objectId;
+        String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.blockSizeThreshold = blockSizeThreshold;
         this.partSizeThreshold = partSizeThreshold;
         waitingUploadBlocks = new LinkedList<>();
@@ -59,8 +59,8 @@ public class ObjectWriter {
         writer = s3Operator.writer(objectKey);
     }
 
-    public ObjectWriter(String objectKey, S3Operator s3Operator) {
-        this(objectKey, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
+    public ObjectWriter(long objectId, S3Operator s3Operator) {
+        this(objectId, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
     }
 
     public void write(StreamRecordBatch record) {
@@ -72,6 +72,13 @@ public class ObjectWriter {
             nextDataBlockPosition += dataBlock.size();
             dataBlock = null;
             tryUploadPart();
+        }
+    }
+
+    public void closeCurrentBlock() {
+        if (dataBlock != null) {
+            dataBlock.close();
+            dataBlock = null;
         }
     }
 
@@ -125,6 +132,10 @@ public class ObjectWriter {
             }
         }
         return streamRanges;
+    }
+
+    public long objectId() {
+        return objectId;
     }
 
     public long size() {

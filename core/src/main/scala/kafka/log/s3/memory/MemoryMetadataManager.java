@@ -181,7 +181,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public CompletableFuture<Void> commitMinorCompactObject(CommitCompactObjectRequest request) {
-        return null;
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
