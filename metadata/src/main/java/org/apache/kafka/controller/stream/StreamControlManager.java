@@ -277,8 +277,6 @@ public class StreamControlManager {
         if (!failedStreamIds.isEmpty()) {
             log.error("stream is invalid when commit wal object, failed stream ids [{}]",
                 String.join(",", failedStreamIds.stream().map(String::valueOf).collect(Collectors.toList())));
-            resp.setErrorCode(Errors.STREAM_FENCED.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
         }
         // commit object
         ControllerResult<Boolean> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
@@ -289,7 +287,7 @@ public class StreamControlManager {
         }
         records.addAll(commitResult.records());
         List<S3ObjectStreamIndex> indexes = new ArrayList<>(streamRanges.size());
-        streamRanges.stream().forEach(range -> {
+        streamRanges.stream().filter(range -> !failedStreamIds.contains(range.streamId())).forEach(range -> {
             // build WAL object
             long streamId = range.streamId();
             long startOffset = range.startOffset();
