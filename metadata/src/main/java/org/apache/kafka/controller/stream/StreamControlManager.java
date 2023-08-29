@@ -286,26 +286,10 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         records.addAll(commitResult.records());
-        List<S3ObjectStreamIndex> indexes = new ArrayList<>(streamRanges.size());
-        streamRanges.stream().filter(range -> !failedStreamIds.contains(range.streamId())).forEach(range -> {
-            // build WAL object
-            long streamId = range.streamId();
-            long startOffset = range.startOffset();
-            long endOffset = range.endOffset();
-            indexes.add(new S3ObjectStreamIndex(objectId, startOffset, endOffset));
-            // TODO: support lazy flush range's end offset
-            // update range's offset
-            S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            RangeMetadata oldRange = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
-            RangeRecord record = new RangeRecord()
-                .setStreamId(streamId)
-                .setBrokerId(brokerId)
-                .setEpoch(oldRange.epoch())
-                .setRangeIndex(oldRange.rangeIndex())
-                .setStartOffset(oldRange.startOffset())
-                .setEndOffset(endOffset);
-            records.add(new ApiMessageAndVersion(record, (short) 0));
-        });
+        List<S3ObjectStreamIndex> indexes = streamRanges.stream()
+            .filter(range -> !failedStreamIds.contains(range.streamId()))
+            .map(range -> new S3ObjectStreamIndex(range.streamId(), range.startOffset(), range.endOffset()))
+            .collect(Collectors.toList());
         // update broker's wal object
         BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
         if (brokerMetadata == null) {
@@ -394,11 +378,33 @@ public class StreamControlManager {
             log.error("broker {} not exist when replay wal object record {}", brokerId, record);
             return;
         }
+
+        // create wal object
         Map<Long, List<S3ObjectStreamIndex>> indexMap = streamIndexes
             .stream()
             .map(S3ObjectStreamIndex::of)
             .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
         brokerMetadata.walObjects.add(new S3WALObject(objectId, brokerId, indexMap));
+
+        // update range
+        record.streamsIndex().forEach(index -> {
+            long streamId = index.streamId();
+            S3StreamMetadata metadata = this.streamsMetadata.get(streamId);
+            if (metadata == null) {
+                // ignore it
+                return;
+            }
+            RangeMetadata rangeMetadata = metadata.ranges().get(metadata.currentRangeIndex.get());
+            if (rangeMetadata == null) {
+                // ignore it
+                return;
+            }
+            if (rangeMetadata.endOffset() != index.startOffset()) {
+                // ignore it
+                return;
+            }
+            rangeMetadata.setEndOffset(index.endOffset());
+        });
     }
 
 

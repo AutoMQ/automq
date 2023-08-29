@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.apache.kafka.common.metadata.AdvanceRangeRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
@@ -104,7 +105,9 @@ public final class S3StreamsMetadataDelta {
     public void replay(WALObjectRecord record) {
         getOrCreateBrokerStreamMetadataDelta(record.brokerId()).replay(record);
         record.streamsIndex().forEach(index -> {
-            getOrCreateStreamMetadataDelta(index.streamId()).replay(record);
+            getOrCreateStreamMetadataDelta(index.streamId()).replay(new AdvanceRangeRecord()
+                .setStartOffset(index.startOffset())
+                .setEndOffset(index.endOffset()));
         });
     }
 
