@@ -26,6 +26,8 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 
@@ -75,6 +77,13 @@ public class S3StreamMetadataDelta {
         removedS3StreamObjectIds.add(record.objectId());
         // new remove, so remove from addedObjects
         changedS3StreamObjects.remove(record.objectId());
+    }
+
+    public void replay(WALObjectRecord record) {
+        StreamIndex streamIndex = record.streamsIndex().get(streamId);
+        streamIndex.
+        long newEndOffset = streamIndex.endOffset();
+        if (this.changedS3StreamObjects.containsKey())
     }
 
     public S3StreamMetadataImage apply() {

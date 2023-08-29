@@ -103,6 +103,9 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(WALObjectRecord record) {
         getOrCreateBrokerStreamMetadataDelta(record.brokerId()).replay(record);
+        record.streamsIndex().forEach(index -> {
+            getOrCreateStreamMetadataDelta(index.streamId()).replay(record);
+        });
     }
 
     public void replay(RemoveWALObjectRecord record) {
