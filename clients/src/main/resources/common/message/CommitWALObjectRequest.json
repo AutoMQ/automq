@@ -51,7 +51,7 @@
       "fields": [
         {
           "name": "StreamId",
-          "type": "int32",
+          "type": "int64",
           "versions": "0+",
           "about": "The ID of the stream"
         },

@@ -150,6 +150,6 @@ public class S3Object implements Comparable<S3Object> {
     }
 
     public boolean isExpired() {
-        return System.currentTimeMillis() > expiredTimeInMs;
+        return this.s3ObjectState == S3ObjectState.PREPARED && System.currentTimeMillis() > expiredTimeInMs;
     }
 }
