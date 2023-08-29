@@ -20,7 +20,6 @@ package org.apache.kafka.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 
 import java.util.ArrayList;
@@ -262,12 +261,10 @@ public class StreamControlManagerTest {
         CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
         replay(manager, result0.records());
-
         ControllerResult<OpenStreamResponseData> result2 = manager.openStream(
             new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
         verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
         replay(manager, result2.records());
-
         // 2. commit valid wal object
         List<ObjectStreamRange> streamRanges0 = new ArrayList<>();
         streamRanges0.add(new ObjectStreamRange()
@@ -290,7 +287,6 @@ public class StreamControlManagerTest {
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(100L, rangeMetadata0.endOffset());
         assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
-
         // 3. commit a wal object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -304,7 +300,6 @@ public class StreamControlManagerTest {
             .setObjectStreamRanges(streamRanges1);
         ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
-
         // 4. commit a wal object that doesn't match the next offset
         List<ObjectStreamRange> streamRanges2 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -320,7 +315,6 @@ public class StreamControlManagerTest {
         assertEquals(Errors.STREAM_FENCED.code(), result5.response().errorCode());
         assertEquals(1, result5.response().failedStreamIds().size());
         assertEquals(STREAM0, result5.response().failedStreamIds().get(0).longValue());
-
         // 5. commit a wal object that contains a stream which doesn't exist
         List<ObjectStreamRange> streamRanges3 = List.of(new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -339,7 +333,6 @@ public class StreamControlManagerTest {
             .setObjectStreamRanges(streamRanges3);
         ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest3);
         assertEquals(Errors.STREAM_FENCED.code(), result6.response().errorCode());
-
         // 6. commit a valid wal object
         List<ObjectStreamRange> streamRanges4 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -361,7 +354,6 @@ public class StreamControlManagerTest {
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(200L, rangeMetadata0.endOffset());
         assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().size());
-
         // 7. broker_1 open stream_0 with epoch_1
         ControllerResult<OpenStreamResponseData> result8 = manager.openStream(
             new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
@@ -369,7 +361,6 @@ public class StreamControlManagerTest {
         assertEquals(0L, result8.response().startOffset());
         assertEquals(200L, result8.response().nextOffset());
         replay(manager, result8.records());
-
         // 8. broker_0 try to keep committing wal object which contains stream_0's data
         List<ObjectStreamRange> streamRanges5 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -383,7 +374,6 @@ public class StreamControlManagerTest {
             .setObjectStreamRanges(streamRanges5);
         ControllerResult<CommitWALObjectResponseData> result9 = manager.commitWALObject(commitRequest5);
         assertEquals(Errors.STREAM_FENCED.code(), result9.response().errorCode());
-
         // 9. broker_1 successfully commit wal object which contains stream_0's data
         List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -407,7 +397,6 @@ public class StreamControlManagerTest {
         RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
         assertEquals(200L, rangeMetadata1.startOffset());
         assertEquals(300L, rangeMetadata1.endOffset());
-        assertTrue(manager.brokersMetadata().containsKey(BROKER1));
         assertEquals(1, manager.brokersMetadata().get(BROKER1).walObjects().size());
     }
 
