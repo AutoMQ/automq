@@ -19,6 +19,7 @@ package org.apache.kafka.controller.stream;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -89,7 +90,8 @@ public class S3ObjectControlManager {
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
         String clusterId,
-        S3Config config) {
+        S3Config config,
+        S3Operator operator) {
         this.quorumController = quorumController;
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(S3ObjectControlManager.class);
@@ -99,7 +101,7 @@ public class S3ObjectControlManager {
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new LinkedBlockingDeque<>();
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
-        this.operator = new DefaultS3Operator();
+        this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor();
         this.lifecycleCheckTimer.scheduleWithFixedDelay(() -> {
@@ -153,6 +155,23 @@ public class S3ObjectControlManager {
         return ControllerResult.atomicOf(records, response);
     }
 
+    public ControllerResult<Boolean> commitObject(long objectId, long objectSize) {
+        S3Object object = this.objectsMetadata.get(objectId);
+        if (object == null) {
+            log.error("object {} not exist when commit wal object", objectId);
+            return ControllerResult.of(Collections.emptyList(), false);
+        }
+        S3ObjectRecord record = new S3ObjectRecord()
+            .setObjectId(objectId)
+            .setObjectSize(objectSize)
+            .setObjectState(S3ObjectState.COMMITTED.toByte())
+            .setPreparedTimeInMs(object.getPreparedTimeInMs())
+            .setExpiredTimeInMs(object.getExpiredTimeInMs())
+            .setCommittedTimeInMs(System.currentTimeMillis());
+        return ControllerResult.of(List.of(
+            new ApiMessageAndVersion(record, (short) 0)), true);
+    }
+
     public void replay(AssignedS3ObjectIdRecord record) {
         nextAssignedObjectId.set(record.assignedS3ObjectId() + 1);
     }
@@ -191,7 +210,7 @@ public class S3ObjectControlManager {
             forEach(obj -> {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
-                    .setObjectState((byte) S3ObjectState.DESTROYED.ordinal())
+                    .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
                     .setObjectSize(obj.getObjectSize())
                     .setPreparedTimeInMs(obj.getPreparedTimeInMs())
                     .setExpiredTimeInMs(obj.getExpiredTimeInMs())
@@ -211,6 +230,9 @@ public class S3ObjectControlManager {
             .map(id -> new ObjectPair(id, objectsMetadata.get(id).getObjectKey()))
             .toArray(ObjectPair[]::new);
         String[] destroyedObjectKeys = Arrays.stream(destroyedObjects).map(ObjectPair::objectKey).toArray(String[]::new);
+        if (destroyedObjectKeys == null || destroyedObjectKeys.length == 0) {
+            return ControllerResult.of(records, null);
+        }
         Set<Long> destroyedObjectIds = Arrays.stream(destroyedObjects).map(ObjectPair::objectId).collect(Collectors.toSet());
         // TODO: deal with failed objects in batch object deletion request
         this.operator.delele(destroyedObjectKeys).whenCompleteAsync((success, e) -> {
@@ -253,6 +275,10 @@ public class S3ObjectControlManager {
 
     public Map<Long, S3Object> objectsMetadata() {
         return objectsMetadata;
+    }
+
+    public S3Object getObject(Long objectId) {
+        return this.objectsMetadata.get(objectId);
     }
 
     /**

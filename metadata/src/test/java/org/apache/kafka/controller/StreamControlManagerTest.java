@@ -20,18 +20,31 @@ package org.apache.kafka.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyLong;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
@@ -41,6 +54,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.Mockito;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
@@ -59,12 +73,14 @@ public class StreamControlManagerTest {
     private final static long EPOCH2 = 2;
 
     private StreamControlManager manager;
+    private S3ObjectControlManager objectControlManager;
 
     @BeforeEach
     public void setUp() {
         LogContext context = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(context);
-        manager = new StreamControlManager(registry, context, null);
+        objectControlManager = Mockito.mock(S3ObjectControlManager.class);
+        manager = new StreamControlManager(registry, context, objectControlManager);
     }
 
     @Test
@@ -229,6 +245,179 @@ public class StreamControlManagerTest {
             new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER1));
         assertEquals(Errors.STREAM_FENCED.code(), result7.response().errorCode());
         assertEquals(0, result7.records().size());
+    }
+
+    @Test
+    public void testCommitWal() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).then(ink -> {
+            long objectId = ink.getArgument(0);
+            if (objectId == 1) {
+                return ControllerResult.of(Collections.emptyList(), false);
+            }
+            return ControllerResult.of(Collections.emptyList(), true);
+        });
+        // 1. create and open stream_0
+        CreateStreamRequestData request0 = new CreateStreamRequestData();
+        ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
+        replay(manager, result0.records());
+        ControllerResult<OpenStreamResponseData> result2 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
+        verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
+        replay(manager, result2.records());
+        // 2. commit valid wal object
+        List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
+        ControllerResult<CommitWALObjectResponseData> result3 = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result3.response().errorCode());
+        replay(manager, result3.records());
+        // verify range's end offset advanced and wal object is added
+        S3StreamMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
+        assertEquals(1, streamMetadata0.ranges().size());
+        RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
+        assertEquals(0L, rangeMetadata0.startOffset());
+        assertEquals(100L, rangeMetadata0.endOffset());
+        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
+        // 3. commit a wal object that doesn't exist
+        List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(100)
+            .setEndOffset(200));
+        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+            .setObjectId(1L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1);
+        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
+        assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
+        // 4. commit a wal object that doesn't match the next offset
+        List<ObjectStreamRange> streamRanges2 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(99)
+            .setEndOffset(200));
+        CommitWALObjectRequestData commitRequest2 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2);
+        ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest2);
+        assertEquals(Errors.NONE.code(), result5.response().errorCode());
+        assertEquals(1, result5.response().failedStreamIds().size());
+        assertEquals(STREAM0, result5.response().failedStreamIds().get(0).longValue());
+        // 5. commit a wal object that contains a stream which doesn't exist
+        List<ObjectStreamRange> streamRanges3 = List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100)
+                .setEndOffset(200),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0)
+                .setEndOffset(100));
+        CommitWALObjectRequestData commitRequest3 = new CommitWALObjectRequestData()
+            .setObjectId(3L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges3);
+        ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest3);
+        assertEquals(Errors.NONE.code(), result6.response().errorCode());
+        assertEquals(1, result6.response().failedStreamIds().size());
+        assertEquals(STREAM1, result6.response().failedStreamIds().get(0).longValue());
+        replay(manager, result6.records());
+        // verify range's end offset advanced and wal object is added
+        streamMetadata0 = manager.streamsMetadata().get(STREAM0);
+        assertEquals(1, streamMetadata0.ranges().size());
+        assertEquals(0L, streamMetadata0.ranges().get(0).startOffset());
+        assertEquals(200L, streamMetadata0.ranges().get(0).endOffset());
+        assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().size());
+        // 6. broker_1 open stream_0 with epoch_1
+        ControllerResult<OpenStreamResponseData> result8 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
+        assertEquals(Errors.NONE.code(), result8.response().errorCode());
+        assertEquals(0L, result8.response().startOffset());
+        assertEquals(200L, result8.response().nextOffset());
+        replay(manager, result8.records());
+        // 7. broker_0 try to keep committing wal object which contains stream_0's data
+        List<ObjectStreamRange> streamRanges5 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(200)
+            .setEndOffset(300));
+        CommitWALObjectRequestData commitRequest5 = new CommitWALObjectRequestData()
+            .setObjectId(5L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges5);
+        ControllerResult<CommitWALObjectResponseData> result9 = manager.commitWALObject(commitRequest5);
+        assertEquals(Errors.NONE.code(), result9.response().errorCode());
+        assertEquals(1, result9.response().failedStreamIds().size());
+        assertEquals(STREAM0, result9.response().failedStreamIds().get(0).longValue());
+        // 8. broker_1 successfully commit wal object which contains stream_0's data
+        List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setStartOffset(200)
+            .setEndOffset(300));
+        CommitWALObjectRequestData commitRequest6 = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER1)
+            .setObjectId(6L)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges6);
+        ControllerResult<CommitWALObjectResponseData> result10 = manager.commitWALObject(commitRequest6);
+        assertEquals(Errors.NONE.code(), result10.response().errorCode());
+        replay(manager, result10.records());
+        // verify range's end offset advanced and wal object is added
+        streamMetadata0 = manager.streamsMetadata().get(STREAM0);
+        assertEquals(2, streamMetadata0.ranges().size());
+        assertEquals(0L, streamMetadata0.ranges().get(0).startOffset());
+        assertEquals(200L, streamMetadata0.ranges().get(0).endOffset());
+        RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
+        assertEquals(200L, rangeMetadata1.startOffset());
+        assertEquals(300L, rangeMetadata1.endOffset());
+        assertEquals(1, manager.brokersMetadata().get(BROKER1).walObjects().size());
+    }
+
+    private void replay(StreamControlManager manager, List<ApiMessageAndVersion> records) {
+        List<ApiMessage> messages = records.stream().map(x -> x.message())
+            .collect(Collectors.toList());
+        for (ApiMessage message : messages) {
+            MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
+            switch (type) {
+                case ASSIGNED_STREAM_ID_RECORD:
+                    manager.replay((AssignedStreamIdRecord) message);
+                    break;
+                case S3_STREAM_RECORD:
+                    manager.replay((S3StreamRecord) message);
+                    break;
+                case REMOVE_S3_STREAM_RECORD:
+                    manager.replay((RemoveS3StreamRecord) message);
+                    break;
+                case RANGE_RECORD:
+                    manager.replay((RangeRecord) message);
+                    break;
+                case REMOVE_RANGE_RECORD:
+                    manager.replay((RemoveRangeRecord) message);
+                    break;
+                case BROKER_WALMETADATA_RECORD:
+                    manager.replay((BrokerWALMetadataRecord) message);
+                    break;
+                case WALOBJECT_RECORD:
+                    manager.replay((WALObjectRecord) message);
+                    break;
+                default:
+                    throw new IllegalStateException("Unknown metadata record type " + type);
+            }
+        }
     }
 
     private void verifyInitializedStreamMetadata(S3StreamMetadata metadata) {

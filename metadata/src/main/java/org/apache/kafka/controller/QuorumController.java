@@ -89,6 +89,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.DefaultS3Operator;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
@@ -1801,7 +1802,8 @@ public final class QuorumController implements Controller {
 
         // Kafka on S3 inject start
         this.s3Config = s3Config;
-        this.s3ObjectControlManager = new S3ObjectControlManager(this, snapshotRegistry, logContext, clusterId, s3Config);
+        this.s3ObjectControlManager = new S3ObjectControlManager(
+            this, snapshotRegistry, logContext, clusterId, s3Config, new DefaultS3Operator());
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         // Kafka on S3 inject end
         updateWriteOffset(-1);
