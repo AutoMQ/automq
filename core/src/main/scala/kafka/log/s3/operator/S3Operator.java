@@ -18,18 +18,14 @@
 package kafka.log.s3.operator;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.UnpooledByteBufAllocator;
 
 import java.util.concurrent.CompletableFuture;
 
 public interface S3Operator {
 
-    /**
-     * Read data from object.
-     *
-     * @param path object path.
-     * @return data.
-     */
-    CompletableFuture<ByteBuf> read(String path);
+    void close();
 
     /**
      * Range read from object.
@@ -39,7 +35,11 @@ public interface S3Operator {
      * @param end   range end.
      * @return data.
      */
-    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end);
+    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc);
+
+    default CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+        return rangeRead(path, start, end, UnpooledByteBufAllocator.DEFAULT);
+    }
 
     /**
      * Write data to object.

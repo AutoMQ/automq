@@ -62,7 +62,8 @@ public class ObjectWriterTest {
         assertEquals(0, streamRanges.get(1).getStartOffset());
         assertEquals(5, streamRanges.get(1).getEndOffset());
 
-        int objectSize = s3Operator.read(metadata.key()).get().readableBytes();
+
+        int objectSize = s3Operator.rangeRead(metadata.key(), 0L, objectWriter.size()).get().readableBytes();
         assertEquals(objectSize, objectWriter.size());
 
         metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.WAL_LOOSE);

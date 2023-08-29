@@ -24,17 +24,15 @@ import kafka.log.es.MemoryClient;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.memory.MemoryMetadataManager;
-import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 
 public class S3Client implements Client {
     private final StreamClient streamClient;
     private final KVClient kvClient;
 
-    public S3Client() {
+    public S3Client(S3Operator s3Operator) {
         MemoryMetadataManager manager = new MemoryMetadataManager();
         manager.start();
-        S3Operator s3Operator = new MemoryS3Operator();
         Wal wal = new S3Wal(manager, s3Operator);
         S3BlockCache blockCache = new DefaultS3BlockCache(manager, s3Operator);
         this.streamClient = new S3StreamClient(manager, wal, blockCache,  manager);
