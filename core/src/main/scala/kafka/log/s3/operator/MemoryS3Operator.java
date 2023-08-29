@@ -17,6 +17,7 @@
 package kafka.log.s3.operator;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
 
@@ -29,21 +30,17 @@ public class MemoryS3Operator implements S3Operator {
     private final Map<String, ByteBuf> storage = new HashMap<>();
 
     @Override
-    public CompletableFuture<ByteBuf> read(String path) {
-        ByteBuf value = storage.get(path);
-        if (value == null) {
-            return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
-        }
-        return CompletableFuture.completedFuture(value.duplicate());
+    public void close() {
     }
 
     @Override
-    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc) {
         ByteBuf value = storage.get(path);
         if (value == null) {
             return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
         }
-        return CompletableFuture.completedFuture(value.slice(value.readerIndex() + (int) start, value.readerIndex() + (int) end));
+        int length = (int) (end - start);
+        return CompletableFuture.completedFuture(value.slice(value.readerIndex() + (int) start, length));
     }
 
     @Override
