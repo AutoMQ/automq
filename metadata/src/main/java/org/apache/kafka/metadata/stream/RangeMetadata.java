@@ -69,6 +69,10 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         return brokerId;
     }
 
+    public void setEndOffset(long endOffset) {
+        this.endOffset = endOffset;
+    }
+
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)

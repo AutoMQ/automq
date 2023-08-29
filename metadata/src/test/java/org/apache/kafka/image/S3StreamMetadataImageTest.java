@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.apache.kafka.common.metadata.AdvanceRangeRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -83,22 +84,17 @@ public class S3StreamMetadataImageTest {
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
             STREAM0, 1L, 0L,
             Map.of(0, new RangeMetadata(STREAM0, 1L, 0, 0L, 0L, BROKER0)), Map.of());
-        S3StreamMetadataImage image = delta1.apply();
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
 
-        // 3. seal range 0_0, broker1 is the new leader, and create range0_1
+        // 3. advance range 0_0, broker1 is the new leader, and create range0_1
         List<ApiMessageAndVersion> delta2Records = new ArrayList<>();
         S3StreamMetadataDelta delta2 = new S3StreamMetadataDelta(image2);
         delta2Records.add(new ApiMessageAndVersion(new S3StreamRecord()
             .setStreamId(STREAM0)
             .setEpoch(2L)
             .setStartOffset(0L), (short) 0));
-        delta2Records.add(new ApiMessageAndVersion(new RangeRecord()
-            .setStreamId(STREAM0)
-            .setRangeIndex(0)
-            .setEpoch(1L)
-            .setBrokerId(BROKER0)
+        delta2Records.add(new ApiMessageAndVersion(new AdvanceRangeRecord()
             .setStartOffset(0L)
             .setEndOffset(100L), (short) 0));
         delta2Records.add(new ApiMessageAndVersion(new RangeRecord()
