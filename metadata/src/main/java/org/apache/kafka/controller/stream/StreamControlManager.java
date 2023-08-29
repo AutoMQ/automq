@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitCompactObjectRequestData;
@@ -52,7 +51,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -137,7 +135,7 @@ public class StreamControlManager {
             return brokerId;
         }
 
-        public TimelineHashSet<S3WALObject> getWalObjects() {
+        public TimelineHashSet<S3WALObject> walObjects() {
             return walObjects;
         }
 
@@ -251,7 +249,7 @@ public class StreamControlManager {
             .setEndOffset(startOffset)
             .setEpoch(newEpoch)
             .setRangeIndex(newRangeIndex), (short) 0));
-        resp.setStartOffset(startOffset);
+        resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
         return ControllerResult.atomicOf(records, resp);
     }
@@ -274,12 +272,11 @@ public class StreamControlManager {
         long objectSize = data.objectSize();
         List<ObjectStreamRange> streamRanges = data.objectStreamRanges();
         // verify stream epoch
-        streamRanges.stream().filter(range -> !verifyWalStreamRanges(range))
+        streamRanges.stream().filter(range -> !verifyWalStreamRanges(range, brokerId))
             .mapToLong(ObjectStreamRange::streamId).forEach(failedStreamIds::add);
         if (!failedStreamIds.isEmpty()) {
-            StringBuilder failedIds = new StringBuilder();
-            Stream.of(failedStreamIds).forEach(id -> failedIds.append(id).append(","));
-            log.error("stream epoch not match when commit wal object, failed stream ids {}", failedIds);
+            log.error("stream is invalid when commit wal object, failed stream ids [{}]",
+                String.join(",", failedStreamIds.stream().map(String::valueOf).collect(Collectors.toList())));
             resp.setErrorCode(Errors.STREAM_FENCED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -301,12 +298,13 @@ public class StreamControlManager {
             // TODO: support lazy flush range's end offset
             // update range's offset
             S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+            RangeMetadata oldRange = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
             RangeRecord record = new RangeRecord()
                 .setStreamId(streamId)
                 .setBrokerId(brokerId)
-                .setEpoch(streamMetadata.currentEpoch())
-                .setRangeIndex(streamMetadata.currentRangeIndex())
-                .setStartOffset(startOffset)
+                .setEpoch(oldRange.epoch())
+                .setRangeIndex(oldRange.rangeIndex())
+                .setStartOffset(oldRange.startOffset())
                 .setEndOffset(endOffset);
             records.add(new ApiMessageAndVersion(record, (short) 0));
         });
@@ -383,6 +381,28 @@ public class StreamControlManager {
         streamMetadata.ranges.remove(record.rangeIndex());
     }
 
+    public void replay(BrokerWALMetadataRecord record) {
+        int brokerId = record.brokerId();
+        this.brokersMetadata.computeIfAbsent(brokerId, id -> new BrokerS3WALMetadata(id, this.snapshotRegistry));
+    }
+
+    public void replay(WALObjectRecord record) {
+        long objectId = record.objectId();
+        int brokerId = record.brokerId();
+        List<StreamIndex> streamIndexes = record.streamsIndex();
+        BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
+        if (brokerMetadata == null) {
+            // should not happen
+            log.error("broker {} not exist when replay wal object record {}", brokerId, record);
+            return;
+        }
+        Map<Long, List<S3ObjectStreamIndex>> indexMap = streamIndexes
+            .stream()
+            .map(S3ObjectStreamIndex::of)
+            .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
+        brokerMetadata.walObjects.add(new S3WALObject(objectId, brokerId, indexMap));
+    }
+
 
     public Map<Long, S3StreamMetadata> streamsMetadata() {
         return streamsMetadata;
@@ -396,7 +416,7 @@ public class StreamControlManager {
         return nextAssignedStreamId.get();
     }
 
-    private boolean verifyWalStreamRanges(ObjectStreamRange range) {
+    private boolean verifyWalStreamRanges(ObjectStreamRange range, long brokerId) {
         long streamId = range.streamId();
         long epoch = range.streamEpoch();
         // verify
@@ -409,6 +429,18 @@ public class StreamControlManager {
             return false;
         }
         if (streamMetadata.currentEpoch() < epoch) {
+            return false;
+        }
+        RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+        if (rangeMetadata == null) {
+            return false;
+        }
+        // compare broker
+        if (rangeMetadata.brokerId() != brokerId) {
+            return false;
+        }
+        // compare offset
+        if (rangeMetadata.endOffset() != range.startOffset()) {
             return false;
         }
         return true;

@@ -90,7 +90,8 @@ public class S3ObjectControlManager {
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
         String clusterId,
-        S3Config config) {
+        S3Config config,
+        S3Operator operator) {
         this.quorumController = quorumController;
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(S3ObjectControlManager.class);
@@ -100,7 +101,7 @@ public class S3ObjectControlManager {
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new LinkedBlockingDeque<>();
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
-        this.operator = new DefaultS3Operator();
+        this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor();
         this.lifecycleCheckTimer.scheduleWithFixedDelay(() -> {
@@ -167,7 +168,7 @@ public class S3ObjectControlManager {
             .setPreparedTimeInMs(object.getPreparedTimeInMs())
             .setExpiredTimeInMs(object.getExpiredTimeInMs())
             .setCommittedTimeInMs(System.currentTimeMillis());
-        return ControllerResult.of(Collections.singletonList(
+        return ControllerResult.of(List.of(
             new ApiMessageAndVersion(record, (short) 0)), true);
     }
 
@@ -209,7 +210,7 @@ public class S3ObjectControlManager {
             forEach(obj -> {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
-                    .setObjectState((byte) S3ObjectState.DESTROYED.ordinal())
+                    .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
                     .setObjectSize(obj.getObjectSize())
                     .setPreparedTimeInMs(obj.getPreparedTimeInMs())
                     .setExpiredTimeInMs(obj.getExpiredTimeInMs())
@@ -229,6 +230,9 @@ public class S3ObjectControlManager {
             .map(id -> new ObjectPair(id, objectsMetadata.get(id).getObjectKey()))
             .toArray(ObjectPair[]::new);
         String[] destroyedObjectKeys = Arrays.stream(destroyedObjects).map(ObjectPair::objectKey).toArray(String[]::new);
+        if (destroyedObjectKeys == null || destroyedObjectKeys.length == 0) {
+            return ControllerResult.of(records, null);
+        }
         Set<Long> destroyedObjectIds = Arrays.stream(destroyedObjects).map(ObjectPair::objectId).collect(Collectors.toSet());
         // TODO: deal with failed objects in batch object deletion request
         this.operator.delele(destroyedObjectKeys).whenCompleteAsync((success, e) -> {
