@@ -2174,30 +2174,32 @@ class ReplicaManager(val config: KafkaConfig,
       if (!localChanges.leaders.isEmpty || !localChanges.followers.isEmpty) {
         val lazyOffsetCheckpoints = new LazyOffsetCheckpoints(this.highWatermarkCheckpoints)
         val changedPartitions = new mutable.HashSet[Partition]
-        if (!localChanges.leaders.isEmpty) {
-          def doPartitionLeading(): Unit = {
+
+        def doPartitionLeadingOrFollowing(): Unit = {
+          stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
+          if (!localChanges.leaders.isEmpty) {
             applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala)
           }
-
-          if (ElasticLogManager.enabled()) {
-            partitionOpenCloseExecutors.submit(new Runnable {
-              override def run(): Unit = {
-                doPartitionLeading()
-              }
-            })
-          } else {
-            doPartitionLeading()
+          if (!localChanges.followers.isEmpty) {
+            applyLocalFollowersDelta(changedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala)
           }
+          maybeAddLogDirFetchers(changedPartitions, lazyOffsetCheckpoints,
+            name => Option(newImage.topics().getTopic(name)).map(_.id()))
 
+          replicaFetcherManager.shutdownIdleFetcherThreads()
+          replicaAlterLogDirsManager.shutdownIdleFetcherThreads()
         }
-        if (!localChanges.followers.isEmpty) {
-          applyLocalFollowersDelta(changedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala)
-        }
-        maybeAddLogDirFetchers(changedPartitions, lazyOffsetCheckpoints,
-          name => Option(newImage.topics().getTopic(name)).map(_.id()))
 
-        replicaFetcherManager.shutdownIdleFetcherThreads()
-        replicaAlterLogDirsManager.shutdownIdleFetcherThreads()
+        if (ElasticLogManager.enabled()) {
+          partitionOpenCloseExecutors.submit(new Runnable {
+            override def run(): Unit = {
+              doPartitionLeadingOrFollowing()
+            }
+          })
+        } else {
+          doPartitionLeadingOrFollowing()
+        }
+
       }
     }
   }
@@ -2340,5 +2342,10 @@ class ReplicaManager(val config: KafkaConfig,
             s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}", e)
       }
     }
+  }
+
+  def shutdownAdditionalThreadPools(): Unit = {
+    slowFetchExecutors.shutdownNow()
+    partitionOpenCloseExecutors.shutdownNow()
   }
 }

@@ -55,6 +55,7 @@ public class LazyStream implements Stream {
         if (streamId != NOOP_STREAM_ID) {
             // open exist stream
             inner = client.openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build()).get();
+            LOGGER.info("opened existing stream: stream_id={}, epoch={}, name={}", streamId, epoch, name);
         }
     }
 

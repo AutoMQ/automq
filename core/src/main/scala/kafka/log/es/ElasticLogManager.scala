@@ -77,6 +77,14 @@ class ElasticLogManager(val client: Client) {
     elasticLog.newSegment(baseOffset, time, suffix)
   }
 
+  def shutdownNow(): Unit = {
+    client match {
+      case alwaysSuccessClient: AlwaysSuccessClient =>
+        alwaysSuccessClient.shutdownNow()
+      case _ =>
+    }
+  }
+
 }
 
 object ElasticLogManager {
@@ -135,5 +143,9 @@ object ElasticLogManager {
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {
     INSTANCE.get.newSegment(topicPartition, baseOffset, time, fileSuffix)
+  }
+
+  def shutdownNow(): Unit = {
+    INSTANCE.foreach(_.shutdownNow())
   }
 }

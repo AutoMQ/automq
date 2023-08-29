@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @Tag("esUnit")
 class AlwaysSuccessClientTest {
     private static final long SLOW_FETCH_TIMEOUT_MILLIS = AlwaysSuccessClient.SLOW_FETCH_TIMEOUT_MILLIS;
+    private AlwaysSuccessClient client;
 
     @BeforeEach
     public void setup() {
@@ -54,11 +55,12 @@ class AlwaysSuccessClientTest {
     @AfterEach
     public void teardown() {
         SeparateSlowAndQuickFetchHint.reset();
+        client.shutdownNow();
     }
 
     @Test
     public void basicAppendAndFetch() throws ExecutionException, InterruptedException {
-        AlwaysSuccessClient client = new AlwaysSuccessClient(new MemoryClient());
+        client = new AlwaysSuccessClient(new MemoryClient());
         Stream stream = client
             .streamClient()
             .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
@@ -75,7 +77,7 @@ class AlwaysSuccessClientTest {
     @Test
     public void testQuickFetch() throws ExecutionException, InterruptedException {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        AlwaysSuccessClient client = new AlwaysSuccessClient(memoryClientWithDelay);
+        client = new AlwaysSuccessClient(memoryClientWithDelay);
         List<Long> quickFetchDelayMillisList = List.of(1L, SLOW_FETCH_TIMEOUT_MILLIS / 2);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
@@ -98,7 +100,7 @@ class AlwaysSuccessClientTest {
     @Test
     public void testSlowFetch() throws ExecutionException, InterruptedException {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        AlwaysSuccessClient client = new AlwaysSuccessClient(memoryClientWithDelay);
+        client = new AlwaysSuccessClient(memoryClientWithDelay);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
         long slowFetchDelay = SLOW_FETCH_TIMEOUT_MILLIS + 1;

@@ -44,24 +44,26 @@ public class AlwaysSuccessClient implements Client {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
     public static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
-    private static final ScheduledExecutorService STREAM_MANAGER_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
+    private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
-    private static final ExecutorService STREAM_MANAGER_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(1,
+    private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
-    private static final ScheduledExecutorService FETCH_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
+    private final ScheduledExecutorService fetchRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
-    private static final ExecutorService APPEND_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
+    private final ExecutorService appendCallbackExecutors = Executors.newFixedThreadPool(4,
         ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
-    private static final ExecutorService FETCH_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
+    private final ExecutorService fetchCallbackExecutors = Executors.newFixedThreadPool(4,
         ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
-    private static final ScheduledExecutorService DELAY_FETCH_SCHEDULER = Executors.newScheduledThreadPool(1,
+    private final ScheduledExecutorService delayFetchScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
     private final StreamClient streamClient;
     private final KVClient kvClient;
+    private final Delayer delayer;
 
     public AlwaysSuccessClient(Client client) {
         this.streamClient = new StreamClientImpl(client.streamClient());
         this.kvClient = client.kvClient();
+        this.delayer = new Delayer(delayFetchScheduler);
     }
 
     @Override
@@ -74,8 +76,17 @@ public class AlwaysSuccessClient implements Client {
         return kvClient;
     }
 
+    public void shutdownNow() {
+        streamManagerRetryScheduler.shutdownNow();
+        streamManagerCallbackExecutors.shutdownNow();
+        fetchRetryScheduler.shutdownNow();
+        appendCallbackExecutors.shutdownNow();
+        fetchCallbackExecutors.shutdownNow();
+        delayFetchScheduler.shutdownNow();
+    }
+
     // TODO: do not retry when stream closed.
-    static class StreamClientImpl implements StreamClient {
+    private class StreamClientImpl implements StreamClient {
 
         private final StreamClient streamClient;
 
@@ -95,12 +106,12 @@ public class AlwaysSuccessClient implements Client {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
                         LOGGER.error("Create and open stream fail, retry later", ex);
-                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
+                        streamManagerRetryScheduler.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
                     } else {
                         cf.complete(new StreamImpl(stream));
                     }
                 }, LOGGER);
-            }, STREAM_MANAGER_CALLBACK_EXECUTORS);
+            }, streamManagerCallbackExecutors);
         }
 
         @Override
@@ -114,17 +125,17 @@ public class AlwaysSuccessClient implements Client {
             streamClient.openStream(streamId, options).whenCompleteAsync((stream, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
-                        LOGGER.error("Create open stream[{}] fail, retry later", streamId, ex);
-                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
+                        LOGGER.error("Open stream[{}](epoch) fail, retry later", streamId, options.epoch(), ex);
+                        streamManagerRetryScheduler.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
                     } else {
                         cf.complete(new StreamImpl(stream));
                     }
                 }, LOGGER);
-            }, APPEND_CALLBACK_EXECUTORS);
+            }, appendCallbackExecutors);
         }
     }
 
-    static class StreamImpl implements Stream {
+    private class StreamImpl implements Stream {
 
         private final Stream stream;
         private volatile boolean closed = false;
@@ -185,7 +196,7 @@ public class AlwaysSuccessClient implements Client {
             }
 
             final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            rawFuture.whenComplete(new CompleteFetchingFutureAndCancelTimeoutCheck(Delayer.delay(() -> {
+            rawFuture.whenComplete(new CompleteFetchingFutureAndCancelTimeoutCheck(delayer.delay(() -> {
                 if (rawFuture == null) {
                     return;
                 }
@@ -245,7 +256,7 @@ public class AlwaysSuccessClient implements Client {
                     if (ex != null) {
                         LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
                         if (!closed) {
-                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
+                            fetchRetryScheduler.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
                         } else {
                             cf.completeExceptionally(new IllegalStateException("stream already closed"));
                         }
@@ -253,7 +264,7 @@ public class AlwaysSuccessClient implements Client {
                         cf.complete(rst);
                     }
                 }, LOGGER);
-            }, FETCH_CALLBACK_EXECUTORS);
+            }, fetchCallbackExecutors);
         }
 
         @Override
@@ -267,7 +278,7 @@ public class AlwaysSuccessClient implements Client {
                         cf.complete(rst);
                     }
                 }, LOGGER);
-            }, APPEND_CALLBACK_EXECUTORS);
+            }, appendCallbackExecutors);
             return cf;
         }
 
@@ -281,7 +292,7 @@ public class AlwaysSuccessClient implements Client {
                 } else {
                     cf.complete(rst);
                 }
-            }, LOGGER), APPEND_CALLBACK_EXECUTORS);
+            }, LOGGER), appendCallbackExecutors);
             return cf;
         }
 
@@ -304,10 +315,15 @@ public class AlwaysSuccessClient implements Client {
     }
 
     static final class Delayer {
+        private final ScheduledExecutorService delayFetchScheduler;
 
-        static ScheduledFuture<?> delay(Runnable command, long delay,
+        public Delayer(ScheduledExecutorService delayFetchScheduler) {
+            this.delayFetchScheduler = delayFetchScheduler;
+        }
+
+        public ScheduledFuture<?> delay(Runnable command, long delay,
             TimeUnit unit) {
-            return DELAY_FETCH_SCHEDULER.schedule(command, delay, unit);
+            return delayFetchScheduler.schedule(command, delay, unit);
         }
     }
 
