@@ -21,7 +21,7 @@ import com.automq.elasticstream.client.api.Client
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.client.{ClientFactoryProxy, Context}
-import kafka.server.{KafkaConfig, LogDirFailureChannel}
+import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
@@ -83,7 +83,7 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
 
-  def init(config: KafkaConfig, clusterId: String): Boolean = {
+  def init(broker: BrokerServer, config: KafkaConfig, clusterId: String): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
     }
@@ -103,6 +103,7 @@ object ElasticLogManager {
     }
     val context = new Context()
     context.config = config
+    context.brokerServer = broker
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context))) 
 
     val namespace = config.elasticStreamNamespace

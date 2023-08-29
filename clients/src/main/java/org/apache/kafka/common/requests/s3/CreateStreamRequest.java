@@ -15,11 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
 public class CreateStreamRequest extends AbstractRequest {
 
