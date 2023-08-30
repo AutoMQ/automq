@@ -22,7 +22,7 @@ import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.client.{ClientFactoryProxy, Context}
 import kafka.server.{KafkaConfig, LogDirFailureChannel}
-import kafka.utils.Scheduler
+import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
 
@@ -30,7 +30,8 @@ import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
-class ElasticLogManager(val client: Client) {
+class ElasticLogManager(val client: Client) extends Logging{
+  this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
 
   def getOrCreateLog(dir: File,
@@ -43,8 +44,16 @@ class ElasticLogManager(val client: Client) {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
              leaderEpoch: Long): ElasticLog = {
-    elasticLogs.computeIfAbsent(topicPartition, _ => ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-      numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch))
+    elasticLogs.computeIfAbsent(topicPartition, _ => {
+      var elasticLog: ElasticLog = null
+      ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+        override def run(): Unit = {
+          elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+            numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
+        }
+      }, s"Failed to create elastic log for $topicPartition", this)
+      elasticLog
+    })
   }
 
   /**
@@ -55,7 +64,11 @@ class ElasticLogManager(val client: Client) {
   def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
     // Removal may have happened in partition's closure. This is a defensive work.
     elasticLogs.remove(topicPartition)
-    ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+      }
+    }, s"Failed to destroy elastic log for $topicPartition", this)
   }
 
   /**
@@ -74,7 +87,14 @@ class ElasticLogManager(val client: Client) {
     if (elasticLog == null) {
       throw new IllegalStateException(s"Cannot find elastic log for $topicPartition")
     }
-    elasticLog.newSegment(baseOffset, time, suffix)
+
+    var segment: ElasticLogSegment = null
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        segment = elasticLog.newSegment(baseOffset, time, suffix)
+      }
+    }, s"Failed to create new segment for $topicPartition", this)
+    segment
   }
 
   def shutdownNow(): Unit = {

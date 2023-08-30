@@ -81,6 +81,7 @@ public class LazyStream implements Stream {
                 // TODO: keep retry or fail all succeed request.
                 this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
                         .epoch(epoch).build()).get();
+                LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {
                 return FutureUtil.failedFuture(new IOException(e));

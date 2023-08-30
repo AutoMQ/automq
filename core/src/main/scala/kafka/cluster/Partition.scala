@@ -574,6 +574,7 @@ class Partition(val topicPartition: TopicPartition,
    * 2) The next leader will then open the partition and the related streams.
    */
   def close(): Unit = {
+    val closeStartTime = System.currentTimeMillis()
     logManager.removeFromCurrentLogs(topicPartition)
     ElasticLogManager.removeLog(topicPartition)
     inWriteLock(leaderIsrUpdateLock) {
@@ -591,6 +592,8 @@ class Partition(val topicPartition: TopicPartition,
       leaderEpochStartOffsetOpt = None
       Partition.removeMetrics(topicPartition)
     }
+    val closeTimeCost = System.currentTimeMillis() - closeStartTime
+    info(s"closed with time cost $closeTimeCost ms, trigger leader re-election")
     // trigger leader re-election
     alterIsrManager.tryElectLeader(topicPartition)
   }

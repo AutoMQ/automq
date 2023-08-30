@@ -289,10 +289,11 @@ class ElasticLog(val metaStream: MetaStream,
       persistLogMeta()
     }
 
-    maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
+    maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()
       segments.close()
       streamManager.close()
+      metaStream.close()
     }
   }
 }
@@ -336,17 +337,19 @@ object ElasticLog extends Logging {
     // open meta stream
     val metaNotExists = kvList.get(0).value() == null
     val metaStream = if (metaNotExists) {
-      createMetaStream(client, key, config.replicationFactor, leaderEpoch, logIdent = logIdent)
+      val stream = createMetaStream(client, key, config.replicationFactor, leaderEpoch, logIdent = logIdent)
+      info(s"${logIdent}created a new meta stream: stream_id=${stream.streamId()}")
+      stream
     } else {
       val keyValue = kvList.get(0)
       val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
       // open partition meta stream
-      client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
+      val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
           .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
           .get()
+      info(s"${logIdent}opened existing meta stream: stream_id=$metaStreamId")
+      stream
     }
-    info(s"${logIdent}created or opened meta stream: stream_id=${metaStream.streamId()}")
-
     // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
     val metaMap = metaStream.replay().asScala
 

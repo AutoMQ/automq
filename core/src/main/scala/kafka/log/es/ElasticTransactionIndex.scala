@@ -83,6 +83,9 @@ class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupp
     var position = 0
     val queue: mutable.Queue[(AbortedTxn, Int)] = mutable.Queue()
     new Iterator[(AbortedTxn, Int)] {
+      /**
+       * Note that nextOffset in stream here actually represents the physical size (or position).
+       */
       override def hasNext: Boolean = queue.nonEmpty || stream.nextOffset() - position >= AbortedTxn.TotalSize
 
       override def next(): (AbortedTxn, Int) = {

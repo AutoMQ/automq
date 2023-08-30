@@ -254,7 +254,7 @@ public class AlwaysSuccessClient implements Client {
             stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
-                        LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
+                        LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset, ex);
                         if (!closed) {
                             fetchRetryScheduler.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
                         } else {
