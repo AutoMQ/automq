@@ -15,20 +15,27 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.objects;
+package org.apache.kafka.metadata.stream;
 
-import kafka.log.s3.utils.ObjectUtils;
-import org.apache.kafka.metadata.stream.S3ObjectType;
 
 public class S3ObjectMetadata {
     private final long objectId;
-    private final long objectSize;
+    private long objectSize;
     private final S3ObjectType type;
+
+    public S3ObjectMetadata(long objectId, S3ObjectType type) {
+        this.objectId = objectId;
+        this.type = type;
+    }
 
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.type = type;
+    }
+
+    public void setObjectSize(long objectSize) {
+        this.objectSize = objectSize;
     }
 
     public long getObjectId() {

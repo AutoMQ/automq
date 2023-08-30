@@ -45,6 +45,10 @@ public class S3StreamObject {
         return objectId;
     }
 
+    public S3ObjectType objectType() {
+        return S3ObjectType.STREAM;
+    }
+
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)

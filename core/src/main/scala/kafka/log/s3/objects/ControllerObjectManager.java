@@ -17,21 +17,55 @@
 
 package kafka.log.s3.objects;
 
+
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import kafka.server.BrokerToControllerChannelManager;
+import kafka.log.s3.StreamMetadataManager;
+import kafka.log.s3.network.ControllerRequestSender;
+import kafka.server.KafkaConfig;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.PrepareS3ObjectRequest;
+import org.apache.kafka.common.requests.PrepareS3ObjectRequest.Builder;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ControllerObjectManager implements ObjectManager {
 
-    private final BrokerToControllerChannelManager channelManager;
+    private final static Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
 
-    public ControllerObjectManager(BrokerToControllerChannelManager channelManager) {
-        this.channelManager = channelManager;
+    private final ControllerRequestSender requestSender;
+    private final StreamMetadataManager metadataManager;
+    private final KafkaConfig config;
+
+    public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager, KafkaConfig config) {
+        this.requestSender = requestSender;
+        this.metadataManager = metadataManager;
+        this.config = config;
     }
 
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
-        return null;
+        PrepareS3ObjectRequest.Builder request = new Builder(
+            new PrepareS3ObjectRequestData()
+                .setBrokerId(config.brokerId())
+                .setPreparedCount(count)
+                .setTimeToLiveInMs(ttl)
+        );
+        return requestSender.send(request, PrepareS3ObjectResponseData.class).thenApply(resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    // TODO: simply response's data structure, only return first object id is enough
+                    return resp.s3ObjectIds().stream().findFirst().get();
+                default:
+                    LOGGER.error("Error while preparing {} object, code: {}", count, code);
+                    throw code.exception();
+            }
+        });
     }
 
     @Override
@@ -56,7 +90,12 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
-        return null;
+        try {
+            return this.metadataManager.getObjects(streamId, startOffset, endOffset, limit);
+        } catch (Exception e) {
+            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit, e);
+            return Collections.emptyList();
+        }
     }
 
     @Override

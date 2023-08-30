@@ -24,7 +24,7 @@ import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
-import kafka.log.s3.utils.ObjectUtils;
+import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.common.compress.ZstdFactory;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 

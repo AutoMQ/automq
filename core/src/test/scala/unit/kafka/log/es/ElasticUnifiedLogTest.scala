@@ -62,7 +62,7 @@ class ElasticUnifiedLogTest {
     def setUp(): Unit = {
         val props = TestUtils.createSimpleEsBrokerConfig()
         config = KafkaConfig.fromProps(props)
-        ElasticLogManager.init(config, clusterId)
+        ElasticLogManager.init(null, config, clusterId)
     }
 
     @AfterEach

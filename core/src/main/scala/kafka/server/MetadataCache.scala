@@ -22,6 +22,7 @@ import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
 import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.{Cluster, Node, TopicPartition, Uuid}
+import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object}
 import org.apache.kafka.server.common.MetadataVersion
 
 import java.util
@@ -116,6 +117,12 @@ trait MetadataCache {
   def features(): FinalizedFeaturesAndEpoch
 
   def getRandomAliveBrokerId: Option[Int]
+
+  // Kafka on S3 inject start
+  def getObjects(streamId: Long, startOffset: Long, endOffset: Long, limit: Int): InRangeObjects
+
+  def getObjectMetadata(objectId: Long): S3Object
+  // Kafka on S3 inject end
 }
 
 object MetadataCache {

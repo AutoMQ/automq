@@ -26,7 +26,6 @@ import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.objects.ControllerObjectManager;
 import kafka.log.s3.objects.ObjectManager;
-import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.ControllerStreamManager;
 import kafka.log.s3.streams.StreamManager;
@@ -37,6 +36,7 @@ import kafka.server.KafkaConfig;
 public class DefaultS3Client implements Client {
 
     private final KafkaConfig config;
+    private final StreamMetadataManager metadataManager;
 
     private final BrokerToControllerChannelManager channelManager;
 
@@ -56,15 +56,16 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig config) {
+    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig config, S3Operator operator) {
         this.config = config;
         this.channelManager = brokerServer.clientToControllerChannelManager();
-        this.operator = new MemoryS3Operator();
-        this.objectManager = new ControllerObjectManager(this.channelManager);
-        this.wal = new S3Wal(objectManager, operator);
-        this.blockCache = new DefaultS3BlockCache(objectManager, operator);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config);
+        this.operator = operator;
         this.requestSender = new ControllerRequestSender(channelManager);
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
+        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
+        this.wal = new S3Wal(objectManager, operator);
+        this.blockCache = new DefaultS3BlockCache(objectManager, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.wal, this.blockCache, this.objectManager);
         this.kvClient = new KVClientImpl();
     }

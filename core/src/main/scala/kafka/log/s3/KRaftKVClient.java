@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class KRaftKVClient implements KVClient {
+
     @Override
     public CompletableFuture<Void> putKV(List<KeyValue> list) {
         return null;

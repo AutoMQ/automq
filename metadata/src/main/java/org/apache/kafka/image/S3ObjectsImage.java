@@ -45,6 +45,10 @@ public final class S3ObjectsImage {
         this.objectsMetadata = objectsMetadata;
     }
 
+    public S3Object getObjectMetadata(long objectId) {
+        return this.objectsMetadata.get(objectId);
+    }
+
     public Map<Long, S3Object> objectsMetadata() {
         return objectsMetadata;
     }

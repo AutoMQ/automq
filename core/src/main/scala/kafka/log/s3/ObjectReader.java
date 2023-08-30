@@ -19,7 +19,7 @@ package kafka.log.s3;
 
 import io.netty.buffer.ByteBuf;
 import kafka.log.s3.model.StreamRecordBatch;
-import kafka.log.s3.objects.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.compress.ZstdFactory;
