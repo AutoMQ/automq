@@ -15,26 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.CommitStreamObjectRequestData;
-import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class CommitStreamObjectRequest extends AbstractRequest {
+public class CommitWALObjectRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<CommitStreamObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<CommitWALObjectRequest> {
 
-        private final CommitStreamObjectRequestData data;
-
-        public Builder(CommitStreamObjectRequestData data) {
-            super(ApiKeys.COMMIT_STREAM_OBJECT);
+        private final CommitWALObjectRequestData data;
+        public Builder(CommitWALObjectRequestData data) {
+            super(ApiKeys.COMMIT_WALOBJECT);
             this.data = data;
         }
 
         @Override
-        public CommitStreamObjectRequest build(short version) {
-            return new CommitStreamObjectRequest(data, version);
+        public CommitWALObjectRequest build(short version) {
+            return new CommitWALObjectRequest(data, version);
         }
 
         @Override
@@ -42,25 +43,25 @@ public class CommitStreamObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
+    private final CommitWALObjectRequestData data;
 
-    private final CommitStreamObjectRequestData data;
-
-    public CommitStreamObjectRequest(CommitStreamObjectRequestData data, short version) {
+    public CommitWALObjectRequest(CommitWALObjectRequestData data, short version) {
         super(ApiKeys.DELETE_STREAM, version);
         this.data = data;
     }
 
     @Override
-    public CommitStreamObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CommitWALObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CommitStreamObjectResponseData response = new CommitStreamObjectResponseData()
+        CommitWALObjectResponseData response = new CommitWALObjectResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CommitStreamObjectResponse(response);
+        return new CommitWALObjectResponse(response);
     }
 
     @Override
-    public CommitStreamObjectRequestData data() {
+    public CommitWALObjectRequestData data() {
         return data;
     }
+
 }

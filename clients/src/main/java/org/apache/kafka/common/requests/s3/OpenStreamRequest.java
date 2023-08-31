@@ -15,25 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
-import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.OpenStreamRequestData;
+import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class PrepareS3ObjectRequest extends AbstractRequest {
+public class OpenStreamRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<PrepareS3ObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<OpenStreamRequest> {
 
-        private final PrepareS3ObjectRequestData data;
-        public Builder(PrepareS3ObjectRequestData data) {
-            super(ApiKeys.DELETE_STREAM);
+        private final OpenStreamRequestData data;
+        public Builder(OpenStreamRequestData data) {
+            super(ApiKeys.CREATE_STREAM);
             this.data = data;
         }
 
         @Override
-        public PrepareS3ObjectRequest build(short version) {
-            return new PrepareS3ObjectRequest(data, version);
+        public OpenStreamRequest build(short version) {
+            return new OpenStreamRequest(data, version);
         }
 
         @Override
@@ -41,25 +43,24 @@ public class PrepareS3ObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final PrepareS3ObjectRequestData data;
 
-    public PrepareS3ObjectRequest(PrepareS3ObjectRequestData data, short version) {
-        super(ApiKeys.PREPARE_S3_OBJECT, version);
+    private final OpenStreamRequestData data;
+    public OpenStreamRequest(OpenStreamRequestData data, short version) {
+        super(ApiKeys.OPEN_STREAM, version);
         this.data = data;
     }
 
     @Override
-    public PrepareS3ObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public OpenStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData()
+        OpenStreamResponseData response = new OpenStreamResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new PrepareS3ObjectResponse(response);
+        return new OpenStreamResponse(response);
     }
 
     @Override
-    public PrepareS3ObjectRequestData data() {
+    public OpenStreamRequestData data() {
         return data;
     }
-    
 }

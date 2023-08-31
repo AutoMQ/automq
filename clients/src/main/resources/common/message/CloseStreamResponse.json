@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 70,
+  "apiKey": 503,
   "type": "response",
   "name": "CloseStreamResponse",
   "validVersions": "0",

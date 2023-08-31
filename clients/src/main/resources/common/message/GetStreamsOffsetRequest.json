@@ -14,22 +14,22 @@
 // limitations under the License.
 
 {
-  "apiKey": 504,
+  "apiKey": 508,
   "type": "request",
   "listeners": [
     "controller",
     "broker"
   ],
-  "name": "DeleteStreamRequest",
+  "name": "GetStreamsOffsetRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "StreamId",
-      "type": "int64",
+      "name": "StreamIds",
+      "type": "[]int64",
       "versions": "0+",
       "entityType": "streamId",
-      "about": "The id of the requesting stream"
+      "about": "The ids of the requesting stream"
     }
   ]
 }

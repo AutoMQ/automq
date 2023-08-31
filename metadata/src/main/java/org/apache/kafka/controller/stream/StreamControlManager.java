@@ -26,8 +26,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
-import org.apache.kafka.common.message.CommitCompactObjectRequestData;
-import org.apache.kafka.common.message.CommitCompactObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
@@ -37,6 +35,9 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData.StreamOffset;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -343,21 +344,15 @@ public class StreamControlManager {
     }
 
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
+        // TODO: deal with compacted objects, mark delete compacted object
+        // TODO: deal with stream objects, replay streamObjectRecord to advance stream's end offset
+        // TODO: generate order id to ensure the order of all wal object
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<Long> failedStreamIds = new ArrayList<>();
-        resp.setFailedStreamIds(failedStreamIds);
         long objectId = data.objectId();
         int brokerId = data.brokerId();
         long objectSize = data.objectSize();
         List<ObjectStreamRange> streamRanges = data.objectStreamRanges();
-        // verify stream epoch
-        streamRanges.stream().filter(range -> !verifyWalStreamRanges(range, brokerId))
-            .mapToLong(ObjectStreamRange::streamId).forEach(failedStreamIds::add);
-        if (!failedStreamIds.isEmpty()) {
-            log.error("stream is invalid when commit wal object, failed stream ids [{}]",
-                String.join(",", failedStreamIds.stream().map(String::valueOf).collect(Collectors.toList())));
-        }
         // commit object
         ControllerResult<Boolean> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
         if (!commitResult.response()) {
@@ -367,7 +362,6 @@ public class StreamControlManager {
         }
         records.addAll(commitResult.records());
         List<S3ObjectStreamIndex> indexes = streamRanges.stream()
-            .filter(range -> !failedStreamIds.contains(range.streamId()))
             .map(range -> new S3ObjectStreamIndex(range.streamId(), range.startOffset(), range.endOffset()))
             .collect(Collectors.toList());
         // update broker's wal object
@@ -388,12 +382,27 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<CommitCompactObjectResponseData> commitCompactObject(CommitCompactObjectRequestData data) {
+    public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
         throw new UnsupportedOperationException();
     }
 
-    public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
-        throw new UnsupportedOperationException();
+    public GetStreamsOffsetResponseData getStreamsOffset(GetStreamsOffsetRequestData data) {
+        List<Long> streamIds = data.streamIds();
+        GetStreamsOffsetResponseData resp = new GetStreamsOffsetResponseData();
+        List<StreamOffset> streamOffsets = streamIds.stream()
+            .filter(this.streamsMetadata::containsKey)
+            .map(id -> {
+                S3StreamMetadata streamMetadata = this.streamsMetadata.get(id);
+                RangeMetadata range = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
+                long startOffset = streamMetadata.startOffset();
+                long endOffset = range == null ? startOffset : range.endOffset();
+                return new StreamOffset()
+                    .setStreamId(id)
+                    .setStartOffset(startOffset)
+                    .setEndOffset(endOffset);
+            }).collect(Collectors.toList());
+        resp.setStreamsOffset(streamOffsets);
+        return resp;
     }
 
     public void replay(AssignedStreamIdRecord record) {

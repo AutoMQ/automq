@@ -15,25 +15,28 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.OpenStreamRequestData;
-import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class OpenStreamRequest extends AbstractRequest {
+public class CommitStreamObjectRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<OpenStreamRequest> {
+    public static class Builder extends AbstractRequest.Builder<CommitStreamObjectRequest> {
 
-        private final OpenStreamRequestData data;
-        public Builder(OpenStreamRequestData data) {
-            super(ApiKeys.CREATE_STREAM);
+        private final CommitStreamObjectRequestData data;
+
+        public Builder(CommitStreamObjectRequestData data) {
+            super(ApiKeys.COMMIT_STREAM_OBJECT);
             this.data = data;
         }
 
         @Override
-        public OpenStreamRequest build(short version) {
-            return new OpenStreamRequest(data, version);
+        public CommitStreamObjectRequest build(short version) {
+            return new CommitStreamObjectRequest(data, version);
         }
 
         @Override
@@ -42,23 +45,24 @@ public class OpenStreamRequest extends AbstractRequest {
         }
     }
 
-    private final OpenStreamRequestData data;
-    public OpenStreamRequest(OpenStreamRequestData data, short version) {
-        super(ApiKeys.OPEN_STREAM, version);
+    private final CommitStreamObjectRequestData data;
+
+    public CommitStreamObjectRequest(CommitStreamObjectRequestData data, short version) {
+        super(ApiKeys.DELETE_STREAM, version);
         this.data = data;
     }
 
     @Override
-    public OpenStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CommitStreamObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        OpenStreamResponseData response = new OpenStreamResponseData()
+        CommitStreamObjectResponseData response = new CommitStreamObjectResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new OpenStreamResponse(response);
+        return new CommitStreamObjectResponse(response);
     }
 
     @Override
-    public OpenStreamRequestData data() {
+    public CommitStreamObjectRequestData data() {
         return data;
     }
 }

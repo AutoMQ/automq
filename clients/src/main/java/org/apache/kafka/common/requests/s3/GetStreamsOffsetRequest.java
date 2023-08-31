@@ -15,24 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.DeleteStreamRequestData;
-import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class DeleteStreamRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<DeleteStreamRequest> {
+public class GetStreamsOffsetRequest extends AbstractRequest {
 
-        private final DeleteStreamRequestData data;
-        public Builder(DeleteStreamRequestData data) {
-            super(ApiKeys.DELETE_STREAM);
+    public static class Builder extends AbstractRequest.Builder<GetStreamsOffsetRequest> {
+
+        private final GetStreamsOffsetRequestData data;
+        public Builder(GetStreamsOffsetRequestData data) {
+            super(ApiKeys.GET_STREAMS_OFFSET);
             this.data = data;
         }
 
         @Override
-        public DeleteStreamRequest build(short version) {
-            return new DeleteStreamRequest(data, version);
+        public GetStreamsOffsetRequest build(short version) {
+            return new GetStreamsOffsetRequest(data, version);
         }
 
         @Override
@@ -40,24 +43,26 @@ public class DeleteStreamRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final DeleteStreamRequestData data;
 
-    public DeleteStreamRequest(DeleteStreamRequestData data, short version) {
-        super(ApiKeys.DELETE_STREAM, version);
+    private final GetStreamsOffsetRequestData data;
+
+    public GetStreamsOffsetRequest(GetStreamsOffsetRequestData data, short version) {
+        super(ApiKeys.GET_STREAMS_OFFSET, version);
         this.data = data;
     }
 
     @Override
-    public DeleteStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CreateStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        DeleteStreamResponseData response = new DeleteStreamResponseData()
+        CreateStreamResponseData response = new CreateStreamResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new DeleteStreamResponse(response);
+        return new CreateStreamResponse(response);
     }
 
     @Override
-    public DeleteStreamRequestData data() {
+    public GetStreamsOffsetRequestData data() {
         return data;
     }
+    
 }

@@ -15,24 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
 import java.util.Map;
-import org.apache.kafka.common.message.CommitCompactObjectResponseData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CommitCompactObjectResponse extends AbstractResponse {
+public class CommitWALObjectResponse extends AbstractResponse {
 
-    private final CommitCompactObjectResponseData data;
 
-    public CommitCompactObjectResponse(CommitCompactObjectResponseData data) {
-        super(ApiKeys.COMMIT_COMPACT_OBJECT);
+    private final CommitWALObjectResponseData data;
+
+    public CommitWALObjectResponse(CommitWALObjectResponseData data) {
+        super(ApiKeys.COMMIT_WALOBJECT);
         this.data = data;
     }
 
     @Override
-    public CommitCompactObjectResponseData data() {
+    public CommitWALObjectResponseData data() {
         return data;
     }
 
@@ -50,5 +52,5 @@ public class CommitCompactObjectResponse extends AbstractResponse {
     public void maybeSetThrottleTimeMs(int throttleTimeMs) {
         data.setThrottleTimeMs(throttleTimeMs);
     }
-
+    
 }

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 68,
+  "apiKey": 501,
   "type": "response",
   "name": "CreateStreamResponse",
   "validVersions": "0",

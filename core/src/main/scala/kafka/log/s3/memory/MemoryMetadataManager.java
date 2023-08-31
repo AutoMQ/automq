@@ -18,7 +18,6 @@
 package kafka.log.s3.memory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -32,13 +31,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
-import kafka.log.s3.objects.GetStreamsOffsetRequest;
-import kafka.log.s3.objects.GetStreamsOffsetResponse;
-import kafka.log.s3.objects.GetStreamsOffsetResponse.StreamRange;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.OpenStreamMetadata;
@@ -364,14 +361,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<GetStreamsOffsetResponse> getStreamsOffset(GetStreamsOffsetRequest request) {
+    public CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds) {
         return this.submitEvent(() -> {
-            GetStreamsOffsetResponse response = new GetStreamsOffsetResponse();
-            StreamRange[] ranges = Arrays.stream(request.streamIds()).filter(this.streamsMetadata::containsKey).mapToObj(id -> {
-                return new StreamRange(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
-            }).toArray(StreamRange[]::new);
-            response.setStreamRanges(ranges);
-            return response;
+            return streamIds.stream().filter(this.streamsMetadata::containsKey).map(id -> {
+                return new StreamOffset(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
+            }).collect(Collectors.toList());
         });
     }
 

@@ -15,25 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.CloseStreamRequestData;
-import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class CloseStreamRequest extends AbstractRequest {
+public class PrepareS3ObjectRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<CloseStreamRequest> {
+    public static class Builder extends AbstractRequest.Builder<PrepareS3ObjectRequest> {
 
-        private final CloseStreamRequestData data;
-        public Builder(CloseStreamRequestData data) {
-            super(ApiKeys.CLOSE_STREAM);
+        private final PrepareS3ObjectRequestData data;
+        public Builder(PrepareS3ObjectRequestData data) {
+            super(ApiKeys.DELETE_STREAM);
             this.data = data;
         }
 
         @Override
-        public CloseStreamRequest build(short version) {
-            return new CloseStreamRequest(data, version);
+        public PrepareS3ObjectRequest build(short version) {
+            return new PrepareS3ObjectRequest(data, version);
         }
 
         @Override
@@ -41,24 +43,25 @@ public class CloseStreamRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final CloseStreamRequestData data;
+    private final PrepareS3ObjectRequestData data;
 
-    public CloseStreamRequest(CloseStreamRequestData data, short version) {
-        super(ApiKeys.CLOSE_STREAM, version);
+    public PrepareS3ObjectRequest(PrepareS3ObjectRequestData data, short version) {
+        super(ApiKeys.PREPARE_S3_OBJECT, version);
         this.data = data;
     }
 
     @Override
-    public CloseStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public PrepareS3ObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CloseStreamResponseData response = new CloseStreamResponseData()
+        PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CloseStreamResponse(response);
+        return new PrepareS3ObjectResponse(response);
     }
 
     @Override
-    public CloseStreamRequestData data() {
+    public PrepareS3ObjectRequestData data() {
         return data;
     }
+    
 }

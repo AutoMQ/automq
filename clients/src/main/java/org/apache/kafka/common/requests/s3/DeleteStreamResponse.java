@@ -14,26 +14,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
 import java.util.Map;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CommitWALObjectResponse extends AbstractResponse {
+public class DeleteStreamResponse extends AbstractResponse {
 
+    private final DeleteStreamResponseData data;
 
-    private final CommitWALObjectResponseData data;
-
-    public CommitWALObjectResponse(CommitWALObjectResponseData data) {
-        super(ApiKeys.COMMIT_WALOBJECT);
+    public DeleteStreamResponse(DeleteStreamResponseData data) {
+        super(ApiKeys.DELETE_STREAM);
         this.data = data;
     }
 
     @Override
-    public CommitWALObjectResponseData data() {
+    public DeleteStreamResponseData data() {
         return data;
     }
 
@@ -51,5 +50,4 @@ public class CommitWALObjectResponse extends AbstractResponse {
     public void maybeSetThrottleTimeMs(int throttleTimeMs) {
         data.setThrottleTimeMs(throttleTimeMs);
     }
-    
 }

@@ -15,25 +15,27 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CloseStreamRequestData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class CommitWALObjectRequest extends AbstractRequest {
+public class CloseStreamRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<CommitWALObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<CloseStreamRequest> {
 
-        private final CommitWALObjectRequestData data;
-        public Builder(CommitWALObjectRequestData data) {
-            super(ApiKeys.COMMIT_WALOBJECT);
+        private final CloseStreamRequestData data;
+        public Builder(CloseStreamRequestData data) {
+            super(ApiKeys.CLOSE_STREAM);
             this.data = data;
         }
 
         @Override
-        public CommitWALObjectRequest build(short version) {
-            return new CommitWALObjectRequest(data, version);
+        public CloseStreamRequest build(short version) {
+            return new CloseStreamRequest(data, version);
         }
 
         @Override
@@ -41,25 +43,24 @@ public class CommitWALObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final CommitWALObjectRequestData data;
+    private final CloseStreamRequestData data;
 
-    public CommitWALObjectRequest(CommitWALObjectRequestData data, short version) {
-        super(ApiKeys.DELETE_STREAM, version);
+    public CloseStreamRequest(CloseStreamRequestData data, short version) {
+        super(ApiKeys.CLOSE_STREAM, version);
         this.data = data;
     }
 
     @Override
-    public CommitWALObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CloseStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CommitWALObjectResponseData response = new CommitWALObjectResponseData()
+        CloseStreamResponseData response = new CloseStreamResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CommitWALObjectResponse(response);
+        return new CloseStreamResponse(response);
     }
 
     @Override
-    public CommitWALObjectRequestData data() {
+    public CloseStreamRequestData data() {
         return data;
     }
-
 }

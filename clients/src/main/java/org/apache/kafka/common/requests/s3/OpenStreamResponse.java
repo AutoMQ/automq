@@ -15,23 +15,24 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
 import java.util.Map;
-import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 
-public class PrepareS3ObjectResponse extends AbstractResponse {
-    private final PrepareS3ObjectResponseData data;
+public class OpenStreamResponse extends AbstractResponse {
 
-    public PrepareS3ObjectResponse(PrepareS3ObjectResponseData data) {
-        super(ApiKeys.PREPARE_S3_OBJECT);
+    private final OpenStreamResponseData data;
+
+    public OpenStreamResponse(OpenStreamResponseData data) {
+        super(ApiKeys.OPEN_STREAM);
         this.data = data;
     }
-
     @Override
-    public PrepareS3ObjectResponseData data() {
+    public OpenStreamResponseData data() {
         return data;
     }
 
