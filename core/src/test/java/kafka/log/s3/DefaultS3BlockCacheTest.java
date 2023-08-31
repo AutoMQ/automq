@@ -22,7 +22,7 @@ import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
-import kafka.log.s3.objects.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.metadata.stream.S3ObjectType;

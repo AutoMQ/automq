@@ -62,6 +62,7 @@ public class S3StreamMetadataImage {
         streamObjects.values().forEach(streamObject -> writer.write(streamObject.toRecord()));
     }
 
+
     public Map<Integer, RangeMetadata> getRanges() {
         return ranges;
     }
@@ -80,6 +81,10 @@ public class S3StreamMetadataImage {
 
     public long getStreamId() {
         return streamId;
+    }
+
+    public long startOffset() {
+        return startOffset;
     }
 
     @Override

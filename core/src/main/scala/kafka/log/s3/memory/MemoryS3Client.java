@@ -15,22 +15,24 @@
  * limitations under the License.
  */
 
-package kafka.log.s3;
+package kafka.log.s3.memory;
 
 import com.automq.elasticstream.client.api.Client;
 import com.automq.elasticstream.client.api.KVClient;
 import com.automq.elasticstream.client.api.StreamClient;
 import kafka.log.es.MemoryClient;
+import kafka.log.s3.S3StreamClient;
+import kafka.log.s3.S3Wal;
+import kafka.log.s3.Wal;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
-import kafka.log.s3.memory.MemoryMetadataManager;
 import kafka.log.s3.operator.S3Operator;
 
-public class S3Client implements Client {
+public class MemoryS3Client implements Client {
     private final StreamClient streamClient;
     private final KVClient kvClient;
 
-    public S3Client(S3Operator s3Operator) {
+    public MemoryS3Client(S3Operator s3Operator) {
         MemoryMetadataManager manager = new MemoryMetadataManager();
         manager.start();
         Wal wal = new S3Wal(manager, s3Operator);

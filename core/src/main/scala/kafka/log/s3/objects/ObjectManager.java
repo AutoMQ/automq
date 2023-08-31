@@ -19,6 +19,7 @@ package kafka.log.s3.objects;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 /**
  * Object metadata registry.

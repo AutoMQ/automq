@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.utils;
+package org.apache.kafka.metadata.stream;
 
 public class ObjectUtils {
 

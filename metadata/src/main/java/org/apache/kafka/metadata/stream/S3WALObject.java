@@ -40,16 +40,17 @@ public class S3WALObject {
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
-        List<S3ObjectStreamIndex> indices = streamsIndex.get(streamId);
-        if (indices == null || indices.isEmpty()) {
+        List<S3ObjectStreamIndex> indexes = streamsIndex.get(streamId);
+        if (indexes == null || indexes.isEmpty()) {
             return false;
         }
-        S3ObjectStreamIndex firstIndex = indices.get(0);
-        S3ObjectStreamIndex lastIndex = indices.get(indices.size() - 1);
-        if (endOffset <= firstIndex.getStartOffset() || startOffset >= lastIndex.getEndOffset()) {
-            return false;
-        }
-        return true;
+        S3ObjectStreamIndex firstIndex = indexes.get(0);
+        S3ObjectStreamIndex lastIndex = indexes.get(indexes.size() - 1);
+        return startOffset >= firstIndex.getStartOffset() && startOffset <= lastIndex.getEndOffset();
+    }
+
+    public Map<Long, List<S3ObjectStreamIndex>> streamsIndex() {
+        return streamsIndex;
     }
 
     public ApiMessageAndVersion toRecord() {
@@ -71,7 +72,7 @@ public class S3WALObject {
         return s3WalObject;
     }
 
-    public Integer getBrokerId() {
+    public Integer brokerId() {
         return brokerId;
     }
 

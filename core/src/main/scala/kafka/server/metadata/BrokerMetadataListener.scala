@@ -16,6 +16,8 @@
  */
 package kafka.server.metadata
 
+import kafka.log.s3.StreamMetadataManager.StreamMetadataListener
+
 import java.util
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CompletableFuture
@@ -94,6 +96,12 @@ class BrokerMetadataListener(
    * been activated yet. Accessed only from the event queue thread.
    */
   private var _publisher: Option[MetadataPublisher] = None
+
+  // Kafka on S3 inject start
+
+  private var _streamMetadataListener: Option[StreamMetadataListener] = None
+
+  // Kafka on S3 inject end
 
   /**
    * The number of bytes of records that we have read  since the last snapshot we took.
@@ -352,6 +360,12 @@ class BrokerMetadataListener(
     // This publish call is done with its own try-catch and fault handler
     publisher.publish(delta, _image)
 
+    // Kafka on S3 inject start
+
+    _streamMetadataListener.foreach(_.onChange(delta, _image))
+
+    // Kafka on S3 inject end
+
     // Update the metrics since the publisher handled the lastest image
     brokerMetrics.updateLastAppliedImageProvenance(_image.provenance())
   }
@@ -391,4 +405,12 @@ class BrokerMetadataListener(
       future.complete(writer.records())
     }
   }
+
+  // Kafka on S3 inject start
+
+  def registerStreamMetadataListener(listener: StreamMetadataListener): Unit = {
+    _streamMetadataListener = Some(listener)
+  }
+
+  // Kafka on S3 inject end
 }

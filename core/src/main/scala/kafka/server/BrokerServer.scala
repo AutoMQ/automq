@@ -199,9 +199,22 @@ class BrokerServer(
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
+      val controllerNodes = RaftConfig.voterConnectionsToNodes(sharedServer.controllerQuorumVotersFuture.get()).asScala
+
+      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
       // elastic stream inject start
+      clientToControllerChannelManager = BrokerToControllerChannelManager(
+        controllerNodeProvider,
+        time,
+        metrics,
+        config,
+        channelName = "forwarding",
+        threadNamePrefix,
+        retryTimeoutMs = 60000
+      )
+
       if (config.elasticStreamEnabled) {
-        if (!ElasticLogManager.init(config, clusterId)) {
+        if (!ElasticLogManager.init(this, config, clusterId)) {
           throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
         }
       } else {
@@ -212,25 +225,13 @@ class BrokerServer(
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
       logManager = LogManager(config, initialOfflineDirs, metadataCache, kafkaScheduler, time,
-        brokerTopicStats, logDirFailureChannel, keepPartitionMetadataFile = true)
+      brokerTopicStats, logDirFailureChannel, keepPartitionMetadataFile = true)
 
       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.
       tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
       credentialProvider = new CredentialProvider(ScramMechanism.mechanismNames, tokenCache)
 
-      val controllerNodes = RaftConfig.voterConnectionsToNodes(sharedServer.controllerQuorumVotersFuture.get()).asScala
-      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
-
-      clientToControllerChannelManager = BrokerToControllerChannelManager(
-        controllerNodeProvider,
-        time,
-        metrics,
-        config,
-        channelName = "forwarding",
-        threadNamePrefix,
-        retryTimeoutMs = 60000
-      )
       clientToControllerChannelManager.start()
       forwardingManager = new ForwardingManagerImpl(clientToControllerChannelManager)
 

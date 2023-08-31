@@ -17,8 +17,10 @@
 
 package kafka.log.es.client;
 
+import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 
 public class Context {
     public KafkaConfig config;
+    public BrokerServer brokerServer;
 }

@@ -35,6 +35,7 @@ import java.util.concurrent.ThreadLocalRandom
 import kafka.admin.BrokerMetadata
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.message.{DescribeClientQuotasRequestData, DescribeClientQuotasResponseData}
+import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object}
 import org.apache.kafka.metadata.{PartitionRegistration, Replicas}
 import org.apache.kafka.server.common.MetadataVersion
 
@@ -392,4 +393,16 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
       features.toMap,
       image.highestOffsetAndEpoch().offset)
   }
+
+  // Kafka on S3 inject start
+  override def getObjects(streamId: Long, startOffset: Long, endOffset: Long, limit: Int): InRangeObjects = {
+    val image = _currentImage
+    image.streamsMetadata().getObjects(streamId, startOffset, endOffset, limit)
+  }
+
+  override def getObjectMetadata(objectId: Long): S3Object = {
+    val image = _currentImage
+    image.objectsMetadata().getObjectMetadata(objectId)
+  }
+  // Kafka on S3 inject end
 }

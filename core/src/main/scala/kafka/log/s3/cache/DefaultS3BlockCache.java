@@ -20,7 +20,7 @@ package kafka.log.s3.cache;
 import kafka.log.s3.ObjectReader;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
-import kafka.log.s3.objects.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.CloseableIterator;
 

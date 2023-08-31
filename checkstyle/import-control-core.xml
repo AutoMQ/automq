@@ -56,6 +56,8 @@
     <allow pkg="kafka.log.s3" />
     <allow pkg="com.google.flatbuffers" />
     <allow pkg="org.apache.kafka.metadata" />
+    <allow pkg="org.apache.kafka.image" />
+    <allow pkg="org.apache.kafka.clients" />
   </subpackage>
 
   <subpackage name="testkit">
