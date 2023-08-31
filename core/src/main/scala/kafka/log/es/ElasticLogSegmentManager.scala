@@ -19,6 +19,7 @@ package kafka.log.es
 
 import kafka.log.es.ElasticLog.info
 import kafka.log.es.ElasticLog.error
+import kafka.log.es.ElasticLog.debug
 
 import java.util
 import java.util.Optional
@@ -102,7 +103,12 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
         case ElasticLogSegmentEvent.SEGMENT_DELETE =>
           val deleted = remove(segmentBaseOffset) != null
           if (deleted) {
-            persistLogMeta()
+            // This may happen since kafka.log.LocalLog.deleteSegmentFiles schedules the delayed deletion task.
+            if (metaStream.isClosed) {
+              debug(s"${logIdent}meta stream is closed, skip persisting log meta")
+            } else {
+              persistLogMeta()
+            }
           }
         case ElasticLogSegmentEvent.SEGMENT_UPDATE =>
           persistLogMeta()

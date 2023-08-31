@@ -468,6 +468,7 @@ object ElasticLog extends Logging {
     val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
     // First, open partition meta stream with higher epoch.
     val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
+    info(s"$logIdent opened meta stream: stream_id=$metaStreamId, epoch=${currentEpoch + 1}")
     // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
     val metaMap = metaStream.replay().asScala
 
@@ -476,6 +477,7 @@ object ElasticLog extends Logging {
       // streamId <0 means the stream is not actually created.
       logMeta.getStreamMap.values().forEach(streamId => if( streamId >= 0) {
         openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
+        info(s"$logIdent destroyed stream: stream_id=$streamId, epoch=${currentEpoch + 1}")
       })
     })
 
@@ -487,14 +489,12 @@ object ElasticLog extends Logging {
   }
 
   private def openStreamWithRetry(client: Client, streamId: Long, epoch: Long, logIdent: String): MetaStream = {
-    val metaStream = client.streamClient()
+    client.streamClient()
         .openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build())
         .exceptionally(_ => client.streamClient()
             .openStream(streamId, OpenStreamOptions.newBuilder().build()).join()
         ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
         .join()
-    info(s"$logIdent opened meta stream: stream_id=$streamId, epoch=$epoch")
-    metaStream
   }
 
   private[es] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): MetaStream = {

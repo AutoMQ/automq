@@ -63,6 +63,12 @@ public class MetaStream implements Stream {
      * trimFuture is used to record a trim task. It may be cancelled and rescheduled.
      */
     private ScheduledFuture<?> trimFuture;
+
+    /**
+     * closed is used to record if the stream is closed.
+     */
+    private volatile boolean closed;
+
     public MetaStream(Stream innerStream, ScheduledExecutorService trimScheduler, String logIdent) {
         this.innerStream = innerStream;
         this.trimScheduler = trimScheduler;
@@ -122,7 +128,12 @@ public class MetaStream implements Stream {
         if (trimFuture != null) {
             trimFuture.cancel(true);
         }
-        return innerStream.close();
+        return innerStream.close()
+            .thenAccept(result -> closed = true);
+    }
+
+    public boolean isClosed() {
+        return closed;
     }
 
     @Override
