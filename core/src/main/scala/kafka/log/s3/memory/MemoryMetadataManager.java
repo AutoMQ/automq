@@ -18,7 +18,6 @@
 package kafka.log.s3.memory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -362,11 +361,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<StreamOffset[]> getStreamsOffset(long[] streamIds) {
+    public CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds) {
         return this.submitEvent(() -> {
-            return Arrays.stream(streamIds).filter(this.streamsMetadata::containsKey).mapToObj(id -> {
+            return streamIds.stream().filter(this.streamsMetadata::containsKey).map(id -> {
                 return new StreamOffset(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
-            }).toArray(StreamOffset[]::new);
+            }).collect(Collectors.toList());
         });
     }
 

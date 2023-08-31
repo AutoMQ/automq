@@ -17,6 +17,7 @@
 
 package kafka.log.s3.streams;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.OpenStreamMetadata;
@@ -75,6 +76,6 @@ public interface StreamManager {
      * @param streamIds stream ids.
      * @return {@link StreamOffset}
      */
-    CompletableFuture<StreamOffset[]> getStreamsOffset(long[] streamIds);
+    CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds);
 }
 

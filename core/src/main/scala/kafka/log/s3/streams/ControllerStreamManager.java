@@ -17,8 +17,6 @@
 
 package kafka.log.s3.streams;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -110,16 +108,16 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<StreamOffset[]> getStreamsOffset(long[] streamIds) {
+    public CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds) {
         GetStreamsOffsetRequest.Builder request = new GetStreamsOffsetRequest.Builder(
             new GetStreamsOffsetRequestData()
-                .setStreamIds(Arrays.stream(streamIds).boxed().collect(Collectors.toList()))
-        );
+                .setStreamIds(streamIds));
         return this.requestSender.send(request, GetStreamsOffsetResponseData.class).thenApply(resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    List<StreamOffset> offsets = new ArrayList<>();
-                    return offsets.toArray(StreamOffset[]::new);
+                    return resp.streamsOffset().stream()
+                        .map(streamOffset -> new StreamOffset(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
+                        .collect(Collectors.toList());
                 default:
                     LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
