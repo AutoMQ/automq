@@ -138,7 +138,7 @@ public class S3Stream implements Stream {
     @Override
     public CompletableFuture<Void> close() {
         status.markClosed();
-        return CompletableFuture.completedFuture(null);
+        return streamManager.closeStream(streamId, epoch);
     }
 
     @Override

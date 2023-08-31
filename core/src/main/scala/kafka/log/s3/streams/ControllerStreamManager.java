@@ -19,6 +19,8 @@ package kafka.log.s3.streams;
 
 import java.util.concurrent.CompletableFuture;
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.objects.GetStreamsOffsetRequest;
+import kafka.log.s3.objects.GetStreamsOffsetResponse;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CreateStreamRequestData;
@@ -86,7 +88,17 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
+    public CompletableFuture<Void> closeStream(long streamId, long epoch) {
+        return null;
+    }
+
+    @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<GetStreamsOffsetResponse> getStreamsOffset(GetStreamsOffsetRequest request) {
         return null;
     }
 }

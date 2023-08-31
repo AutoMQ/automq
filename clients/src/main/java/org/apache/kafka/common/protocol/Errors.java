@@ -130,7 +130,10 @@ import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
 import org.apache.kafka.common.errors.s3.StreamExistException;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
+import org.apache.kafka.common.errors.s3.StreamInnerErrorException;
+import org.apache.kafka.common.errors.s3.StreamNotClosedException;
 import org.apache.kafka.common.errors.s3.StreamNotExistException;
+import org.apache.kafka.common.errors.s3.StreamNotOpenedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -381,8 +384,14 @@ public enum Errors {
     STREAM_EXIST(501, "The stream already exists.", StreamExistException::new),
     STREAM_NOT_EXIST(502, "The stream does not exist.", StreamNotExistException::new),
     STREAM_FENCED(503, "The stream is fenced.", StreamFencedException::new),
-    OBJECT_NOT_EXIST(504, "The object does not exist.", ObjectNotExistException::new);
+    OBJECT_NOT_EXIST(504, "The object does not exist.", ObjectNotExistException::new),
+    STREAM_NOT_OPENED(505, "The stream is not opened.", StreamNotOpenedException::new),
+    STREAM_NOT_CLOSED(506, "The stream is not closed.", StreamNotClosedException::new),
 
+
+
+
+    STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
     // Kafka on S3 inject end
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
