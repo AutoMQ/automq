@@ -29,6 +29,7 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.ControllerStreamManager;
 import kafka.log.s3.streams.StreamManager;
+import kafka.log.s3.wal.MemoryWriteAheadLog;
 import kafka.server.BrokerServer;
 import kafka.server.BrokerToControllerChannelManager;
 import kafka.server.KafkaConfig;
@@ -44,7 +45,7 @@ public class DefaultS3Client implements Client {
 
     private final S3Operator operator;
 
-    private final Wal wal;
+    private final Storage storage;
 
     private final S3BlockCache blockCache;
 
@@ -64,9 +65,9 @@ public class DefaultS3Client implements Client {
         this.requestSender = new ControllerRequestSender(channelManager);
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
-        this.wal = new S3Wal(objectManager, operator);
         this.blockCache = new DefaultS3BlockCache(objectManager, operator);
-        this.streamClient = new S3StreamClient(this.streamManager, this.wal, this.blockCache, this.objectManager);
+        this.storage = new S3Storage(new MemoryWriteAheadLog(), objectManager, blockCache, operator);
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage);
         this.kvClient = new KVClientImpl();
     }
 

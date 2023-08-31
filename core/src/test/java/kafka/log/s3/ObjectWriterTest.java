@@ -44,13 +44,13 @@ public class ObjectWriterTest {
         S3Operator s3Operator = new MemoryS3Operator();
         ObjectWriter objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(233, 10, 5, 512);
-        objectWriter.write(r1);
+        objectWriter.write(FlatStreamRecordBatch.from(r1));
         StreamRecordBatch r2 = newRecord(233, 15, 10, 512);
-        objectWriter.write(r2);
+        objectWriter.write(FlatStreamRecordBatch.from(r2));
         StreamRecordBatch r3 = newRecord(233, 25, 5, 512);
-        objectWriter.write(r3);
+        objectWriter.write(FlatStreamRecordBatch.from(r3));
         StreamRecordBatch r4 = newRecord(234, 0, 5, 512);
-        objectWriter.write(r4);
+        objectWriter.write(FlatStreamRecordBatch.from(r4));
         objectWriter.close().get();
 
         List<ObjectStreamRange> streamRanges = objectWriter.getStreamRanges();

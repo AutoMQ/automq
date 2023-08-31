@@ -30,6 +30,7 @@ import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +42,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.memory.MemoryMetadataManager;
@@ -48,6 +50,7 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.StreamManager;
+import kafka.log.s3.wal.MemoryWriteAheadLog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -91,7 +94,7 @@ public class S3StreamMemoryTest {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamMemoryTest.class);
     MemoryMetadataManager manager;
-    Wal wal;
+    Storage storage;
     S3BlockCache blockCache;
     S3Operator operator;
     StreamManager streamManager;
@@ -108,9 +111,9 @@ public class S3StreamMemoryTest {
         streamManager = manager;
         objectManager = manager;
         operator = new MemoryS3Operator();
-        wal = new S3Wal(objectManager, operator);
         blockCache = new DefaultS3BlockCache(objectManager, operator);
-        streamClient = new S3StreamClient(streamManager, wal, blockCache, objectManager);
+        storage = new S3Storage(new MemoryWriteAheadLog(), objectManager, blockCache, operator);
+        streamClient = new S3StreamClient(streamManager, storage);
     }
 
     @Test
@@ -124,13 +127,13 @@ public class S3StreamMemoryTest {
         assertNotNull(stream);
         // open with new epoch but current epoch is not closed
         assertThrows(ExecutionException.class,
-            () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(1L).build()).get());
+                () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(1L).build()).get());
         stream.close().get();
         // duplicate close
         stream.close().get();
         // reopen with stale epoch
         assertThrows(ExecutionException.class,
-            () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(0L).build()).get());
+                () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(0L).build()).get());
         // reopen with new epoch
         Stream newStream = this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(1L).build()).get();
         assertEquals(streamId, newStream.streamId());
@@ -154,20 +157,20 @@ public class S3StreamMemoryTest {
         RecordBatchWithContext record0 = result0.recordBatchList().get(0);
         assertEquals(0, record0.baseOffset());
         assertEquals(1, record0.lastOffset());
-        assertEquals("hello", new String(record0.rawPayload().array()));
+        assertEquals("hello", new String(buf2array(record0.rawPayload())));
         FetchResult result1 = stream.fetch(1, 2, 100).get();
         assertEquals(1, result1.recordBatchList().size());
         RecordBatchWithContext record1 = result1.recordBatchList().get(0);
         assertEquals(1, record1.baseOffset());
         assertEquals(2, record1.lastOffset());
-        assertEquals("world", new String(record1.rawPayload().array()));
+        assertEquals("world", new String(buf2array(record1.rawPayload())));
         // fetch all
         FetchResult result = stream.fetch(0, 2, 100000).get();
         assertEquals(2, result.recordBatchList().size());
         RecordBatchWithContext record = result.recordBatchList().get(0);
-        assertEquals("hello", new String(record.rawPayload().array()));
+        assertEquals("hello", new String(buf2array(record.rawPayload())));
         RecordBatchWithContext record2 = result.recordBatchList().get(1);
-        assertEquals("world", new String(record2.rawPayload().array()));
+        assertEquals("world", new String(buf2array(record2.rawPayload())));
     }
 
     @Test
@@ -213,6 +216,11 @@ public class S3StreamMemoryTest {
         latch.await();
     }
 
+    private static byte[] buf2array(ByteBuffer buffer) {
+        byte[] array = new byte[buffer.remaining()];
+        buffer.get(array);
+        return array;
+    }
 
     static class Producer implements Runnable {
 
@@ -299,12 +307,12 @@ public class S3StreamMemoryTest {
             FetchResult result = stream.fetch(consumeOffset, appendEndOffset + 1, Integer.MAX_VALUE).get();
             LOGGER.info("[Consumer-{}-{}] fetch records: {}", stream.streamId(), id, result.recordBatchList().size());
             result.recordBatchList().forEach(
-                record -> {
-                    long offset = record.baseOffset();
-                    assertEquals("hello[" + stream.streamId() + "][" + offset + "]", new String(record.rawPayload().array()));
-                    LOGGER.info("[Consumer-{}-{}] consume: {}", stream.streamId(), id, offset);
-                    consumeOffset = Math.max(consumeOffset, offset + 1);
-                }
+                    record -> {
+                        long offset = record.baseOffset();
+                        assertEquals("hello[" + stream.streamId() + "][" + offset + "]", new String(buf2array(record.rawPayload())));
+                        LOGGER.info("[Consumer-{}-{}] consume: {}", stream.streamId(), id, offset);
+                        consumeOffset = Math.max(consumeOffset, offset + 1);
+                    }
             );
         }
 

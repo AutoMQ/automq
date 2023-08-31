@@ -21,7 +21,6 @@ import com.automq.elasticstream.client.api.ElasticStreamClientException;
 import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.cache.ReadDataBlock;
-import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,28 +40,28 @@ import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class S3StreamTest {
-    Wal wal;
-    S3BlockCache blockCache;
+    Storage storage;
     StreamManager streamManager;
     S3Stream stream;
 
     @BeforeEach
     public void setup() {
-        wal = mock(Wal.class);
-        blockCache = mock(S3BlockCache.class);
+        storage = mock(Storage.class);
         streamManager = mock(StreamManager.class);
-        stream = new S3Stream(233, 1, 100, 233, wal, blockCache, streamManager);
+        stream = new S3Stream(233, 1, 100, 233, storage, streamManager);
     }
 
     @Test
     public void testFetch() throws Throwable {
         stream.confirmOffset.set(120L);
-        when(blockCache.read(eq(233L), eq(110L), eq(120L), eq(100)))
+        when(storage.read(eq(233L), eq(110L), eq(120L), eq(100)))
                 .thenReturn(CompletableFuture.completedFuture(newReadDataBlock(110, 115, 110)));
         FetchResult rst = stream.fetch(110, 120, 100).get(1, TimeUnit.SECONDS);
         assertEquals(1, rst.recordBatchList().size());
         assertEquals(110, rst.recordBatchList().get(0).baseOffset());
         assertEquals(115, rst.recordBatchList().get(0).lastOffset());
+
+        // TODO: add fetch from WAL cache
 
         boolean isException = false;
         try {

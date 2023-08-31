@@ -54,20 +54,20 @@ public class DefaultS3BlockCacheTest {
     @Test
     public void testRead() throws Exception {
         ObjectWriter objectWriter = new ObjectWriter(0, s3Operator, 1024, 1024);
-        objectWriter.write(newRecord(233, 10, 5, 512));
-        objectWriter.write(newRecord(233, 15, 10, 512));
-        objectWriter.write(newRecord(233, 25, 5, 512));
-        objectWriter.write(newRecord(234, 0, 5, 512));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 10, 5, 512)));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 15, 10, 512)));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 25, 5, 512)));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(234, 0, 5, 512)));
         objectWriter.close();
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
         objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
-        objectWriter.write(newRecord(233, 30, 10, 512));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 30, 10, 512)));
         objectWriter.close();
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
         objectWriter = new ObjectWriter(2, s3Operator, 1024, 1024);
-        objectWriter.write(newRecord(233, 40, 20, 512));
+        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 40, 20, 512)));
         objectWriter.close();
         S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
