@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 73,
+  "apiKey": 506,
   "type": "response",
   "name": "CommitWALObjectResponse",
   "validVersions": "0",
@@ -31,12 +31,6 @@
       "type": "int32",
       "versions": "0+",
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
-    },
-    {
-      "name": "FailedStreamIds",
-      "type": "[]int64",
-      "versions": "0+",
-      "about": "Failed to commit WAL objects' id"
     }
   ]
 }

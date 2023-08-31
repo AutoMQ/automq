@@ -18,8 +18,7 @@
 package kafka.log.s3.streams;
 
 import java.util.concurrent.CompletableFuture;
-import kafka.log.s3.objects.GetStreamsOffsetRequest;
-import kafka.log.s3.objects.GetStreamsOffsetResponse;
+import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.OpenStreamMetadata;
 
 public interface StreamManager {
@@ -72,9 +71,10 @@ public interface StreamManager {
      * Get streams offset.
      *
      * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
-     * @param request {@link GetStreamsOffsetRequest}
-     * @return {@link GetStreamsOffsetResponse}
+     *
+     * @param streamIds stream ids.
+     * @return {@link StreamOffset}
      */
-    CompletableFuture<GetStreamsOffsetResponse> getStreamsOffset(GetStreamsOffsetRequest request);
+    CompletableFuture<StreamOffset[]> getStreamsOffset(long[] streamIds);
 }
 

@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 74,
+  "apiKey": 508,
   "type": "response",
-  "name": "CommitCompactObjectResponse",
+  "name": "GetStreamsOffsetResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -31,6 +31,32 @@
       "type": "int32",
       "versions": "0+",
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+    },
+    {
+      "name": "StreamsOffset",
+      "type": "[]StreamOffset",
+      "versions": "0+",
+      "about": "The responses for each topic.",
+      "fields": [
+        {
+          "name": "StreamId",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The stream id"
+        },
+        {
+          "name": "StartOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The start offset of the stream"
+        },
+        {
+          "name": "EndOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The end offset of the stream"
+        }
+      ]
     }
   ]
 }

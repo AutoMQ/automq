@@ -14,24 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.common.requests;
+
+package org.apache.kafka.common.requests.s3;
 
 import java.util.Map;
-import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 
-public class DeleteStreamResponse extends AbstractResponse {
+public class CloseStreamResponse extends AbstractResponse {
 
-    private final DeleteStreamResponseData data;
+    private final CloseStreamResponseData data;
 
-    public DeleteStreamResponse(DeleteStreamResponseData data) {
-        super(ApiKeys.DELETE_STREAM);
+    public CloseStreamResponse(CloseStreamResponseData data) {
+        super(ApiKeys.CLOSE_STREAM);
         this.data = data;
     }
 
     @Override
-    public DeleteStreamResponseData data() {
+    public CloseStreamResponseData data() {
         return data;
     }
 

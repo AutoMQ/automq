@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 73,
+  "apiKey": 506,
   "type": "request",
   "listeners": [
     "controller",
@@ -75,6 +75,57 @@
           "about": "The end offset of the stream range"
         }
       ]
+    },
+    {
+      "name": "StreamObjects",
+      "type": "[]StreamObject",
+      "versions": "0+",
+      "about": "The stream objects to commit",
+      "fields": [
+        {
+          "name": "ObjectId",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The ID of the WAL S3 object to commit"
+        },
+        {
+          "name": "ObjectSize",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The size of the WAL S3 object to commit"
+        },
+        {
+          "name": "StreamId",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The ID of the stream",
+          "entityType": "streamId"
+        },
+        {
+          "name": "StartOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The start offset of the stream range"
+        },
+        {
+          "name": "EndOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The end offset of the stream range"
+        },
+        {
+          "name": "sourceObjectIds",
+          "type": "[]int64",
+          "versions": "0+",
+          "about": "The IDs of the source S3 objects"
+        }
+      ]
+    },
+    {
+      "name": "CompactedObjectIds",
+      "type": "[]int64",
+      "versions": "0+",
+      "about": "The IDs of the compacted S3 objects"
     }
   ]
 }

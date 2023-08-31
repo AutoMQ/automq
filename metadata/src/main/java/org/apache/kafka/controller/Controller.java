@@ -30,8 +30,6 @@ import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
-import org.apache.kafka.common.message.CommitCompactObjectRequestData;
-import org.apache.kafka.common.message.CommitCompactObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
@@ -46,6 +44,8 @@ import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
@@ -436,14 +436,6 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to commit a compact object.
-     */
-    CompletableFuture<CommitCompactObjectResponseData> commitCompactObject(
-        ControllerRequestContext context,
-        CommitCompactObjectRequestData request
-    );
-
-    /**
      * Broker trys to commit a stream object
      */
     CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(
@@ -451,6 +443,13 @@ public interface Controller extends AclMutator, AutoCloseable {
         CommitStreamObjectRequestData request
     );
 
+    /**
+     * Broker trys to get the offset:<code> [startOffset, endOffset) </code> of the stream.
+     */
+    CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(
+        ControllerRequestContext context,
+        GetStreamsOffsetRequestData request
+    );
 
     // Kafka on S3 inject end
 }

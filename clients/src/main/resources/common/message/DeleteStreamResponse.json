@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 71,
+  "apiKey": 504,
   "type": "response",
   "name": "DeleteStreamResponse",
   "validVersions": "0",

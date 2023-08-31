@@ -15,24 +15,24 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
 import java.util.Map;
-import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CloseStreamResponse extends AbstractResponse {
+public class GetStreamsOffsetResponse extends AbstractResponse {
+    private final GetStreamsOffsetResponseData data;
 
-    private final CloseStreamResponseData data;
-
-    public CloseStreamResponse(CloseStreamResponseData data) {
-        super(ApiKeys.CLOSE_STREAM);
+    public GetStreamsOffsetResponse(GetStreamsOffsetResponseData data) {
+        super(ApiKeys.GET_STREAMS_OFFSET);
         this.data = data;
     }
 
     @Override
-    public CloseStreamResponseData data() {
+    public GetStreamsOffsetResponseData data() {
         return data;
     }
 

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 {
-  "apiKey": 72,
+  "apiKey": 505,
   "type": "response",
   "name": "PrepareS3ObjectResponse",
   "validVersions": "0",

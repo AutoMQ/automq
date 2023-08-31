@@ -17,18 +17,24 @@
 
 package kafka.log.s3.streams;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.network.ControllerRequestSender;
-import kafka.log.s3.objects.GetStreamsOffsetRequest;
-import kafka.log.s3.objects.GetStreamsOffsetResponse;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.OpenStreamRequest;
+import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
+import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,8 +78,14 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return new OpenStreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset());
+                case STREAM_NOT_EXIST:
+                    LOGGER.error("Stream not exist while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_FENCED:
                     LOGGER.error("Stream fenced while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_NOT_CLOSED:
+                    LOGGER.error("Stream not closed while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
@@ -98,7 +110,20 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<GetStreamsOffsetResponse> getStreamsOffset(GetStreamsOffsetRequest request) {
-        return null;
+    public CompletableFuture<StreamOffset[]> getStreamsOffset(long[] streamIds) {
+        GetStreamsOffsetRequest.Builder request = new GetStreamsOffsetRequest.Builder(
+            new GetStreamsOffsetRequestData()
+                .setStreamIds(Arrays.stream(streamIds).boxed().collect(Collectors.toList()))
+        );
+        return this.requestSender.send(request, GetStreamsOffsetResponseData.class).thenApply(resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    List<StreamOffset> offsets = new ArrayList<>();
+                    return offsets.toArray(StreamOffset[]::new);
+                default:
+                    LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+            }
+        });
     }
 }

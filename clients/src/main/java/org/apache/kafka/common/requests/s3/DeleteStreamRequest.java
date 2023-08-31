@@ -15,24 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.requests;
+package org.apache.kafka.common.requests.s3;
 
-import org.apache.kafka.common.message.CommitCompactObjectRequestData;
-import org.apache.kafka.common.message.CommitCompactObjectResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.requests.ApiError;
 
-public class CommitCompactObjectRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<CommitCompactObjectRequest> {
+public class DeleteStreamRequest extends AbstractRequest {
+    public static class Builder extends AbstractRequest.Builder<DeleteStreamRequest> {
 
-        private final CommitCompactObjectRequestData data;
-        public Builder(CommitCompactObjectRequestData data) {
-            super(ApiKeys.COMMIT_COMPACT_OBJECT);
+        private final DeleteStreamRequestData data;
+        public Builder(DeleteStreamRequestData data) {
+            super(ApiKeys.DELETE_STREAM);
             this.data = data;
         }
 
         @Override
-        public CommitCompactObjectRequest build(short version) {
-            return new CommitCompactObjectRequest(data, version);
+        public DeleteStreamRequest build(short version) {
+            return new DeleteStreamRequest(data, version);
         }
 
         @Override
@@ -40,24 +42,24 @@ public class CommitCompactObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final CommitCompactObjectRequestData data;
+    private final DeleteStreamRequestData data;
 
-    public CommitCompactObjectRequest(CommitCompactObjectRequestData data, short version) {
+    public DeleteStreamRequest(DeleteStreamRequestData data, short version) {
         super(ApiKeys.DELETE_STREAM, version);
         this.data = data;
     }
 
     @Override
-    public CommitCompactObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public DeleteStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CommitCompactObjectResponseData response = new CommitCompactObjectResponseData()
+        DeleteStreamResponseData response = new DeleteStreamResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CommitCompactObjectResponse(response);
+        return new DeleteStreamResponse(response);
     }
 
     @Override
-    public CommitCompactObjectRequestData data() {
+    public DeleteStreamRequestData data() {
         return data;
     }
 }

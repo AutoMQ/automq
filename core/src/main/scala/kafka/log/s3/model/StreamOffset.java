@@ -15,17 +15,28 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.objects;
+package kafka.log.s3.model;
 
-public class GetStreamsOffsetRequest {
+public class StreamOffset {
+    private final long streamId;
+    private final long startOffset;
+    private final long endOffset;
 
-    private long[] streamIds;
-
-    public long[] streamIds() {
-        return streamIds;
+    public StreamOffset(long streamId, long startOffset, long endOffset) {
+        this.streamId = streamId;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
     }
 
-    public void setStreamIds(long[] streamIds) {
-        this.streamIds = streamIds;
+    public long streamId() {
+        return streamId;
+    }
+
+    public long startOffset() {
+        return startOffset;
+    }
+
+    public long endOffset() {
+        return endOffset;
     }
 }
