@@ -18,6 +18,7 @@
 package kafka.log.s3.memory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -35,9 +36,14 @@ import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectRequest;
 import kafka.log.s3.objects.CommitWalObjectResponse;
+import kafka.log.s3.objects.GetStreamsOffsetRequest;
+import kafka.log.s3.objects.GetStreamsOffsetResponse;
+import kafka.log.s3.objects.GetStreamsOffsetResponse.StreamRange;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.OpenStreamMetadata;
+import org.apache.kafka.common.errors.s3.StreamNotClosedException;
+import org.apache.kafka.controller.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.streams.StreamManager;
 import org.apache.kafka.metadata.stream.ObjectUtils;
@@ -48,6 +54,7 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,17 +70,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
 
     private static class MemoryStreamMetadata {
+
         private final long streamId;
-        private long epoch;
-        private long startOffset;
-        private long endOffset;
+        private StreamState state = StreamState.CLOSED;
+        private long epoch = S3StreamConstant.INIT_EPOCH;
+        private long startOffset = S3StreamConstant.INIT_START_OFFSET;
+        private long endOffset = S3StreamConstant.INIT_END_OFFSET;
         private List<S3StreamObject> streamObjects;
 
-        public MemoryStreamMetadata(long streamId, long epoch, long startOffset, long endOffset) {
+        public MemoryStreamMetadata(long streamId) {
             this.streamId = streamId;
-            this.epoch = epoch;
-            this.startOffset = startOffset;
-            this.endOffset = endOffset;
+            this.state = StreamState.CLOSED;
         }
 
         public void addStreamObject(S3StreamObject object) {
@@ -82,9 +89,18 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             streamObjects.add(object);
         }
+
+        public StreamState state() {
+            return state;
+        }
+
+        public void setState(StreamState state) {
+            this.state = state;
+        }
     }
 
     private static class MemoryBrokerWALMetadata {
+
         private final int brokerId;
         private final List<S3WALObject> walObjects;
 
@@ -269,7 +285,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         return this.submitEvent(() -> {
             long streamId = this.nextAssignedStreamId++;
             this.streamsMetadata.put(streamId,
-                new MemoryStreamMetadata(streamId, 0, 0, 0));
+                new MemoryStreamMetadata(streamId));
             return streamId;
         });
     }
@@ -282,17 +298,28 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             if (!this.streamsMetadata.containsKey(streamId)) {
                 throw new StreamNotExistException("Stream " + streamId + " does not exist");
             }
-            // verify epoch match
             MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+            // verify epoch match
             if (streamMetadata.epoch > epoch) {
                 throw new StreamFencedException("Stream " + streamId + " is fenced");
             }
             if (streamMetadata.epoch == epoch) {
-                return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
+                if (streamMetadata.state == StreamState.OPENED) {
+                    // duplicate open
+                    return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
+                }
+                if (streamMetadata.state == StreamState.CLOSED) {
+                    // stream is closed, can't open again at same epoch
+                    throw new StreamFencedException("Stream " + streamId + " is fenced");
+                }
+            }
+            if (streamMetadata.state == StreamState.OPENED) {
+                // stream still opened, can't open again until it's closed
+                throw new StreamNotClosedException("Stream " + streamId + " is not closed");
             }
             // update epoch
-            // update epoch and rangeIndex
             streamMetadata.epoch = epoch;
+            streamMetadata.state = StreamState.OPENED;
             return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
         });
     }
@@ -303,8 +330,49 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
+    public CompletableFuture<Void> closeStream(long streamId, long epoch) {
+        return this.submitEvent(() -> {
+            // verify stream exist
+            if (!this.streamsMetadata.containsKey(streamId)) {
+                throw new StreamNotExistException("Stream " + streamId + " does not exist");
+            }
+            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+            // verify epoch match
+            if (streamMetadata.epoch > epoch) {
+                LOGGER.warn("Stream {} is fenced, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
+                throw new StreamFencedException("Stream " + streamId + " is fenced");
+            }
+            if (streamMetadata.epoch < epoch) {
+                // this should not happen
+                LOGGER.error("Stream {} epoch is not match, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
+                throw new RuntimeException("Stream " + streamId + " epoch is not match");
+            }
+            if (streamMetadata.state == StreamState.CLOSED) {
+                LOGGER.warn("Stream {} is already closed at epoch: {}", streamId, epoch);
+                // duplicate close
+                return null;
+            }
+            // update epoch
+            streamMetadata.state = StreamState.CLOSED;
+            return null;
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         return null;
+    }
+
+    @Override
+    public CompletableFuture<GetStreamsOffsetResponse> getStreamsOffset(GetStreamsOffsetRequest request) {
+        return this.submitEvent(() -> {
+            GetStreamsOffsetResponse response = new GetStreamsOffsetResponse();
+            StreamRange[] ranges = Arrays.stream(request.streamIds()).filter(this.streamsMetadata::containsKey).mapToObj(id -> {
+                return new StreamRange(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
+            }).toArray(StreamRange[]::new);
+            response.setStreamRanges(ranges);
+            return response;
+        });
     }
 
     private S3Object prepareObject(long objectId, long ttl) {

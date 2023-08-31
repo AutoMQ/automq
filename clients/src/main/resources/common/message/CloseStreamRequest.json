@@ -37,6 +37,13 @@
       "versions": "0+",
       "entityType": "streamId",
       "about": "The id of the requesting stream"
+    },
+    {
+      "name": "StreamEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "entityType": "streamEpoch",
+      "about": "The epoch of the requesting stream"
     }
   ]
 }

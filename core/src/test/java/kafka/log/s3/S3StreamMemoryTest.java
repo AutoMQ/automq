@@ -19,11 +19,14 @@ package kafka.log.s3;
 
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.automq.elasticstream.client.api.AppendResult;
 import com.automq.elasticstream.client.api.CreateStreamOptions;
 import com.automq.elasticstream.client.api.FetchResult;
+import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
@@ -111,7 +114,33 @@ public class S3StreamMemoryTest {
     }
 
     @Test
-    public void testBasic() throws Exception {
+    public void testOpenAndClose() throws Exception {
+        CreateStreamOptions options = CreateStreamOptions.newBuilder().epoch(0L).build();
+        Stream stream = this.streamClient.createAndOpenStream(options).get();
+        long streamId = stream.streamId();
+        assertNotNull(stream);
+        // duplicate open
+        stream = this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(0L).build()).get();
+        assertNotNull(stream);
+        // open with new epoch but current epoch is not closed
+        assertThrows(ExecutionException.class,
+            () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(1L).build()).get());
+        stream.close().get();
+        // duplicate close
+        stream.close().get();
+        // reopen with stale epoch
+        assertThrows(ExecutionException.class,
+            () -> this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(0L).build()).get());
+        // reopen with new epoch
+        Stream newStream = this.streamClient.openStream(streamId, OpenStreamOptions.newBuilder().epoch(1L).build()).get();
+        assertEquals(streamId, newStream.streamId());
+        // close with stale epoch
+        final Stream oldStream = stream;
+        assertThrows(ExecutionException.class, () -> oldStream.close().get());
+    }
+
+    @Test
+    public void testFetch() throws Exception {
         CreateStreamOptions options = CreateStreamOptions.newBuilder().epoch(1L).build();
         Stream stream = this.streamClient.createAndOpenStream(options).get();
         RecordBatch recordBatch = new MockRecordBatch("hello", 1);

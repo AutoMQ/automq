@@ -26,6 +26,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.message.CloseStreamRequestData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
@@ -45,6 +47,7 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.S3StreamConstant;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
@@ -101,9 +104,9 @@ public class StreamControlManagerTest {
         assertInstanceOf(S3StreamRecord.class, record1.message());
         S3StreamRecord streamRecord0 = (S3StreamRecord) record1.message();
         assertEquals(STREAM0, streamRecord0.streamId());
-        assertEquals(0, streamRecord0.epoch());
-        assertEquals(-1, streamRecord0.rangeIndex());
-        assertEquals(0L, streamRecord0.startOffset());
+        assertEquals(S3StreamConstant.INIT_EPOCH, streamRecord0.epoch());
+        assertEquals(S3StreamConstant.INIT_RANGE_INDEX, streamRecord0.rangeIndex());
+        assertEquals(S3StreamConstant.INIT_START_OFFSET, streamRecord0.startOffset());
 
         // replay
         manager.replay(assignedRecord);
@@ -131,9 +134,9 @@ public class StreamControlManagerTest {
         assertInstanceOf(S3StreamRecord.class, record1.message());
         S3StreamRecord streamRecord1 = (S3StreamRecord) record1.message();
         assertEquals(STREAM1, streamRecord1.streamId());
-        assertEquals(0, streamRecord1.epoch());
-        assertEquals(-1, streamRecord1.rangeIndex());
-        assertEquals(0L, streamRecord1.startOffset());
+        assertEquals(S3StreamConstant.INIT_EPOCH, streamRecord1.epoch());
+        assertEquals(S3StreamConstant.INIT_RANGE_INDEX, streamRecord1.rangeIndex());
+        assertEquals(S3StreamConstant.INIT_START_OFFSET, streamRecord1.startOffset());
 
         // replay records_1
         manager.replay(assignedRecord);
@@ -147,16 +150,14 @@ public class StreamControlManagerTest {
     }
 
     @Test
-    public void testBasicOpenStream() {
+    public void testBasicOpenCloseStream() {
         // 1. create stream_0 and stream_1
         CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
-        manager.replay((AssignedStreamIdRecord) result0.records().get(0).message());
-        result0.records().stream().skip(1).map(x -> (S3StreamRecord) x.message()).forEach(manager::replay);
+        replay(manager, result0.records());
         CreateStreamRequestData request1 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result1 = manager.createStream(request1);
-        manager.replay((AssignedStreamIdRecord) result1.records().get(0).message());
-        result1.records().stream().skip(1).map(x -> (S3StreamRecord) x.message()).forEach(manager::replay);
+        replay(manager, result1.records());
 
         // verify the streams are created
         Map<Long, S3StreamMetadata> streamsMetadata = manager.streamsMetadata();
@@ -199,40 +200,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.STREAM_FENCED.code(), result4.response().errorCode());
         assertEquals(0, result4.records().size());
 
-        // 4. broker_1 try to open stream_0 with epoch1
-        ControllerResult<OpenStreamResponseData> result5 = manager.openStream(
-            new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
-        assertEquals(Errors.NONE.code(), result5.response().errorCode());
-        assertEquals(0L, result5.response().startOffset());
-        assertEquals(0L, result5.response().nextOffset());
-        assertEquals(2, result5.records().size());
-        streamRecord = (S3StreamRecord) result5.records().get(0).message();
-        manager.replay(streamRecord);
-        assertEquals(EPOCH1, streamRecord.epoch());
-        assertEquals(1, streamRecord.rangeIndex());
-        assertEquals(0L, streamRecord.startOffset());
-        rangeRecord = (RangeRecord) result5.records().get(1).message();
-        manager.replay(rangeRecord);
-        assertEquals(BROKER1, rangeRecord.brokerId());
-        assertEquals(EPOCH1, rangeRecord.epoch());
-        assertEquals(1, rangeRecord.rangeIndex());
-        assertEquals(0L, rangeRecord.startOffset());
-        assertEquals(0L, rangeRecord.endOffset());
-
-        // verify that stream_0's epoch update to epoch1, and range index update to 1
-        streamMetadata0 = manager.streamsMetadata().get(STREAM0);
-        assertEquals(EPOCH1, streamMetadata0.currentEpoch());
-        assertEquals(1, streamMetadata0.currentRangeIndex());
-        assertEquals(0L, streamMetadata0.startOffset());
-        assertEquals(2, streamMetadata0.ranges().size());
-        RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(1);
-        assertEquals(BROKER1, rangeMetadata0.brokerId());
-        assertEquals(EPOCH1, rangeMetadata0.epoch());
-        assertEquals(1, rangeMetadata0.rangeIndex());
-        assertEquals(0L, rangeMetadata0.startOffset());
-        assertEquals(0L, rangeMetadata0.endOffset());
-
-        // 5. broker_0 try to open stream_1 with epoch0
+        // 4. broker_0 try to open stream_1 with epoch0
         ControllerResult<OpenStreamResponseData> result6 = manager.openStream(
             new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
@@ -240,11 +208,55 @@ public class StreamControlManagerTest {
         assertEquals(0L, result6.response().nextOffset());
         assertEquals(0, result6.records().size());
 
-        // 6. broker_1 try to open stream_1 with epoch0
+        // 5. broker_0 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponseData> result7 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH1).setBrokerId(BROKER0));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), result7.response().errorCode());
+
+        // 6. broker_1 try to open stream_1 with epoch0
+        ControllerResult<OpenStreamResponseData> result8 = manager.openStream(
             new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER1));
-        assertEquals(Errors.STREAM_FENCED.code(), result7.response().errorCode());
-        assertEquals(0, result7.records().size());
+        assertEquals(Errors.STREAM_FENCED.code(), result8.response().errorCode());
+        assertEquals(0, result8.records().size());
+
+        // 7. broker_1 try to open stream_1 with epoch1
+        ControllerResult<OpenStreamResponseData> result9 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), result9.response().errorCode());
+
+        // 8. broker_1 try to close stream_1 with epoch0
+        ControllerResult<CloseStreamResponseData> result10 = manager.closeStream(
+            new CloseStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER1));
+        assertEquals(Errors.STREAM_FENCED.code(), result10.response().errorCode());
+
+        // 9. broker_0 try to close stream_1 with epoch1
+        ControllerResult<CloseStreamResponseData> result11 = manager.closeStream(
+            new CloseStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH1).setBrokerId(BROKER0));
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result11.response().errorCode());
+
+        // 10. broker_0 try to close stream_1 with epoch0
+        ControllerResult<CloseStreamResponseData> result12 = manager.closeStream(
+            new CloseStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
+        assertEquals(Errors.NONE.code(), result12.response().errorCode());
+        replay(manager, result12.records());
+
+        // 11. broker_0 try to close stream_1 with epoch0 again
+        ControllerResult<CloseStreamResponseData> result13 = manager.closeStream(
+            new CloseStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
+        assertEquals(Errors.NONE.code(), result13.response().errorCode());
+
+        // 12. broker_1 try to open stream_1 with epoch1
+        ControllerResult<OpenStreamResponseData> result14 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(STREAM1).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
+        assertEquals(Errors.NONE.code(), result14.response().errorCode());
+        replay(manager, result14.records());
+
+        // 13. verify the stream_1 metadata are updated, and the range_1 is created
+        S3StreamMetadata streamMetadata1 = manager.streamsMetadata().get(STREAM1);
+        assertEquals(EPOCH1, streamMetadata1.currentEpoch());
+        RangeMetadata range = streamMetadata1.ranges().get(streamMetadata1.currentRangeIndex());
+        assertEquals(EPOCH1, range.epoch());
+        assertEquals(BROKER1, range.brokerId());
     }
 
     @Test
@@ -340,7 +352,11 @@ public class StreamControlManagerTest {
         assertEquals(0L, streamMetadata0.ranges().get(0).startOffset());
         assertEquals(200L, streamMetadata0.ranges().get(0).endOffset());
         assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().size());
-        // 6. broker_1 open stream_0 with epoch_1
+        // 6. broker_0 close stream_0 with epoch_0 and broker_1 open stream_0 with epoch_1
+        ControllerResult<CloseStreamResponseData> result7 = manager.closeStream(
+            new CloseStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setBrokerId(BROKER0));
+        assertEquals(Errors.NONE.code(), result7.response().errorCode());
+        replay(manager, result7.records());
         ControllerResult<OpenStreamResponseData> result8 = manager.openStream(
             new OpenStreamRequestData().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setBrokerId(BROKER1));
         assertEquals(Errors.NONE.code(), result8.response().errorCode());
@@ -422,9 +438,9 @@ public class StreamControlManagerTest {
 
     private void verifyInitializedStreamMetadata(S3StreamMetadata metadata) {
         assertNotNull(metadata);
-        assertEquals(0, metadata.currentEpoch());
-        assertEquals(-1, metadata.currentRangeIndex());
-        assertEquals(0L, metadata.startOffset());
+        assertEquals(S3StreamConstant.INIT_EPOCH, metadata.currentEpoch());
+        assertEquals(S3StreamConstant.INIT_RANGE_INDEX, metadata.currentRangeIndex());
+        assertEquals(S3StreamConstant.INIT_START_OFFSET, metadata.startOffset());
     }
 
     private void verifyFirstTimeOpenStreamResult(ControllerResult<OpenStreamResponseData> result,
