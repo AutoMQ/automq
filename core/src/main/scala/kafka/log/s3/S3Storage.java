@@ -22,7 +22,6 @@ import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.StreamRecordBatch;
-import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.wal.WriteAheadLog;
