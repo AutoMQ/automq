@@ -48,9 +48,9 @@ public class S3Object implements Comparable<S3Object> {
     private long committedTimeInMs;
 
     /**
-     * The time when the object is destroyed
+     * The time when the object is mark destroyed
      */
-    private long destroyedTimeInMs;
+    private long markDestroyedTimeInMs;
 
     private S3ObjectState s3ObjectState = S3ObjectState.UNINITIALIZED;
 
@@ -65,7 +65,7 @@ public class S3Object implements Comparable<S3Object> {
         final long preparedTimeInMs,
         final long expiredTimeInMs,
         final long committedTimeInMs,
-        final long destroyedTimeInMs,
+        final long markDestroyedTimeInMs,
         final S3ObjectState s3ObjectState) {
         this.objectId = objectId;
         this.objectSize = objectSize;
@@ -73,7 +73,7 @@ public class S3Object implements Comparable<S3Object> {
         this.preparedTimeInMs = preparedTimeInMs;
         this.expiredTimeInMs = expiredTimeInMs;
         this.committedTimeInMs = committedTimeInMs;
-        this.destroyedTimeInMs = destroyedTimeInMs;
+        this.markDestroyedTimeInMs = markDestroyedTimeInMs;
         this.s3ObjectState = s3ObjectState;
     }
 
@@ -85,13 +85,13 @@ public class S3Object implements Comparable<S3Object> {
             .setPreparedTimeInMs(preparedTimeInMs)
             .setExpiredTimeInMs(expiredTimeInMs)
             .setCommittedTimeInMs(committedTimeInMs)
-            .setDestroyedTimeInMs(destroyedTimeInMs), (short) 0);
+            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs), (short) 0);
     }
 
     public static S3Object of(S3ObjectRecord record) {
         return new S3Object(
             record.objectId(), record.objectSize(), null,
-            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
+            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
             S3ObjectState.fromByte(record.objectState()));
     }
 
@@ -137,8 +137,8 @@ public class S3Object implements Comparable<S3Object> {
         return committedTimeInMs;
     }
 
-    public long getDestroyedTimeInMs() {
-        return destroyedTimeInMs;
+    public long getMarkDestroyedTimeInMs() {
+        return markDestroyedTimeInMs;
     }
 
     public long getExpiredTimeInMs() {

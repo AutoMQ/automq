@@ -65,7 +65,10 @@ import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -75,12 +78,23 @@ import org.apache.kafka.common.metadata.NoOpRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -1451,6 +1465,53 @@ public final class QuorumController implements Controller {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
+
+            // Kafka on S3 inject start
+
+            case S3_STREAM_RECORD:
+                streamControlManager.replay((S3StreamRecord) message);
+                break;
+            case REMOVE_S3_STREAM_RECORD:
+                streamControlManager.replay((RemoveS3StreamRecord) message);
+                break;
+            case RANGE_RECORD:
+                streamControlManager.replay((RangeRecord) message);
+                break;
+            case REMOVE_RANGE_RECORD:
+                streamControlManager.replay((RemoveRangeRecord) message);
+                break;
+            case S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamObjectRecord) message);
+                break;
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((RemoveS3StreamObjectRecord) message);
+                break;
+            case WALOBJECT_RECORD:
+                streamControlManager.replay((WALObjectRecord) message);
+                break;
+            case REMOVE_WALOBJECT_RECORD:
+                streamControlManager.replay((RemoveWALObjectRecord) message);
+                break;
+            case S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((S3ObjectRecord) message);
+                break;
+            case REMOVE_S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((RemoveS3ObjectRecord) message);
+                break;
+            case ASSIGNED_STREAM_ID_RECORD:
+                streamControlManager.replay((AssignedStreamIdRecord) message);
+                break;
+            case ASSIGNED_S3_OBJECT_ID_RECORD:
+                s3ObjectControlManager.replay((AssignedS3ObjectIdRecord) message);
+                break;
+            case BROKER_WALMETADATA_RECORD:
+                streamControlManager.replay((BrokerWALMetadataRecord) message);
+                break;
+            case REMOVE_BROKER_WALMETADATA_RECORD:
+                streamControlManager.replay((RemoveBrokerWALMetadataRecord) message);
+                break;
+
+            // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
         }

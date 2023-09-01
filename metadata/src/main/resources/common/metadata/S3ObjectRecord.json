@@ -51,10 +51,10 @@
       "about": "The object be committed timestamp"
     },
     {
-      "name": "DestroyedTimeInMs",
+      "name": "MarkDestroyedTimeInMs",
       "type": "int64",
       "versions": "0+",
-      "about": "The object be destroyed timestamp"
+      "about": "The object be mark destroyed timestamp"
     },
     {
       "name": "ObjectState",

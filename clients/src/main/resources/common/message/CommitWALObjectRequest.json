@@ -38,6 +38,12 @@
       "about": "The ID of the WAL S3 object to commit"
     },
     {
+      "name": "OrderId",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The order ID of the WAL S3 object"
+    },
+    {
       "name": "ObjectSize",
       "type": "int64",
       "versions": "0+",
@@ -86,13 +92,13 @@
           "name": "ObjectId",
           "type": "int64",
           "versions": "0+",
-          "about": "The ID of the WAL S3 object to commit"
+          "about": "The ID of the Stream object to commit"
         },
         {
           "name": "ObjectSize",
           "type": "int64",
           "versions": "0+",
-          "about": "The size of the WAL S3 object to commit"
+          "about": "The size of the Stream object to commit"
         },
         {
           "name": "StreamId",

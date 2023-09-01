@@ -22,7 +22,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
@@ -30,6 +29,7 @@ import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
@@ -43,8 +43,12 @@ import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
@@ -59,7 +63,6 @@ import org.apache.kafka.metadata.stream.StreamState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
-import org.apache.kafka.timeline.TimelineHashSet;
 import org.apache.kafka.timeline.TimelineInteger;
 import org.apache.kafka.timeline.TimelineLong;
 import org.apache.kafka.timeline.TimelineObject;
@@ -79,7 +82,7 @@ public class StreamControlManager {
         private TimelineLong startOffset;
         private TimelineObject<StreamState> currentState;
         private TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
-        private TimelineHashSet<S3StreamObject> streamObjects;
+        private TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
         public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
             StreamState currentState, SnapshotRegistry registry) {
@@ -91,7 +94,7 @@ public class StreamControlManager {
             this.startOffset.set(startOffset);
             this.currentState = new TimelineObject<StreamState>(registry, currentState);
             this.ranges = new TimelineHashMap<>(registry, 0);
-            this.streamObjects = new TimelineHashSet<>(registry, 0);
+            this.streamObjects = new TimelineHashMap<>(registry, 0);
         }
 
         public long currentEpoch() {
@@ -114,7 +117,11 @@ public class StreamControlManager {
             return ranges;
         }
 
-        public Set<S3StreamObject> streamObjects() {
+        public RangeMetadata currentRangeMetadata() {
+            return ranges.get(currentRangeIndex.get());
+        }
+
+        public Map<Long, S3StreamObject> streamObjects() {
             return streamObjects;
         }
 
@@ -134,18 +141,18 @@ public class StreamControlManager {
     public static class BrokerS3WALMetadata {
 
         private int brokerId;
-        private TimelineHashSet<S3WALObject> walObjects;
+        private TimelineHashMap<Long/*objectId*/, S3WALObject> walObjects;
 
         public BrokerS3WALMetadata(int brokerId, SnapshotRegistry registry) {
             this.brokerId = brokerId;
-            this.walObjects = new TimelineHashSet<>(registry, 0);
+            this.walObjects = new TimelineHashMap<>(registry, 0);
         }
 
         public int getBrokerId() {
             return brokerId;
         }
 
-        public TimelineHashSet<S3WALObject> walObjects() {
+        public TimelineHashMap<Long, S3WALObject> walObjects() {
             return walObjects;
         }
 
@@ -346,12 +353,12 @@ public class StreamControlManager {
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         // TODO: deal with compacted objects, mark delete compacted object
         // TODO: deal with stream objects, replay streamObjectRecord to advance stream's end offset
-        // TODO: generate order id to ensure the order of all wal object
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         List<ApiMessageAndVersion> records = new ArrayList<>();
         long objectId = data.objectId();
         int brokerId = data.brokerId();
         long objectSize = data.objectSize();
+        long orderId = data.orderId();
         List<ObjectStreamRange> streamRanges = data.objectStreamRanges();
         // commit object
         ControllerResult<Boolean> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
@@ -361,24 +368,48 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         records.addAll(commitResult.records());
+        // mark destroy compacted object
+        if (data.compactedObjectIds() != null && !data.compactedObjectIds().isEmpty()) {
+            ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(data.compactedObjectIds());
+            if (!destroyResult.response()) {
+                log.error("Mark destroy compacted objects {} failed", String.join(",", data.compactedObjectIds().toArray(new String[0])));
+                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
+            records.addAll(destroyResult.records());
+        }
+
         List<S3ObjectStreamIndex> indexes = streamRanges.stream()
             .map(range -> new S3ObjectStreamIndex(range.streamId(), range.startOffset(), range.endOffset()))
             .collect(Collectors.toList());
         // update broker's wal object
         BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
         if (brokerMetadata == null) {
-            // first time commit wal object, create broker's metadata
+            // first time commit wal object, generate broker's metadata record
             records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
                 .setBrokerId(brokerId), (short) 0));
         }
-        // create broker's wal object
+        // generate broker's wal object record
         records.add(new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(objectId)
+            .setOrderId(orderId)
             .setBrokerId(brokerId)
             .setStreamsIndex(
                 indexes.stream()
                     .map(S3ObjectStreamIndex::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0));
+        // generate compacted objects' remove record
+        data.compactedObjectIds().forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
+            .setObjectId(id), (short) 0)));
+        // create stream object records
+        // TODO: deal with the lifecycle of stream object's source objects, when and how to delete them ?
+        List<StreamObject> streamObjects = data.streamObjects();
+        streamObjects.stream().forEach(obj -> {
+            long streamId = obj.streamId();
+            long startOffset = obj.startOffset();
+            long endOffset = obj.endOffset();
+            records.add(new S3StreamObject(obj.objectId(), obj.objectSize(), streamId, startOffset, endOffset).toRecord());
+        });
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -461,6 +492,7 @@ public class StreamControlManager {
     public void replay(WALObjectRecord record) {
         long objectId = record.objectId();
         int brokerId = record.brokerId();
+        long orderId = record.orderId();
         List<StreamIndex> streamIndexes = record.streamsIndex();
         BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
         if (brokerMetadata == null) {
@@ -474,7 +506,7 @@ public class StreamControlManager {
             .stream()
             .map(S3ObjectStreamIndex::of)
             .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
-        brokerMetadata.walObjects.add(new S3WALObject(objectId, brokerId, indexMap));
+        brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -484,7 +516,7 @@ public class StreamControlManager {
                 // ignore it
                 return;
             }
-            RangeMetadata rangeMetadata = metadata.ranges().get(metadata.currentRangeIndex.get());
+            RangeMetadata rangeMetadata = metadata.currentRangeMetadata();
             if (rangeMetadata == null) {
                 // ignore it
                 return;
@@ -495,6 +527,60 @@ public class StreamControlManager {
             }
             rangeMetadata.setEndOffset(index.endOffset());
         });
+    }
+
+    public void replay(RemoveWALObjectRecord record) {
+        long objectId = record.objectId();
+        BrokerS3WALMetadata walMetadata = this.brokersMetadata.get(record.brokerId());
+        if (walMetadata == null) {
+            // should not happen
+            log.error("broker {} not exist when replay remove wal object record {}", record.brokerId(), record);
+            return;
+        }
+        walMetadata.walObjects.remove(objectId);
+    }
+    public void replay(S3StreamObjectRecord record) {
+        long objectId = record.objectId();
+        long streamId = record.streamId();
+        long startOffset = record.startOffset();
+        long endOffset = record.endOffset();
+        long objectSize = record.objectSize();
+
+        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        if (streamMetadata == null) {
+            // should not happen
+            log.error("stream {} not exist when replay stream object record {}", streamId, record);
+            return;
+        }
+        streamMetadata.streamObjects.put(objectId, new S3StreamObject(objectId, objectSize, streamId, startOffset, endOffset));
+        // update range
+        RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
+        if (rangeMetadata == null) {
+            // ignore it
+            return;
+        }
+        if (rangeMetadata.endOffset() != startOffset) {
+            // ignore it
+            return;
+        }
+        rangeMetadata.setEndOffset(endOffset);
+    }
+
+    public void replay(RemoveS3StreamObjectRecord record) {
+        long streamId = record.streamId();
+        long objectId = record.objectId();
+        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        if (streamMetadata == null) {
+            // should not happen
+            log.error("stream {} not exist when replay remove stream object record {}", streamId, record);
+            return;
+        }
+        streamMetadata.streamObjects.remove(objectId);
+    }
+
+    public void replay(RemoveBrokerWALMetadataRecord record) {
+        int brokerId = record.brokerId();
+        this.brokersMetadata.remove(brokerId);
     }
 
 
