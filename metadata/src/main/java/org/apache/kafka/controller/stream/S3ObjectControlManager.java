@@ -172,6 +172,27 @@ public class S3ObjectControlManager {
             new ApiMessageAndVersion(record, (short) 0)), true);
     }
 
+    public ControllerResult<Boolean> markDestroyObjects(List<Long> objects) {
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        for (Long objectId : objects) {
+            S3Object object = this.objectsMetadata.get(objectId);
+            if (object == null) {
+                log.error("object {} not exist when mark destroy object", objectId);
+                // TODO: Maybe we can ignore this situation, because this object is already destroyed ?
+                return ControllerResult.of(Collections.emptyList(), false);
+            }
+            S3ObjectRecord record = new S3ObjectRecord()
+                .setObjectId(objectId)
+                .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                .setPreparedTimeInMs(object.getPreparedTimeInMs())
+                .setExpiredTimeInMs(object.getExpiredTimeInMs())
+                .setCommittedTimeInMs(object.getCommittedTimeInMs())
+                .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+            records.add(new ApiMessageAndVersion(record, (short) 0));
+        }
+        return ControllerResult.atomicOf(records, true);
+    }
+
     public void replay(AssignedS3ObjectIdRecord record) {
         nextAssignedObjectId.set(record.assignedS3ObjectId() + 1);
     }
@@ -180,7 +201,7 @@ public class S3ObjectControlManager {
         GenerateContextV0 ctx = new GenerateContextV0(clusterId, record.objectId());
         String objectKey = S3ObjectKeyGeneratorManager.getByVersion(0).generate(ctx);
         S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
-            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.destroyedTimeInMs(),
+            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
             S3ObjectState.fromByte(record.objectState()));
         objectsMetadata.put(record.objectId(), object);
         // TODO: recover the prepared objects and mark destroyed objects when restart the controller
@@ -215,7 +236,7 @@ public class S3ObjectControlManager {
                     .setPreparedTimeInMs(obj.getPreparedTimeInMs())
                     .setExpiredTimeInMs(obj.getExpiredTimeInMs())
                     .setCommittedTimeInMs(obj.getCommittedTimeInMs())
-                    .setDestroyedTimeInMs(obj.getDestroyedTimeInMs());
+                    .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, (short) 0));
                 // generate the records which listener reply for the object-destroy events
