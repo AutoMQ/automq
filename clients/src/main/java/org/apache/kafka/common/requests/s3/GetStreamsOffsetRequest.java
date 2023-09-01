@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -63,6 +65,11 @@ public class GetStreamsOffsetRequest extends AbstractRequest {
     @Override
     public GetStreamsOffsetRequestData data() {
         return data;
+    }
+
+    public static GetStreamsOffsetRequest parse(ByteBuffer buffer, short version) {
+        return new GetStreamsOffsetRequest(new GetStreamsOffsetRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
     
 }

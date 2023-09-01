@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -29,7 +31,7 @@ public class OpenStreamRequest extends AbstractRequest {
 
         private final OpenStreamRequestData data;
         public Builder(OpenStreamRequestData data) {
-            super(ApiKeys.CREATE_STREAM);
+            super(ApiKeys.OPEN_STREAM);
             this.data = data;
         }
 
@@ -62,5 +64,10 @@ public class OpenStreamRequest extends AbstractRequest {
     @Override
     public OpenStreamRequestData data() {
         return data;
+    }
+
+    public static OpenStreamRequest parse(ByteBuffer buffer, short version) {
+        return new OpenStreamRequest(new OpenStreamRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
 }

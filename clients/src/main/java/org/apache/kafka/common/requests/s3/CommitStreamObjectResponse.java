@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
@@ -50,6 +52,11 @@ public class CommitStreamObjectResponse extends AbstractResponse {
     @Override
     public void maybeSetThrottleTimeMs(int throttleTimeMs) {
         data.setThrottleTimeMs(throttleTimeMs);
+    }
+
+    public static CommitStreamObjectResponse parse(ByteBuffer buffer, short version) {
+        return new CommitStreamObjectResponse(new CommitStreamObjectResponseData(
+            new ByteBufferAccessor(buffer), version));
     }
 
 }

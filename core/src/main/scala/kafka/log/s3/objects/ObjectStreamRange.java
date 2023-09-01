@@ -17,6 +17,8 @@
 
 package kafka.log.s3.objects;
 
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+
 public class ObjectStreamRange {
     private long streamId;
     private long epoch;
@@ -61,6 +63,13 @@ public class ObjectStreamRange {
 
     public void setEndOffset(long endOffset) {
         this.endOffset = endOffset;
+    }
+
+    public CommitWALObjectRequestData.ObjectStreamRange toObjectStreamRangeInRequest() {
+        return new CommitWALObjectRequestData.ObjectStreamRange()
+            .setStreamId(streamId)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset);
     }
 
     @Override

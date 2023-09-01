@@ -20,16 +20,22 @@ package kafka.log.s3.objects;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import kafka.log.s3.StreamMetadataManager;
+import kafka.log.s3.StreamMetadataManager.InflightWalObject;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.server.KafkaConfig;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest.Builder;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +76,38 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
-        return null;
+        org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder wrapRequestBuilder = new org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder(
+            new CommitWALObjectRequestData()
+                .setBrokerId(config.brokerId())
+                .setOrderId(request.getOrderId())
+                .setObjectId(request.getObjectId())
+                .setObjectSize(request.getObjectSize())
+                .setObjectStreamRanges(request.getStreamRanges()
+                    .stream()
+                    .map(ObjectStreamRange::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+                .setStreamObjects(request.getStreamObjects()
+                    .stream()
+                    .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList())));
+        return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    return new CommitWALObjectResponse();
+                default:
+                    LOGGER.error("Error while committing WAL object: {}, code: {}", request, code);
+                    throw code.exception();
+            }
+        }).thenApply(resp -> {
+            long objectId = request.getObjectId();
+            long orderId = request.getOrderId();
+            int brokerId = config.brokerId();
+            long objectSize = request.getObjectSize();
+            Map<Long, List<S3ObjectStreamIndex>> rangeList = request.getStreamRanges().stream()
+                .map(range -> new S3ObjectStreamIndex(range.getStreamId(), range.getStartOffset(), range.getEndOffset()))
+                .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
+            this.metadataManager.append(new InflightWalObject(objectId, brokerId, rangeList, orderId, objectSize));
+            return resp;
+        });
     }
 
     @Override
@@ -88,7 +125,8 @@ public class ControllerObjectManager implements ObjectManager {
         try {
             return this.metadataManager.getObjects(streamId, startOffset, endOffset, limit);
         } catch (Exception e) {
-            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit, e);
+            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
+                e);
             return Collections.emptyList();
         }
     }

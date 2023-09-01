@@ -118,6 +118,7 @@ public class S3Stream implements Stream {
         if (status.isClosed()) {
             return FutureUtil.failedFuture(new ElasticStreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is already closed"));
         }
+        LOGGER.info("{} stream try fetch, startOffset: {}, endOffset: {}, maxBytes: {}", logIdent, startOffset, endOffset, maxBytes);
         long confirmOffset = this.confirmOffset.get();
         if (startOffset < startOffset() || endOffset > confirmOffset) {
             return FutureUtil.failedFuture(
@@ -128,6 +129,7 @@ public class S3Stream implements Stream {
         }
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<RecordBatchWithContext> records = dataBlock.getRecords().stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+            LOGGER.info("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
             return new DefaultFetchResult(records);
         });
     }
@@ -176,6 +178,7 @@ public class S3Stream implements Stream {
                 break;
             }
             if (confirmOffset.compareAndSet(oldConfirmOffset, newOffset)) {
+                LOGGER.info("{} stream update confirm offset from {} to {}", logIdent, oldConfirmOffset, newOffset);
                 break;
             }
         }

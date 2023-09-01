@@ -17,7 +17,8 @@
 
 package kafka.log.s3.objects;
 
-import java.util.Arrays;
+import java.util.List;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
 
 public class StreamObject {
     private long objectId;
@@ -29,7 +30,7 @@ public class StreamObject {
     /**
      * The source objects' id of the stream object.
      */
-    private long[] sourceObjectIds;
+    private List<Long> sourceObjectIds;
 
     public long getObjectId() {
         return objectId;
@@ -71,12 +72,22 @@ public class StreamObject {
         this.endOffset = endOffset;
     }
 
-    public long[] getSourceObjectIds() {
+    public List<Long> getSourceObjectIds() {
         return sourceObjectIds;
     }
 
-    public void setSourceObjectIds(long[] sourceObjectIds) {
+    public void setSourceObjectIds(List<Long> sourceObjectIds) {
         this.sourceObjectIds = sourceObjectIds;
+    }
+
+    public CommitWALObjectRequestData.StreamObject toStreamObjectInRequest() {
+        return new CommitWALObjectRequestData.StreamObject()
+            .setStreamId(streamId)
+            .setObjectId(objectId)
+            .setObjectSize(objectSize)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset)
+            .setSourceObjectIds(sourceObjectIds);
     }
 
     @Override
@@ -87,7 +98,7 @@ public class StreamObject {
                 ", streamId=" + streamId +
                 ", startOffset=" + startOffset +
                 ", endOffset=" + endOffset +
-                ", sourceObjectIds=" + Arrays.toString(sourceObjectIds) +
+                ", sourceObjectIds=" + sourceObjectIds +
                 '}';
     }
 }

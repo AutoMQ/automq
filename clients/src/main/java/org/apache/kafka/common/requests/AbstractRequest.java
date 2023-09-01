@@ -26,6 +26,14 @@ import org.apache.kafka.common.protocol.SendBuilder;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
+import org.apache.kafka.common.requests.s3.CloseStreamRequest;
+import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
+import org.apache.kafka.common.requests.s3.CommitWALObjectRequest;
+import org.apache.kafka.common.requests.s3.CreateStreamRequest;
+import org.apache.kafka.common.requests.s3.DeleteStreamRequest;
+import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
+import org.apache.kafka.common.requests.s3.OpenStreamRequest;
+import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
@@ -165,6 +173,7 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
         return new RequestAndSize(doParseRequest(apiKey, apiVersion, buffer), bufferSize);
     }
 
+    @SuppressWarnings("all")
     private static AbstractRequest doParseRequest(ApiKeys apiKey, short apiVersion, ByteBuffer buffer) {
         switch (apiKey) {
             case PRODUCE:
@@ -303,6 +312,25 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return ListTransactionsRequest.parse(buffer, apiVersion);
             case ALLOCATE_PRODUCER_IDS:
                 return AllocateProducerIdsRequest.parse(buffer, apiVersion);
+
+            // Kafka on S3 inject start
+            case CREATE_STREAM:
+                return CreateStreamRequest.parse(buffer, apiVersion);
+            case OPEN_STREAM:
+                return OpenStreamRequest.parse(buffer, apiVersion);
+            case CLOSE_STREAM:
+                return CloseStreamRequest.parse(buffer, apiVersion);
+            case DELETE_STREAM:
+                return DeleteStreamRequest.parse(buffer, apiVersion);
+            case PREPARE_S3_OBJECT:
+                return PrepareS3ObjectRequest.parse(buffer, apiVersion);
+            case COMMIT_WALOBJECT:
+                return CommitWALObjectRequest.parse(buffer, apiVersion);
+            case COMMIT_STREAM_OBJECT:
+                return CommitStreamObjectRequest.parse(buffer, apiVersion);
+            case GET_STREAMS_OFFSET:
+                return GetStreamsOffsetRequest.parse(buffer, apiVersion);
+            // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
                         "code should be updated to do so.", apiKey));
