@@ -18,7 +18,8 @@
 package kafka.log.s3;
 
 import kafka.log.s3.model.StreamRecordBatch;
-import kafka.log.s3.objects.CommitCompactObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.StreamObject;
 import kafka.log.s3.operator.MemoryS3Operator;
@@ -58,7 +59,7 @@ public class WALObjectUploadTaskTest {
     public void testTryCompact() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitMinorCompactObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
 
         Map<Long, List<FlatStreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -78,12 +79,12 @@ public class WALObjectUploadTaskTest {
         walObjectUploadTask.commit().get();
 
 
-        ArgumentCaptor<CommitCompactObjectRequest> reqArg = ArgumentCaptor.forClass(CommitCompactObjectRequest.class);
-        verify(objectManager, times(1)).commitMinorCompactObject(reqArg.capture());
+        ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
+        verify(objectManager, times(1)).commitWALObject(reqArg.capture());
         // expect
         // - stream233 split
         // - stream234 write to one stream range
-        CommitCompactObjectRequest request = reqArg.getValue();
+        CommitWALObjectRequest request = reqArg.getValue();
         assertEquals(10, request.getObjectId());
         assertEquals(1, request.getStreamRanges().size());
         assertEquals(234, request.getStreamRanges().get(0).getStreamId());

@@ -20,7 +20,7 @@ package kafka.log.s3;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
-import kafka.log.s3.objects.CommitWalObjectResponse;
+import kafka.log.s3.objects.CommitWALObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
@@ -54,8 +54,8 @@ public class S3StorageTest {
     @Test
     public void testAppend() throws Exception {
         when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
-        CommitWalObjectResponse resp = new CommitWalObjectResponse();
-        when(objectManager.commitWalObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
+        CommitWALObjectResponse resp = new CommitWALObjectResponse();
+        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
         CompletableFuture<Void> cf1 = storage.append(new StreamRecordBatch(233, 1, 10, DefaultRecordBatch.of(1, 100)));
         CompletableFuture<Void> cf2 = storage.append(new StreamRecordBatch(233, 1, 11, DefaultRecordBatch.of(2, 100)));

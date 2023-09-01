@@ -26,16 +26,16 @@ import java.util.concurrent.CompletableFuture;
 public interface WriteAheadLog {
 
     /**
-     * Get log start position.
-     * @return start position.
+     * Get log start offset.
+     * @return start offset.
      */
-    long startPosition();
+    long startOffset();
 
     /**
-     * Get log end position.
-     * @return end position.
+     * Get log end offset.
+     * @return exclusive end offset.
      */
-    long endPosition();
+    long endOffset();
 
     /**
      * Read data from log.
@@ -52,24 +52,24 @@ public interface WriteAheadLog {
     AppendResult append(ByteBuf data);
 
     /**
-     * Trim log to new start position.
+     * Trim data <= offset in log.
      *
-     * @param position new start position.
+     * @param offset inclusive trim offset.
      */
-    void trim(long position);
+    void trim(long offset);
 
 
     class WalRecord {
-        private long endPosition;
-        private ByteBuf data;
+        private final long offset;
+        private final ByteBuf data;
 
-        public WalRecord(long endPosition, ByteBuf data) {
-            this.endPosition = endPosition;
+        public WalRecord(long offset, ByteBuf data) {
+            this.offset = offset;
             this.data = data;
         }
 
-        public long endPosition() {
-            return endPosition;
+        public long offset() {
+            return offset;
         }
 
         public ByteBuf data() {
@@ -78,7 +78,7 @@ public interface WriteAheadLog {
     }
 
     class AppendResult {
-        public long endPosition;
+        public long offset;
         public CompletableFuture<Void> future;
     }
 

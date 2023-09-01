@@ -17,24 +17,8 @@
 
 package kafka.log.s3.objects;
 
-import java.util.Collections;
-import java.util.List;
-
 /**
- * Commit wal loose object response.
- * When stream is fenced, the stream id will be added to failedStreamIds.
+ * Commit WAL object response.
  */
-public class CommitWalObjectResponse {
-    private List<Long> failedStreamIds;
-
-    public List<Long> getFailedStreamIds() {
-        if (failedStreamIds == null) {
-            return Collections.emptyList();
-        }
-        return failedStreamIds;
-    }
-
-    public void setFailedStreamIds(List<Long> failedStreamIds) {
-        this.failedStreamIds = failedStreamIds;
-    }
+public class CommitWALObjectResponse {
 }

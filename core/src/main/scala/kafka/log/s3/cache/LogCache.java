@@ -37,8 +37,8 @@ public class LogCache {
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
     }
 
-    public boolean put(FlatStreamRecordBatch recordBatch, long endPosition) {
-        return activeBlock.put(recordBatch, endPosition);
+    public boolean put(FlatStreamRecordBatch recordBatch, long offset) {
+        return activeBlock.put(recordBatch, offset);
     }
 
     /**
@@ -84,7 +84,7 @@ public class LogCache {
         private final int maxSize;
         private final Map<Long, List<FlatStreamRecordBatch>> map = new HashMap<>();
         private int size = 0;
-        private long logEndPosition;
+        private long maxOffset;
 
         public LogCacheBlock(int maxSize) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
@@ -95,12 +95,12 @@ public class LogCache {
             return blockId;
         }
 
-        public boolean put(FlatStreamRecordBatch recordBatch, long endPosition) {
+        public boolean put(FlatStreamRecordBatch recordBatch, long offset) {
             List<FlatStreamRecordBatch> streamCache = map.computeIfAbsent(recordBatch.streamId, id -> new ArrayList<>());
             streamCache.add(recordBatch);
             int recordSize = recordBatch.encodedBuf.readableBytes();
             size += recordSize;
-            logEndPosition = endPosition;
+            maxOffset = offset;
             return size >= maxSize;
         }
 
@@ -136,8 +136,8 @@ public class LogCache {
             return map;
         }
 
-        public long logEndPosition() {
-            return logEndPosition;
+        public long maxOffset() {
+            return maxOffset;
         }
 
     }

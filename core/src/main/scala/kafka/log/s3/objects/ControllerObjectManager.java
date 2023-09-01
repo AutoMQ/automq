@@ -69,12 +69,7 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitWalObjectResponse> commitWalObject(CommitWalObjectRequest request) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<Void> commitMinorCompactObject(CommitCompactObjectRequest request) {
+    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
         return null;
     }
 
