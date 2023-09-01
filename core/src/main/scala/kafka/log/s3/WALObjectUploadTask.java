@@ -17,7 +17,7 @@
 
 package kafka.log.s3;
 
-import kafka.log.s3.objects.CommitCompactObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.StreamObject;
@@ -40,7 +40,7 @@ public class WALObjectUploadTask {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
-    private final CompletableFuture<CommitCompactObjectRequest> uploadCf = new CompletableFuture<>();
+    private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
 
     public WALObjectUploadTask(Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap, int streamSplitSizeThreshold, ObjectManager objectManager, S3Operator s3Operator) {
         this.streamRecordsMap = streamRecordsMap;
@@ -58,12 +58,11 @@ public class WALObjectUploadTask {
         return prepareCf;
     }
 
-    public CompletableFuture<CommitCompactObjectRequest> upload() {
+    public CompletableFuture<CommitWALObjectRequest> upload() {
         prepareCf.thenAccept(objectId -> {
             List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
             Collections.sort(streamIds);
-            CommitCompactObjectRequest compactRequest = new CommitCompactObjectRequest();
-            compactRequest.setCompactedObjectIds(Collections.emptyList());
+            CommitWALObjectRequest compactRequest = new CommitWALObjectRequest();
 
             ObjectWriter minorCompactObject = new ObjectWriter(objectId, s3Operator);
 
@@ -86,6 +85,7 @@ public class WALObjectUploadTask {
                 }
             }
             compactRequest.setObjectId(objectId);
+            compactRequest.setOrderId(objectId);
             CompletableFuture<Void> minorCompactObjectCf = minorCompactObject.close().thenAccept(nil -> {
                 compactRequest.setObjectSize(minorCompactObject.size());
             });
@@ -107,7 +107,7 @@ public class WALObjectUploadTask {
     }
 
     public CompletableFuture<Void> commit() {
-        return uploadCf.thenCompose(objectManager::commitMinorCompactObject);
+        return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> null));
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(List<FlatStreamRecordBatch> streamRecords) {

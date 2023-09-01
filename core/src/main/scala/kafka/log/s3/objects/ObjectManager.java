@@ -36,19 +36,12 @@ public interface ObjectManager {
     CompletableFuture<Long> prepareObject(int count, long ttl);
 
     /**
-     * Commit wal object.
+     * Commit WAL object.
      *
-     * @param request {@link CommitWalObjectRequest}
-     * @return {@link CommitWalObjectResponse}
+     * @param request {@link CommitWALObjectRequest}
+     * @return {@link CommitWALObjectResponse}
      */
-    CompletableFuture<CommitWalObjectResponse> commitWalObject(CommitWalObjectRequest request);
-
-    /**
-     * Commit minor compact object. Use minor compact object and stream objects to substitute wal object.
-     *
-     * @param request {@link CommitCompactObjectRequest}
-     */
-    CompletableFuture<Void> commitMinorCompactObject(CommitCompactObjectRequest request);
+    CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request);
 
     /**
      * Commit major compact object. Use major compact object and stream objects to substitute minor compact object.

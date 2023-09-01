@@ -28,12 +28,12 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     private final AtomicLong offsetAlloc = new AtomicLong();
 
     @Override
-    public long startPosition() {
+    public long startOffset() {
         return 0;
     }
 
     @Override
-    public long endPosition() {
+    public long endOffset() {
         return 0;
     }
 
@@ -45,13 +45,13 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     @Override
     public AppendResult append(ByteBuf data) {
         AppendResult appendResult = new AppendResult();
-        appendResult.endPosition = offsetAlloc.getAndIncrement();
+        appendResult.offset = offsetAlloc.getAndIncrement();
         appendResult.future = CompletableFuture.completedFuture(null);
         return appendResult;
     }
 
     @Override
-    public void trim(long position) {
+    public void trim(long offset) {
 
     }
 }

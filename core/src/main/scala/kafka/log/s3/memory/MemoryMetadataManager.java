@@ -31,11 +31,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
 import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
-import kafka.log.s3.objects.CommitWalObjectRequest;
-import kafka.log.s3.objects.CommitWalObjectResponse;
+import kafka.log.s3.objects.CommitWALObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.OpenStreamMetadata;
@@ -145,11 +146,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitWalObjectResponse> commitWalObject(CommitWalObjectRequest request) {
+    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
         return this.submitEvent(() -> {
-            CommitWalObjectResponse resp = new CommitWalObjectResponse();
-            List<Long> failedStreamIds = new ArrayList<>();
-            resp.setFailedStreamIds(failedStreamIds);
+            CommitWALObjectResponse resp = new CommitWALObjectResponse();
             long objectId = request.getObjectId();
             long objectSize = request.getObjectSize();
             List<ObjectStreamRange> streamRanges = request.getStreamRanges();
@@ -160,21 +159,15 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             if (object.getS3ObjectState() != S3ObjectState.PREPARED) {
                 throw new RuntimeException("Object " + objectId + " is not in prepared state");
             }
-            // verify the stream
-            streamRanges.stream().filter(range -> !verifyWalStreamRanges(range)).mapToLong(ObjectStreamRange::getStreamId)
-                .forEach(failedStreamIds::add);
-            if (!failedStreamIds.isEmpty()) {
-                return resp;
-            }
             // commit object
             this.objectsMetadata.put(objectId, new S3Object(
-                objectId, objectSize, object.getObjectKey(),
-                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                S3ObjectState.COMMITTED)
+                    objectId, objectSize, object.getObjectKey(),
+                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                    S3ObjectState.COMMITTED)
             );
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
-                k -> new MemoryBrokerWALMetadata(k));
+                    k -> new MemoryBrokerWALMetadata(k));
             Map<Long, List<S3ObjectStreamIndex>> index = new HashMap<>();
             streamRanges.stream().forEach(range -> {
                 long streamId = range.getStreamId();
@@ -185,7 +178,15 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
                 streamMetadata.endOffset = endOffset;
             });
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index);
+            request.getStreamObjects().forEach(streamObject -> {
+                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamObject.getStreamId());
+                S3StreamObject s3StreamObject = new S3StreamObject(streamObject.getObjectId(), streamObject.getObjectSize(),
+                        streamObject.getStreamId(), streamObject.getStartOffset(), streamObject.getEndOffset());
+                streamMetadata.addStreamObject(s3StreamObject);
+                streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
+            });
+
+            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId());
             walMetadata.walObjects.add(walObject);
             return resp;
         });
@@ -207,11 +208,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             return false;
         }
         return true;
-    }
-
-    @Override
-    public CompletableFuture<Void> commitMinorCompactObject(CommitCompactObjectRequest request) {
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -282,7 +278,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         return this.submitEvent(() -> {
             long streamId = this.nextAssignedStreamId++;
             this.streamsMetadata.put(streamId,
-                new MemoryStreamMetadata(streamId));
+                    new MemoryStreamMetadata(streamId));
             return streamId;
         });
     }
@@ -373,9 +369,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         long preparedTs = System.currentTimeMillis();
         String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         return new S3Object(
-            objectId, -1, objectKey,
-            preparedTs, preparedTs + ttl, -1, -1,
-            S3ObjectState.PREPARED);
+                objectId, -1, objectKey,
+                preparedTs, preparedTs + ttl, -1, -1,
+                S3ObjectState.PREPARED);
     }
 
 

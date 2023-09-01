@@ -17,15 +17,23 @@
 
 package kafka.log.s3.objects;
 
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 
-public class CommitWalObjectRequest {
+public class CommitWALObjectRequest {
     private long objectId;
     private long objectSize;
     /**
      * The stream ranges of the compacted object.
      */
     private List<ObjectStreamRange> streamRanges;
+
+    /**
+     * The stream objects which split from the compacted object.
+     */
+    private List<StreamObject> streamObjects;
+    private long orderId;
 
     public long getObjectId() {
         return objectId;
@@ -44,10 +52,46 @@ public class CommitWalObjectRequest {
     }
 
     public List<ObjectStreamRange> getStreamRanges() {
+        if (streamRanges == null) {
+            return Collections.emptyList();
+        }
         return streamRanges;
     }
 
     public void setStreamRanges(List<ObjectStreamRange> streamRanges) {
         this.streamRanges = streamRanges;
+    }
+
+    public void addStreamRange(ObjectStreamRange streamRange) {
+        if (streamRanges == null) {
+            streamRanges = new LinkedList<>();
+        }
+        streamRanges.add(streamRange);
+    }
+
+    public List<StreamObject> getStreamObjects() {
+        if (streamObjects == null) {
+            return Collections.emptyList();
+        }
+        return streamObjects;
+    }
+
+    public void setStreamObjects(List<StreamObject> streamObjects) {
+        this.streamObjects = streamObjects;
+    }
+
+    public void addStreamObject(StreamObject streamObject) {
+        if (streamObjects == null) {
+            streamObjects = new LinkedList<>();
+        }
+        streamObjects.add(streamObject);
+    }
+
+    public long getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(long orderId) {
+        this.orderId = orderId;
     }
 }

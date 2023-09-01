@@ -22,12 +22,12 @@ import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {
     final FlatStreamRecordBatch record;
-    final long position;
+    final long offset;
     final CompletableFuture<Void> cf;
 
-    public WalWriteRequest(FlatStreamRecordBatch record, long position, CompletableFuture<Void> cf) {
+    public WalWriteRequest(FlatStreamRecordBatch record, long offset, CompletableFuture<Void> cf) {
         this.record = record;
-        this.position = position;
+        this.offset = offset;
         this.cf = cf;
     }
 
