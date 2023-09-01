@@ -152,8 +152,8 @@ public class S3StreamMetadataImageTest {
         // verify delta and check image's write
         S3StreamMetadataImage image1 = new S3StreamMetadataImage(
             STREAM0, 0L, 0L, Map.of(), Map.of(
-            0L, new S3StreamObject(0L, STREAM0, 0L, 100L),
-            1L, new S3StreamObject(1L, STREAM0, 100L, 200L)));
+            0L, new S3StreamObject(0L, 999, STREAM0, 0L, 100L),
+            1L, new S3StreamObject(1L, 999, STREAM0, 100L, 200L)));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -166,7 +166,7 @@ public class S3StreamMetadataImageTest {
         // verify delta and check image's write
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
             STREAM0, 0L, 0L, Map.of(), Map.of(
-            1L, new S3StreamObject(1L, STREAM0, 100L, 200L)));
+            1L, new S3StreamObject(1L, 999, STREAM0, 100L, 200L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
     }

@@ -25,16 +25,14 @@ public class S3StreamObject {
 
     private final long objectId;
 
+    private final long objectSize;
+
     private final S3ObjectStreamIndex streamIndex;
 
-    public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset) {
+    public S3StreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {
         this.objectId = objectId;
+        this.objectSize = objectSize;
         this.streamIndex = new S3ObjectStreamIndex(streamId, startOffset, endOffset);
-    }
-
-    public S3StreamObject(long objectId, S3ObjectStreamIndex streamIndex) {
-        this.objectId = objectId;
-        this.streamIndex = streamIndex;
     }
 
     public S3ObjectStreamIndex streamIndex() {
@@ -58,8 +56,9 @@ public class S3StreamObject {
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {
-        S3ObjectStreamIndex index = new S3ObjectStreamIndex(record.streamId(), record.startOffset(), record.endOffset());
-        S3StreamObject s3StreamObject = new S3StreamObject(record.objectId(), index);
+        S3StreamObject s3StreamObject = new S3StreamObject(
+            record.objectId(), record.objectSize(), record.streamId(),
+            record.startOffset(), record.endOffset());
         return s3StreamObject;
     }
 

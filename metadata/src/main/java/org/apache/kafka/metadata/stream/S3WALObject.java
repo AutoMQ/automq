@@ -24,8 +24,16 @@ import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class S3WALObject {
+public class S3WALObject implements Comparable<S3WALObject> {
 
+    /**
+     * The order id of the object.
+     * Sort by this field to get the order of the objects which contains logically increasing streams.
+     * <p>
+     * When compact a batch of objects to a compacted object,
+     * this compacted object's order id will be assigned the value <code>first object's order id in this batch</code>
+     */
+    private final long orderId;
     private final long objectId;
 
     private final int brokerId;
@@ -34,6 +42,12 @@ public class S3WALObject {
     private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
     public S3WALObject(long objectId, int brokerId, final Map<Long, List<S3ObjectStreamIndex>> streamsIndex) {
+        // default orderId is equal to objectId
+        this(objectId, brokerId, streamsIndex, objectId);
+    }
+
+    public S3WALObject(long objectId, int brokerId, final Map<Long, List<S3ObjectStreamIndex>> streamsIndex, long orderId) {
+        this.orderId = orderId;
         this.objectId = objectId;
         this.brokerId = brokerId;
         this.streamsIndex = streamsIndex;
@@ -84,6 +98,10 @@ public class S3WALObject {
         return objectType;
     }
 
+    public long orderId() {
+        return orderId;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -105,9 +123,15 @@ public class S3WALObject {
     public String toString() {
         return "S3WALObject{" +
             "objectId=" + objectId +
+            ", orderId=" + orderId +
             ", brokerId=" + brokerId +
             ", streamsIndex=" + streamsIndex +
             ", objectType=" + objectType +
             '}';
+    }
+
+    @Override
+    public int compareTo(S3WALObject o) {
+        return Long.compare(this.orderId, o.orderId);
     }
 }

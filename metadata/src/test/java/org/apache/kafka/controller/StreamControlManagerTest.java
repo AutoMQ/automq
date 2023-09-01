@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 
 import java.util.Collections;
@@ -30,6 +31,7 @@ import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
@@ -42,7 +44,10 @@ import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
@@ -262,7 +267,7 @@ public class StreamControlManagerTest {
     }
 
     @Test
-    public void testCommitWal() {
+    public void testCommitWalBasic() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
@@ -355,7 +360,197 @@ public class StreamControlManagerTest {
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(0).endOffset());
+    }
 
+    private void createAndOpenStream(int brokerId, long epoch) {
+        CreateStreamRequestData request0 = new CreateStreamRequestData();
+        ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
+        replay(manager, result0.records());
+        long streamId = result0.response().streamId();
+        ControllerResult<OpenStreamResponseData> result1 = manager.openStream(
+            new OpenStreamRequestData().setStreamId(streamId).setStreamEpoch(epoch).setBrokerId(brokerId));
+        replay(manager, result1.records());
+    }
+
+    @Test
+    public void testCommitWalCompacted() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 1. create and open stream_0 and stream_1
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        // 2. commit first level wal object of stream_0 and stream_1
+        List<ObjectStreamRange> streamRanges0 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(200L));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
+        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result4.response().errorCode());
+        replay(manager, result4.records());
+
+        // 3. fetch range end offset
+        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
+            .setStreamIds(List.of(STREAM0, STREAM1));
+        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(100L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 4. keep committing first level object of stream_0 and stream_1
+        List<ObjectStreamRange> streamRanges1 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100L)
+                .setEndOffset(200L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(200L)
+                .setEndOffset(300L));
+        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+            .setObjectId(1L)
+            .setOrderId(1L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1);
+        ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        assertEquals(Errors.NONE.code(), result5.response().errorCode());
+        replay(manager, result5.records());
+
+        // 5. fetch range end offset
+        streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 6. commit a second level wal object which compact wal_0 and wal_1
+        List<ObjectStreamRange> streamRanges2 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(200L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(300L));
+        CommitWALObjectRequestData commitRequest2 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2)
+            .setCompactedObjectIds(List.of(0L, 1L));
+        ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
+        assertEquals(Errors.NONE.code(), result6.response().errorCode());
+        replay(manager, result6.records());
+
+        // 7. fetch range end offset
+        streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 8. verify compacted wal objects is removed
+        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
+        assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).objectId());
+        assertEquals(0, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).orderId());
+    }
+
+    @Test
+    public void testCommitWalWithStreamObject() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 1. create and open stream_0 and stream_1
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        // 2. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
+        List<ObjectStreamRange> streamRanges0 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(1L)
+                    .setObjectSize(999)
+                    .setStartOffset(0L)
+                    .setEndOffset(200L)
+            ));
+        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result4.response().errorCode());
+        replay(manager, result4.records());
+
+        // 3. fetch range end offset
+        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
+            .setStreamIds(List.of(STREAM0, STREAM1));
+        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(100L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 4. verify stream object is added
+        assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+    }
+
+    private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {
+        List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
+            .setStreamId(streamId)
+            .setStreamEpoch(epoch)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(objectId)
+            .setOrderId(orderId)
+            .setBrokerId(brokerId)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
+        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
     }
 
     private void replay(StreamControlManager manager, List<ApiMessageAndVersion> records) {
@@ -384,6 +579,15 @@ public class StreamControlManagerTest {
                     break;
                 case WALOBJECT_RECORD:
                     manager.replay((WALObjectRecord) message);
+                    break;
+                case REMOVE_WALOBJECT_RECORD:
+                    manager.replay((RemoveWALObjectRecord) message);
+                    break;
+                case S3_STREAM_OBJECT_RECORD:
+                    manager.replay((S3StreamObjectRecord) message);
+                    break;
+                case REMOVE_S3_OBJECT_RECORD:
+                    manager.replay((RemoveS3StreamObjectRecord) message);
                     break;
                 default:
                     throw new IllegalStateException("Unknown metadata record type " + type);

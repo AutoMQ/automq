@@ -43,6 +43,12 @@
       "type": "int64",
       "versions": "0+",
       "about": "The object id of the S3 object"
+    },
+    {
+      "name": "ObjectSize",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The size of the Stream object to commit"
     }
   ]
 }

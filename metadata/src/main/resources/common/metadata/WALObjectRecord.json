@@ -33,6 +33,12 @@
       "about": "The object id of the S3 object"
     },
     {
+      "name": "OrderId",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The order id of the S3 object"
+    },
+    {
       "name": "StreamsIndex",
       "type": "[]StreamIndex",
       "versions": "0+",
