@@ -263,6 +263,7 @@
     <allow pkg="org.apache.kafka.server.util" />
     <allow pkg="org.apache.kafka.snapshot" />
     <allow pkg="org.apache.kafka.test" />
+    <allow pkg="org.apache.kafka.controller.stream" />
   </subpackage>
 
   <subpackage name="metadata">

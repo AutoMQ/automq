@@ -96,6 +96,9 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(new AdvanceRangeRecord()
+            .setStartOffset(record.startOffset())
+            .setEndOffset(record.endOffset()));
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {

@@ -27,4 +27,8 @@ public class S3StreamConstant {
 
     public static final long INIT_END_OFFSET = 0L;
 
+    public static final long INVALID_STREAM_ID = -1L;
+
+    public static final long INVALID_OBJECT_ID = -1L;
+
 }
