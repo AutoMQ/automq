@@ -26,6 +26,8 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class StreamRecordBatchCodec {
     private static final byte MAGIC_V0 = 0x22;
@@ -70,5 +72,22 @@ public class StreamRecordBatchCodec {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static StreamRecordBatch decode(ByteBuf buf) {
+        buf.readByte(); // magic
+        long streamId = buf.readLong();
+        long epoch = buf.readLong();
+        long baseOffset = buf.readLong();
+        int lastOffsetDelta = buf.readInt();
+        int payloadLength = buf.readInt();
+        ByteBuffer payload = buf.slice(buf.readerIndex(), payloadLength).nioBuffer();
+        buf.skipBytes(payloadLength);
+        DefaultRecordBatch defaultRecordBatch = new DefaultRecordBatch(lastOffsetDelta, 0, Collections.emptyMap(), payload);
+        return new StreamRecordBatch(streamId, epoch, baseOffset, defaultRecordBatch);
+    }
+
+    public static List<StreamRecordBatch> decode(List<FlatStreamRecordBatch> records) {
+        return records.stream().map(r -> decode(r.encodedBuf())).collect(Collectors.toList());
     }
 }

@@ -20,7 +20,6 @@ package kafka.log.s3;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
-import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
@@ -63,7 +62,7 @@ public class ObjectWriter {
         this(objectId, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
     }
 
-    public void write(StreamRecordBatch record) {
+    public void write(FlatStreamRecordBatch record) {
         if (dataBlock == null) {
             dataBlock = new DataBlock(nextDataBlockPosition);
         }
@@ -159,7 +158,7 @@ public class ObjectWriter {
             streamRanges = new LinkedList<>();
         }
 
-        public boolean write(StreamRecordBatch record) {
+        public boolean write(FlatStreamRecordBatch record) {
             try {
                 recordCount++;
                 return write0(record);
@@ -169,17 +168,17 @@ public class ObjectWriter {
             }
         }
 
-        public boolean write0(StreamRecordBatch record) throws IOException {
-            if (streamRange == null || streamRange.getStreamId() != record.getStreamId()) {
+        public boolean write0(FlatStreamRecordBatch record) throws IOException {
+            if (streamRange == null || streamRange.getStreamId() != record.streamId) {
                 streamRange = new ObjectStreamRange();
-                streamRange.setStreamId(record.getStreamId());
-                streamRange.setEpoch(record.getEpoch());
-                streamRange.setStartOffset(record.getBaseOffset());
+                streamRange.setStreamId(record.streamId);
+                streamRange.setEpoch(record.epoch);
+                streamRange.setStartOffset(record.baseOffset);
                 streamRanges.add(streamRange);
             }
-            streamRange.setEndOffset(record.getBaseOffset() + record.getRecordBatch().count());
+            streamRange.setEndOffset(record.lastOffset());
 
-            ByteBuf recordBuf = StreamRecordBatchCodec.encode(record);
+            ByteBuf recordBuf = record.encodedBuf();
             out.write(recordBuf.array(), recordBuf.arrayOffset(), recordBuf.readableBytes());
             recordBuf.release();
             blockSize += recordBuf.readableBytes();

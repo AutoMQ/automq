@@ -15,24 +15,43 @@
  * limitations under the License.
  */
 
-package kafka.log.s3;
+package kafka.log.s3.wal;
 
+import io.netty.buffer.ByteBuf;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 
-public class WalWriteRequest implements Comparable<WalWriteRequest> {
-    final FlatStreamRecordBatch record;
-    final long position;
-    final CompletableFuture<Void> cf;
+public class MemoryWriteAheadLog implements WriteAheadLog {
+    private final AtomicLong offsetAlloc = new AtomicLong();
 
-    public WalWriteRequest(FlatStreamRecordBatch record, long position, CompletableFuture<Void> cf) {
-        this.record = record;
-        this.position = position;
-        this.cf = cf;
+    @Override
+    public long startPosition() {
+        return 0;
     }
 
     @Override
-    public int compareTo(WalWriteRequest o) {
-        return record.compareTo(o.record);
+    public long endPosition() {
+        return 0;
+    }
+
+    @Override
+    public List<WalRecord> read() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public AppendResult append(ByteBuf data) {
+        AppendResult appendResult = new AppendResult();
+        appendResult.endPosition = offsetAlloc.getAndIncrement();
+        appendResult.future = CompletableFuture.completedFuture(null);
+        return appendResult;
+    }
+
+    @Override
+    public void trim(long position) {
+
     }
 }

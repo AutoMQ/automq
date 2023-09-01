@@ -27,7 +27,6 @@ import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.flatc.header.ErrorCode;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;
-import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.slf4j.Logger;
@@ -47,12 +46,11 @@ public class S3Stream implements Stream {
     private long startOffset;
     final AtomicLong confirmOffset;
     private final AtomicLong nextOffset;
-    private final Wal wal;
-    private final S3BlockCache blockCache;
+    private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Wal wal, S3BlockCache blockCache, StreamManager streamManager) {
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -60,8 +58,7 @@ public class S3Stream implements Stream {
         this.nextOffset = new AtomicLong(nextOffset);
         this.confirmOffset = new AtomicLong(nextOffset);
         this.status = new Status();
-        this.wal = wal;
-        this.blockCache = blockCache;
+        this.storage = storage;
         this.streamManager = streamManager;
     }
 
@@ -88,7 +85,7 @@ public class S3Stream implements Stream {
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
         StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch);
-        CompletableFuture<AppendResult> cf = wal.append(streamRecordBatch).thenApply(nil -> {
+        CompletableFuture<AppendResult> cf = storage.append(streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);
         });
@@ -119,7 +116,7 @@ public class S3Stream implements Stream {
                             String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
                     ));
         }
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
+        return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<RecordBatchWithContext> records = dataBlock.getRecords().stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
             return new DefaultFetchResult(records);
         });
@@ -138,6 +135,7 @@ public class S3Stream implements Stream {
     @Override
     public CompletableFuture<Void> close() {
         status.markClosed();
+        // TODO: force storage upload the stream data to s3
         return streamManager.closeStream(streamId, epoch);
     }
 

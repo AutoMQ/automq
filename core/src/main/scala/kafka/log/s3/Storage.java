@@ -17,6 +17,7 @@
 
 package kafka.log.s3;
 
+import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
@@ -24,14 +25,16 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Write ahead log for server.
  */
-public interface Wal {
+public interface Storage {
 
     /**
-     * Append stream record to wal.
+     * Append stream record.
      *
      * @param streamRecord {@link StreamRecordBatch}
      */
     CompletableFuture<Void> append(StreamRecordBatch streamRecord);
+
+    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
 
     void close();
 }

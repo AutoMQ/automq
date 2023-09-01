@@ -21,8 +21,6 @@ import com.automq.elasticstream.client.api.CreateStreamOptions;
 import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
-import kafka.log.s3.cache.S3BlockCache;
-import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.streams.StreamManager;
 
 import java.util.concurrent.CompletableFuture;
@@ -30,15 +28,11 @@ import java.util.concurrent.CompletableFuture;
 public class S3StreamClient implements StreamClient {
 
     private final StreamManager streamManager;
-    private final Wal wal;
-    private final S3BlockCache blockCache;
-    private final ObjectManager objectManager;
+    private final Storage storage;
 
-    public S3StreamClient(StreamManager streamManager, Wal wal, S3BlockCache blockCache, ObjectManager objectManager) {
+    public S3StreamClient(StreamManager streamManager, Storage storage) {
         this.streamManager = streamManager;
-        this.wal = wal;
-        this.blockCache = blockCache;
-        this.objectManager = objectManager;
+        this.storage = storage;
     }
 
     @Override
@@ -56,6 +50,6 @@ public class S3StreamClient implements StreamClient {
             thenApply(metadata -> new S3Stream(
                 metadata.getStreamId(), metadata.getEpoch(),
                 metadata.getStartOffset(), metadata.getNextOffset(),
-                wal, blockCache, streamManager));
+                    storage, streamManager));
     }
 }
