@@ -17,6 +17,7 @@
 
 package kafka.log.s3;
 
+import kafka.log.es.FutureUtil;
 import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.cache.S3BlockCache;
@@ -30,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -83,17 +85,19 @@ public class S3Storage implements Storage {
             // TODO: callback is out of order, we need reorder ack in stream dimension.
             // TODO: cache end offset update should consider log hollow.
             logConfirmOffset.getAndUpdate(operand -> Math.max(operand, appendResult.offset));
-            putToCache(writeRequest);
-            tryCallback();
+            handleAppendCallback(writeRequest);
         });
-        // log#append may success before add writeRequest to waitingLogConfirmedRequests, so we need tryCallback here.
-        tryCallback();
         return cf;
     }
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        // TODO: thread model to keep data safe.
+        CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
+        mainExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
+        return cf;
+    }
+
+    private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<FlatStreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
         if (!records.isEmpty()) {
             return CompletableFuture.completedFuture(new ReadDataBlock(StreamRecordBatchCodec.decode(records)));
@@ -110,14 +114,31 @@ public class S3Storage implements Storage {
         });
     }
 
-    private void tryCallback() {
-        if (processedLogConfirmOffset.get() == logConfirmOffset.get()) {
-            return;
-        }
-        mainExecutor.execute(this::tryCallback0);
+    @Override
+    public CompletableFuture<Void> forceUpload(long streamId) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        mainExecutor.execute(() -> {
+            Optional<LogCache.LogCacheBlock> blockOpt = logCache.archiveCurrentBlockIfContains(streamId);
+            if (blockOpt.isPresent()) {
+                blockOpt.ifPresent(logCacheBlock -> FutureUtil.propagate(uploadWALObject(logCacheBlock), cf));
+            } else {
+                cf.complete(null);
+            }
+        });
+        return cf;
     }
 
-    private void tryCallback0() {
+    private void handleAppendCallback(WalWriteRequest request) {
+        mainExecutor.execute(() -> {
+            putToCache(request);
+            if (processedLogConfirmOffset.get() == logConfirmOffset.get()) {
+                return;
+            }
+            tryCallback();
+        });
+    }
+
+    private void tryCallback() {
         long walConfirmOffset = this.logConfirmOffset.get();
         for (; ; ) {
             WalWriteRequest request = waitingLogConfirmedRequests.peek();
@@ -140,11 +161,13 @@ public class S3Storage implements Storage {
         }
     }
 
-    private void uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
-        backgroundExecutor.execute(() -> uploadWALObject0(logCacheBlock));
+    private CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        backgroundExecutor.execute(() -> uploadWALObject0(logCacheBlock, cf));
+        return cf;
     }
 
-    private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock) {
+    private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
         // TODO: pipeline the WAL object upload to accelerate the upload.
         try {
             WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), 16 * 1024 * 1024, objectManager, s3Operator);
@@ -153,8 +176,10 @@ public class S3Storage implements Storage {
             walObjectUploadTask.commit().get();
             log.trim(logCacheBlock.maxOffset());
             freeCache(logCacheBlock.blockId());
+            cf.complete(null);
         } catch (Throwable e) {
             LOGGER.error("unexpect upload wal object fail", e);
+            cf.completeExceptionally(e);
         }
     }
 

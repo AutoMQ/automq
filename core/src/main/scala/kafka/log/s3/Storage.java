@@ -36,5 +36,10 @@ public interface Storage {
 
     CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
 
+    /**
+     * Force stream record in WAL upload to s3
+     */
+    CompletableFuture<Void> forceUpload(long streamId);
+
     void close();
 }

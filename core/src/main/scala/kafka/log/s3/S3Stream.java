@@ -135,8 +135,7 @@ public class S3Stream implements Stream {
     @Override
     public CompletableFuture<Void> close() {
         status.markClosed();
-        // TODO: force storage upload the stream data to s3
-        return streamManager.closeStream(streamId, epoch);
+        return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
     @Override

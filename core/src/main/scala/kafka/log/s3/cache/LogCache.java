@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class LogCache {
@@ -72,6 +73,14 @@ public class LogCache {
         archiveBlocks.add(block);
         activeBlock = new LogCacheBlock(cacheBlockMaxSize);
         return block;
+    }
+
+    public Optional<LogCacheBlock> archiveCurrentBlockIfContains(long streamId) {
+        if (activeBlock.map.containsKey(streamId)) {
+            return Optional.of(archiveCurrentBlock());
+        } else {
+            return Optional.empty();
+        }
     }
 
     public void free(long blockId) {

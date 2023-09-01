@@ -20,15 +20,19 @@ package kafka.log.s3;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
+import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
+import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.wal.MemoryWriteAheadLog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -37,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -70,20 +75,19 @@ public class S3StorageTest {
         readRst = storage.read(233, 10, 13, 200).get();
         assertEquals(2, readRst.getRecords().size());
 
-        // TODO: add force upload to test commit wal object.
-
-//        ArgumentCaptor<CommitWalObjectRequest> commitArg = ArgumentCaptor.forClass(CommitWalObjectRequest.class);
-//        verify(objectManager).commitWalObject(commitArg.capture());
-//        CommitWalObjectRequest commitReq = commitArg.getValue();
-//        assertEquals(16L, commitReq.getObjectId());
-//        List<ObjectStreamRange> streamRanges = commitReq.getStreamRanges();
-//        assertEquals(2, streamRanges.size());
-//        assertEquals(233, streamRanges.get(0).getStreamId());
-//        assertEquals(10, streamRanges.get(0).getStartOffset());
-//        assertEquals(13, streamRanges.get(0).getEndOffset());
-//        assertEquals(234, streamRanges.get(1).getStreamId());
-//        assertEquals(100, streamRanges.get(1).getStartOffset());
-//        assertEquals(101, streamRanges.get(1).getEndOffset());
+        storage.forceUpload(233L).get();
+        ArgumentCaptor<CommitWALObjectRequest> commitArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
+        verify(objectManager).commitWALObject(commitArg.capture());
+        CommitWALObjectRequest commitReq = commitArg.getValue();
+        assertEquals(16L, commitReq.getObjectId());
+        List<ObjectStreamRange> streamRanges = commitReq.getStreamRanges();
+        assertEquals(2, streamRanges.size());
+        assertEquals(233, streamRanges.get(0).getStreamId());
+        assertEquals(10, streamRanges.get(0).getStartOffset());
+        assertEquals(13, streamRanges.get(0).getEndOffset());
+        assertEquals(234, streamRanges.get(1).getStreamId());
+        assertEquals(100, streamRanges.get(1).getStartOffset());
+        assertEquals(101, streamRanges.get(1).getEndOffset());
     }
 
     @Test
