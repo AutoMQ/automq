@@ -27,11 +27,25 @@ public class FutureUtil {
         cf.completeExceptionally(ex);
         return cf;
     }
+
     public static void suppress(Runnable run, Logger logger) {
         try {
             run.run();
         } catch (Throwable t) {
             logger.error("Suppress error", t);
         }
+    }
+
+    /**
+     * Propagate CompleteFuture result / error from source to dest.
+     */
+    public static <T> void propagate(CompletableFuture<T> source, CompletableFuture<T> dest) {
+        source.whenComplete((rst, ex) -> {
+            if (ex != null) {
+                dest.completeExceptionally(ex);
+            } else {
+                dest.complete(rst);
+            }
+        });
     }
 }
