@@ -92,7 +92,12 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        // TODO: thread model to keep data safe.
+        CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
+        mainExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
+        return cf;
+    }
+
+    private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<FlatStreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
         if (!records.isEmpty()) {
             return CompletableFuture.completedFuture(new ReadDataBlock(StreamRecordBatchCodec.decode(records)));
