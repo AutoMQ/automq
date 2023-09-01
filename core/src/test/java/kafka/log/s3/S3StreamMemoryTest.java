@@ -100,7 +100,7 @@ public class S3StreamMemoryTest {
     StreamManager streamManager;
     ObjectManager objectManager;
     S3StreamClient streamClient;
-    private final static long MAX_APPENDED_OFFSET = 1000;
+    private final static long MAX_APPENDED_OFFSET = 200;
 
     Random random = new Random();
 

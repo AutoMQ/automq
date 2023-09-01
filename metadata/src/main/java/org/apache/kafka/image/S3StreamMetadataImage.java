@@ -20,34 +20,43 @@ package org.apache.kafka.image;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.controller.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.StreamState;
 
 public class S3StreamMetadataImage {
 
     public static final S3StreamMetadataImage EMPTY =
-        new S3StreamMetadataImage(-1L, -1L, -1L, Map.of(), Map.of());
+        new S3StreamMetadataImage(S3StreamConstant.INVALID_STREAM_ID, S3StreamConstant.INIT_EPOCH, StreamState.CLOSED,
+            S3StreamConstant.INIT_RANGE_INDEX, S3StreamConstant.INIT_START_OFFSET, Map.of(), Map.of());
 
     private final long streamId;
 
     private final long epoch;
 
+    private final int rangeIndex;
+
     private final long startOffset;
+
+    private final StreamState state;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
 
     private final Map<Long/*objectId*/, S3StreamObject> streamObjects;
 
     public S3StreamMetadataImage(
-        long streamId,
-        long epoch,
+        long streamId, long epoch, StreamState state,
+        int rangeIndex,
         long startOffset,
         Map<Integer, RangeMetadata> ranges,
         Map<Long, S3StreamObject> streamObjects) {
         this.streamId = streamId;
         this.epoch = epoch;
+        this.state = state;
+        this.rangeIndex = rangeIndex;
         this.startOffset = startOffset;
         this.ranges = ranges;
         this.streamObjects = streamObjects;
@@ -56,6 +65,8 @@ public class S3StreamMetadataImage {
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(0, new S3StreamRecord()
             .setStreamId(streamId)
+            .setRangeIndex(rangeIndex)
+            .setStreamState(state.toByte())
             .setEpoch(epoch)
             .setStartOffset(startOffset));
         ranges.values().forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
@@ -87,6 +98,14 @@ public class S3StreamMetadataImage {
         return startOffset;
     }
 
+    public int rangeIndex() {
+        return rangeIndex;
+    }
+
+    public StreamState state() {
+        return state;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -98,6 +117,8 @@ public class S3StreamMetadataImage {
         S3StreamMetadataImage that = (S3StreamMetadataImage) o;
         return this.streamId == that.streamId &&
             this.epoch == that.epoch &&
+            this.state == that.state &&
+            this.rangeIndex == that.rangeIndex &&
             this.startOffset == that.startOffset &&
             this.ranges.equals(that.ranges) &&
             this.streamObjects.equals(that.streamObjects);
@@ -105,6 +126,6 @@ public class S3StreamMetadataImage {
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, epoch, startOffset, ranges, streamObjects);
+        return Objects.hash(streamId, epoch, state, rangeIndex, startOffset, ranges, streamObjects);
     }
 }

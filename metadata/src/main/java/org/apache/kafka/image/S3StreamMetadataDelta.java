@@ -17,7 +17,6 @@
 
 package org.apache.kafka.image;
 
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -30,15 +29,17 @@ import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.StreamState;
 
 public class S3StreamMetadataDelta {
+
     private final S3StreamMetadataImage image;
 
     private long streamId;
     private long newStartOffset;
     private long newEpoch;
-
-    private int activeRangeIndex = -1;
+    private StreamState currentState;
+    private int currentRangeIndex;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
@@ -50,28 +51,28 @@ public class S3StreamMetadataDelta {
         this.newEpoch = image.getEpoch();
         this.streamId = image.getStreamId();
         this.newStartOffset = image.getStartOffset();
-        this.activeRangeIndex = image.getRanges().keySet().stream().sorted(Comparator.reverseOrder()).findFirst().orElse(-1);
+        this.currentState = image.state();
+        this.currentRangeIndex = image.rangeIndex();
     }
+
     public void replay(S3StreamRecord record) {
         this.streamId = record.streamId();
         this.newEpoch = record.epoch();
         this.newStartOffset = record.startOffset();
+        this.currentState = StreamState.fromByte(record.streamState());
+        this.currentRangeIndex = record.rangeIndex();
     }
 
     public void replay(RangeRecord record) {
         changedRanges.put(record.rangeIndex(), RangeMetadata.of(record));
         // new add or update, so remove from removedRanges
         removedRanges.remove(record.rangeIndex());
-        this.activeRangeIndex = record.rangeIndex();
     }
 
     public void replay(RemoveRangeRecord record) {
         removedRanges.add(record.rangeIndex());
         // new remove, so remove from changedRanges
         changedRanges.remove(record.rangeIndex());
-        if (record.rangeIndex() == activeRangeIndex) {
-            activeRangeIndex = -1;
-        }
     }
 
     public void replay(S3StreamObjectRecord record) {
@@ -89,10 +90,10 @@ public class S3StreamMetadataDelta {
     public void replay(AdvanceRangeRecord record) {
         long startOffset = record.startOffset();
         long newEndOffset = record.endOffset();
-        // check active range
-        RangeMetadata metadata = this.changedRanges.get(activeRangeIndex);
+        // check current range
+        RangeMetadata metadata = this.changedRanges.get(currentRangeIndex);
         if (metadata == null) {
-            metadata = this.image.getRanges().get(activeRangeIndex);
+            metadata = this.image.getRanges().get(currentRangeIndex);
         }
         if (metadata == null) {
             // ignore it
@@ -103,7 +104,7 @@ public class S3StreamMetadataDelta {
             return;
         }
         // update the endOffset
-        this.changedRanges.put(activeRangeIndex, new RangeMetadata(
+        this.changedRanges.put(currentRangeIndex, new RangeMetadata(
             streamId, metadata.epoch(), metadata.rangeIndex(), metadata.startOffset(), newEndOffset, metadata.brokerId()
         ));
     }
@@ -119,7 +120,7 @@ public class S3StreamMetadataDelta {
         newS3StreamObjects.putAll(changedS3StreamObjects);
         // remove all removed stream-objects
         removedS3StreamObjectIds.forEach(newS3StreamObjects::remove);
-        return new S3StreamMetadataImage(streamId, newEpoch, newStartOffset, newRanges, newS3StreamObjects);
+        return new S3StreamMetadataImage(streamId, newEpoch, currentState, currentRangeIndex, newStartOffset, newRanges, newS3StreamObjects);
     }
 
 }

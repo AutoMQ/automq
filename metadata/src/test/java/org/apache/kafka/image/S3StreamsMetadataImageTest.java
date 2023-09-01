@@ -33,6 +33,7 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -120,7 +121,7 @@ public class S3StreamsMetadataImageTest {
             8L, new S3StreamObject(8, GB, STREAM0, 10L, 100L),
             9L, new S3StreamObject(9, GB, STREAM0, 200L, 300L),
             10L, new S3StreamObject(10, GB, STREAM0, 300L, 400L));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, 10, ranges, streamObjects);
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 4, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
             Map.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage));
 
