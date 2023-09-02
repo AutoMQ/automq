@@ -20,6 +20,7 @@ package kafka.log.es;
 import org.slf4j.Logger;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 public class FutureUtil {
     public static <T> CompletableFuture<T> failedFuture(Throwable ex) {
@@ -47,5 +48,14 @@ public class FutureUtil {
                 dest.complete(rst);
             }
         });
+    }
+
+    public static <T> CompletableFuture<T> exec(Supplier<CompletableFuture<T>> run, Logger logger, String name) {
+        try {
+            return run.get();
+        } catch (Throwable ex) {
+            logger.error("{} run with unexpected exception", name, ex);
+            return failedFuture(ex);
+        }
     }
 }

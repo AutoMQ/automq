@@ -45,7 +45,7 @@ public class S3Storage implements Storage {
     private final WriteAheadLog log;
     private final LogCache logCache;
     private final AtomicLong logConfirmOffset = new AtomicLong();
-    private final AtomicLong processedLogConfirmOffset = new AtomicLong();
+    private final AtomicLong processedLogConfirmOffset = new AtomicLong(-1L);
     private final ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main", false));
     private final ScheduledExecutorService backgroundExecutor = Executors.newSingleThreadScheduledExecutor(

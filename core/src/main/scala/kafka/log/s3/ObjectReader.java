@@ -19,21 +19,21 @@ package kafka.log.s3;
 
 import io.netty.buffer.ByteBuf;
 import kafka.log.s3.model.StreamRecordBatch;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.compress.ZstdFactory;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.CloseableIterator;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ObjectReader {
@@ -97,7 +97,7 @@ public class ObjectReader {
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
-                ByteBuf indexBlockBuf = objectTailBuf.slice(indexRelativePosition, indexBlockSize);
+                ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
                 int blockCount = indexBlockBuf.readInt();
                 ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
                 indexBlockBuf.skipBytes(blockCount * 16);

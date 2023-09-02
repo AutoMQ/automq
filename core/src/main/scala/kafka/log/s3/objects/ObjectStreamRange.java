@@ -62,4 +62,14 @@ public class ObjectStreamRange {
     public void setEndOffset(long endOffset) {
         this.endOffset = endOffset;
     }
+
+    @Override
+    public String toString() {
+        return "ObjectStreamRange{" +
+                "streamId=" + streamId +
+                ", epoch=" + epoch +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                '}';
+    }
 }

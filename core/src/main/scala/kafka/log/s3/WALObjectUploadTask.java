@@ -40,6 +40,7 @@ public class WALObjectUploadTask {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
+    private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
 
     public WALObjectUploadTask(Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap, int streamSplitSizeThreshold, ObjectManager objectManager, S3Operator s3Operator) {
@@ -62,9 +63,9 @@ public class WALObjectUploadTask {
         prepareCf.thenAccept(objectId -> {
             List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
             Collections.sort(streamIds);
-            CommitWALObjectRequest compactRequest = new CommitWALObjectRequest();
+            CommitWALObjectRequest request = new CommitWALObjectRequest();
 
-            ObjectWriter minorCompactObject = new ObjectWriter(objectId, s3Operator);
+            ObjectWriter walObject = new ObjectWriter(objectId, s3Operator);
 
             List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
 
@@ -75,29 +76,27 @@ public class WALObjectUploadTask {
                     streamObjectCfList.add(writeStreamObject(streamRecords));
                 } else {
                     for (FlatStreamRecordBatch record : streamRecords) {
-                        minorCompactObject.write(record);
+                        walObject.write(record);
                     }
                     long startOffset = streamRecords.get(0).baseOffset;
                     long endOffset = streamRecords.get(streamRecords.size() - 1).lastOffset();
-                    compactRequest.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
-                    // minor compact object block only contain single stream's data.
-                    minorCompactObject.closeCurrentBlock();
+                    request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
+                    // log object block only contain single stream's data.
+                    walObject.closeCurrentBlock();
                 }
             }
-            compactRequest.setObjectId(objectId);
-            compactRequest.setOrderId(objectId);
-            CompletableFuture<Void> minorCompactObjectCf = minorCompactObject.close().thenAccept(nil -> {
-                compactRequest.setObjectSize(minorCompactObject.size());
-            });
-            compactRequest.setObjectSize(minorCompactObject.size());
+            request.setObjectId(objectId);
+            request.setOrderId(objectId);
+            CompletableFuture<Void> walObjectCf = walObject.close().thenAccept(nil -> request.setObjectSize(walObject.size()));
             for (CompletableFuture<StreamObject> streamObjectCf : streamObjectCfList) {
-                streamObjectCf.thenAccept(compactRequest::addStreamObject);
+                streamObjectCf.thenAccept(request::addStreamObject);
             }
             List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
-            allCf.add(minorCompactObjectCf);
+            allCf.add(walObjectCf);
 
             CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
-                uploadCf.complete(compactRequest);
+                commitWALObjectRequest = request;
+                uploadCf.complete(request);
             }).exceptionally(ex -> {
                 uploadCf.completeExceptionally(ex);
                 return null;
@@ -107,7 +106,10 @@ public class WALObjectUploadTask {
     }
 
     public CompletableFuture<Void> commit() {
-        return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> null));
+        return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> {
+            LOGGER.debug("Commit WAL object {}", commitWALObjectRequest);
+            return null;
+        }));
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(List<FlatStreamRecordBatch> streamRecords) {

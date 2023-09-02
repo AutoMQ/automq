@@ -17,6 +17,8 @@
 
 package kafka.log.s3.objects;
 
+import java.util.Arrays;
+
 public class StreamObject {
     private long objectId;
     private long objectSize;
@@ -75,5 +77,17 @@ public class StreamObject {
 
     public void setSourceObjectIds(long[] sourceObjectIds) {
         this.sourceObjectIds = sourceObjectIds;
+    }
+
+    @Override
+    public String toString() {
+        return "StreamObject{" +
+                "objectId=" + objectId +
+                ", objectSize=" + objectSize +
+                ", streamId=" + streamId +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                ", sourceObjectIds=" + Arrays.toString(sourceObjectIds) +
+                '}';
     }
 }

@@ -105,6 +105,11 @@ public class ObjectWriterTest {
         assertEquals(1, blockIndexes.get(0).blockId());
     }
 
+    @Test
+    public void testWrite_closeBlock() {
+
+    }
+
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
         RecordBatch recordBatch = DefaultRecordBatch.of(count, payloadSize);
         return new StreamRecordBatch(streamId, 0, offset, recordBatch);
