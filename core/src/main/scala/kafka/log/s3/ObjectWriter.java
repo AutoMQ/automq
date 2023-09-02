@@ -77,7 +77,10 @@ public class ObjectWriter {
     public void closeCurrentBlock() {
         if (dataBlock != null) {
             dataBlock.close();
+            waitingUploadBlocks.add(dataBlock);
+            nextDataBlockPosition += dataBlock.size();
             dataBlock = null;
+            tryUploadPart();
         }
     }
 
@@ -98,11 +101,11 @@ public class ObjectWriter {
             dataBlock.close();
             nextDataBlockPosition += dataBlock.size();
             waitingUploadBlocks.add(dataBlock);
-            completedBlocks.add(dataBlock);
             dataBlock = null;
         }
         for (DataBlock block : waitingUploadBlocks) {
             buf.addComponent(true, block.buffer());
+            completedBlocks.add(block);
         }
         waitingUploadBlocks.clear();
         indexBlock = new IndexBlock();

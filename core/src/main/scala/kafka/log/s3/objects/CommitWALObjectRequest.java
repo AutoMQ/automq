@@ -94,4 +94,15 @@ public class CommitWALObjectRequest {
     public void setOrderId(long orderId) {
         this.orderId = orderId;
     }
+
+    @Override
+    public String toString() {
+        return "CommitWALObjectRequest{" +
+                "objectId=" + objectId +
+                ", objectSize=" + objectSize +
+                ", streamRanges=" + streamRanges +
+                ", streamObjects=" + streamObjects +
+                ", orderId=" + orderId +
+                '}';
+    }
 }

@@ -38,6 +38,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+import static kafka.log.es.FutureUtil.exec;
+
 public class S3Stream implements Stream {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
     private final String logIdent;
@@ -80,6 +82,10 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        return exec(() -> append0(recordBatch), LOGGER, "append");
+    }
+
+    private CompletableFuture<AppendResult> append0(RecordBatch recordBatch) {
         if (!status.isWritable()) {
             return FutureUtil.failedFuture(new ElasticStreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is not writable"));
         }
@@ -105,6 +111,10 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
+        return exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
+    }
+
+    private CompletableFuture<FetchResult> fetch0(long startOffset, long endOffset, int maxBytes) {
         if (status.isClosed()) {
             return FutureUtil.failedFuture(new ElasticStreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is already closed"));
         }
@@ -122,8 +132,13 @@ public class S3Stream implements Stream {
         });
     }
 
+
     @Override
     public CompletableFuture<Void> trim(long newStartOffset) {
+        return exec(() -> trim0(newStartOffset), LOGGER, "trim");
+    }
+
+    private CompletableFuture<Void> trim0(long newStartOffset) {
         if (newStartOffset < this.startOffset) {
             throw new IllegalArgumentException("newStartOffset[" + newStartOffset + "] cannot be less than current start offset["
                     + this.startOffset + "]");
@@ -132,14 +147,23 @@ public class S3Stream implements Stream {
         return streamManager.trimStream(streamId, epoch, newStartOffset);
     }
 
+
     @Override
     public CompletableFuture<Void> close() {
+        return exec(this::close0, LOGGER, "close");
+    }
+
+    private CompletableFuture<Void> close0() {
         status.markClosed();
         return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
     @Override
     public CompletableFuture<Void> destroy() {
+        return exec(this::destroy0, LOGGER, "destroy");
+    }
+
+    private CompletableFuture<Void> destroy0() {
         status.markDestroy();
         startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);

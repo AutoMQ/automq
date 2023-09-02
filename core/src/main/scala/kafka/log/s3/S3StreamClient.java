@@ -22,10 +22,15 @@ import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
 import kafka.log.s3.streams.StreamManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 
+import static kafka.log.es.FutureUtil.exec;
+
 public class S3StreamClient implements StreamClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
 
     private final StreamManager streamManager;
     private final Storage storage;
@@ -37,19 +42,20 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        return streamManager.createStream().thenCompose(streamId -> openStream0(streamId, options.epoch()));
+        return exec(() -> streamManager.createStream().thenCompose(streamId -> openStream0(streamId, options.epoch())),
+                LOGGER, "createAndOpenStream");
     }
 
     @Override
     public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
-        return openStream0(streamId, openStreamOptions.epoch());
+        return exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         return streamManager.openStream(streamId, epoch).
-            thenApply(metadata -> new S3Stream(
-                metadata.getStreamId(), metadata.getEpoch(),
-                metadata.getStartOffset(), metadata.getNextOffset(),
-                    storage, streamManager));
+                thenApply(metadata -> new S3Stream(
+                        metadata.getStreamId(), metadata.getEpoch(),
+                        metadata.getStartOffset(), metadata.getNextOffset(),
+                        storage, streamManager));
     }
 }

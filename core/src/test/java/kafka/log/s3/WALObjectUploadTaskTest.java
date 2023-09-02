@@ -24,6 +24,9 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.StreamObject;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
+import org.apache.kafka.common.utils.CloseableIterator;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -97,6 +100,31 @@ public class WALObjectUploadTaskTest {
         assertEquals(11, streamObject.getObjectId());
         assertEquals(10, streamObject.getStartOffset());
         assertEquals(16, streamObject.getEndOffset());
+
+        {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.WAL_LOOSE);
+            ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
+            ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get().get(0);
+            ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
+            try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
+                StreamRecordBatch record = it.next();
+                assertEquals(20, record.getBaseOffset());
+                record = it.next();
+                assertEquals(24, record.getLastOffset());
+            }
+        }
+
+        {
+            S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
+            ObjectReader objectReader = new ObjectReader(streamObjectMetadata, s3Operator);
+            ObjectReader.DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get().get(0);
+            ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
+            try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
+                assertEquals(10, it.next().getBaseOffset());
+                assertEquals(12, it.next().getBaseOffset());
+                assertEquals(14, it.next().getBaseOffset());
+            }
+        }
     }
 
 }
