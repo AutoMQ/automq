@@ -36,6 +36,8 @@ import java.util.concurrent.TimeUnit;
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
     private final Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap;
+    private final int objectBlockSize;
+    private final int objectPartSize;
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
@@ -43,8 +45,11 @@ public class WALObjectUploadTask {
     private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
 
-    public WALObjectUploadTask(Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap, int streamSplitSizeThreshold, ObjectManager objectManager, S3Operator s3Operator) {
+    public WALObjectUploadTask(Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold) {
         this.streamRecordsMap = streamRecordsMap;
+        this.objectBlockSize = objectBlockSize;
+        this.objectPartSize = objectPartSize;
         this.streamSplitSizeThreshold = streamSplitSizeThreshold;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -65,7 +70,7 @@ public class WALObjectUploadTask {
             Collections.sort(streamIds);
             CommitWALObjectRequest request = new CommitWALObjectRequest();
 
-            ObjectWriter walObject = new ObjectWriter(objectId, s3Operator);
+            ObjectWriter walObject = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
 
             List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
 
@@ -116,7 +121,7 @@ public class WALObjectUploadTask {
         CompletableFuture<Long> objectIdCf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
         // TODO: retry until success
         return objectIdCf.thenCompose(objectId -> {
-            ObjectWriter streamObjectWriter = new ObjectWriter(objectId, s3Operator);
+            ObjectWriter streamObjectWriter = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
             for (FlatStreamRecordBatch record : streamRecords) {
                 streamObjectWriter.write(record);
             }
