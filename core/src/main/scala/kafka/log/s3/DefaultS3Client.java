@@ -69,7 +69,7 @@ public class DefaultS3Client implements Client {
         this.streamManager = memoryMetadataManager;
         this.objectManager = memoryMetadataManager;
         this.blockCache = new DefaultS3BlockCache(objectManager, operator);
-        this.storage = new S3Storage(new MemoryWriteAheadLog(), objectManager, blockCache, operator);
+        this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage);
         this.kvClient = new KVClientImpl();
     }

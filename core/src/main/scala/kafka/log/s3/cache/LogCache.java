@@ -29,12 +29,12 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class LogCache {
-    private final int cacheBlockMaxSize;
+    private final long cacheBlockMaxSize;
     private final List<LogCacheBlock> archiveBlocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
 
-    public LogCache(int cacheBlockMaxSize) {
+    public LogCache(long cacheBlockMaxSize) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
     }
@@ -96,12 +96,12 @@ public class LogCache {
     public static class LogCacheBlock {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
         private final long blockId;
-        private final int maxSize;
+        private final long maxSize;
         private final Map<Long, List<FlatStreamRecordBatch>> map = new HashMap<>();
-        private int size = 0;
+        private long size = 0;
         private long confirmOffset;
 
-        public LogCacheBlock(int maxSize) {
+        public LogCacheBlock(long maxSize) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
             this.maxSize = maxSize;
         }

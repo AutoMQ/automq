@@ -25,6 +25,7 @@ import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.wal.WriteAheadLog;
+import kafka.server.KafkaConfig;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
+    private final KafkaConfig config;
     private final WriteAheadLog log;
     private final LogCache logCache;
     private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
@@ -57,9 +59,10 @@ public class S3Storage implements Storage {
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
 
-    public S3Storage(WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
+    public S3Storage(KafkaConfig config, WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
+        this.config = config;
         this.log = log;
-        this.logCache = new LogCache(512 * 1024 * 1024);
+        this.logCache = new LogCache(config.s3WALObjectSize());
         this.objectManager = objectManager;
         this.blockCache = blockCache;
         this.s3Operator = s3Operator;
@@ -145,7 +148,8 @@ public class S3Storage implements Storage {
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
         // TODO: pipeline the WAL object upload to accelerate the upload.
         try {
-            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), 16 * 1024 * 1024, objectManager, s3Operator);
+            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
+                    config.s3ObjectBlockSizeProp(), config.s3ObjectPartSizeProp(), config.s3StreamSplitSizeProp());
             walObjectUploadTask.prepare().get();
             walObjectUploadTask.upload().get();
             walObjectUploadTask.commit().get();

@@ -27,6 +27,8 @@ import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.wal.MemoryWriteAheadLog;
+import kafka.server.KafkaConfig;
+import kafka.utils.TestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -54,7 +56,7 @@ public class S3StorageTest {
     public void setup() {
         objectManager = mock(ObjectManager.class);
         S3Operator s3Operator = new MemoryS3Operator();
-        storage = new S3Storage(new MemoryWriteAheadLog(), objectManager, new DefaultS3BlockCache(objectManager, s3Operator), s3Operator);
+        storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(), objectManager, new DefaultS3BlockCache(objectManager, s3Operator), s3Operator);
     }
 
     @Test

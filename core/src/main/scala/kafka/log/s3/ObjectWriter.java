@@ -58,10 +58,6 @@ public class ObjectWriter {
         writer = s3Operator.writer(objectKey);
     }
 
-    public ObjectWriter(long objectId, S3Operator s3Operator) {
-        this(objectId, s3Operator, 16 * 1024 * 1024, 32 * 1024 * 1024);
-    }
-
     public void write(FlatStreamRecordBatch record) {
         if (dataBlock == null) {
             dataBlock = new DataBlock(nextDataBlockPosition);

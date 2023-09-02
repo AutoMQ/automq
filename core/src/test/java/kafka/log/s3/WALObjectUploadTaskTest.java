@@ -75,7 +75,7 @@ public class WALObjectUploadTaskTest {
                 FlatStreamRecordBatch.from(new StreamRecordBatch(234, 0, 22, DefaultRecordBatch.of(2, 128)))
         ));
 
-        walObjectUploadTask = new WALObjectUploadTask(map, 1000, objectManager, s3Operator);
+        walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024, 1000);
 
         walObjectUploadTask.prepare().get();
         walObjectUploadTask.upload().get();
