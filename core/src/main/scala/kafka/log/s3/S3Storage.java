@@ -29,23 +29,26 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
-    private final BlockingQueue<WalWriteRequest> waitingLogConfirmedRequests;
     private final WriteAheadLog log;
     private final LogCache logCache;
-    private final AtomicLong logConfirmOffset = new AtomicLong();
-    private final AtomicLong processedLogConfirmOffset = new AtomicLong(-1L);
+    private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
     private final ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main", false));
     private final ScheduledExecutorService backgroundExecutor = Executors.newSingleThreadScheduledExecutor(
@@ -55,7 +58,6 @@ public class S3Storage implements Storage {
     private final S3BlockCache blockCache;
 
     public S3Storage(WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
-        this.waitingLogConfirmedRequests = new ArrayBlockingQueue<>(16384);
         this.log = log;
         this.logCache = new LogCache(512 * 1024 * 1024);
         this.objectManager = objectManager;
@@ -76,17 +78,8 @@ public class S3Storage implements Storage {
         WriteAheadLog.AppendResult appendResult = log.append(flatStreamRecordBatch.encodedBuf.duplicate());
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(flatStreamRecordBatch, appendResult.offset, cf);
-        try {
-            waitingLogConfirmedRequests.put(writeRequest);
-        } catch (InterruptedException e) {
-            cf.completeExceptionally(e);
-        }
-        appendResult.future.thenAccept(nil -> {
-            // TODO: callback is out of order, we need reorder ack in stream dimension.
-            // TODO: cache end offset update should consider log hollow.
-            logConfirmOffset.getAndUpdate(operand -> Math.max(operand, appendResult.offset));
-            handleAppendCallback(writeRequest);
-        });
+        callbackSequencer.before(writeRequest);
+        appendResult.future.thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;
     }
 
@@ -130,35 +123,17 @@ public class S3Storage implements Storage {
 
     private void handleAppendCallback(WalWriteRequest request) {
         mainExecutor.execute(() -> {
-            putToCache(request);
-            if (processedLogConfirmOffset.get() == logConfirmOffset.get()) {
-                return;
+            List<WalWriteRequest> waitingAckRequests = callbackSequencer.after(request);
+            for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
+                if (logCache.put(waitingAckRequest.record)) {
+                    // cache block is full, trigger WAL object upload.
+                    logCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
+                    LogCache.LogCacheBlock logCacheBlock = logCache.archiveCurrentBlock();
+                    uploadWALObject(logCacheBlock);
+                }
+                waitingAckRequest.cf.complete(null);
             }
-            tryCallback();
         });
-    }
-
-    private void tryCallback() {
-        long walConfirmOffset = this.logConfirmOffset.get();
-        for (; ; ) {
-            WalWriteRequest request = waitingLogConfirmedRequests.peek();
-            if (request == null) break;
-            if (request.offset <= walConfirmOffset) {
-                waitingLogConfirmedRequests.poll();
-                request.cf.complete(null);
-            } else {
-                break;
-            }
-        }
-        processedLogConfirmOffset.set(walConfirmOffset);
-    }
-
-    private void putToCache(WalWriteRequest request) {
-        if (logCache.put(request.record, request.offset)) {
-            // cache block is full, trigger WAL object upload.
-            LogCache.LogCacheBlock logCacheBlock = logCache.archiveCurrentBlock();
-            uploadWALObject(logCacheBlock);
-        }
     }
 
     private CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
@@ -174,7 +149,7 @@ public class S3Storage implements Storage {
             walObjectUploadTask.prepare().get();
             walObjectUploadTask.upload().get();
             walObjectUploadTask.commit().get();
-            log.trim(logCacheBlock.maxOffset());
+            log.trim(logCacheBlock.confirmOffset());
             freeCache(logCacheBlock.blockId());
             cf.complete(null);
         } catch (Throwable e) {
@@ -185,5 +160,74 @@ public class S3Storage implements Storage {
 
     private void freeCache(long blockId) {
         mainExecutor.execute(() -> logCache.free(blockId));
+    }
+
+    static class WALCallbackSequencer {
+        public static final long NOOP_OFFSET = -1L;
+        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new ConcurrentHashMap<>();
+        private final BlockingQueue<WalWriteRequest> walRequests = new ArrayBlockingQueue<>(4096);
+        private long walConfirmOffset = NOOP_OFFSET;
+
+        /**
+         * Add request to stream sequence queue.
+         */
+        public void before(WalWriteRequest request) {
+            try {
+                walRequests.put(request);
+                Queue<WalWriteRequest> streamRequests = stream2requests.computeIfAbsent(request.record.streamId, s -> new LinkedBlockingQueue<>());
+                streamRequests.add(request);
+            } catch (InterruptedException ex) {
+                request.cf.completeExceptionally(ex);
+            }
+        }
+
+        /**
+         * Try pop sequence persisted request from stream queue and move forward wal inclusive confirm offset.
+         *
+         * @return popped sequence persisted request.
+         */
+        public List<WalWriteRequest> after(WalWriteRequest request) {
+            request.persisted = true;
+            // move the WAL inclusive confirm offset.
+            for (; ; ) {
+                WalWriteRequest peek = walRequests.peek();
+                if (peek == null || !peek.persisted) {
+                    break;
+                }
+                walRequests.poll();
+                walConfirmOffset = peek.offset;
+            }
+
+            // pop sequence success stream request.
+            long streamId = request.record.streamId;
+            Queue<WalWriteRequest> streamRequests = stream2requests.get(streamId);
+            WalWriteRequest peek = streamRequests.peek();
+            if (peek == null || peek.offset != request.offset) {
+                return Collections.emptyList();
+            }
+            List<WalWriteRequest> rst = new ArrayList<>();
+            rst.add(streamRequests.poll());
+            for (; ; ) {
+                peek = streamRequests.peek();
+                if (peek == null || !peek.persisted) {
+                    break;
+                }
+                rst.add(streamRequests.poll());
+            }
+            if (streamRequests.isEmpty()) {
+                stream2requests.computeIfPresent(streamId, (id, requests) -> requests.isEmpty() ? null : requests);
+            }
+            return rst;
+        }
+
+        /**
+         * Get WAL inclusive confirm offset.
+         *
+         * @return inclusive confirm offset.
+         */
+        public long getWALConfirmOffset() {
+            return walConfirmOffset;
+        }
+
     }
 }

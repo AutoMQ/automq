@@ -24,6 +24,7 @@ public class WalWriteRequest implements Comparable<WalWriteRequest> {
     final FlatStreamRecordBatch record;
     final long offset;
     final CompletableFuture<Void> cf;
+    boolean persisted;
 
     public WalWriteRequest(FlatStreamRecordBatch record, long offset, CompletableFuture<Void> cf) {
         this.record = record;
