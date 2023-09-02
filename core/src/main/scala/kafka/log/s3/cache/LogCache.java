@@ -32,14 +32,15 @@ public class LogCache {
     private final int cacheBlockMaxSize;
     private final List<LogCacheBlock> archiveBlocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
+    private long confirmOffset;
 
     public LogCache(int cacheBlockMaxSize) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
     }
 
-    public boolean put(FlatStreamRecordBatch recordBatch, long offset) {
-        return activeBlock.put(recordBatch, offset);
+    public boolean put(FlatStreamRecordBatch recordBatch) {
+        return activeBlock.put(recordBatch);
     }
 
     /**
@@ -70,6 +71,7 @@ public class LogCache {
 
     public LogCacheBlock archiveCurrentBlock() {
         LogCacheBlock block = activeBlock;
+        block.confirmOffset = confirmOffset;
         archiveBlocks.add(block);
         activeBlock = new LogCacheBlock(cacheBlockMaxSize);
         return block;
@@ -87,13 +89,17 @@ public class LogCache {
         archiveBlocks.removeIf(b -> b.blockId == blockId);
     }
 
+    public void setConfirmOffset(long confirmOffset) {
+        this.confirmOffset = confirmOffset;
+    }
+
     public static class LogCacheBlock {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
         private final long blockId;
         private final int maxSize;
         private final Map<Long, List<FlatStreamRecordBatch>> map = new HashMap<>();
         private int size = 0;
-        private long maxOffset;
+        private long confirmOffset;
 
         public LogCacheBlock(int maxSize) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
@@ -104,12 +110,11 @@ public class LogCache {
             return blockId;
         }
 
-        public boolean put(FlatStreamRecordBatch recordBatch, long offset) {
+        public boolean put(FlatStreamRecordBatch recordBatch) {
             List<FlatStreamRecordBatch> streamCache = map.computeIfAbsent(recordBatch.streamId, id -> new ArrayList<>());
             streamCache.add(recordBatch);
             int recordSize = recordBatch.encodedBuf.readableBytes();
             size += recordSize;
-            maxOffset = offset;
             return size >= maxSize;
         }
 
@@ -145,8 +150,8 @@ public class LogCache {
             return map;
         }
 
-        public long maxOffset() {
-            return maxOffset;
+        public long confirmOffset() {
+            return confirmOffset;
         }
 
     }
