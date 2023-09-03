@@ -65,7 +65,7 @@ public class ElasticLogFileRecords {
     private final AtomicLong committedOffset;
     // Inflight append result.
     private volatile CompletableFuture<?> lastAppend;
-    private boolean closed;
+    private volatile ElasticResourceStatus status;
 
 
     public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset, int size) {
@@ -84,7 +84,7 @@ public class ElasticLogFileRecords {
         this.lastAppend = CompletableFuture.completedFuture(null);
 
         batches = batchesFrom(baseOffset);
-        closed = false;
+        status = ElasticResourceStatus.OK;
 
     }
 
@@ -100,7 +100,7 @@ public class ElasticLogFileRecords {
         return nextOffset.get() - baseOffset;
     }
 
-    public Records read(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException {
+    public Records read(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException, IOException {
         if (ReadManualReleaseHint.isMarked()) {
             return readAll0(startOffset, maxOffset, maxSize);
         } else {
@@ -108,7 +108,7 @@ public class ElasticLogFileRecords {
         }
     }
 
-    private Records readAll0(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException {
+    private Records readAll0(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException, IOException {
         int readSize = 0;
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
@@ -131,9 +131,18 @@ public class ElasticLogFileRecords {
         return PooledMemoryRecords.of(fetchResults);
     }
 
+    /**
+     * Append records to segment.
+     * Note that lastOffset is the expected value of nextOffset after append. lastOffset = (the real last offset of the
+     * records) + 1
+     * @param records records to append
+     * @param lastOffset expected next offset after append
+     * @return the size of the appended records
+     * @throws IOException
+     */
     public int append(MemoryRecords records, long lastOffset) throws IOException {
-        if (closed) {
-            throw new IOException("Cannot append to a closed log segment");
+        if (!status.writable()) {
+            throw new IOException("Cannot append to a fenced log segment due to status " + status);
         }
         if (records.sizeInBytes() > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("Append of size " + records.sizeInBytes() +
@@ -145,7 +154,14 @@ public class ElasticLogFileRecords {
         CompletableFuture<?> cf = streamSegment.append(batch);
         nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
-        cf.thenAccept(rst -> updateCommittedOffset(lastOffset));
+        cf.whenComplete((rst, e) -> {
+            if (e == null) {
+                updateCommittedOffset(lastOffset);
+            } else if (e instanceof IOException) {
+                status = ElasticResourceStatus.FENCED;
+                LOGGER.error("ElasticLogFileRecords[stream={}, baseOffset={}] fencing with ex: {}", streamSegment.stream().streamId(), baseOffset, e.getMessage());
+            }
+        });
         lastAppend = cf;
         return appendSize;
     }
@@ -178,11 +194,11 @@ public class ElasticLogFileRecords {
     }
 
     public void close() {
-        closed = true;
+        status = ElasticResourceStatus.CLOSED;
     }
 
     public void closeHandlers() {
-        closed = true;
+        status = ElasticResourceStatus.CLOSED;
     }
 
     public FileRecords.TimestampAndOffset searchForTimestamp(long targetTimestamp, long startingOffset) {
@@ -375,7 +391,11 @@ public class ElasticLogFileRecords {
 
         @Override
         public int sizeInBytes() {
-            ensureAllLoaded();
+            try {
+                ensureAllLoaded();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
             return sizeInBytes;
         }
 
@@ -406,12 +426,12 @@ public class ElasticLogFileRecords {
             return memoryRecords.writeTo(channel, position, length);
         }
 
-        public long lastOffset() {
+        public long lastOffset() throws IOException {
             ensureAllLoaded();
             return lastOffset;
         }
 
-        private void ensureAllLoaded() {
+        private void ensureAllLoaded() throws IOException {
             if (sizeInBytes != -1) {
                 return;
             }

@@ -253,7 +253,14 @@ class ReplicaManager(val config: KafkaConfig,
         fatal(s"Halting broker because dir $newOfflineLogDir is offline")
         Exit.halt(1)
       }
-      handleLogDirFailure(newOfflineLogDir)
+      // elastic stream inject start
+      if (ElasticLogManager.enabled()) {
+        handlePartitionFailure(newOfflineLogDir)
+      } else {
+        handleLogDirFailure(newOfflineLogDir)
+      }
+      // elastic stream inject end
+
     }
   }
 
@@ -1945,6 +1952,44 @@ class ReplicaManager(val config: KafkaConfig,
     warn(s"Stopped serving replicas in dir $dir")
   }
 
+  // elastic stream inject start
+  def handlePartitionFailure(partitionDir: String): Unit = {
+    warn(s"Stopping serving partition $partitionDir")
+    replicaStateChangeLock synchronized {
+      val newOfflinePartitions = onlinePartitionsIterator.filter { partition =>
+        partition.log.exists {
+          _.dir.getAbsolutePath == partitionDir
+        }
+      }.map(_.topicPartition).toSet
+
+      val partitionsWithOfflineFutureReplica = onlinePartitionsIterator.filter { partition =>
+        partition.futureLog.exists {
+          _.dir.getAbsolutePath == partitionDir
+        }
+      }.toSet
+
+      replicaFetcherManager.removeFetcherForPartitions(newOfflinePartitions)
+      replicaAlterLogDirsManager.removeFetcherForPartitions(newOfflinePartitions ++ partitionsWithOfflineFutureReplica.map(_.topicPartition))
+
+      // These partitions should first be made offline to remove topic metrics.
+      newOfflinePartitions.foreach { topicPartition =>
+        markPartitionOffline(topicPartition)
+      }
+      newOfflinePartitions.map(_.topic).foreach { topic: String =>
+        maybeRemoveTopicMetrics(topic)
+      }
+      // Remove these partitions from the partition map finally.
+      allPartitions.removeAll(newOfflinePartitions)
+
+      warn(s"Broker $localBrokerId stopped fetcher for partition ${newOfflinePartitions.mkString(",")} and stopped moving logs " +
+          s"for partition ${partitionsWithOfflineFutureReplica.mkString(",")} because it is in the failed log directory $partitionDir.")
+    }
+    logManager.handlePartitionFailure(partitionDir)
+
+    warn(s"Stopped serving partition replicas in dir $partitionDir")
+  }
+  // elastic stream inject end
+
   def removeMetrics(): Unit = {
     removeMetric("LeaderCount")
     removeMetric("PartitionCount")
@@ -2142,6 +2187,7 @@ class ReplicaManager(val config: KafkaConfig,
     replicaStateChangeLock.synchronized {
       // Handle deleted partitions. We need to do this first because we might subsequently
       // create new partitions with the same names as the ones we are deleting here.
+      // elastic stream inject start
       if (!localChanges.deletes.isEmpty) {
         val deletes = localChanges.deletes.asScala.map(tp => (tp, true)).toMap
 
@@ -2175,16 +2221,19 @@ class ReplicaManager(val config: KafkaConfig,
         val lazyOffsetCheckpoints = new LazyOffsetCheckpoints(this.highWatermarkCheckpoints)
         val changedPartitions = new mutable.HashSet[Partition]
 
-        def doPartitionLeadingOrFollowing(): Unit = {
+        def doPartitionLeadingOrFollowing(onlyLeaderChange: Boolean): Unit = {
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
           if (!localChanges.leaders.isEmpty) {
             applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala)
           }
-          if (!localChanges.followers.isEmpty) {
-            applyLocalFollowersDelta(changedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala)
+          // skip becoming follower or adding log dir
+          if (!onlyLeaderChange) {
+            if (!localChanges.followers.isEmpty) {
+              applyLocalFollowersDelta(changedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.followers.asScala)
+            }
+            maybeAddLogDirFetchers(changedPartitions, lazyOffsetCheckpoints,
+              name => Option(newImage.topics().getTopic(name)).map(_.id()))
           }
-          maybeAddLogDirFetchers(changedPartitions, lazyOffsetCheckpoints,
-            name => Option(newImage.topics().getTopic(name)).map(_.id()))
 
           replicaFetcherManager.shutdownIdleFetcherThreads()
           replicaAlterLogDirsManager.shutdownIdleFetcherThreads()
@@ -2193,14 +2242,15 @@ class ReplicaManager(val config: KafkaConfig,
         if (ElasticLogManager.enabled()) {
           partitionOpenCloseExecutors.submit(new Runnable {
             override def run(): Unit = {
-              doPartitionLeadingOrFollowing()
+              doPartitionLeadingOrFollowing(true)
             }
           })
         } else {
-          doPartitionLeadingOrFollowing()
+          doPartitionLeadingOrFollowing(false)
         }
 
       }
+      // elastic stream inject end
     }
   }
 

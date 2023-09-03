@@ -15,11 +15,21 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client;
 
-import kafka.server.KafkaConfig;
+package kafka.log.es;
 
-public class Context {
-    public KafkaConfig config;
-    public boolean appendWithAsyncCallbacks;
+public enum ElasticResourceStatus {
+    FENCED(false),
+    CLOSED(false),
+    OK(true);
+
+    private final boolean writable;
+
+    ElasticResourceStatus(boolean writable) {
+        this.writable = writable;
+    }
+
+    public boolean writable() {
+        return writable;
+    }
 }

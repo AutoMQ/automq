@@ -25,7 +25,7 @@ import kafka.utils.TestUtils.checkEquals
 import kafka.utils.{MockTime, TestUtils}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record._
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{Time, Utils}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse}
 import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
 
@@ -86,13 +86,14 @@ class ElasticLogSegmentTest {
     def setup(): Unit = {
         segments.clear()
         logDir = TestUtils.tempDir()
-        ElasticLogManager.init(kafkaConfig, "fake_cluster_id")
+        ElasticLogManager.init(kafkaConfig, "fake_cluster_id", appendWithAsyncCallbacks = false)
     }
 
     @AfterEach
     def teardown(): Unit = {
         segments.values.foreach(_.close())
         ElasticLogManager.destroyLog(topicPartition, 0)
+        Utils.delete(logDir)
     }
 
     /**

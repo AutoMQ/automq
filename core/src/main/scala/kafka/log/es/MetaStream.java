@@ -22,6 +22,7 @@ import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -65,9 +67,9 @@ public class MetaStream implements Stream {
     private ScheduledFuture<?> trimFuture;
 
     /**
-     * closed is used to record if the stream is closed.
+     * closed is used to record if the stream is fenced.
      */
-    private volatile boolean closed;
+    private volatile boolean fenced;
 
     public MetaStream(Stream innerStream, ScheduledExecutorService trimScheduler, String logIdent) {
         this.innerStream = innerStream;
@@ -91,10 +93,9 @@ public class MetaStream implements Stream {
         return innerStream.nextOffset();
     }
 
-    @Deprecated
     @Override
     public CompletableFuture<AppendResult> append(RecordBatch batch) {
-        return append(MetaKeyValue.decode(batch.rawPayload()));
+        throw new UnsupportedOperationException("append record batch is not supported in meta stream");
     }
 
     public CompletableFuture<AppendResult> append(MetaKeyValue kv) {
@@ -103,6 +104,21 @@ public class MetaStream implements Stream {
             trimAsync();
             return result;
         });
+    }
+
+    public AppendResult appendSync(MetaKeyValue kv) throws IOException {
+        try {
+            return append(kv).get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) (e.getCause());
+            } else {
+                throw new RuntimeException(e.getCause());
+            }
+        }
+
     }
 
     /**
@@ -129,11 +145,11 @@ public class MetaStream implements Stream {
             trimFuture.cancel(true);
         }
         return innerStream.close()
-            .thenAccept(result -> closed = true);
+            .thenAccept(result -> fenced = true);
     }
 
-    public boolean isClosed() {
-        return closed;
+    public boolean isFenced() {
+        return fenced;
     }
 
     @Override
@@ -148,7 +164,7 @@ public class MetaStream implements Stream {
      * Replay meta stream and return a map of meta keyValues. KeyValues will be cached in metaCache.
      * @return meta keyValues map
      */
-    public Map<String, Object> replay() {
+    public Map<String, Object> replay() throws IOException {
         metaCache.clear();
 
         long startOffset = startOffset();
@@ -156,21 +172,33 @@ public class MetaStream implements Stream {
         long pos = startOffset;
         boolean done = false;
 
-        while (!done) {
-            FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).join();
-            for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
-                try {
-                    MetaKeyValue kv = MetaKeyValue.decode(context.rawPayload());
-                    metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
-                } catch (Exception e) {
-                    LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
+        try {
+            while (!done) {
+                FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
+                for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
+                    try {
+                        MetaKeyValue kv = MetaKeyValue.decode(context.rawPayload());
+                        metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
+                    } catch (Exception e) {
+                        LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
+                    }
+                    pos = context.lastOffset();
                 }
-                pos = context.lastOffset();
+                if (pos >= endOffset) {
+                    done = true;
+                }
             }
-            if (pos >= endOffset) {
-                done = true;
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof IOException) {
+                fenced = true;
+                throw (IOException) (e.getCause());
+            } else {
+                throw new RuntimeException(e.getCause());
             }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
+
         return getValidMetaMap();
     }
 

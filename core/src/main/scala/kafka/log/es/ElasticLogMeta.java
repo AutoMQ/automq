@@ -25,11 +25,13 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
 
 /**
  * logical meta data for a Kafka topicPartition.
  */
 public class ElasticLogMeta {
+    private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ElasticLogMeta.class);
     /**
      * KV map for segment file suffix -> streamId.
      */
@@ -48,6 +50,7 @@ public class ElasticLogMeta {
             String str = om.writeValueAsString(meta);
             return ByteBuffer.wrap(str.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException e) {
+            LOGGER.error("encode ElasticLogMeta {} failed", meta, e);
             throw new IllegalArgumentException(e);
         }
     }
@@ -58,7 +61,7 @@ public class ElasticLogMeta {
         try {
             return om.readValue(metaStr, ElasticLogMeta.class);
         } catch (JsonProcessingException e) {
-            // TODO: throw a better exception
+            LOGGER.error("decode ElasticLogMeta {} failed", metaStr, e);
             throw new RuntimeException(e);
         }
     }

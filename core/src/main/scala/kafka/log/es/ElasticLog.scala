@@ -24,15 +24,15 @@ import kafka.log.es.metrics.Timer
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
-import kafka.utils.{Logging, Scheduler}
+import kafka.utils.{CoreUtils, Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 
 import java.io.File
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import java.util.concurrent._
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.control.Breaks.{break, breakable}
@@ -101,6 +101,12 @@ class ElasticLog(val metaStream: MetaStream,
       persistLogMeta()
     }
   })
+
+  override protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+    LocalLog.maybeHandleIOException(logDirFailureChannel, _dir.getPath, msg) {
+      fun
+    }
+  }
 
   private def getLogStartOffsetFromMeta: Long = partitionMeta.getStartOffset
 
@@ -283,17 +289,28 @@ class ElasticLog(val metaStream: MetaStream,
     partitionMeta.setCleanedShutdown(true)
     partitionMeta.setStartOffset(logStartOffset)
     partitionMeta.setRecoverOffset(recoveryPoint)
-    persistPartitionMeta()
-    if (modified) {
-      // update log size
-      persistLogMeta()
-    }
 
     maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
+      persistPartitionMeta()
+      if (modified) {
+        // update log size
+        persistLogMeta()
+      }
       checkIfMemoryMappedBufferClosed()
       segments.close()
-      streamManager.close()
-      metaStream.close()
+      closeStreams()
+    }
+  }
+
+  /**
+   * Directly close all streams of the log. This method may throw IOException.
+   */
+  def closeStreams(): Unit = {
+    try{
+      CompletableFuture.allOf(streamManager.close(), metaStream.close()).get()
+    } catch {
+      case e: ExecutionException =>
+        throw e.getCause
     }
   }
 }
@@ -336,118 +353,140 @@ object ElasticLog extends Logging {
 
     // open meta stream
     val metaNotExists = kvList.get(0).value() == null
-    val metaStream = if (metaNotExists) {
-      val stream = createMetaStream(client, key, config.replicationFactor, leaderEpoch, logIdent = logIdent)
-      info(s"${logIdent}created a new meta stream: stream_id=${stream.streamId()}")
-      stream
-    } else {
-      val keyValue = kvList.get(0)
-      val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
-      // open partition meta stream
-      val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
-          .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
-          .get()
-      info(s"${logIdent}opened existing meta stream: stream_id=$metaStreamId")
-      stream
-    }
-    // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
-    val metaMap = metaStream.replay().asScala
 
+    var metaStream: MetaStream = null
+    var logStreamManager: ElasticLogStreamManager = null
 
-    // load meta info for this partition
-    val partitionMetaOpt = metaMap.get(MetaStream.PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
-    if (partitionMetaOpt.isEmpty) {
-      partitionMeta = new ElasticPartitionMeta(0, 0, 0)
-      persistMeta(metaStream, MetaKeyValue.of(MetaStream.PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
-    } else {
-      partitionMeta = partitionMetaOpt.get
-    }
-    info(s"${logIdent}loaded partition meta: $partitionMeta")
-
-    def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
-      metaMap.filter(kv => kv._1.startsWith(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX))
-        .map(kv => (kv._1.stripPrefix(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
-    }
-
-    //load producer snapshots for this partition
-    val producerSnapshotsMetaOpt = metaMap.get(MetaStream.PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta])
-    val (producerSnapshotsMeta, snapshotsMap) = if (producerSnapshotsMetaOpt.isEmpty) {
-      // No need to persist if not exists
-      (new ElasticPartitionProducerSnapshotsMeta(), new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
-    } else {
-      (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
-    }
-    if (snapshotsMap.nonEmpty) {
-      info(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
-    } else {
-      info(s"${logIdent}loaded no producer snapshots")
-    }
-
-    def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
-      val key = MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX + meta.getOffset
-      if (meta.isEmpty) {
-        // The real deletion of this snapshot is done in metaStream's compaction.
-        producerSnapshotsMeta.remove(meta.getOffset)
+    try {
+      metaStream = if (metaNotExists) {
+        val stream = createMetaStream(client, key, config.replicationFactor, leaderEpoch, logIdent = logIdent)
+        info(s"${logIdent}created a new meta stream: stream_id=${stream.streamId()}")
+        stream
       } else {
-        producerSnapshotsMeta.add(meta.getOffset)
-        persistMeta(metaStream, MetaKeyValue.of(key, meta.encode()))
+        val keyValue = kvList.get(0)
+        val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
+        // open partition meta stream
+        val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
+            .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+            .get()
+        info(s"${logIdent}opened existing meta stream: stream_id=$metaStreamId")
+        stream
       }
-      persistMeta(metaStream, MetaKeyValue.of(MetaStream.PRODUCER_SNAPSHOTS_META_KEY, producerSnapshotsMeta.encode()))
+      // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
+      val metaMap = metaStream.replay().asScala
+
+      // load meta info for this partition
+      val partitionMetaOpt = metaMap.get(MetaStream.PARTITION_META_KEY).map(m => m.asInstanceOf[ElasticPartitionMeta])
+      if (partitionMetaOpt.isEmpty) {
+        partitionMeta = new ElasticPartitionMeta(0, 0, 0)
+        persistMeta(metaStream, MetaKeyValue.of(MetaStream.PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
+      } else {
+        partitionMeta = partitionMetaOpt.get
+      }
+      info(s"${logIdent}loaded partition meta: $partitionMeta")
+
+      def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
+        metaMap.filter(kv => kv._1.startsWith(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX))
+            .map(kv => (kv._1.stripPrefix(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
+      }
+
+      //load producer snapshots for this partition
+      val producerSnapshotsMetaOpt = metaMap.get(MetaStream.PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta])
+      val (producerSnapshotsMeta, snapshotsMap) = if (producerSnapshotsMetaOpt.isEmpty) {
+        // No need to persist if not exists
+        (new ElasticPartitionProducerSnapshotsMeta(), new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
+      } else {
+        (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
+      }
+      if (snapshotsMap.nonEmpty) {
+        info(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
+      } else {
+        info(s"${logIdent}loaded no producer snapshots")
+      }
+
+      def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
+        val key = MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX + meta.getOffset
+        if (meta.isEmpty) {
+          // The real deletion of this snapshot is done in metaStream's compaction.
+          producerSnapshotsMeta.remove(meta.getOffset)
+        } else {
+          producerSnapshotsMeta.add(meta.getOffset)
+          persistMeta(metaStream, MetaKeyValue.of(key, meta.encode()))
+        }
+        persistMeta(metaStream, MetaKeyValue.of(MetaStream.PRODUCER_SNAPSHOTS_META_KEY, producerSnapshotsMeta.encode()))
+      }
+
+      val producerStateManager = ElasticProducerStateManager(topicPartition, dir,
+        maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
+
+      val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
+      logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
+      val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
+
+      val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent = logIdent)
+
+      // load LogSegments and recover log
+      val segments = new LogSegments(topicPartition)
+      val offsets = new ElasticLogLoader(
+        logMeta,
+        segments,
+        logSegmentManager,
+        streamSliceManager,
+        dir,
+        topicPartition,
+        config,
+        time,
+        hadCleanShutdown = partitionMeta.getCleanedShutdown,
+        logStartOffsetCheckpoint = partitionMeta.getStartOffset,
+        partitionMeta.getRecoverOffset,
+        leaderEpochCache = None,
+        producerStateManager = producerStateManager,
+        numRemainingSegments = numRemainingSegments,
+        createAndSaveSegmentFunc = createAndSaveSegment(logSegmentManager, logIdent = logIdent)).load()
+      info(s"${logIdent}loaded log meta: $logMeta")
+
+      // load leader epoch checkpoint
+      val leaderEpochCheckpointMetaOpt = metaMap.get(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY).map(m => m.asInstanceOf[ElasticLeaderEpochCheckpointMeta])
+      val leaderEpochCheckpointMeta = if (leaderEpochCheckpointMetaOpt.isEmpty) {
+        val newMeta = new ElasticLeaderEpochCheckpointMeta(LeaderEpochCheckpointFile.CurrentVersion, List.empty[EpochEntry].asJava)
+        // save right now.
+        persistMeta(metaStream, MetaKeyValue.of(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(newMeta.encode())))
+        newMeta
+      } else {
+        leaderEpochCheckpointMetaOpt.get
+      }
+      info(s"${logIdent}loaded leader epoch checkpoint with ${leaderEpochCheckpointMeta.entries.size} entries")
+      if (!leaderEpochCheckpointMeta.entries.isEmpty) {
+        val lastEntry = leaderEpochCheckpointMeta.entries.get(leaderEpochCheckpointMeta.entries.size - 1)
+        info(s"${logIdent}last leaderEpoch entry is: $lastEntry")
+      }
+
+      val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, logSegmentManager, partitionMeta, leaderEpochCheckpointMeta, dir, config,
+        segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, offsets.logStartOffset, leaderEpoch)
+      if (partitionMeta.getCleanedShutdown) {
+        // set cleanedShutdown=false before append, the mark will be set to true when gracefully close.
+        partitionMeta.setCleanedShutdown(false)
+        elasticLog.persistPartitionMeta()
+      }
+      elasticLog
+    } catch {
+      case e: Throwable =>
+        // We have to close streams here since this log has not been added to currentLogs yet. It will not be handled
+        // by LogDirFailureChannel.
+        CoreUtils.swallow({
+            if (metaStream != null) {
+                metaStream.close().get
+            }
+            if (logStreamManager != null) {
+                logStreamManager.close().get()
+            }
+            client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+            }, this)
+        error(s"${logIdent}failed to open elastic log, trying to close streams and delete key. Error msg: ${e.getMessage}")
+        throw e
     }
 
-    val producerStateManager = ElasticProducerStateManager(topicPartition, dir,
-      maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
 
-    val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-    val logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
-    val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
-
-    val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent = logIdent)
-
-    // load LogSegments and recover log
-    val segments = new LogSegments(topicPartition)
-    val offsets = new ElasticLogLoader(
-      logMeta,
-      segments,
-      logSegmentManager,
-      streamSliceManager,
-      dir,
-      topicPartition,
-      config,
-      time,
-      hadCleanShutdown = partitionMeta.getCleanedShutdown,
-      logStartOffsetCheckpoint = partitionMeta.getStartOffset,
-      partitionMeta.getRecoverOffset,
-      leaderEpochCache = None,
-      producerStateManager = producerStateManager,
-      numRemainingSegments = numRemainingSegments,
-      createAndSaveSegmentFunc = createAndSaveSegment(logSegmentManager, logIdent = logIdent)).load()
-    info(s"${logIdent}loaded log meta: $logMeta")
-
-    // load leader epoch checkpoint
-    val leaderEpochCheckpointMetaOpt = metaMap.get(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY).map(m => m.asInstanceOf[ElasticLeaderEpochCheckpointMeta])
-    val leaderEpochCheckpointMeta = if (leaderEpochCheckpointMetaOpt.isEmpty) {
-      val newMeta = new ElasticLeaderEpochCheckpointMeta(LeaderEpochCheckpointFile.CurrentVersion, List.empty[EpochEntry].asJava)
-      // save right now.
-      persistMeta(metaStream, MetaKeyValue.of(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY, ByteBuffer.wrap(newMeta.encode())))
-      newMeta
-    } else {
-      leaderEpochCheckpointMetaOpt.get
-    }
-    info(s"${logIdent}loaded leader epoch checkpoint with ${leaderEpochCheckpointMeta.entries.size} entries")
-    if (!leaderEpochCheckpointMeta.entries.isEmpty) {
-      val lastEntry = leaderEpochCheckpointMeta.entries.get(leaderEpochCheckpointMeta.entries.size - 1)
-      info(s"${logIdent}last leaderEpoch entry is: $lastEntry")
-    }
-
-    val elasticLog = new ElasticLog(metaStream, logStreamManager, streamSliceManager, producerStateManager, logSegmentManager, partitionMeta, leaderEpochCheckpointMeta, dir, config,
-      segments, offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, offsets.logStartOffset, leaderEpoch)
-    if (partitionMeta.getCleanedShutdown) {
-      // set cleanedShutdown=false before append, the mark will be set to true when gracefully close.
-      partitionMeta.setCleanedShutdown(false)
-      elasticLog.persistPartitionMeta()
-    }
-    elasticLog
   }
 
   /**
@@ -463,27 +502,32 @@ object ElasticLog extends Logging {
     val logIdent = s"[ElasticLog partition=$topicPartition] "
 
     val key = formatStreamKey(namespace, topicPartition)
-    val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
-    val keyValue = kvList.get(0)
-    val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
-    // First, open partition meta stream with higher epoch.
-    val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
-    info(s"$logIdent opened meta stream: stream_id=$metaStreamId, epoch=${currentEpoch + 1}")
-    // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
-    val metaMap = metaStream.replay().asScala
 
-    metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
-      // Then, destroy log stream, time index stream, txn stream, ...
-      // streamId <0 means the stream is not actually created.
-      logMeta.getStreamMap.values().forEach(streamId => if( streamId >= 0) {
-        openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
-        info(s"$logIdent destroyed stream: stream_id=$streamId, epoch=${currentEpoch + 1}")
+    try {
+      val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
+      val keyValue = kvList.get(0)
+      val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
+      // First, open partition meta stream with higher epoch.
+      val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
+      info(s"$logIdent opened meta stream: stream_id=$metaStreamId, epoch=${currentEpoch + 1}")
+      // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
+      val metaMap = metaStream.replay().asScala
+
+      metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
+        // Then, destroy log stream, time index stream, txn stream, ...
+        // streamId <0 means the stream is not actually created.
+        logMeta.getStreamMap.values().forEach(streamId => if (streamId >= 0) {
+          openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
+          info(s"$logIdent destroyed stream: stream_id=$streamId, epoch=${currentEpoch + 1}")
+        })
       })
-    })
 
-    // Finally, destroy meta stream and kv info.
-    metaStream.destroy()
-    client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+      // Finally, destroy meta stream.
+      metaStream.destroy()
+    } finally {
+        // remove kv info
+        client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+    }
 
     info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
   }
@@ -514,7 +558,7 @@ object ElasticLog extends Logging {
   }
 
   private def persistMeta(metaStream: MetaStream, metaKeyValue: MetaKeyValue): Unit = {
-    metaStream.append(metaKeyValue).get()
+    metaStream.appendSync(metaKeyValue)
   }
 
   /**

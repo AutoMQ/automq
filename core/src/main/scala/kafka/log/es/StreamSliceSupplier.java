@@ -17,6 +17,8 @@
 
 package kafka.log.es;
 
+import java.io.IOException;
+
 public class StreamSliceSupplier {
     private final ElasticStreamSliceManager streamSliceManager;
     private final String streamName;
@@ -28,7 +30,7 @@ public class StreamSliceSupplier {
         this.sliceRange = sliceRange;
     }
 
-    public ElasticStreamSlice get() {
+    public ElasticStreamSlice get() throws IOException {
         return streamSliceManager.loadOrCreateSlice(streamName, sliceRange);
     }
 
@@ -36,7 +38,7 @@ public class StreamSliceSupplier {
      * reset the slice to an open empty slice. This is used in segment index recovery.
      * @return a new open empty slice
      */
-    public ElasticStreamSlice reset() {
+    public ElasticStreamSlice reset() throws IOException {
         return streamSliceManager.newSlice(streamName);
     }
 

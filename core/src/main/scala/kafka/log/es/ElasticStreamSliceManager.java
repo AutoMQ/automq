@@ -19,6 +19,7 @@ package kafka.log.es;
 
 import com.automq.elasticstream.client.api.Stream;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -39,7 +40,7 @@ public class ElasticStreamSliceManager {
         return streamManager;
     }
 
-    public ElasticStreamSlice newSlice(String streamName) {
+    public ElasticStreamSlice newSlice(String streamName) throws IOException {
         // seal last segment with the same stream name when create new segment
         ElasticStreamSlice lastSegment = lastSlices.get(streamName);
         if (lastSegment != null) {
@@ -56,7 +57,7 @@ public class ElasticStreamSliceManager {
      * - when startOffset is NOOP_OFFSET, then seal last active slice and create new slice.
      * - when startOffset != NOOP_OFFSET, then load slice.
      */
-    public ElasticStreamSlice loadOrCreateSlice(String streamName, SliceRange sliceRange) {
+    public ElasticStreamSlice loadOrCreateSlice(String streamName, SliceRange sliceRange) throws IOException {
         check(sliceRange.start() >= Offsets.NOOP_OFFSET, "startOffset must be >= NOOP_OFFSET");
         check(sliceRange.end() >= Offsets.NOOP_OFFSET, "endOffset must be >= NOOP_OFFSET");
         if (sliceRange.start() == Offsets.NOOP_OFFSET) {

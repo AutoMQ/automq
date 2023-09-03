@@ -64,11 +64,13 @@ class ElasticLogManager(val client: Client) extends Logging{
   def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
     // Removal may have happened in partition's closure. This is a defensive work.
     elasticLogs.remove(topicPartition)
-    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
-      override def run(): Unit = {
-        ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
-      }
-    }, s"Failed to destroy elastic log for $topicPartition", this)
+    try {
+      ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+    } catch {
+      case e: Throwable =>
+        // Even though the elastic log failed to be destroyed, the metadata has been deleted in controllers.
+        warn(s"Failed to destroy elastic log for $topicPartition. But we will ignore this exception. ", e)
+    }
   }
 
   /**
@@ -111,7 +113,7 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
 
-  def init(config: KafkaConfig, clusterId: String): Boolean = {
+  def init(config: KafkaConfig, clusterId: String, appendWithAsyncCallbacks: Boolean = true): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
     }
@@ -121,6 +123,7 @@ object ElasticLogManager {
     }
     val context = new Context()
     context.config = config
+    context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context))) 
 
     val namespace = config.elasticStreamNamespace

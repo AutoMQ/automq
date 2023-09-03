@@ -23,6 +23,7 @@ import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -74,13 +75,15 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException {
+    public FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException, IOException {
         long fixedStartOffset = Utils.max(startOffset, 0);
         try {
             return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SlowFetchHintException) {
                 throw (SlowFetchHintException) (e.getCause());
+            } else if (e.getCause() instanceof IOException) {
+                throw (IOException) (e.getCause());
             } else {
                 throw new RuntimeException(e.getCause());
             }

@@ -195,7 +195,10 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, threadNamePrefix.getOrElse(""))
 
-      logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
+      // elastic stream inject start
+      val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
+      logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
+      // elastic stream inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 

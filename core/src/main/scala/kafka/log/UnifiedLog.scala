@@ -20,7 +20,7 @@ package kafka.log
 import com.yammer.metrics.core.MetricName
 
 import java.io.{File, IOException}
-import java.nio.file.Files
+import java.nio.file.{Files, Paths}
 import java.util.Optional
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
@@ -1890,17 +1890,19 @@ object UnifiedLog extends Logging {
                              logDirFailureChannel: LogDirFailureChannel,
                              topicId: Option[Uuid],
                              leaderEpoch: Long = 0): UnifiedLog = {
-    val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
-    val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
-    // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
-    // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
-    new ElasticUnifiedLog(localLog.logStartOffset,
-      localLog,
-      brokerTopicStats,
-      producerIdExpirationCheckIntervalMs,
-      _leaderEpochCache = leaderEpochFileCache,
-      localLog.producerStateManager,
-      topicId)
+    LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
+      val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
+      val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
+      // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
+      // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
+      new ElasticUnifiedLog(localLog.logStartOffset,
+        localLog,
+        brokerTopicStats,
+        producerIdExpirationCheckIntervalMs,
+        _leaderEpochCache = leaderEpochFileCache,
+        localLog.producerStateManager,
+        topicId)
+    }
   }
 
   def logFile(dir: File, offset: Long, suffix: String = ""): File = LocalLog.logFile(dir, offset, suffix)
@@ -2163,13 +2165,16 @@ object UnifiedLog extends Logging {
     val snapshotsToDelete = segments.flatMap { segment =>
       producerStateManager.removeAndMarkSnapshotForDeletion(segment.baseOffset)}
     def deleteProducerSnapshots(): Unit = {
+      // elastic stream inject start
+      val handlingDir = if (ElasticLogManager.enabled()) Paths.get(parentDir, topicPartition.toString).toString else parentDir
       LocalLog.maybeHandleIOException(logDirFailureChannel,
-        parentDir,
-        s"Error while deleting producer state snapshots for $topicPartition in dir $parentDir") {
+        handlingDir,
+        s"Error while deleting producer state snapshots for $topicPartition in dir $handlingDir") {
         snapshotsToDelete.foreach { snapshot =>
           snapshot.deleteIfExists()
         }
       }
+      // elastic stream inject end
     }
 
     if (asyncDelete)

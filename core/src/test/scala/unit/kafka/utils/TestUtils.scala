@@ -688,16 +688,21 @@ object TestUtils extends Logging {
     assertEquals(expectedLength, n)
   }
 
+  // elastic stream inject start
   /**
    * Throw an exception if the two iterators are of differing lengths or contain
    * different messages on their Nth element
    */
   def checkEquals[T](s1: java.util.Iterator[T], s2: java.util.Iterator[T]): Unit = {
-    while(s1.hasNext && s2.hasNext)
+    var count = 0
+    while(s1.hasNext && s2.hasNext) {
       assertEquals(s1.next, s2.next)
-    assertFalse(s1.hasNext, "Iterators have uneven length--first has more")
-    assertFalse(s2.hasNext, "Iterators have uneven length--second has more")
+      count += 1
+    }
+    assertFalse(s1.hasNext, s"Iterators have uneven length--first has more, count > $count")
+    assertFalse(s2.hasNext, s"Iterators have uneven length--second has more, count > $count")
   }
+  // elastic stream inject end
 
   def stackedIterator[T](s: Iterator[T]*): Iterator[T] = {
     new Iterator[T] {
