@@ -26,8 +26,8 @@ import java.util.concurrent.ScheduledExecutorService;
  * HeaderMetaMagicCode - 表示 HeaderMeta 的魔数
  * RecordMeta
  * - MagicCode - 表示 RecordMeta 的魔数
- * - RecordSize - 表示 Record 的大小
- * - RecordOffset - 表示 Record 的逻辑位置
+ * - RecordBodySize - 表示 Record 的大小
+ * - RecordBodyOffset - 表示 Record 的逻辑位置
  * - RecordBodyCRC - 表示 Record body 的 CRC
  * - RecordMetaCRC - 表示 RecordMeta 的 CRC
  */
@@ -45,8 +45,8 @@ import java.util.concurrent.ScheduledExecutorService;
  * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
  * Record 存储结构，每次写都以块大小对齐
  * - MagicCode [4B]
- * - RecordSize [4B]
- * - RecordOffset [8B]
+ * - RecordBodySize [4B]
+ * - RecordBodyOffset [8B]
  * - RecordBodyCRC [4B]
  * - RecordMetaCRC [4B]
  * - Record [ByteBuffer]
