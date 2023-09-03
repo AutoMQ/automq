@@ -1,4 +1,4 @@
-package com.automq.kafka.cloudstorage;
+package com.automq.kafka.cloudstorage.api;
 
 import com.google.common.util.concurrent.FutureCallback;
 
@@ -34,6 +34,42 @@ public interface FastWAL {
             return beginOffset;
         }
     }
+
+    interface AppendResult {
+        // 预分配好的 Reocord 存储的起始位置
+        long beginOffset();
+
+        int size();
+
+        class CallbackResult {
+            // Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
+            private final long pendingIOWindowMinOffset;
+            // 预分配好的 Reocord 存储的起始位置
+            private final long beginOffset;
+
+            // 预分配好的 Reocord 的大小
+            private final int size;
+
+            public CallbackResult(long pendingIOWindowMinOffset, long beginOffset, int size) {
+                this.pendingIOWindowMinOffset = pendingIOWindowMinOffset;
+                this.beginOffset = beginOffset;
+                this.size = size;
+            }
+
+            private long getPendingIOWindowMinOffset() {
+                return pendingIOWindowMinOffset;
+            }
+
+            private long getBeginOffset() {
+                return beginOffset;
+            }
+
+            private int getSize() {
+                return size;
+            }
+        }
+    }
+
 
     /**
      * 启动线程，加载元数据
