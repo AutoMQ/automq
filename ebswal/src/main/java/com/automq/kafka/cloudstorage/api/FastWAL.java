@@ -19,53 +19,53 @@ public interface FastWAL {
 
     class RecordEntity {
         private ByteBuffer record;
-        private long beginOffset;
+        private long recordBodyBeginOffset;
 
-        public RecordEntity(ByteBuffer record, long beginOffset) {
+        public RecordEntity(ByteBuffer record, long recordBodyBeginOffset) {
             this.record = record;
-            this.beginOffset = beginOffset;
+            this.recordBodyBeginOffset = recordBodyBeginOffset;
         }
 
         public ByteBuffer getRecord() {
             return record;
         }
 
-        public long getBeginOffset() {
-            return beginOffset;
+        public long getRecordBodyBeginOffset() {
+            return recordBodyBeginOffset;
         }
     }
 
     interface AppendResult {
-        // 预分配好的 Reocord 存储的起始位置
-        long beginOffset();
+        // 预分配好的 Reocord body 存储的起始位置
+        long recordBodyBeginOffset();
 
-        int size();
+        int recordBodySize();
 
         class CallbackResult {
             // Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
             private final long pendingIOWindowMinOffset;
             // 预分配好的 Reocord 存储的起始位置
-            private final long beginOffset;
+            private final long recordBodyBeginOffset;
 
             // 预分配好的 Reocord 的大小
-            private final int size;
+            private final int recordBodySize;
 
-            public CallbackResult(long pendingIOWindowMinOffset, long beginOffset, int size) {
+            public CallbackResult(long pendingIOWindowMinOffset, long recordBodyBeginOffset, int recordBodySize) {
                 this.pendingIOWindowMinOffset = pendingIOWindowMinOffset;
-                this.beginOffset = beginOffset;
-                this.size = size;
+                this.recordBodyBeginOffset = recordBodyBeginOffset;
+                this.recordBodySize = recordBodySize;
             }
 
             private long getPendingIOWindowMinOffset() {
                 return pendingIOWindowMinOffset;
             }
 
-            private long getBeginOffset() {
-                return beginOffset;
+            private long getRecordBodyBeginOffset() {
+                return recordBodyBeginOffset;
             }
 
-            private int getSize() {
-                return size;
+            private int getRecordBodySize() {
+                return recordBodySize;
             }
         }
     }
