@@ -16,16 +16,40 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 
 /**
- * Position - 表示块存储的物理位置
+ * [不需要持久化]Position - 表示块存储的物理位置
+ * [不需要持久化]RoundNum - 表示正在写第几轮，默认从第 0 轮开始
  * Offset - 表示 WAL 的逻辑位置
  * TrimOffset - 表示 WAL 的逻辑位置，小于此位置的数据已经被删除（实际上传到了 S3）
- * RoundNum - 表示正在写第几轮，默认从第 1 轮开始
- * pendingIOWindowMinOffset - Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
- * pendingIOWindowMaxSize - 表示 Pending IO Window 的最大大小
+ * PendingIOWindowMinOffset - Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
+ * PendingIOWindowNextWriteOffset - Pending IO Window 下一个要写的 Record 对应的 Offset
+ * PendingIOWindowMaxSize - 表示 Pending IO Window 的最大大小
  * HeaderMetaMagicCode - 表示 HeaderMeta 的魔数
- * RecordMetaMagicCode - 表示 RecordMeta 的魔数
- * RecordMetaRecordSize - 表示 Record 的大小
- * RecordMetaRecordCRC - 表示 Record 的 CRC
+ * RecordMeta
+ * - MagicCode - 表示 RecordMeta 的魔数
+ * - RecordSize - 表示 Record 的大小
+ * - RecordOffset - 表示 Record 的逻辑位置
+ * - RecordBodyCRC - 表示 Record body 的 CRC
+ * - RecordMetaCRC - 表示 RecordMeta 的 CRC
+ */
+
+/**
+ * Header 存储结构
+ * Header 1 [4K]
+ * - HeaderMetaMagicCode [4B]
+ * - TrimOffset [8B]
+ * - PendingIOWindowMaxSize [4B]
+ * - LastWriteTimestamp [8B]
+ * - NextWriteOffset [8B]
+ * - ShutdownGracefully [1B]
+ * Header 2 [4K]
+ * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
+ * Record 存储结构，每次写都以块大小对齐
+ * - MagicCode [4B]
+ * - RecordSize [4B]
+ * - RecordOffset [8B]
+ * - RecordBodyCRC [4B]
+ * - RecordMetaCRC [4B]
+ * - Record [ByteBuffer]
  */
 
 public class EBSFastWAL implements FastWAL {
