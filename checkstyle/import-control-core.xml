@@ -114,12 +114,16 @@
     </subpackage>
   </subpackage>
 
-  <subpackage name="metrics">
-    <allow pkg="kafka.metrics.cruisecontrol" />
+  <subpackage name="autobalancer">
+    <allow pkg="org.apache.commons" />
+    <allow pkg="kafka.autobalancer" />
     <allow pkg="kafka.server" />
-    <allow pkg="org.apache.kafka.clients" />
+    <allow pkg="kafka.cluster" />
+    <allow pkg="kafka.metrics" />
+    <allow pkg="org.apache.kafka" />
     <allow pkg="kafka.testkit" />
-    <allow pkg="org.apache.kafka.metadata" />
+    <allow pkg="kafka.test" />
     <allow pkg="org.apache.directory" />
+    <allow pkg="org.mockito" />
   </subpackage>
 </import-control>

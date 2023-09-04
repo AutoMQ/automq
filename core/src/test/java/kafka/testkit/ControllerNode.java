@@ -17,6 +17,10 @@
 
 package kafka.testkit;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
 public class ControllerNode implements TestKitNode {
     public static class Builder {
         private int id = -1;
@@ -45,10 +49,16 @@ public class ControllerNode implements TestKitNode {
 
     private final int id;
     private final String metadataDirectory;
+    private final Map<String, String> propertyOverrides;
 
     ControllerNode(int id, String metadataDirectory) {
+        this(id, metadataDirectory, Collections.emptyMap());
+    }
+
+    ControllerNode(int id, String metadataDirectory, Map<String, String> propertyOverrides) {
         this.id = id;
         this.metadataDirectory = metadataDirectory;
+        this.propertyOverrides = new HashMap<>(propertyOverrides);
     }
 
     @Override
@@ -59,5 +69,9 @@ public class ControllerNode implements TestKitNode {
     @Override
     public String metadataDirectory() {
         return metadataDirectory;
+    }
+
+    public Map<String, String> propertyOverrides() {
+        return propertyOverrides;
     }
 }

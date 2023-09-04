@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import kafka.autobalancer.AutoBalancerManager
+import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.cluster.Broker.ServerInfo
 import kafka.metrics.{KafkaMetricsGroup, LinuxIoMetricsCollector}
 import kafka.migration.MigrationPropagator
@@ -104,6 +106,7 @@ class ControllerServer(
   var controllerApis: ControllerApis = _
   var controllerApisHandlerPool: KafkaRequestHandlerPool = _
   var migrationSupport: Option[ControllerMigrationSupport] = None
+  var autoBalancerManager: AutoBalancerManager = _
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
@@ -281,6 +284,10 @@ class ControllerServer(
         s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
         DataPlaneAcceptor.ThreadPrefix)
 
+      if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
+        autoBalancerManager = new AutoBalancerManager(time, config, controller.asInstanceOf[QuorumController], raftManager.client)
+        autoBalancerManager.start()
+      }
       /**
        * Enable the controller endpoint(s). If we are using an authorizer which stores
        * ACLs in the metadata log, such as StandardAuthorizer, we will be able to start
@@ -307,6 +314,8 @@ class ControllerServer(
       // Ensure that we're not the Raft leader prior to shutting down our socket server, for a
       // smoother transition.
       sharedServer.ensureNotRaftLeader()
+      if (autoBalancerManager != null)
+        CoreUtils.swallow(autoBalancerManager.shutdown(), logging = this)
       if (socketServer != null)
         CoreUtils.swallow(socketServer.stopProcessingRequests(), this)
       migrationSupport.foreach(_.shutdown(this))

@@ -193,6 +193,9 @@ public class KafkaClusterTestKit implements AutoCloseable {
             if (brokerNode != null) {
                 props.putAll(brokerNode.propertyOverrides());
             }
+            if (controllerNode != null) {
+                props.putAll(controllerNode.propertyOverrides());
+            }
             return new KafkaConfig(props, false, Option.empty());
         }
 
