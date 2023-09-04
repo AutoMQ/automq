@@ -206,6 +206,7 @@ public class StreamControlManager {
             .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
             .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
         resp.setStreamId(streamId);
+        log.info("[CreateStream]: create stream {} success", streamId);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
@@ -288,6 +289,7 @@ public class StreamControlManager {
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
+        log.info("[OpenStream]: broker: {} open stream: {} with epoch: {} success", brokerId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -343,6 +345,7 @@ public class StreamControlManager {
                 .setRangeIndex(streamMetadata.currentRangeIndex())
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
+        log.info("[CloseStream]: broker: {} close stream: {} with epoch: {} success", brokerId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -410,6 +413,7 @@ public class StreamControlManager {
             long endOffset = obj.endOffset();
             records.add(new S3StreamObject(obj.objectId(), obj.objectSize(), streamId, startOffset, endOffset).toRecord());
         });
+        log.info("[CommitWALObject]: broker: {} commit wal object {} success", brokerId, objectId);
         return ControllerResult.atomicOf(records, resp);
     }
 
