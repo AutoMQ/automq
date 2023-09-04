@@ -11,8 +11,11 @@ import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.CRC32;
 
 /**
  * [不需要持久化]Position - 表示块存储的物理位置
@@ -106,8 +109,19 @@ public class EBSFastWAL implements FastWAL {
 
     private AsynchronousFileChannel fileChannel;
 
+    private AtomicLong slidingWindowNextWriteOffset = new AtomicLong(0);
+    private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
+    private AtomicLong trimOffset = new AtomicLong(0);
 
-    public EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath) {
+    private long contentSize = 1024 * 1024 * 1024 * 8;
+
+    private long refuseRequestWaterLevel = (long) (contentSize * 0.2);
+
+
+    private final int RecordMetaHeaderSize = 4 + 4 + 8 + 4 + 4;
+
+
+    private EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath) {
         this.scheduledExecutorService = scheduledExecutorService;
         this.executorService = executorService;
         this.devicePath = devicePath;
@@ -137,8 +151,57 @@ public class EBSFastWAL implements FastWAL {
 
     }
 
+    public static int crc32(byte[] array, int offset, int length) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(array, offset, length);
+        return (int) (crc32.getValue() & 0x7FFFFFFF);
+    }
+
     @Override
     public AppendResult append(ByteBuffer record, int crc) throws OverCapacityException {
+        // 生成 crc
+        int recordBodyCRC = crc;
+        if (recordBodyCRC == 0) {
+            recordBodyCRC = crc32(record.array(), record.position(), record.limit());
+        }
+
+        // 暴力处理，预留 20% 的空间。
+        // TODO: 优化
+        if ((slidingWindowNextWriteOffset.get() - trimOffset.get()) < refuseRequestWaterLevel) {
+            throw new OverCapacityException(String.format("The ebs wal will soon be full, slidingWindowNextWriteOffset [%d], trimOffset [%d], refuseRequestWaterLevel [%d]", //
+                    slidingWindowNextWriteOffset.get(), trimOffset.get(), refuseRequestWaterLevel));
+        }
+
+        // 滑动窗口如果超限，需要扩容
+
+        // 计算写入 wal offset
+        long lastWriteOffset = 0;
+        long expectedWriteOffset = 0;
+        do {
+            lastWriteOffset = slidingWindowNextWriteOffset.get();
+            expectedWriteOffset = lastWriteOffset % BlockSize == 0  //
+                    ? lastWriteOffset //
+                    : lastWriteOffset + BlockSize - lastWriteOffset % BlockSize;
+        } while (!slidingWindowNextWriteOffset.compareAndSet(lastWriteOffset, expectedWriteOffset));
+
+
+        AppendResult appendResult = new AppendResult() {
+            @Override
+            public long walOffset() {
+                return 0;
+            }
+
+            @Override
+            public int length() {
+                return 0;
+            }
+
+            @Override
+            public CompletableFuture<CallbackResult> future() {
+                return null;
+            }
+        };
+
         return null;
     }
 
@@ -149,7 +212,7 @@ public class EBSFastWAL implements FastWAL {
 
     @Override
     public void trim(long offset) {
-
+        trimOffset.set(offset);
     }
 }
 
