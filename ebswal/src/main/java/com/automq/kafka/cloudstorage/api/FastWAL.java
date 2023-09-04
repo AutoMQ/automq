@@ -35,8 +35,6 @@ public interface FastWAL {
             long slidingWindowMinOffset();
 
             AppendResult appendResult();
-
-
         }
     }
 
