@@ -75,7 +75,7 @@ public interface FastWAL {
      * @throws OverCapacityException
      */
     AppendResult append(ByteBuffer record, //
-                        int crc //
+                        int crc // 如果 crc == 0，表示需要重新计算 crc
     ) throws OverCapacityException;
 
 
