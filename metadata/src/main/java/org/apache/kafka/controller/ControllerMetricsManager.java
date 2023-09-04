@@ -146,6 +146,23 @@ final class ControllerMetricsManager {
             case REMOVE_ACCESS_CONTROL_ENTRY_RECORD:
             case NO_OP_RECORD:
             case ZK_MIGRATION_STATE_RECORD:
+            // Kafka on S3 inject start
+            case S3_STREAM_RECORD:
+            case REMOVE_S3_STREAM_RECORD:
+            case RANGE_RECORD:
+            case REMOVE_RANGE_RECORD:
+            case S3_STREAM_OBJECT_RECORD:
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+            case WALOBJECT_RECORD:
+            case REMOVE_WALOBJECT_RECORD:
+            case S3_OBJECT_RECORD:
+            case REMOVE_S3_OBJECT_RECORD:
+            case ASSIGNED_STREAM_ID_RECORD:
+            case ASSIGNED_S3_OBJECT_ID_RECORD:
+            case BROKER_WALMETADATA_RECORD:
+            case REMOVE_BROKER_WALMETADATA_RECORD:
+            case ADVANCE_RANGE_RECORD:
+            // Kafka on S3 inject end
                 // These record types do not affect metrics
                 break;
             default:

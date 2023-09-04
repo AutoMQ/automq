@@ -30,6 +30,7 @@ public class ClientFactory {
         String region = context.config.s3Region();
         String bucket = context.config.s3Bucket();
         S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket);
-        return new AlwaysSuccessClient(new DefaultS3Client(context.brokerServer, context.config, s3Operator));
+        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config, s3Operator);
+        return new AlwaysSuccessClient(client);
     }
 }

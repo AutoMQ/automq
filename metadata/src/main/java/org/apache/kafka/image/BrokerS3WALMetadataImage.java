@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -66,5 +67,15 @@ public class BrokerS3WALMetadataImage {
 
     public int getBrokerId() {
         return brokerId;
+    }
+
+    @Override
+    public String toString() {
+        return "BrokerS3WALMetadataImage{" +
+            "brokerId=" + brokerId +
+            ", s3WalObjects=" + s3WalObjects.stream()
+            .map(wal -> wal.toString())
+            .collect(Collectors.joining(", ")) +
+            '}';
     }
 }

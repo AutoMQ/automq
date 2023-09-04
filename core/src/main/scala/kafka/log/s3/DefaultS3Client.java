@@ -23,22 +23,20 @@ import com.automq.elasticstream.client.api.StreamClient;
 import kafka.log.es.MemoryClient.KVClientImpl;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
-import kafka.log.s3.memory.MemoryMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.objects.ControllerObjectManager;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
+import kafka.log.s3.streams.ControllerStreamManager;
 import kafka.log.s3.streams.StreamManager;
 import kafka.log.s3.wal.MemoryWriteAheadLog;
 import kafka.server.BrokerServer;
-import kafka.server.BrokerToControllerChannelManager;
 import kafka.server.KafkaConfig;
 
 public class DefaultS3Client implements Client {
 
     private final KafkaConfig config;
-//    private final StreamMetadataManager metadataManager;
-
-    private final BrokerToControllerChannelManager channelManager;
+    private final StreamMetadataManager metadataManager;
 
     private final ControllerRequestSender requestSender;
 
@@ -58,16 +56,11 @@ public class DefaultS3Client implements Client {
 
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig config, S3Operator operator) {
         this.config = config;
-        this.channelManager = brokerServer.clientToControllerChannelManager();
-//        this.metadataManager = new StreamMetadataManager(brokerServer, config);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config);
         this.operator = operator;
-        this.requestSender = new ControllerRequestSender(channelManager);
-//        this.streamManager = new ControllerStreamManager(this.requestSender, config);
-//        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
-        MemoryMetadataManager memoryMetadataManager = new MemoryMetadataManager();
-        memoryMetadataManager.start();
-        this.streamManager = memoryMetadataManager;
-        this.objectManager = memoryMetadataManager;
+        this.requestSender = new ControllerRequestSender(brokerServer);
+        this.streamManager = new ControllerStreamManager(this.requestSender, config);
+        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(objectManager, operator);
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage);

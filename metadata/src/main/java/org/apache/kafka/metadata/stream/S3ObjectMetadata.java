@@ -23,11 +23,6 @@ public class S3ObjectMetadata {
     private long objectSize;
     private final S3ObjectType type;
 
-    public S3ObjectMetadata(long objectId, S3ObjectType type) {
-        this.objectId = objectId;
-        this.type = type;
-    }
-
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
         this.objectId = objectId;
         this.objectSize = objectSize;

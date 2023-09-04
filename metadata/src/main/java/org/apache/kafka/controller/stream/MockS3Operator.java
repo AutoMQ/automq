@@ -28,11 +28,14 @@ public class MockS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Boolean> delete(String objectKey) {
-        return delele(new String[]{objectKey});
+        return delele(new String[] {objectKey});
     }
 
     @Override
     public CompletableFuture<Boolean> delele(String[] objectKeys) {
-        return CompletableFuture.completedFuture(false);
+        for (String objectKey : objectKeys) {
+            objects.remove(objectKey);
+        }
+        return CompletableFuture.completedFuture(true);
     }
 }

@@ -21,6 +21,7 @@ import com.automq.elasticstream.client.api.Client
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.client.{ClientFactoryProxy, Context}
+import kafka.log.s3.DefaultS3Client
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.Scheduler
 import org.apache.kafka.common.TopicPartition
@@ -82,7 +83,7 @@ class ElasticLogManager(val client: Client) {
 object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
-
+  var DEFAULT_CLIENT: Option[DefaultS3Client] = None
   def init(broker: BrokerServer, config: KafkaConfig, clusterId: String): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false

@@ -318,4 +318,15 @@ public final class S3StreamsMetadataImage {
     public long nextAssignedStreamId() {
         return nextAssignedStreamId;
     }
+
+    @Override
+    public String toString() {
+        return "S3StreamsMetadataImage{" +
+            "nextAssignedStreamId=" + nextAssignedStreamId +
+            ", streamsMetadata=" + streamsMetadata.entrySet().stream().
+            map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
+            ", brokerWALMetadata=" + brokerWALMetadata.entrySet().stream().
+            map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
+            '}';
+    }
 }

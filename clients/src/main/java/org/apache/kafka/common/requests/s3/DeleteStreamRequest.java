@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -61,5 +63,10 @@ public class DeleteStreamRequest extends AbstractRequest {
     @Override
     public DeleteStreamRequestData data() {
         return data;
+    }
+
+    public static DeleteStreamRequest parse(ByteBuffer buffer, short version) {
+        return new DeleteStreamRequest(new DeleteStreamRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
 }

@@ -161,4 +161,15 @@ public final class S3StreamsMetadataDelta {
         return new S3StreamsMetadataImage(currentAssignedStreamId, newStreams, newBrokerStreams);
     }
 
+    @Override
+    public String toString() {
+        return "S3StreamsMetadataDelta{" +
+            "image=" + image +
+            ", currentAssignedStreamId=" + currentAssignedStreamId +
+            ", changedStreams=" + changedStreams +
+            ", changedBrokers=" + changedBrokers +
+            ", deletedStreams=" + deletedStreams +
+            ", deletedBrokers=" + deletedBrokers +
+            '}';
+    }
 }

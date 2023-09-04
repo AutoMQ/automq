@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -29,7 +31,7 @@ public class PrepareS3ObjectRequest extends AbstractRequest {
 
         private final PrepareS3ObjectRequestData data;
         public Builder(PrepareS3ObjectRequestData data) {
-            super(ApiKeys.DELETE_STREAM);
+            super(ApiKeys.PREPARE_S3_OBJECT);
             this.data = data;
         }
 
@@ -62,6 +64,11 @@ public class PrepareS3ObjectRequest extends AbstractRequest {
     @Override
     public PrepareS3ObjectRequestData data() {
         return data;
+    }
+
+    public static PrepareS3ObjectRequest parse(ByteBuffer buffer, short version) {
+        return new PrepareS3ObjectRequest(new PrepareS3ObjectRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
     
 }

@@ -199,29 +199,6 @@ class BrokerServer(
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
-      val controllerNodes = RaftConfig.voterConnectionsToNodes(sharedServer.controllerQuorumVotersFuture.get()).asScala
-
-      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
-      // elastic stream inject start
-      clientToControllerChannelManager = BrokerToControllerChannelManager(
-        controllerNodeProvider,
-        time,
-        metrics,
-        config,
-        channelName = "forwarding",
-        threadNamePrefix,
-        retryTimeoutMs = 60000
-      )
-
-      if (config.elasticStreamEnabled) {
-        if (!ElasticLogManager.init(this, config, clusterId)) {
-          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
-        }
-      } else {
-        warn("Elastic stream is disabled. This node will store data locally.")
-      }
-      // elastic stream inject end
-
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
       logManager = LogManager(config, initialOfflineDirs, metadataCache, kafkaScheduler, time,
@@ -231,6 +208,19 @@ class BrokerServer(
       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.
       tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
       credentialProvider = new CredentialProvider(ScramMechanism.mechanismNames, tokenCache)
+
+      val controllerNodes = RaftConfig.voterConnectionsToNodes(sharedServer.controllerQuorumVotersFuture.get()).asScala
+      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
+
+      clientToControllerChannelManager = BrokerToControllerChannelManager(
+        controllerNodeProvider,
+        time,
+        metrics,
+        config,
+        channelName = "forwarding",
+        threadNamePrefix,
+        retryTimeoutMs = 60000
+      )
 
       clientToControllerChannelManager.start()
       forwardingManager = new ForwardingManagerImpl(clientToControllerChannelManager)
@@ -331,6 +321,17 @@ class BrokerServer(
         metadataSnapshotter,
         sharedServer.brokerMetrics,
         sharedServer.metadataLoaderFaultHandler)
+
+      // elastic stream inject start
+
+      if (config.elasticStreamEnabled) {
+        if (!ElasticLogManager.init(this, config, clusterId)) {
+          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
+        }
+      } else {
+        warn("Elastic stream is disabled. This node will store data locally.")
+      }
+      // elastic stream inject end
 
       val networkListeners = new ListenerCollection()
       config.effectiveAdvertisedListeners.foreach { ep =>

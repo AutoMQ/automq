@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -62,6 +64,11 @@ public class CommitWALObjectRequest extends AbstractRequest {
     @Override
     public CommitWALObjectRequestData data() {
         return data;
+    }
+
+    public static CommitWALObjectRequest parse(ByteBuffer buffer, short version) {
+        return new CommitWALObjectRequest(new CommitWALObjectRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
 
 }

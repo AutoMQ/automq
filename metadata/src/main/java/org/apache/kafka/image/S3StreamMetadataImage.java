@@ -19,6 +19,7 @@ package org.apache.kafka.image;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.controller.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.RangeMetadata;
@@ -127,5 +128,19 @@ public class S3StreamMetadataImage {
     @Override
     public int hashCode() {
         return Objects.hash(streamId, epoch, state, rangeIndex, startOffset, ranges, streamObjects);
+    }
+
+    @Override
+    public String toString() {
+        return "S3StreamMetadataImage{" +
+            "streamId=" + streamId +
+            ", epoch=" + epoch +
+            ", rangeIndex=" + rangeIndex +
+            ", startOffset=" + startOffset +
+            ", state=" + state +
+            ", ranges=" + ranges +
+            ", streamObjects=" + streamObjects.entrySet().stream().
+            map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
+            '}';
     }
 }

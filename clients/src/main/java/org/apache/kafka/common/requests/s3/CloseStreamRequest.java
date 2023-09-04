@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
@@ -62,5 +64,10 @@ public class CloseStreamRequest extends AbstractRequest {
     @Override
     public CloseStreamRequestData data() {
         return data;
+    }
+
+    public static CloseStreamRequest parse(ByteBuffer buffer, short version) {
+        return new CloseStreamRequest(new CloseStreamRequestData(
+            new ByteBufferAccessor(buffer), version), version);
     }
 }

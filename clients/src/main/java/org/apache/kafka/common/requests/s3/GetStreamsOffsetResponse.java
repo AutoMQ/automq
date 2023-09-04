@@ -17,9 +17,11 @@
 
 package org.apache.kafka.common.requests.s3;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
@@ -49,5 +51,10 @@ public class GetStreamsOffsetResponse extends AbstractResponse {
     @Override
     public void maybeSetThrottleTimeMs(int throttleTimeMs) {
         data.setThrottleTimeMs(throttleTimeMs);
+    }
+
+    public static GetStreamsOffsetResponse parse(ByteBuffer buffer, short version) {
+        return new GetStreamsOffsetResponse(new GetStreamsOffsetResponseData(
+            new ByteBufferAccessor(buffer), version));
     }
 }
