@@ -202,20 +202,10 @@ class BrokerServer(
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
-      // elastic stream inject start
-      if (config.elasticStreamEnabled) {
-        if (!ElasticLogManager.init(config, clusterId)) {
-          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
-        }
-      } else {
-        warn("Elastic stream is disabled. This node will store data locally.")
-      }
-      // elastic stream inject end
-
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
       logManager = LogManager(config, initialOfflineDirs, metadataCache, kafkaScheduler, time,
-        brokerTopicStats, logDirFailureChannel, keepPartitionMetadataFile = true)
+      brokerTopicStats, logDirFailureChannel, keepPartitionMetadataFile = true)
 
       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.
@@ -234,6 +224,7 @@ class BrokerServer(
         threadNamePrefix,
         retryTimeoutMs = 60000
       )
+
       clientToControllerChannelManager.start()
       forwardingManager = new ForwardingManagerImpl(clientToControllerChannelManager)
 
@@ -333,6 +324,17 @@ class BrokerServer(
         metadataSnapshotter,
         sharedServer.brokerMetrics,
         sharedServer.metadataLoaderFaultHandler)
+
+      // elastic stream inject start
+
+      if (config.elasticStreamEnabled) {
+        if (!ElasticLogManager.init(this, config, clusterId)) {
+          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
+        }
+      } else {
+        warn("Elastic stream is disabled. This node will store data locally.")
+      }
+      // elastic stream inject end
 
       val networkListeners = new ListenerCollection()
       config.effectiveAdvertisedListeners.foreach { ep =>

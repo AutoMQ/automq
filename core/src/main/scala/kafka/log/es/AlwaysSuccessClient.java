@@ -44,6 +44,8 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
+@SuppressWarnings("uncheck")
 public class AlwaysSuccessClient implements Client {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
@@ -392,19 +394,9 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<Void> destroy() {
-            // TODO: restore when elastic stream supporting destroy.
-            return CompletableFuture.completedFuture(null);
-//            CompletableFuture<Void> cf = new CompletableFuture<>();
-//            stream.destroy().whenCompleteAsync((rst, ex) -> {
-//                FutureUtil.suppress(() -> {
-//                    if (ex != null) {
-//                        cf.completeExceptionally(ex);
-//                    } else {
-//                        cf.complete(rst);
-//                    }
-//                }, LOGGER);
-//            }, APPEND_CALLBACK_EXECUTORS);
-//            return cf;
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            destroy0(cf);
+            return cf;
         }
 
         private void destroy0(CompletableFuture<Void> cf) {

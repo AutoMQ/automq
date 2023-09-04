@@ -38,7 +38,9 @@ public final class MetadataImage {
         ConfigurationsImage.EMPTY,
         ClientQuotasImage.EMPTY,
         ProducerIdsImage.EMPTY,
-        AclsImage.EMPTY);
+        AclsImage.EMPTY,
+        S3StreamsMetadataImage.EMPTY,
+        S3ObjectsImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -56,6 +58,14 @@ public final class MetadataImage {
 
     private final AclsImage acls;
 
+    // Kafka on S3 inject start
+
+    private final S3StreamsMetadataImage streamMetadata;
+
+    private final S3ObjectsImage objectsMetadata;
+
+    // Kafka on S3 inject end
+
     public MetadataImage(
         MetadataProvenance provenance,
         FeaturesImage features,
@@ -64,7 +74,9 @@ public final class MetadataImage {
         ConfigurationsImage configs,
         ClientQuotasImage clientQuotas,
         ProducerIdsImage producerIds,
-        AclsImage acls
+        AclsImage acls,
+        S3StreamsMetadataImage streamMetadata,
+        S3ObjectsImage s3ObjectsImage
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -74,6 +86,8 @@ public final class MetadataImage {
         this.clientQuotas = clientQuotas;
         this.producerIds = producerIds;
         this.acls = acls;
+        this.streamMetadata = streamMetadata;
+        this.objectsMetadata = s3ObjectsImage;
     }
 
     public boolean isEmpty() {
@@ -83,7 +97,8 @@ public final class MetadataImage {
             configs.isEmpty() &&
             clientQuotas.isEmpty() &&
             producerIds.isEmpty() &&
-            acls.isEmpty();
+            acls.isEmpty() &&
+            streamMetadata.isEmpty();
     }
 
     public MetadataProvenance provenance() {
@@ -126,6 +141,18 @@ public final class MetadataImage {
         return acls;
     }
 
+    // Kafka on S3 inject start
+
+    public S3StreamsMetadataImage streamsMetadata() {
+        return streamMetadata;
+    }
+
+    public S3ObjectsImage objectsMetadata() {
+        return objectsMetadata;
+    }
+
+    // Kafka on S3 inject end
+
     public void write(ImageWriter writer, ImageWriterOptions options) {
         // Features should be written out first so we can include the metadata.version at the beginning of the
         // snapshot
@@ -136,6 +163,10 @@ public final class MetadataImage {
         clientQuotas.write(writer, options);
         producerIds.write(writer, options);
         acls.write(writer, options);
+        // Kafka on S3 inject start
+        streamMetadata.write(writer, options);
+        objectsMetadata.write(writer, options);
+        // Kafka on S3 inject end
         writer.close(true);
     }
 
@@ -150,7 +181,9 @@ public final class MetadataImage {
             configs.equals(other.configs) &&
             clientQuotas.equals(other.clientQuotas) &&
             producerIds.equals(other.producerIds) &&
-            acls.equals(other.acls);
+            acls.equals(other.acls) &&
+            streamMetadata.equals(other.streamMetadata) &&
+            objectsMetadata.equals(other.objectsMetadata);
     }
 
     @Override
@@ -163,7 +196,9 @@ public final class MetadataImage {
             configs,
             clientQuotas,
             producerIds,
-            acls);
+            acls,
+            streamMetadata,
+            objectsMetadata);
     }
 
     @Override
@@ -177,6 +212,8 @@ public final class MetadataImage {
             ", clientQuotas=" + clientQuotas +
             ", producerIdsImage=" + producerIds +
             ", acls=" + acls +
+            ", streamMetadata=" + streamMetadata +
+            ", objectsMetadata=" + objectsMetadata +
             ")";
     }
 }

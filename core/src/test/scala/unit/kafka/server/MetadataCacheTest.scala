@@ -71,7 +71,9 @@ object MetadataCacheTest {
           image.configs(),
           image.clientQuotas(),
           image.producerIds(),
-          image.acls())
+          image.acls(),
+          image.streamsMetadata(),
+          image.objectsMetadata())
         val delta = new MetadataDelta.Builder().setImage(partialImage).build()
 
         def toRecord(broker: UpdateMetadataBroker): RegisterBrokerRecord = {

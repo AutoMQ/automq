@@ -38,18 +38,37 @@ import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamRequestData;
+import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamRequestData;
+import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamRequestData;
+import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -59,12 +78,23 @@ import org.apache.kafka.common.metadata.NoOpRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -73,6 +103,9 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.MockS3Operator;
+import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -83,6 +116,7 @@ import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
+import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.EventQueue;
 import org.apache.kafka.queue.KafkaEventQueue;
@@ -179,6 +213,12 @@ public final class QuorumController implements Controller {
         private BootstrapMetadata bootstrapMetadata = null;
         private int maxRecordsPerBatch = MAX_RECORDS_PER_BATCH;
         private boolean zkMigrationEnabled = false;
+
+        // Kafka on S3 inject start
+
+        private S3Config s3Config;
+
+        // Kafka on S3 inject end
 
         public Builder(int nodeId, String clusterId) {
             this.nodeId = nodeId;
@@ -299,6 +339,15 @@ public final class QuorumController implements Controller {
             return this;
         }
 
+        // Kafka on S3 inject start
+
+        public Builder setS3Config(S3Config s3Config) {
+            this.s3Config = s3Config;
+            return this;
+        }
+
+        // Kafka on S3 inject end
+
         @SuppressWarnings("unchecked")
         public QuorumController build() throws Exception {
             if (raftClient == null) {
@@ -349,7 +398,8 @@ public final class QuorumController implements Controller {
                     staticConfig,
                     bootstrapMetadata,
                     maxRecordsPerBatch,
-                    zkMigrationEnabled
+                    zkMigrationEnabled,
+                    s3Config
                 );
             } catch (Exception e) {
                 Utils.closeQuietly(queue, "event queue");
@@ -1415,6 +1465,53 @@ public final class QuorumController implements Controller {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
+
+            // Kafka on S3 inject start
+
+            case S3_STREAM_RECORD:
+                streamControlManager.replay((S3StreamRecord) message);
+                break;
+            case REMOVE_S3_STREAM_RECORD:
+                streamControlManager.replay((RemoveS3StreamRecord) message);
+                break;
+            case RANGE_RECORD:
+                streamControlManager.replay((RangeRecord) message);
+                break;
+            case REMOVE_RANGE_RECORD:
+                streamControlManager.replay((RemoveRangeRecord) message);
+                break;
+            case S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamObjectRecord) message);
+                break;
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((RemoveS3StreamObjectRecord) message);
+                break;
+            case WALOBJECT_RECORD:
+                streamControlManager.replay((WALObjectRecord) message);
+                break;
+            case REMOVE_WALOBJECT_RECORD:
+                streamControlManager.replay((RemoveWALObjectRecord) message);
+                break;
+            case S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((S3ObjectRecord) message);
+                break;
+            case REMOVE_S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((RemoveS3ObjectRecord) message);
+                break;
+            case ASSIGNED_STREAM_ID_RECORD:
+                streamControlManager.replay((AssignedStreamIdRecord) message);
+                break;
+            case ASSIGNED_S3_OBJECT_ID_RECORD:
+                s3ObjectControlManager.replay((AssignedS3ObjectIdRecord) message);
+                break;
+            case BROKER_WALMETADATA_RECORD:
+                streamControlManager.replay((BrokerWALMetadataRecord) message);
+                break;
+            case REMOVE_BROKER_WALMETADATA_RECORD:
+                streamControlManager.replay((RemoveBrokerWALMetadataRecord) message);
+                break;
+
+            // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
         }
@@ -1644,6 +1741,24 @@ public final class QuorumController implements Controller {
      */
     private final int maxRecordsPerBatch;
 
+    // Kafka on S3 inject start
+
+    private final S3Config s3Config;
+
+    /**
+     * An object which stores the controller's view of the S3 objects.
+     * This must be accessed only by the event queue thread.
+     */
+    private final S3ObjectControlManager s3ObjectControlManager;
+
+    /**
+     * An object which stores the controller's view of the Streams.
+     * This must be accessed only by the event queue thread.
+     */
+    private final StreamControlManager streamControlManager;
+
+    // Kafka on S3 inject end
+
     private QuorumController(
         FaultHandler fatalFaultHandler,
         LogContext logContext,
@@ -1668,7 +1783,8 @@ public final class QuorumController implements Controller {
         Map<String, Object> staticConfig,
         BootstrapMetadata bootstrapMetadata,
         int maxRecordsPerBatch,
-        boolean zkMigrationEnabled
+        boolean zkMigrationEnabled,
+        S3Config s3Config
     ) {
         this.fatalFaultHandler = fatalFaultHandler;
         this.logContext = logContext;
@@ -1744,6 +1860,13 @@ public final class QuorumController implements Controller {
         this.curClaimEpoch = -1;
         this.needToCompleteAuthorizerLoad = authorizer.isPresent();
         this.zkRecordConsumer = new MigrationRecordConsumer();
+
+        // Kafka on S3 inject start
+        this.s3Config = s3Config;
+        this.s3ObjectControlManager = new S3ObjectControlManager(
+            this, snapshotRegistry, logContext, clusterId, s3Config, new MockS3Operator());
+        this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
+        // Kafka on S3 inject end
         updateWriteOffset(-1);
 
         resetToEmptyState();
@@ -2106,6 +2229,74 @@ public final class QuorumController implements Controller {
         queue.close();
         controllerMetrics.close();
     }
+
+    // Kafka on S3 inject start
+    @Override
+    public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
+        return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
+            () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
+    }
+
+
+    @Override
+    public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
+        Set<Long/*objectId*/> deletedObjectIds) {
+        return appendWriteEvent("notifyS3ObjectDeleted", context.deadlineNs(),
+            () -> s3ObjectControlManager.notifyS3ObjectDeleted(deletedObjectIds));
+    }
+
+
+
+    @Override
+    public CompletableFuture<CreateStreamResponseData> createStream(ControllerRequestContext context, CreateStreamRequestData request) {
+        return appendWriteEvent("creatStream", context.deadlineNs(),
+            () -> streamControlManager.createStream(request));
+    }
+
+    @Override
+    public CompletableFuture<OpenStreamResponseData> openStream(ControllerRequestContext context, OpenStreamRequestData request) {
+        return appendWriteEvent("openStream", context.deadlineNs(),
+            () -> streamControlManager.openStream(request));
+    }
+
+    @Override
+    public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData response) {
+        return appendWriteEvent("closeStream", context.deadlineNs(),
+            () -> streamControlManager.closeStream(response));
+    }
+
+    @Override
+    public CompletableFuture<DeleteStreamResponseData> deleteStream(ControllerRequestContext context, DeleteStreamRequestData request) {
+        return appendWriteEvent("deleteStream", context.deadlineNs(),
+            () -> streamControlManager.deleteStream(request));
+    }
+
+    @Override
+    public CompletableFuture<PrepareS3ObjectResponseData> prepareObject(ControllerRequestContext context, PrepareS3ObjectRequestData request) {
+        return appendWriteEvent("prepareObject", context.deadlineNs(),
+            () -> s3ObjectControlManager.prepareObject(request));
+    }
+
+    @Override
+    public CompletableFuture<CommitWALObjectResponseData> commitWALObject(ControllerRequestContext context, CommitWALObjectRequestData request) {
+        return appendWriteEvent("commitWALObject", context.deadlineNs(),
+            () -> streamControlManager.commitWALObject(request));
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
+        CommitStreamObjectRequestData request) {
+        return appendWriteEvent("commitStreamObject", context.deadlineNs(),
+            () -> streamControlManager.commitStreamObject(request));
+    }
+
+    @Override
+    public CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(ControllerRequestContext context, GetStreamsOffsetRequestData request) {
+        return appendReadEvent("getStreamsOffset", context.deadlineNs(),
+            () -> streamControlManager.getStreamsOffset(request));
+    }
+
+    // Kafka on S3 inject end
 
     // VisibleForTesting
     CountDownLatch pause() {

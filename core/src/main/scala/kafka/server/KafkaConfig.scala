@@ -675,6 +675,25 @@ object KafkaConfig {
   val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
   // elastic stream inject end
 
+  // Kafka on S3 inject start
+  val S3EndpointProp = "s3.endpoint"
+  val S3RegionProp = "s3.region"
+  val S3BucketProp = "s3.bucket"
+  val S3WALObjectSizeProp = "s3.wal.object.size"
+  val S3StreamSplitSizeProp = "s3.stream.object.split.size"
+  val S3ObjectBlockSizeProp = "s3.object.block.size"
+  val S3ObjectPartSizeProp = "s3.object.part.size"
+
+  val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
+  val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
+  val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
+  val S3WALObjectSizeDoc = "The S3 WAL object size threshold."
+  val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload WAL object or compact object."
+  val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
+  val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
+
+  // Kafka on S3 inject end
+
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
   val ZkConnectDoc = "Specifies the ZooKeeper connection string in the form <code>hostname:port</code> where host and port are the " +
@@ -1470,6 +1489,16 @@ object KafkaConfig {
       .define(ElasticStreamKvEndpointProp, STRING, null, HIGH, ElasticStreamKvEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
     // elastic stream inject end
+
+    // Kafka on S3 inject start
+      .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
+      .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
+      .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
+      .define(S3WALObjectSizeProp, LONG, 524288000, MEDIUM, S3WALObjectSizeDoc)
+      .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
+      .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
+      .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
+    // Kafka on S3 inject end
   }
 
   /** ********* Remote Log Management Configuration *********/
@@ -1578,7 +1607,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   // We make it part of each instance rather than the object to facilitate testing.
   private val zkClientConfigViaSystemProperties = new ZKClientConfig()
 
-  override def originals: util.Map[String, AnyRef] =
+  override def /** ********* Raft Quorum Configuration *********/originals: util.Map[String, AnyRef] =
     if (this eq currentConfig) super.originals else currentConfig.originals
   override def values: util.Map[String, _] =
     if (this eq currentConfig) super.values else currentConfig.values
@@ -2001,6 +2030,17 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val elasticStreamKvEndpoint = getString(KafkaConfig.ElasticStreamKvEndpointProp)
   val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
   // elastic stream inject end
+
+  // Kafka on S3 inject start
+  /** ********* Kafka on S3 Configuration *********/
+  val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
+  val s3Region = getString(KafkaConfig.S3RegionProp)
+  val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  val s3WALObjectSize = getLong(KafkaConfig.S3WALObjectSizeProp)
+  val s3StreamSplitSizeProp = getInt(KafkaConfig.S3StreamSplitSizeProp)
+  val s3ObjectBlockSizeProp = getInt(KafkaConfig.S3ObjectBlockSizeProp)
+  val s3ObjectPartSizeProp = getInt(KafkaConfig.S3ObjectPartSizeProp)
+  // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
     dynamicConfig.addReconfigurable(reconfigurable)

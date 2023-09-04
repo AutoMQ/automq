@@ -41,6 +41,7 @@ import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
+import org.apache.kafka.metadata.stream.S3Config
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.ApiMessageAndVersion
@@ -209,7 +210,7 @@ class ControllerServer(
         }
 
         val maxIdleIntervalNs = config.metadataMaxIdleIntervalNs.fold(OptionalLong.empty)(OptionalLong.of)
-
+        val s3Config = new S3Config(config.s3Region, config.s3Bucket)
         new QuorumController.Builder(config.nodeId, sharedServer.metaProps.clusterId).
           setTime(time).
           setThreadNamePrefix(threadNamePrefix).
@@ -230,6 +231,7 @@ class ControllerServer(
           setBootstrapMetadata(bootstrapMetadata).
           setFatalFaultHandler(sharedServer.quorumControllerFaultHandler).
           setZkMigrationEnabled(config.migrationEnabled)
+          .setS3Config(s3Config)
       }
       authorizer match {
         case Some(a: ClusterMetadataAuthorizer) => controllerBuilder.setAuthorizer(a)

@@ -20,6 +20,7 @@ package kafka.log.es;
 import org.slf4j.Logger;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 public class FutureUtil {
     public static <T> CompletableFuture<T> failedFuture(Throwable ex) {
@@ -27,11 +28,49 @@ public class FutureUtil {
         cf.completeExceptionally(ex);
         return cf;
     }
+
     public static void suppress(Runnable run, Logger logger) {
         try {
             run.run();
         } catch (Throwable t) {
             logger.error("Suppress error", t);
+        }
+    }
+
+    /**
+     * Propagate CompleteFuture result / error from source to dest.
+     */
+    public static <T> void propagate(CompletableFuture<T> source, CompletableFuture<T> dest) {
+        source.whenComplete((rst, ex) -> {
+            if (ex != null) {
+                dest.completeExceptionally(ex);
+            } else {
+                dest.complete(rst);
+            }
+        });
+    }
+
+    /**
+     * Catch exceptions as a last resort to avoid unresponsiveness.
+     */
+    public static <T> CompletableFuture<T> exec(Supplier<CompletableFuture<T>> run, Logger logger, String name) {
+        try {
+            return run.get();
+        } catch (Throwable ex) {
+            logger.error("{} run with unexpected exception", name, ex);
+            return failedFuture(ex);
+        }
+    }
+
+    /**
+     * Catch exceptions as a last resort to avoid unresponsiveness.
+     */
+    public static <T> void exec(Runnable run, CompletableFuture<T> cf, Logger logger, String name) {
+        try {
+            run.run();
+        } catch (Throwable ex) {
+            logger.error("{} run with unexpected exception", name, ex);
+            cf.completeExceptionally(ex);
         }
     }
 }

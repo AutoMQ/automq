@@ -273,6 +273,10 @@ object TestUtils extends Logging {
     props
   }
 
+  def defaultBrokerConfig(): Properties = {
+    createBrokerConfig(1, "")
+  }
+
   /**
     * Create a test config for the provided parameters.
     *
