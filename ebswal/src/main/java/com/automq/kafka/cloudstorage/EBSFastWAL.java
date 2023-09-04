@@ -59,7 +59,7 @@ public class EBSFastWAL implements FastWAL {
 
     private static int SlidingWindowUpperLimit = 1024 * 1024 * 512;
 
-    private static int SlidingWindowScaleStepLength = 1024 * 1024 * 16;
+    private static int SlidingWindowScaleUnit = 1024 * 1024 * 16;
 
     private ScheduledExecutorService scheduledExecutorService;
 
