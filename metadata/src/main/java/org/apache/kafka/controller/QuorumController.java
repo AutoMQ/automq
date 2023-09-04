@@ -50,10 +50,14 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteKVRequestData;
+import org.apache.kafka.common.message.DeleteKVResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.GetKVRequestData;
+import org.apache.kafka.common.message.GetKVResponseData;
 import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
 import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -62,6 +66,8 @@ import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.PutKVRequestData;
+import org.apache.kafka.common.message.PutKVResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
@@ -73,6 +79,7 @@ import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
@@ -82,6 +89,7 @@ import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -103,6 +111,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.MockS3Operator;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -1409,6 +1418,7 @@ public final class QuorumController implements Controller {
      * @param batchLastOffset   The offset of the last record in the log batch, or the lastContainedLogOffset
      *                          if this record is from a snapshot, this is used along with RegisterBrokerRecord
      */
+    @SuppressWarnings("all")
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset) {
         logReplayTracker.replay(message);
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
@@ -1510,7 +1520,12 @@ public final class QuorumController implements Controller {
             case REMOVE_BROKER_WALMETADATA_RECORD:
                 streamControlManager.replay((RemoveBrokerWALMetadataRecord) message);
                 break;
-
+            case KVRECORD:
+                kvControlManager.replay((KVRecord) message);
+                break;
+            case REMOVE_KVRECORD:
+                kvControlManager.replay((RemoveKVRecord) message);
+                break;
             // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
@@ -1757,6 +1772,12 @@ public final class QuorumController implements Controller {
      */
     private final StreamControlManager streamControlManager;
 
+    /**
+     * An object which stores the controller's view of the KV objects.
+     * This must be accessed only by the event queue thread.
+     */
+    private final KVControlManager kvControlManager;
+
     // Kafka on S3 inject end
 
     private QuorumController(
@@ -1866,6 +1887,7 @@ public final class QuorumController implements Controller {
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, s3Config, new MockS3Operator());
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
+        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         // Kafka on S3 inject end
         updateWriteOffset(-1);
 
@@ -2294,6 +2316,24 @@ public final class QuorumController implements Controller {
     public CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(ControllerRequestContext context, GetStreamsOffsetRequestData request) {
         return appendReadEvent("getStreamsOffset", context.deadlineNs(),
             () -> streamControlManager.getStreamsOffset(request));
+    }
+
+    @Override
+    public CompletableFuture<GetKVResponseData> getKV(ControllerRequestContext context, GetKVRequestData request) {
+        return appendReadEvent("getKV", context.deadlineNs(),
+            () -> kvControlManager.getKV(request));
+    }
+
+    @Override
+    public CompletableFuture<PutKVResponseData> putKV(ControllerRequestContext context, PutKVRequestData request) {
+        return appendWriteEvent("putKV", context.deadlineNs(),
+            () -> kvControlManager.putKV(request));
+    }
+
+    @Override
+    public CompletableFuture<DeleteKVResponseData> deleteKV(ControllerRequestContext context, DeleteKVRequestData request) {
+        return appendWriteEvent("deleteKV", context.deadlineNs(),
+            () -> kvControlManager.deleteKV(request));
     }
 
     // Kafka on S3 inject end

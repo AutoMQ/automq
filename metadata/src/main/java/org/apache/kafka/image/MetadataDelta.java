@@ -26,6 +26,7 @@ import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
@@ -34,6 +35,7 @@ import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -92,6 +94,8 @@ public final class MetadataDelta {
     private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
 
     private S3ObjectsDelta s3ObjectsDelta = null;
+
+    private KVDelta kvDelta = null;
 
     // Kafka on S3 inject end
 
@@ -204,6 +208,13 @@ public final class MetadataDelta {
         return s3ObjectsDelta;
     }
 
+    public KVDelta getOrCreateKVDelta() {
+        if (kvDelta == null) {
+            kvDelta = new KVDelta(image.kv());
+        }
+        return kvDelta;
+    }
+
     // Kafka on S3 inject end
 
     public Optional<MetadataVersion> metadataVersionChanged() {
@@ -214,6 +225,7 @@ public final class MetadataDelta {
         }
     }
 
+    @SuppressWarnings("all")
     public void replay(ApiMessage record) {
         MetadataRecordType type = MetadataRecordType.fromId(record.apiKey());
         switch (type) {
@@ -312,6 +324,12 @@ public final class MetadataDelta {
                 break;
             case REMOVE_BROKER_WALMETADATA_RECORD:
                 replay((RemoveBrokerWALMetadataRecord) record);
+                break;
+            case KVRECORD:
+                replay((KVRecord) record);
+                break;
+            case REMOVE_KVRECORD:
+                replay((RemoveKVRecord) record);
                 break;
                 // Kafka on S3 inject end
             default:
@@ -447,6 +465,14 @@ public final class MetadataDelta {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
+    public void replay(KVRecord record) {
+        getOrCreateKVDelta().replay(record);
+    }
+
+    public void replay(RemoveKVRecord record) {
+        getOrCreateKVDelta().replay(record);
+    }
+
     // Kafka on S3 inject end
 
     /**
@@ -460,6 +486,7 @@ public final class MetadataDelta {
         getOrCreateClientQuotasDelta().finishSnapshot();
         getOrCreateProducerIdsDelta().finishSnapshot();
         getOrCreateAclsDelta().finishSnapshot();
+        // TODO: fill new added delta
     }
 
     public MetadataImage apply(MetadataProvenance provenance) {
@@ -509,6 +536,7 @@ public final class MetadataDelta {
         // Kafka on S3 inject start
         S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
         S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
+        KVImage newKVImage = getNewKVImage();
         // Kafka on S3 inject end
         return new MetadataImage(
             provenance,
@@ -520,7 +548,8 @@ public final class MetadataDelta {
             newProducerIds,
             newAcls,
             newStreamMetadata,
-            newS3ObjectsMetadata
+            newS3ObjectsMetadata,
+            newKVImage
         );
     }
 
@@ -534,6 +563,11 @@ public final class MetadataDelta {
     private S3ObjectsImage getNewS3ObjectsMetadataImage() {
         return s3ObjectsDelta == null ?
             image.objectsMetadata() : s3ObjectsDelta.apply();
+    }
+
+    private KVImage getNewKVImage() {
+        return kvDelta == null ?
+            image.kv() : kvDelta.apply();
     }
 
     // Kafka on S3 inject end

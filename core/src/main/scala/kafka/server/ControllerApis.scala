@@ -42,7 +42,7 @@ import org.apache.kafka.common.message.{CreateTopicsRequestData, _}
 import org.apache.kafka.common.protocol.Errors._
 import org.apache.kafka.common.protocol.{ApiKeys, ApiMessage, Errors}
 import org.apache.kafka.common.requests._
-import org.apache.kafka.common.requests.s3.{CloseStreamRequest, CloseStreamResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamRequest, CreateStreamResponse, DeleteStreamRequest, DeleteStreamResponse, GetStreamsOffsetRequest, GetStreamsOffsetResponse, OpenStreamRequest, OpenStreamResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse}
+import org.apache.kafka.common.requests.s3.{CloseStreamRequest, CloseStreamResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamRequest, CreateStreamResponse, DeleteKVRequest, DeleteKVResponse, DeleteStreamRequest, DeleteStreamResponse, GetKVRequest, GetKVResponse, GetStreamsOffsetRequest, GetStreamsOffsetResponse, OpenStreamRequest, OpenStreamResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVRequest, PutKVResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC}
 import org.apache.kafka.common.utils.Time
@@ -119,6 +119,9 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
         case ApiKeys.GET_STREAMS_OFFSET => handleGetStreamsOffset(request)
+        case ApiKeys.GET_KV => handleGetKV(request)
+        case ApiKeys.PUT_KV => handlePutKV(request)
+        case ApiKeys.DELETE_KV => handleDeleteKV(request)
         // Kafka on S3 inject end
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
@@ -1000,6 +1003,72 @@ class ControllerApis(val requestChannel: RequestChannel,
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new GetStreamsOffsetResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleGetKV(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val getKVRequest = request.body[GetKVRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.getKV(context, getKVRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new GetKVResponse(new GetKVResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new GetKVResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handlePutKV(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val putKVRequest = request.body[PutKVRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.putKV(context, putKVRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new PutKVResponse(new PutKVResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new PutKVResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleDeleteKV(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val deleteKVRequest = request.body[DeleteKVRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.deleteKV(context, deleteKVRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new DeleteKVResponse(new DeleteKVResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new DeleteKVResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
