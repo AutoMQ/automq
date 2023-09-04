@@ -119,7 +119,7 @@ class AlwaysSuccessClientTest {
         client = new AlwaysSuccessClient(memoryClientWithDelay);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
-        long slowFetchDelay = SLOW_FETCH_TIMEOUT_MILLIS + 1;
+        long slowFetchDelay = SLOW_FETCH_TIMEOUT_MILLIS + SLOW_FETCH_TIMEOUT_MILLIS / 2;
         memoryClientWithDelay.setDelayMillis(slowFetchDelay);
         Stream stream = client
             .streamClient()
