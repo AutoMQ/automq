@@ -100,6 +100,10 @@ public interface FastWAL {
 
     List<RecordEntity> read();
 
+    /**
+     * 抹除所有小于 offset 的数据。
+     * >= offset 的数据仍然可以读取。
+     */
     void trim(long offset);
 }
 
