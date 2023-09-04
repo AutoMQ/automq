@@ -154,5 +154,9 @@ public class LogCache {
             return confirmOffset;
         }
 
+        public void confirmOffset(long confirmOffset) {
+            this.confirmOffset = confirmOffset;
+        }
+
     }
 }

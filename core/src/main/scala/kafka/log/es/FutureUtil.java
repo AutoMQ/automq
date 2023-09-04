@@ -50,12 +50,27 @@ public class FutureUtil {
         });
     }
 
+    /**
+     * Catch exceptions as a last resort to avoid unresponsiveness.
+     */
     public static <T> CompletableFuture<T> exec(Supplier<CompletableFuture<T>> run, Logger logger, String name) {
         try {
             return run.get();
         } catch (Throwable ex) {
             logger.error("{} run with unexpected exception", name, ex);
             return failedFuture(ex);
+        }
+    }
+
+    /**
+     * Catch exceptions as a last resort to avoid unresponsiveness.
+     */
+    public static <T> void exec(Runnable run, CompletableFuture<T> cf, Logger logger, String name) {
+        try {
+            run.run();
+        } catch (Throwable ex) {
+            logger.error("{} run with unexpected exception", name, ex);
+            cf.completeExceptionally(ex);
         }
     }
 }

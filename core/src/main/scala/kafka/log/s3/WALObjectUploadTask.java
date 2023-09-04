@@ -33,6 +33,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import static kafka.log.es.FutureUtil.exec;
+
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
     private final Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap;
@@ -65,49 +67,50 @@ public class WALObjectUploadTask {
     }
 
     public CompletableFuture<CommitWALObjectRequest> upload() {
-        prepareCf.thenAccept(objectId -> {
-            List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
-            Collections.sort(streamIds);
-            CommitWALObjectRequest request = new CommitWALObjectRequest();
-
-            ObjectWriter walObject = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
-
-            List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
-
-            for (Long streamId : streamIds) {
-                List<FlatStreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
-                long streamSize = streamRecords.stream().mapToLong(r -> r.encodedBuf.readableBytes()).sum();
-                if (streamSize >= streamSplitSizeThreshold) {
-                    streamObjectCfList.add(writeStreamObject(streamRecords));
-                } else {
-                    for (FlatStreamRecordBatch record : streamRecords) {
-                        walObject.write(record);
-                    }
-                    long startOffset = streamRecords.get(0).baseOffset;
-                    long endOffset = streamRecords.get(streamRecords.size() - 1).lastOffset();
-                    request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
-                    // log object block only contain single stream's data.
-                    walObject.closeCurrentBlock();
-                }
-            }
-            request.setObjectId(objectId);
-            request.setOrderId(objectId);
-            CompletableFuture<Void> walObjectCf = walObject.close().thenAccept(nil -> request.setObjectSize(walObject.size()));
-            for (CompletableFuture<StreamObject> streamObjectCf : streamObjectCfList) {
-                streamObjectCf.thenAccept(request::addStreamObject);
-            }
-            List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
-            allCf.add(walObjectCf);
-
-            CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
-                commitWALObjectRequest = request;
-                uploadCf.complete(request);
-            }).exceptionally(ex -> {
-                uploadCf.completeExceptionally(ex);
-                return null;
-            });
-        });
+        prepareCf.thenAccept(objectId -> exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"));
         return uploadCf;
+    }
+
+    private void upload0(long objectId) {
+        List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
+        Collections.sort(streamIds);
+        CommitWALObjectRequest request = new CommitWALObjectRequest();
+
+        ObjectWriter walObject = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
+
+        List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
+
+        for (Long streamId : streamIds) {
+            List<FlatStreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
+            long streamSize = streamRecords.stream().mapToLong(r -> r.encodedBuf.readableBytes()).sum();
+            if (streamSize >= streamSplitSizeThreshold) {
+                streamObjectCfList.add(writeStreamObject(streamRecords));
+            } else {
+                for (FlatStreamRecordBatch record : streamRecords) {
+                    walObject.write(record);
+                }
+                long startOffset = streamRecords.get(0).baseOffset;
+                long endOffset = streamRecords.get(streamRecords.size() - 1).lastOffset();
+                request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
+                // log object block only contain single stream's data.
+                walObject.closeCurrentBlock();
+            }
+        }
+        request.setObjectId(objectId);
+        request.setOrderId(objectId);
+        CompletableFuture<Void> walObjectCf = walObject.close().thenAccept(nil -> request.setObjectSize(walObject.size()));
+        for (CompletableFuture<StreamObject> streamObjectCf : streamObjectCfList) {
+            streamObjectCf.thenAccept(request::addStreamObject);
+        }
+        List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
+        allCf.add(walObjectCf);
+        CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
+            commitWALObjectRequest = request;
+            uploadCf.complete(request);
+        }).exceptionally(ex -> {
+            uploadCf.completeExceptionally(ex);
+            return null;
+        });
     }
 
     public CompletableFuture<Void> commit() {
