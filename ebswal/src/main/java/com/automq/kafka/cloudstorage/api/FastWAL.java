@@ -9,13 +9,11 @@ import java.util.concurrent.CompletableFuture;
  * 如果上一次是优雅关闭，重新启动后，read 返回的数据为空集合。
  */
 public interface FastWAL {
-
     class OverCapacityException extends Exception {
         public OverCapacityException(String message) {
             super(message);
         }
     }
-
 
     /**
      * 启动线程，加载元数据
@@ -28,7 +26,6 @@ public interface FastWAL {
     void shutdown();
 
     interface AppendResult {
-
         // 预分配好的 Reocord body 存储的起始位置
         long walOffset();
 
@@ -37,7 +34,6 @@ public interface FastWAL {
         CompletableFuture<CallbackResult> future();
 
         interface CallbackResult {
-
             // 滑动窗口的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
             long slidingWindowMinOffset();
 
@@ -55,7 +51,6 @@ public interface FastWAL {
     AppendResult append(ByteBuffer record, //
                         int crc // 如果 crc == 0，表示需要重新计算 crc
     ) throws OverCapacityException;
-
 
     interface RecoverResult {
         ByteBuffer record();
