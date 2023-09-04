@@ -50,27 +50,25 @@ public interface FastWAL {
 
         int length();
 
-        // TODO future
-
         CompletableFuture<CallbackResult> future();
 
         class CallbackResult {
-            // Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
-            private final long pendingIOWindowMinOffset;
+            // 滑动窗口的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
+            private final long slidingWindowMinOffset;
             // 预分配好的 Reocord 存储的起始位置
             private final long walOffset;
 
             // 预分配好的 Reocord 的大小
             private final int length;
 
-            public CallbackResult(long pendingIOWindowMinOffset, long walOffset, int length) {
-                this.pendingIOWindowMinOffset = pendingIOWindowMinOffset;
+            public CallbackResult(long slidingWindowMinOffset, long walOffset, int length) {
+                this.slidingWindowMinOffset = slidingWindowMinOffset;
                 this.walOffset = walOffset;
                 this.length = length;
             }
 
-            public long getPendingIOWindowMinOffset() {
-                return pendingIOWindowMinOffset;
+            public long getSlidingWindowMinOffset() {
+                return slidingWindowMinOffset;
             }
 
             public long getWalOffset() {

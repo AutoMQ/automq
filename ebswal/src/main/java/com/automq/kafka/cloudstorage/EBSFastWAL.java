@@ -20,9 +20,9 @@ import java.util.concurrent.ScheduledExecutorService;
  * [不需要持久化]RoundNum - 表示正在写第几轮，默认从第 0 轮开始
  * Offset - 表示 WAL 的逻辑位置
  * TrimOffset - 表示 WAL 的逻辑位置，小于此位置的数据已经被删除（实际上传到了 S3）
- * PendingIOWindowMinOffset - Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
- * PendingIOWindowNextWriteOffset - Pending IO Window 下一个要写的 Record 对应的 Offset
- * PendingIOWindowMaxSize - 表示 Pending IO Window 的最大大小
+ * SlidingWindowMinOffset - 滑动窗口的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
+ * SlidingWindowNextWriteOffset - 滑动窗口下一个要写的 Record 对应的 Offset
+ * SlidingWindowMaxSize - 表示 滑动窗口的最大大小
  * HeaderMetaMagicCode - 表示 HeaderMeta 的魔数
  * RecordMeta
  * - MagicCode - 表示 RecordMeta 的魔数
@@ -37,7 +37,7 @@ import java.util.concurrent.ScheduledExecutorService;
  * Header 1 [4K]
  * - HeaderMetaMagicCode [4B]
  * - ContentSize [8B]
- * - PendingIOWindowMaxSize [4B]
+ * - SlidingWindowMaxSize [4B]
  * - TrimOffset [8B]
  * - LastWriteTimestamp [8B]
  * - NextWriteOffset [8B]
