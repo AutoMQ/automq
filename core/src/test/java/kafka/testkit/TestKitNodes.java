@@ -191,7 +191,7 @@ public class TestKitNodes {
         for (Entry<Integer, ControllerNode> entry : controllerNodes.entrySet()) {
             ControllerNode node = entry.getValue();
             newControllerNodes.put(entry.getKey(), new ControllerNode(node.id(),
-                absolutize(baseDirectory, node.metadataDirectory())));
+                absolutize(baseDirectory, node.metadataDirectory()), node.propertyOverrides()));
         }
         for (Entry<Integer, BrokerNode> entry : brokerNodes.entrySet()) {
             BrokerNode node = entry.getValue();

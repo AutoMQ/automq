@@ -191,12 +191,11 @@ class KafkaApis(val requestChannel: RequestChannel,
         case Some(response) =>
           requestHelper.sendForwardedResponse(request, response)
           response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
-            if (result.errorCode() != Errors.NONE.code()) {
-              return
+            if (result.errorCode() == Errors.NONE.code()) {
+              topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
+                ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
+              })
             }
-            topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
-              ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
-            })
           })
         case None => handleInvalidVersionsDuringForwarding(request)
       }

@@ -681,7 +681,7 @@ class ElasticLogTest {
         topicPartition: TopicPartition = topicPartition,
         logDirFailureChannel: LogDirFailureChannel = logDirFailureChannel,
         clusterId: String = "test_cluster"): ElasticLog = {
-        ElasticLogManager.init(null, kafkaConfig, clusterId)
+        ElasticLogManager.init(kafkaConfig, clusterId, appendWithAsyncCallbacks = false)
         ElasticLogManager.getOrCreateLog(dir = dir,
             config = config,
             scheduler = scheduler,

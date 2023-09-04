@@ -23,7 +23,7 @@ import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.client.{ClientFactoryProxy, Context}
 import kafka.log.s3.DefaultS3Client
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
-import kafka.utils.Scheduler
+import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
 
@@ -31,7 +31,8 @@ import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
-class ElasticLogManager(val client: Client) {
+class ElasticLogManager(val client: Client) extends Logging{
+  this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
 
   def getOrCreateLog(dir: File,
@@ -44,8 +45,16 @@ class ElasticLogManager(val client: Client) {
              maxTransactionTimeoutMs: Int,
              producerStateManagerConfig: ProducerStateManagerConfig,
              leaderEpoch: Long): ElasticLog = {
-    elasticLogs.computeIfAbsent(topicPartition, _ => ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-      numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch))
+    elasticLogs.computeIfAbsent(topicPartition, _ => {
+      var elasticLog: ElasticLog = null
+      ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+        override def run(): Unit = {
+          elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+            numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
+        }
+      }, s"Failed to create elastic log for $topicPartition", this)
+      elasticLog
+    })
   }
 
   /**
@@ -56,7 +65,13 @@ class ElasticLogManager(val client: Client) {
   def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
     // Removal may have happened in partition's closure. This is a defensive work.
     elasticLogs.remove(topicPartition)
-    ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+    try {
+      ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+    } catch {
+      case e: Throwable =>
+        // Even though the elastic log failed to be destroyed, the metadata has been deleted in controllers.
+        warn(s"Failed to destroy elastic log for $topicPartition. But we will ignore this exception. ", e)
+    }
   }
 
   /**
@@ -75,7 +90,22 @@ class ElasticLogManager(val client: Client) {
     if (elasticLog == null) {
       throw new IllegalStateException(s"Cannot find elastic log for $topicPartition")
     }
-    elasticLog.newSegment(baseOffset, time, suffix)
+
+    var segment: ElasticLogSegment = null
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        segment = elasticLog.newSegment(baseOffset, time, suffix)
+      }
+    }, s"Failed to create new segment for $topicPartition", this)
+    segment
+  }
+
+  def shutdownNow(): Unit = {
+    client match {
+      case alwaysSuccessClient: AlwaysSuccessClient =>
+        alwaysSuccessClient.shutdownNow()
+      case _ =>
+    }
   }
 
 }
@@ -84,7 +114,7 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
   var DEFAULT_CLIENT: Option[DefaultS3Client] = None
-  def init(broker: BrokerServer, config: KafkaConfig, clusterId: String): Boolean = {
+  def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null, appendWithAsyncCallbacks: Boolean = true): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
     }
@@ -105,6 +135,7 @@ object ElasticLogManager {
     val context = new Context()
     context.config = config
     context.brokerServer = broker
+    context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context))) 
 
     val namespace = config.elasticStreamNamespace
@@ -147,5 +178,9 @@ object ElasticLogManager {
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {
     INSTANCE.get.newSegment(topicPartition, baseOffset, time, fileSuffix)
+  }
+
+  def shutdownNow(): Unit = {
+    INSTANCE.foreach(_.shutdownNow())
   }
 }

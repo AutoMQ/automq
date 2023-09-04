@@ -434,6 +434,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     node.config = KafkaConfig(**kraft_broker_configs)
         self.colocated_nodes_started = 0
         self.nodes_to_start = self.nodes
+        self.have_cleaned_topics = False
 
     def reconfigure_zk_for_migration(self, kraft_quorum):
         self.configured_for_zk_migration = True
@@ -946,11 +947,18 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             self.delete_all_topics()
         super(KafkaService, self).stop()
 
-    def delete_all_topics(self):
+    def delete_all_topics(self, timeout_sec=60):
         """
         Delete all topics on the cluster.
         Note that this is needed to keep E2E tests isolated from each other.
         """
+        if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
+            self.logger.info("skip topic deletion on KRaft controller-only cluster")
+            return
+        if self.have_cleaned_topics:
+            self.logger.info("skip topic deletion since it has already been done")
+            return
+
         node = self.nodes[0]
         force_use_zk_connection = not self.all_nodes_topic_command_supports_bootstrap_server() or \
                                  not self.all_nodes_topic_command_supports_if_not_exists_with_bootstrap_server()
@@ -962,6 +970,15 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         self.logger.info("Running topic deletion command...\n%s" % cmd)
         node.account.ssh(cmd)
+
+        try:
+            # wait until no topics exist
+            wait_until(lambda: sum(1 for _ in self.list_topics(node)) == 0, timeout_sec=timeout_sec,
+                       err_msg="Kafka node failed to delete all topics in %d seconds" % timeout_sec)
+        except Exception:
+            self.thread_dump(node)
+            raise
+        self.have_cleaned_topics = True
 
     def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
         pids = self.pids(node)
@@ -1009,6 +1026,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     def kafka_topics_cmd_with_optional_security_settings(self, node, force_use_zk_connection, kafka_security_protocol=None, offline_nodes=[]):
         if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
+            self.logger.info("quorum_info = [using_kraft=%s, has_brokers=%s]" % (self.quorum_info.using_kraft, self.quorum_info.has_brokers))
             raise Exception("Must invoke kafka-topics against a broker, not a KRaft controller")
         if force_use_zk_connection:
             bootstrap_server_or_zookeeper = "--zookeeper %s" % (self.zk_connect_setting())
@@ -1297,8 +1315,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         cmd = fix_opts_for_new_jvm(node)
         cmd += "%s --list" % (self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection))
+        self.logger.info("Running list topics command...\n%s" % cmd)
         for line in node.account.ssh_capture(cmd):
-            if not line.startswith("SLF4J"):
+            if not line.startswith("SLF4J") and len(line.rstrip()) > 0:
+                self.logger.info("get topic: %s" % line.rstrip())
                 yield line.rstrip()
 
     def alter_message_format(self, topic, msg_format_version, node=None):

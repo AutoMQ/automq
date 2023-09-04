@@ -49,6 +49,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     deleteProducerSnapshots(deletedSegments, asyncDelete = true)
   }
 
+  override protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+    LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, msg) {
+      fun
+    }
+  }
+
   override private[log] def splitOverflowedSegment(segment: LogSegment) = {
     // normally, there should be no overflowed segment
     throw new UnsupportedOperationException()
@@ -79,7 +85,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
       maybeFlushMetadataFile()
       elasticLog.checkIfMemoryMappedBufferClosed()
       producerExpireCheck.cancel(true)
-      maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
+      maybeHandleIOException(s"Error while closing $topicPartition") {
         // We take a snapshot at the last written offset to hopefully avoid the need to scan the log
         // after restarting and to ensure that we cannot inadvertently hit the upgrade optimization
         // (the clean shutdown file is written after the logs are all closed).
@@ -92,6 +98,13 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     elasticLog.segments.clear()
     elasticLog.isMemoryMappedBufferClosed = true
     elasticLog.deleteEmptyDir()
+  }
+
+  /**
+   * Quickly close the log without flushing. This is used when partition is offline
+   */
+  def quicklyClose(): Unit = {
+    elasticLog.closeStreams()
   }
 
   override private[log] def delete(): Unit = {

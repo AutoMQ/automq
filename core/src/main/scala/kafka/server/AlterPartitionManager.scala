@@ -389,7 +389,7 @@ class DefaultAlterPartitionManager(
       unsentElectLeaders.add(topicPartition)
     }
     // Send all pending items if there is not already a request in-flight.
-    if (!unsentElectLeaders.isEmpty && inflightRequest.compareAndSet(false, true)) {
+    if (!unsentElectLeaders.isEmpty && inflightElectLeadersRequest.compareAndSet(false, true)) {
       // Copy current unsent ISRs but don't remove from the map, they get cleared in the response handler
       val inflight = new util.LinkedList[TopicPartition]()
       unsentElectLeaders.drainTo(inflight)
@@ -399,7 +399,7 @@ class DefaultAlterPartitionManager(
 
   private def sendElectLeadersRequest(topicPartitions: util.List[TopicPartition]): Unit = {
     if (topicPartitions.isEmpty) {
-      inflightRequest.set(false)
+      inflightElectLeadersRequest.set(false)
       return
     }
     val request = new ElectLeadersRequest.Builder(ElectionType.PREFERRED, topicPartitions, 1000)

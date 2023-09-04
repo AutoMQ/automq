@@ -195,7 +195,10 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, threadNamePrefix.getOrElse(""))
 
-      logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
+      // elastic stream inject start
+      val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
+      logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
+      // elastic stream inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
@@ -325,7 +328,7 @@ class BrokerServer(
       // elastic stream inject start
 
       if (config.elasticStreamEnabled) {
-        if (!ElasticLogManager.init(this, config, clusterId)) {
+        if (!ElasticLogManager.init(config, clusterId, this)) {
           throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
         }
       } else {
@@ -580,6 +583,13 @@ class BrokerServer(
 
       if (logManager != null)
         CoreUtils.swallow(logManager.shutdown(), this)
+
+      // elastic stream inject start
+      // Note that logs are closed in logManager.shutdown().
+      // Make sure these thread pools are shutdown after the log manager's shutdown.
+      CoreUtils.swallow(replicaManager.shutdownAdditionalThreadPools(), this)
+      ElasticLogManager.shutdownNow()
+      // elastic stream inject end
 
       if (quotaManagers != null)
         CoreUtils.swallow(quotaManagers.shutdown(), this)
