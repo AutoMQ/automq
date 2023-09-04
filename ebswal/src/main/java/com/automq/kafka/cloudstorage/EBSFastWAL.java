@@ -107,7 +107,7 @@ public class EBSFastWAL implements FastWAL {
     }
 
     @Override
-    public Iterator<RecordEntity> recover() {
+    public Iterator<RecoveredRecordResult> recover() {
         return null;
     }
 

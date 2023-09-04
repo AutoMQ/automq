@@ -16,29 +16,10 @@ public interface FastWAL {
         }
     }
 
-    class RecordEntity {
-        private final ByteBuffer record;
-        private final long walOffset;
+    interface RecoveredRecordResult {
+        ByteBuffer record();
 
-        private final int length;
-
-        public RecordEntity(ByteBuffer record, long walOffset, int length) {
-            this.record = record;
-            this.walOffset = walOffset;
-            this.length = length;
-        }
-
-        public ByteBuffer getRecord() {
-            return record;
-        }
-
-        public long getWalOffset() {
-            return walOffset;
-        }
-
-        public int getLength() {
-            return length;
-        }
+        AppendResult appendResult();
     }
 
     interface AppendResult {
@@ -79,7 +60,7 @@ public interface FastWAL {
     ) throws OverCapacityException;
 
 
-    Iterator<RecordEntity> recover();
+    Iterator<RecoveredRecordResult> recover();
 
     /**
      * 抹除所有小于 offset 的数据。
