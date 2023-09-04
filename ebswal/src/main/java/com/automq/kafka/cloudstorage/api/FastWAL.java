@@ -4,6 +4,8 @@ import com.google.common.util.concurrent.FutureCallback;
 
 import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 /**
  * 是一个从零开始无限增长的 WAL，实际实现会使用块设备，每次写入采用块对齐方式。Record 之间非连续存储。
@@ -49,6 +51,8 @@ public interface FastWAL {
         int length();
 
         // TODO future
+
+        CompletableFuture<CallbackResult> future();
 
         class CallbackResult {
             // Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
