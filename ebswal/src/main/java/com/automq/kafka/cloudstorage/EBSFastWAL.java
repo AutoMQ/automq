@@ -55,11 +55,48 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public class EBSFastWAL implements FastWAL {
 
-    private static int BlockSize = 4096;
+    static class EBSFastWALBuilder {
+        private ScheduledExecutorService scheduledExecutorService;
 
-    private static int SlidingWindowUpperLimit = 1024 * 1024 * 512;
+        private ExecutorService executorService;
 
-    private static int SlidingWindowScaleUnit = 1024 * 1024 * 16;
+        private String devicePath;
+
+        public EBSFastWALBuilder setScheduledExecutorService(ScheduledExecutorService scheduledExecutorService) {
+            this.scheduledExecutorService = scheduledExecutorService;
+            return this;
+        }
+
+        public EBSFastWALBuilder setExecutorService(ExecutorService executorService) {
+            this.executorService = executorService;
+            return this;
+        }
+
+        public EBSFastWALBuilder setDevicePath(String devicePath) {
+            this.devicePath = devicePath;
+            return this;
+        }
+
+        public EBSFastWAL createEBSFastWAL() {
+            return new EBSFastWAL(scheduledExecutorService, executorService, devicePath);
+        }
+    }
+
+    private static int BlockSize = Integer.parseInt(System.getProperty(//
+            "automq.ebswal.blocksize", //
+            "4096"));
+
+    private static int AioThreadNums = Integer.parseInt(System.getProperty(//
+            "automq.ebswal.aioThreadNums", //
+            "8"));
+
+    private static long SlidingWindowUpperLimit = Long.parseLong(System.getProperty(//
+            "automq.ebswal.slidingWindowUpperLimit", //
+            String.valueOf(1024 * 1024 * 512)));
+
+    private static long SlidingWindowScaleUnit = Long.parseLong(System.getProperty(//
+            "automq.ebswal.slidingWindowScaleUnit", //
+            String.valueOf(1024 * 1024 * 16)));
 
     private ScheduledExecutorService scheduledExecutorService;
 
@@ -70,15 +107,14 @@ public class EBSFastWAL implements FastWAL {
     private AsynchronousFileChannel fileChannel;
 
 
-    public static FastWAL build() {
-        EBSFastWAL ebsFastWAL = new EBSFastWAL();
-        ebsFastWAL.init();
-        return ebsFastWAL;
+    public EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath) {
+        this.scheduledExecutorService = scheduledExecutorService;
+        this.executorService = executorService;
+        this.devicePath = devicePath;
     }
 
-
     private void init() {
-        Path path = Paths.get(String.format("%s/ebsTestFile", System.getenv("HOME")));
+        Path path = Paths.get(this.devicePath);
         Set<StandardOpenOption> options = new HashSet<StandardOpenOption>();
         options.add(StandardOpenOption.CREATE);
         options.add(StandardOpenOption.WRITE);
@@ -97,7 +133,7 @@ public class EBSFastWAL implements FastWAL {
     }
 
     @Override
-    public void shutdown() {
+    public void shutdownGracefully() {
 
     }
 

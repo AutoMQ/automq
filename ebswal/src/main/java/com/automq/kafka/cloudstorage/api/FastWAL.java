@@ -17,7 +17,7 @@ public interface FastWAL {
     /**
      * 关闭线程，保存元数据，其中包含 trim offset。
      */
-    void shutdown();
+    void shutdownGracefully();
 
     interface AppendResult {
 
