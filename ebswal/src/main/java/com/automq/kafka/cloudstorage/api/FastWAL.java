@@ -3,7 +3,7 @@ package com.automq.kafka.cloudstorage.api;
 import com.google.common.util.concurrent.FutureCallback;
 
 import java.nio.ByteBuffer;
-import java.util.List;
+import java.util.Iterator;
 
 /**
  * 是一个从零开始无限增长的 WAL，实际实现会使用块设备，每次写入采用块对齐方式。Record 之间非连续存储。
@@ -18,54 +18,63 @@ public interface FastWAL {
     }
 
     class RecordEntity {
-        private ByteBuffer record;
-        private long recordBodyBeginOffset;
+        private final ByteBuffer record;
+        private final long walOffset;
 
-        public RecordEntity(ByteBuffer record, long recordBodyBeginOffset) {
+        private final int length;
+
+        public RecordEntity(ByteBuffer record, long walOffset, int length) {
             this.record = record;
-            this.recordBodyBeginOffset = recordBodyBeginOffset;
+            this.walOffset = walOffset;
+            this.length = length;
         }
 
         public ByteBuffer getRecord() {
             return record;
         }
 
-        public long getRecordBodyBeginOffset() {
-            return recordBodyBeginOffset;
+        public long getWalOffset() {
+            return walOffset;
+        }
+
+        public int getLength() {
+            return length;
         }
     }
 
     interface AppendResult {
         // 预分配好的 Reocord body 存储的起始位置
-        long recordBodyBeginOffset();
+        long walOffset();
 
-        int recordBodySize();
+        int length();
+
+        // TODO future
 
         class CallbackResult {
             // Pending IO Window 的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
             private final long pendingIOWindowMinOffset;
             // 预分配好的 Reocord 存储的起始位置
-            private final long recordBodyBeginOffset;
+            private final long walOffset;
 
             // 预分配好的 Reocord 的大小
-            private final int recordBodySize;
+            private final int length;
 
-            public CallbackResult(long pendingIOWindowMinOffset, long recordBodyBeginOffset, int recordBodySize) {
+            public CallbackResult(long pendingIOWindowMinOffset, long walOffset, int length) {
                 this.pendingIOWindowMinOffset = pendingIOWindowMinOffset;
-                this.recordBodyBeginOffset = recordBodyBeginOffset;
-                this.recordBodySize = recordBodySize;
+                this.walOffset = walOffset;
+                this.length = length;
             }
 
-            private long getPendingIOWindowMinOffset() {
+            public long getPendingIOWindowMinOffset() {
                 return pendingIOWindowMinOffset;
             }
 
-            private long getRecordBodyBeginOffset() {
-                return recordBodyBeginOffset;
+            public long getWalOffset() {
+                return walOffset;
             }
 
-            private int getRecordBodySize() {
-                return recordBodySize;
+            public int getLength() {
+                return length;
             }
         }
     }
@@ -77,18 +86,12 @@ public interface FastWAL {
     void start();
 
     /**
-     * 阻止新的 Append 写入，等待已经写入的 Append 完成。
-     * 为优雅关闭 EBS WAL Service 服务。
-     * 第一步：调用 stopAppending() 方法，阻止新的 Append 写入。
-     * 第二步：将所有数据上传 S3
-     * 第三步：调用 trim() 方法，删除本地数据
-     * 第四步：调用 shutdown() 方法，关闭线程
-     */
-    void stopAppending();
-
-
-    /**
      * 关闭线程，保存元数据，其中包含 trim offset。
+     * 优雅 shutodnw 流程
+     * 调用层等待所有 Append 完成
+     * 上传 S3 完成
+     * 调用 trim
+     * 然后调用 shutdown，保证 trim offset 持久化
      */
     void shutdown();
 
@@ -97,8 +100,10 @@ public interface FastWAL {
                         FutureCallback<AppendResult.CallbackResult> callback //
     ) throws OverCapacityException;
 
+    // PendingIO Window 由一个最大值，512MB，不能无限扩容。
 
-    List<RecordEntity> read();
+
+    Iterator<RecordEntity> recover();
 
     /**
      * 抹除所有小于 offset 的数据。

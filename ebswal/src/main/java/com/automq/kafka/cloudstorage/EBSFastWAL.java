@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -33,14 +34,16 @@ import java.util.concurrent.ScheduledExecutorService;
  */
 
 /**
- * Header 存储结构
+ * Header 存储结构， 10s 写一次。
  * Header 1 [4K]
  * - HeaderMetaMagicCode [4B]
  * - TrimOffset [8B]
  * - PendingIOWindowMaxSize [4B]
+ * - ContentSize [8B]
  * - LastWriteTimestamp [8B]
  * - NextWriteOffset [8B]
  * - ShutdownGracefully [1B]
+ * - crc [4B]
  * Header 2 [4K]
  * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
  * Record 存储结构，每次写都以块大小对齐
@@ -92,11 +95,6 @@ public class EBSFastWAL implements FastWAL {
     }
 
     @Override
-    public void stopAppending() {
-
-    }
-
-    @Override
     public void shutdown() {
 
     }
@@ -107,7 +105,7 @@ public class EBSFastWAL implements FastWAL {
     }
 
     @Override
-    public List<RecordEntity> read() {
+    public Iterator<RecordEntity> recover() {
         return null;
     }
 
