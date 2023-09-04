@@ -11,7 +11,6 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,9 +36,9 @@ import java.util.concurrent.ScheduledExecutorService;
  * Header 存储结构， 10s 写一次。
  * Header 1 [4K]
  * - HeaderMetaMagicCode [4B]
- * - TrimOffset [8B]
- * - PendingIOWindowMaxSize [4B]
  * - ContentSize [8B]
+ * - PendingIOWindowMaxSize [4B]
+ * - TrimOffset [8B]
  * - LastWriteTimestamp [8B]
  * - NextWriteOffset [8B]
  * - ShutdownGracefully [1B]
