@@ -26,9 +26,10 @@ public interface FastWAL {
     void shutdown();
 
     interface AppendResult {
-        // 预分配好的 Reocord body 存储的起始位置
+        // Record body 预分配的存储起始位置
         long walOffset();
 
+        // Record body 的长度（不包含任何元数据长度）
         int length();
 
         CompletableFuture<CallbackResult> future();
