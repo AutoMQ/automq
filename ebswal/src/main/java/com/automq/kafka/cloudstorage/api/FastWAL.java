@@ -16,28 +16,6 @@ public interface FastWAL {
         }
     }
 
-    interface RecoveredRecordResult {
-        ByteBuffer record();
-
-        AppendResult appendResult();
-    }
-
-    interface AppendResult {
-        // 预分配好的 Reocord body 存储的起始位置
-        long walOffset();
-
-        int length();
-
-        CompletableFuture<CallbackResult> future();
-
-        interface CallbackResult {
-            // 滑动窗口的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
-            long slidingWindowMinOffset();
-
-            AppendResult appendResult();
-        }
-    }
-
 
     /**
      * 启动线程，加载元数据
@@ -48,6 +26,25 @@ public interface FastWAL {
      * 关闭线程，保存元数据，其中包含 trim offset。
      */
     void shutdown();
+
+    interface AppendResult {
+
+        // 预分配好的 Reocord body 存储的起始位置
+        long walOffset();
+
+        int length();
+
+        CompletableFuture<CallbackResult> future();
+
+        interface CallbackResult {
+
+            // 滑动窗口的最小 Offset，此 Offset 之前的数据已经全部成功写入存储设备
+            long slidingWindowMinOffset();
+
+            AppendResult appendResult();
+
+        }
+    }
 
     /**
      * trim 不及时，会抛异常。
@@ -60,7 +57,13 @@ public interface FastWAL {
     ) throws OverCapacityException;
 
 
-    Iterator<RecoveredRecordResult> recover();
+    interface RecoverResult {
+        ByteBuffer record();
+
+        AppendResult appendResult();
+    }
+
+    Iterator<RecoverResult> recover();
 
     /**
      * 抹除所有小于 offset 的数据。
