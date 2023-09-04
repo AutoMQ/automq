@@ -1,11 +1,8 @@
 package com.automq.kafka.cloudstorage.api;
 
-import com.google.common.util.concurrent.FutureCallback;
-
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 
 /**
  * 是一个从零开始无限增长的 WAL，实际实现会使用块设备，每次写入采用块对齐方式。Record 之间非连续存储。
@@ -89,20 +86,18 @@ public interface FastWAL {
 
     /**
      * 关闭线程，保存元数据，其中包含 trim offset。
-     * 优雅 shutodnw 流程
-     * 调用层等待所有 Append 完成
-     * 上传 S3 完成
-     * 调用 trim
-     * 然后调用 shutdown，保证 trim offset 持久化
      */
     void shutdown();
 
+    /**
+     * trim 不及时，会抛异常。
+     * 滑动窗口无法扩容，也会抛异常。
+     *
+     * @throws OverCapacityException
+     */
     AppendResult append(ByteBuffer record, //
-                        int crc, //
-                        FutureCallback<AppendResult.CallbackResult> callback //
+                        int crc //
     ) throws OverCapacityException;
-
-    // PendingIO Window 由一个最大值，512MB，不能无限扩容。
 
 
     Iterator<RecordEntity> recover();

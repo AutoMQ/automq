@@ -1,7 +1,6 @@
 package com.automq.kafka.cloudstorage;
 
 import com.automq.kafka.cloudstorage.api.FastWAL;
-import com.google.common.util.concurrent.FutureCallback;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -58,6 +57,10 @@ public class EBSFastWAL implements FastWAL {
 
     private static int BlockSize = 4096;
 
+    private static int SlidingWindowUpperLimit = 1024 * 1024 * 512;
+
+    private static int SlidingWindowScaleStepLength = 1024 * 1024 * 16;
+
     private ScheduledExecutorService scheduledExecutorService;
 
     private ExecutorService executorService;
@@ -99,7 +102,7 @@ public class EBSFastWAL implements FastWAL {
     }
 
     @Override
-    public AppendResult append(ByteBuffer record, int crc, FutureCallback<AppendResult.CallbackResult> callback) throws OverCapacityException {
+    public AppendResult append(ByteBuffer record, int crc) throws OverCapacityException {
         return null;
     }
 
