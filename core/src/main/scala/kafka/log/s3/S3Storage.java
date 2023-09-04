@@ -35,6 +35,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -51,6 +52,8 @@ public class S3Storage implements Storage {
     private final WriteAheadLog log;
     private final LogCache logCache;
     private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
+    private final Queue<WALObjectUploadTaskContext> walObjectPrepareQueue = new LinkedList<>();
+    private final Queue<WALObjectUploadTaskContext> walObjectCommitQueue = new LinkedList<>();
     private final ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main", false));
     private final ScheduledExecutorService backgroundExecutor = Executors.newSingleThreadScheduledExecutor(
@@ -139,27 +142,65 @@ public class S3Storage implements Storage {
         });
     }
 
-    private CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
+    /**
+     * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
+     */
+    CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         backgroundExecutor.execute(() -> uploadWALObject0(logCacheBlock, cf));
         return cf;
     }
 
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
-        // TODO: pipeline the WAL object upload to accelerate the upload.
-        try {
-            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
-                    config.s3ObjectBlockSizeProp(), config.s3ObjectPartSizeProp(), config.s3StreamSplitSizeProp());
-            walObjectUploadTask.prepare().get();
-            walObjectUploadTask.upload().get();
-            walObjectUploadTask.commit().get();
-            log.trim(logCacheBlock.confirmOffset());
-            freeCache(logCacheBlock.blockId());
-            cf.complete(null);
-        } catch (Throwable e) {
-            LOGGER.error("unexpect upload wal object fail", e);
-            cf.completeExceptionally(e);
+        WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
+                config.s3ObjectBlockSizeProp(), config.s3ObjectPartSizeProp(), config.s3StreamSplitSizeProp());
+        WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
+        context.task = walObjectUploadTask;
+        context.cache = logCacheBlock;
+        context.cf = cf;
+
+        boolean walObjectPrepareQueueEmpty = walObjectPrepareQueue.isEmpty();
+        walObjectPrepareQueue.add(context);
+        if (!walObjectPrepareQueueEmpty) {
+            // there is another WAL object upload task is preparing, just return.
+            return;
         }
+        prepareWALObject(context);
+    }
+
+    private void prepareWALObject(WALObjectUploadTaskContext context) {
+        context.task.prepare().thenAcceptAsync(nil -> {
+            // 1. poll out current task and trigger upload.
+            WALObjectUploadTaskContext peek = walObjectPrepareQueue.poll();
+            Objects.requireNonNull(peek).task.upload();
+            // 2. add task to commit queue.
+            boolean walObjectCommitQueueEmpty = walObjectCommitQueue.isEmpty();
+            walObjectCommitQueue.add(peek);
+            if (walObjectCommitQueueEmpty) {
+                commitWALObject(peek);
+            }
+            // 3. trigger next task to prepare.
+            WALObjectUploadTaskContext next = walObjectPrepareQueue.peek();
+            if (next != null) {
+                prepareWALObject(next);
+            }
+        }, backgroundExecutor);
+    }
+
+    private void commitWALObject(WALObjectUploadTaskContext context) {
+        context.task.commit().thenAcceptAsync(nil -> {
+            // 1. poll out current task
+            walObjectCommitQueue.poll();
+            log.trim(context.cache.confirmOffset());
+            freeCache(context.cache.blockId());
+            context.cf.complete(null);
+
+            // 2. trigger next task to commit.
+            WALObjectUploadTaskContext next = walObjectCommitQueue.peek();
+            if (next != null) {
+                commitWALObject(next);
+            }
+        }, backgroundExecutor);
     }
 
     private void freeCache(long blockId) {
@@ -233,5 +274,11 @@ public class S3Storage implements Storage {
             return walConfirmOffset;
         }
 
+    }
+
+    static class WALObjectUploadTaskContext {
+        WALObjectUploadTask task;
+        LogCache.LogCacheBlock cache;
+        CompletableFuture<Void> cf;
     }
 }
