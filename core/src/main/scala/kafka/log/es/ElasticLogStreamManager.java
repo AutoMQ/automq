@@ -17,12 +17,13 @@
 
 package kafka.log.es;
 
-import java.util.Collections;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
-
+import java.io.IOException;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -42,33 +43,27 @@ public class ElasticLogStreamManager {
      */
     private ElasticStreamEventListener outerListener;
 
-    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch) {
+    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch) throws IOException {
         this.streamClient = streamClient;
         this.replicaCount = replicaCount;
         this.epoch = epoch;
-        streams.forEach((name, streamId) -> {
-            try {
-                LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch);
-                stream.setListener(innerListener);
-                streamMap.put(name, stream);
-            } catch (Exception e) {
-                // TODO: handle exception
-                throw new RuntimeException(e);
-            }
-        });
+        for (Map.Entry<String, Long> entry : streams.entrySet()) {
+            String name = entry.getKey();
+            long streamId = entry.getValue();
+            LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch);
+            stream.setListener(innerListener);
+            streamMap.put(name, stream);
+        }
     }
 
-    public LazyStream getStream(String name) {
-        return streamMap.computeIfAbsent(name, key -> {
-            try {
-                LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch);
-                lazyStream.setListener(innerListener);
-                return lazyStream;
-            } catch (Exception e) {
-                // TODO: handle exception
-                throw new RuntimeException(e);
-            }
-        });
+    public LazyStream getStream(String name) throws IOException {
+        if (streamMap.containsKey(name)) {
+            return streamMap.get(name);
+        }
+        LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch);
+        lazyStream.setListener(innerListener);
+        streamMap.put(name, lazyStream);
+        return lazyStream;
     }
 
     public Map<String, Stream> streams() {
@@ -79,8 +74,12 @@ public class ElasticLogStreamManager {
         this.outerListener = listener;
     }
 
-    // no operation.
-    public void close() {}
+    /**
+     * Directly close all streams.
+     */
+    public CompletableFuture<Void> close() {
+        return CompletableFuture.allOf(streamMap.values().stream().map(LazyStream::close).toArray(CompletableFuture[]::new));
+    }
 
     class LazyStreamStreamEventListener implements ElasticStreamEventListener {
         @Override

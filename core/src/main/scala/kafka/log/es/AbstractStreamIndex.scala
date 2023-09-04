@@ -48,8 +48,11 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
   @volatile
   protected var _maxEntries: Int = adjustedMaxIndexSize / entrySize
 
+  /**
+   * Note that nextOffset in stream here actually represents the physical size (or position).
+   */
   @volatile
-  protected var _entries: Int = stream.nextOffset().toInt
+  protected var _entries: Int = (stream.nextOffset() / entrySize).toInt
 
   @volatile
   protected var cache: MappedByteBuffer = {

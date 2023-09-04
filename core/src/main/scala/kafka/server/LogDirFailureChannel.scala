@@ -32,6 +32,9 @@ import kafka.utils.Logging
  * directory is added for the first time, a thread which is blocked waiting for new offline log directories
  * can take the name of the new offline log directory out of the LogDirFailureChannel and handle the log failure properly.
  * An offline log directory will stay offline until the broker is restarted.
+ * Elastic stream comment: We reuse this class to handle partition failure. Note that <strong> only the corresponding
+ * partitions </strong> rather than the whole log dir will be offline. The LogDirs in the map and the queue are absolute
+ * paths of the partitions.
  *
  */
 class LogDirFailureChannel(logDirNum: Int) extends Logging {

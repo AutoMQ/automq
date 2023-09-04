@@ -21,3 +21,8 @@ Some portions of this file Copyright (c) 2004-2006 Intel Corporation and license
 
 This project contains the following code copied from Apache Hive:
 streams/src/main/java/org/apache/kafka/streams/state/internals/Murmur3.java
+
+This project contains codes copied from, derived from or inspired by Cruise Control (https://github.com/linkedin/cruise-control)
+Copyright 2017, 2018, 2019, 2020, 2021, 2022 LinkedIn Corporation.
+All Rights Reserved.
+License: BSD 2-CLAUSE

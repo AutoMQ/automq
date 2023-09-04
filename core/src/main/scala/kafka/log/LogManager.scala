@@ -18,7 +18,7 @@
 package kafka.log
 
 import kafka.log.LogConfig.MessageFormatVersion
-import kafka.log.es.ElasticLogManager
+import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
 
 import java.io._
 import java.nio.file.Files
@@ -229,6 +229,61 @@ class LogManager(logDirs: Seq[File],
       warn(s"Logs for partitions ${offlineCurrentTopicPartitions.mkString(",")} are offline and " +
            s"logs for future partitions ${offlineFutureTopicPartitions.mkString(",")} are offline due to failure on log directory $dir")
       dirLocks.filter(_.file.getParent == dir).foreach(dir => CoreUtils.swallow(dir.destroy(), this))
+    }
+  }
+
+  // elastic stream inject start
+  /**
+   * The partition failure handler. It will stop log cleaning and close handlers of logs in that partition.
+   *
+   * @param dir the absolute path of the partition's directory
+   */
+  def handlePartitionFailure(dir: String): Unit = {
+    warn(s"Stopping serving partition with dir $dir")
+    logCreationOrDeletionLock synchronized {
+
+      def removeOfflineLogs(logs: Pool[TopicPartition, UnifiedLog]): Iterable[TopicPartition] = {
+        val offlineTopicPartitions: Iterable[TopicPartition] = logs.collect {
+          case (tp, log) if log.dir.getAbsolutePath == dir => tp
+        }
+        offlineTopicPartitions.foreach { topicPartition => {
+          val removedLog = removeLogAndMetrics(logs, topicPartition)
+          removedLog.foreach {
+            log => log.closeHandlers()
+            quicklyCloseLogWithNoExceptionThrown(log)
+          }
+        }
+        }
+
+        offlineTopicPartitions
+      }
+
+      val offlineCurrentTopicPartitions = removeOfflineLogs(currentLogs)
+      if (cleaner != null)
+        offlineCurrentTopicPartitions.foreach(cleaner.abortAndPauseCleaning(_))
+      val offlineFutureTopicPartitions = removeOfflineLogs(futureLogs)
+
+      warn(s"Logs for partitions ${offlineCurrentTopicPartitions.mkString(",")} are offline and " +
+          s"logs for future partitions ${offlineFutureTopicPartitions.mkString(",")} are offline due to failure on log directory $dir")
+    }
+  }
+  // elastic stream inject end
+
+  /**
+   * Despite any exception occurs, quickly close the given log without flushing. Exceptions will only be logged and will
+   * not be thrown.
+   * @param log
+   */
+  private def quicklyCloseLogWithNoExceptionThrown(log: UnifiedLog): Unit = {
+    try {
+      log match {
+        case elasticUnifiedLog: ElasticUnifiedLog =>
+          elasticUnifiedLog.quicklyClose()
+        case _ =>
+      }
+    } catch {
+      case e: Throwable =>
+        warn(s"Ignore error occurred while quickly closing partition ${log.topicPartition}, msg: ${e.getMessage}")
     }
   }
 
@@ -618,22 +673,23 @@ class LogManager(logDirs: Seq[File],
     try {
       jobs.forKeyValue { (dir, dirJobs) =>
         if (waitForAllToComplete(dirJobs,
-          e => warn(s"There was an error in one of the threads during LogManager shutdown: ${e.getCause}"))) {
+          e => warn(s"There was an error in one of the threads during LogManager shutdown: ", e))) {
           // elastic stream inject start
           // No need for updating recovery points, updating log start offsets or writing clean shutdown marker Since they have all been done in log.close()
-          if (ElasticLogManager.enabled()) return
-          val logs = logsInDir(localLogsByDir, dir)
+          if (!ElasticLogManager.enabled()) {
+            val logs = logsInDir(localLogsByDir, dir)
 
-          // update the last flush point
-          debug(s"Updating recovery points at $dir")
-          checkpointRecoveryOffsetsInDir(dir, logs)
+            // update the last flush point
+            debug(s"Updating recovery points at $dir")
+            checkpointRecoveryOffsetsInDir(dir, logs)
 
-          debug(s"Updating log start offsets at $dir")
-          checkpointLogStartOffsetsInDir(dir, logs)
+            debug(s"Updating log start offsets at $dir")
+            checkpointLogStartOffsetsInDir(dir, logs)
 
-          // mark that the shutdown was clean by creating marker file
-          debug(s"Writing clean shutdown marker at $dir")
-          CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+            // mark that the shutdown was clean by creating marker file
+            debug(s"Writing clean shutdown marker at $dir")
+            CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
+          }
           // elastic stream inject end
         }
       }
@@ -1112,10 +1168,14 @@ class LogManager(logDirs: Seq[File],
         // Now that replica in source log directory has been successfully renamed for deletion.
         // Close the log, update checkpoint files, and enqueue this log to be deleted.
         sourceLog.close()
-        val logDir = sourceLog.parentDirFile
-        val logsToCheckpoint = logsInDir(logDir)
-        checkpointRecoveryOffsetsInDir(logDir, logsToCheckpoint)
-        checkpointLogStartOffsetsInDir(logDir, logsToCheckpoint)
+        // elastic stream inject start
+        if (!ElasticLogManager.enabled()) {
+          val logDir = sourceLog.parentDirFile
+          val logsToCheckpoint = logsInDir(logDir)
+          checkpointRecoveryOffsetsInDir(logDir, logsToCheckpoint)
+          checkpointLogStartOffsetsInDir(logDir, logsToCheckpoint)
+        }
+        // elastic stream inject end
         sourceLog.removeLogMetrics()
         addLogToBeDeleted(sourceLog)
       } catch {

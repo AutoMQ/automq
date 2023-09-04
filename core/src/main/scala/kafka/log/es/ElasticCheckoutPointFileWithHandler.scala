@@ -39,15 +39,19 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extend
   }
 
   private def write0(entries: Iterable[(TopicPartition, Long)], f: (ElasticLog, Long) => Unit): Unit = {
-    for (elem <- entries) {
-      val (topicPartition, checkpoint) = elem
-      val elasticLog = ElasticLogManager.getElasticLog(topicPartition)
-      if (elasticLog == null) {
-        warn(s"Cannot find elastic log for $topicPartition and skip persistence. Is this broker shutting down?")
-      } else {
-        f(elasticLog, checkpoint)
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        for (elem <- entries) {
+          val (topicPartition, checkpoint) = elem
+          val elasticLog = ElasticLogManager.getElasticLog(topicPartition)
+          if (elasticLog == null) {
+            warn(s"Cannot find elastic log for $topicPartition and skip persistence. Is this broker shutting down?")
+          } else {
+            f(elasticLog, checkpoint)
+          }
+        }
       }
-    }
+    }, "error when writing", this)
   }
 
   def read(): Seq[(TopicPartition, Long)] = {
@@ -66,6 +70,12 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extend
   }
 
   private def read0(f: ElasticLog => (TopicPartition, Long)): Seq[(TopicPartition, Long)] = {
-    ElasticLogManager.getAllElasticLogs.map(f).toSeq
+    var result: Seq[(TopicPartition, Long)] = Seq.empty
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        result = ElasticLogManager.getAllElasticLogs.map(f).toSeq
+      }
+    }, "error when reading", this)
+    result
   }
 }

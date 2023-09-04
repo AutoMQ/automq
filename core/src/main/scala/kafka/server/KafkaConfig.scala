@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import kafka.autobalancer.config.AutoBalancerControllerConfig
+
 import java.util
 import java.util.concurrent.TimeUnit
 import java.util.{Collections, Locale, Properties}
@@ -84,6 +86,7 @@ object Defaults {
   val MetadataSnapshotMaxIntervalMs = TimeUnit.HOURS.toMillis(1);
   val MetadataMaxIdleIntervalMs = 500
   val MetadataMaxRetentionBytes = 100 * 1024 * 1024
+  val EnableAutoBalancer = false
 
   /** KRaft mode configs */
   val EmptyNodeId: Int = -1
@@ -393,6 +396,7 @@ object KafkaConfig {
   val RequestTimeoutMsProp = CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG
   val ConnectionSetupTimeoutMsProp = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG
   val ConnectionSetupTimeoutMaxMsProp = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_CONFIG
+  val EnableAutoBalancerProp = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE;
 
   /** KRaft mode configs */
   val ProcessRolesProp = "process.roles"
@@ -753,6 +757,7 @@ object KafkaConfig {
   val RequestTimeoutMsDoc = CommonClientConfigs.REQUEST_TIMEOUT_MS_DOC
   val ConnectionSetupTimeoutMsDoc = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_DOC
   val ConnectionSetupTimeoutMaxMsDoc = CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_DOC
+  val EnableAutoBalancerDoc = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE_DOC;
 
   /** KRaft mode configs */
   val ProcessRolesDoc = "The roles that this process plays: 'broker', 'controller', or 'broker,controller' if it is both. " +
@@ -1201,6 +1206,7 @@ object KafkaConfig {
       .define(RequestTimeoutMsProp, INT, Defaults.RequestTimeoutMs, HIGH, RequestTimeoutMsDoc)
       .define(ConnectionSetupTimeoutMsProp, LONG, Defaults.ConnectionSetupTimeoutMs, MEDIUM, ConnectionSetupTimeoutMsDoc)
       .define(ConnectionSetupTimeoutMaxMsProp, LONG, Defaults.ConnectionSetupTimeoutMaxMs, MEDIUM, ConnectionSetupTimeoutMaxMsDoc)
+      .define(EnableAutoBalancerProp, BOOLEAN, Defaults.EnableAutoBalancer, HIGH, EnableAutoBalancerDoc)
 
       /*
        * KRaft mode configs.

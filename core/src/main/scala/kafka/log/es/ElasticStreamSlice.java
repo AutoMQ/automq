@@ -22,6 +22,7 @@ import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.Stream;
 
+import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
@@ -47,9 +48,9 @@ public interface ElasticStreamSlice {
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
      * @return {@link FetchResult}
      */
-    FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException;
+    FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException, IOException;
 
-    default FetchResult fetch(long startOffset, long endOffset) throws SlowFetchHintException {
+    default FetchResult fetch(long startOffset, long endOffset) throws SlowFetchHintException, IOException {
         return fetch(startOffset, endOffset, (int) (endOffset - startOffset));
     }
 

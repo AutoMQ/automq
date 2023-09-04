@@ -55,3 +55,8 @@ esk_test_suite:
     - kafkatest/tests/core/fetch_from_follower_test.py
     # can not reuse since there is only one replica
     - kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
+    # skip kraft upgrade test
+    - kafkatest/tests/core/kraft_upgrade_test.py
+    # exclude benchmark tests
+    - kafkatest/tests/core/produce_bench_test.py
+    - kafkatest/tests/core/consume_bench_test.py

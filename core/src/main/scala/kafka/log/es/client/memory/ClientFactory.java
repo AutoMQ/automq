@@ -25,7 +25,7 @@ import kafka.log.es.MemoryClient;
 public class ClientFactory {
 
     public static Client get(Context context) {
-        return new AlwaysSuccessClient(new MemoryClient());
+        return new AlwaysSuccessClient(new MemoryClient(), context.appendWithAsyncCallbacks);
     }
 
 }

@@ -20,14 +20,17 @@ package kafka.log.es;
 import com.automq.elasticstream.client.api.AppendResult;
 import com.automq.elasticstream.client.api.Client;
 import com.automq.elasticstream.client.api.CreateStreamOptions;
+import com.automq.elasticstream.client.api.ElasticStreamClientException;
 import com.automq.elasticstream.client.api.FetchResult;
 import com.automq.elasticstream.client.api.KVClient;
 import com.automq.elasticstream.client.api.OpenStreamOptions;
 import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
-
+import com.automq.elasticstream.client.flatc.header.ErrorCode;
+import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -36,36 +39,54 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
-
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
-@SuppressWarnings("uncheck")
 public class AlwaysSuccessClient implements Client {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
+    public static final Set<Short> HALT_ERROR_CODES = Set.of(ErrorCode.EXPIRED_STREAM_EPOCH, ErrorCode.STREAM_ALREADY_CLOSED);
     public static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
-    private static final ScheduledExecutorService STREAM_MANAGER_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
+    private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
-    private static final ExecutorService STREAM_MANAGER_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(1,
+    private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
-    private static final ScheduledExecutorService FETCH_RETRY_SCHEDULER = Executors.newScheduledThreadPool(1,
+    private final ScheduledExecutorService appendRetryScheduler = Executors.newScheduledThreadPool(1,
+        ThreadUtils.createThreadFactory("append-retry-scheduler-%d", true));
+    private final ScheduledExecutorService fetchRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
-    private static final ExecutorService APPEND_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
+    private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
+        ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
+    private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
+        ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
+    private final ExecutorService appendCallbackExecutors = Executors.newFixedThreadPool(4,
         ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
-    private static final ExecutorService FETCH_CALLBACK_EXECUTORS = Executors.newFixedThreadPool(4,
+    private final ExecutorService fetchCallbackExecutors = Executors.newFixedThreadPool(4,
         ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
-    private static final ScheduledExecutorService DELAY_FETCH_SCHEDULER = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
+    private final ScheduledExecutorService delayFetchScheduler = Executors.newScheduledThreadPool(1,
+        ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
     private final StreamClient streamClient;
     private final KVClient kvClient;
+    private final Delayer delayer;
+    /**
+     * The flag to indicate if the callback of append is async.
+     * It is generally true, but for test cases, it is set to false. In test cases, we aim to ensure that
+     * the committed offset is promptly updated right after appending. Otherwise, the subsequent fetch request may fail
+     * due to the delay in updating the committed offset.
+     */
+    private final boolean appendCallbackAsync;
 
     public AlwaysSuccessClient(Client client) {
+        this(client, true);
+    }
+
+    public AlwaysSuccessClient(Client client, boolean appendCallbackAsync) {
         this.streamClient = new StreamClientImpl(client.streamClient());
         this.kvClient = client.kvClient();
+        this.delayer = new Delayer(delayFetchScheduler);
+        this.appendCallbackAsync = appendCallbackAsync;
     }
 
     @Override
@@ -78,8 +99,47 @@ public class AlwaysSuccessClient implements Client {
         return kvClient;
     }
 
-    // TODO: do not retry when stream closed.
-    static class StreamClientImpl implements StreamClient {
+    public void shutdownNow() {
+        streamManagerRetryScheduler.shutdownNow();
+        streamManagerCallbackExecutors.shutdownNow();
+        appendRetryScheduler.shutdownNow();
+        fetchRetryScheduler.shutdownNow();
+        generalRetryScheduler.shutdownNow();
+        generalCallbackExecutors.shutdownNow();
+        appendCallbackExecutors.shutdownNow();
+        fetchCallbackExecutors.shutdownNow();
+        delayFetchScheduler.shutdownNow();
+    }
+
+    /**
+     * Check if the exception is a ElasticStreamClientException with a halt error code.
+     * @param t the exception
+     * @return true if the exception is a ElasticStreamClientException with a halt error code, otherwise false
+     */
+    private static boolean shouldHalt(Throwable t) {
+        if (!(t instanceof ElasticStreamClientException)) {
+            return false;
+        }
+        ElasticStreamClientException e = (ElasticStreamClientException) t;
+        return HALT_ERROR_CODES.contains((short) e.getCode());
+    }
+
+    /**
+     * Maybe halt and complete the waiting future if the exception is a ElasticStreamClientException with a halt error code.
+     *
+     * @param t             the exception
+     * @param waitingFuture the waiting future
+     * @return true if the waiting future is completed, otherwise false
+     */
+    private static boolean maybeHaltAndCompleteWaitingFuture(Throwable t, CompletableFuture<?> waitingFuture) {
+        if (!shouldHalt(t)) {
+            return false;
+        }
+        waitingFuture.completeExceptionally(new IOException("No operations allowed on stream"));
+        return true;
+    }
+
+    private class StreamClientImpl implements StreamClient {
 
         private final StreamClient streamClient;
 
@@ -99,12 +159,12 @@ public class AlwaysSuccessClient implements Client {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
                         LOGGER.error("Create and open stream fail, retry later", ex);
-                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
+                        streamManagerRetryScheduler.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
                     } else {
                         cf.complete(new StreamImpl(stream));
                     }
                 }, LOGGER);
-            }, STREAM_MANAGER_CALLBACK_EXECUTORS);
+            }, streamManagerCallbackExecutors);
         }
 
         @Override
@@ -118,20 +178,21 @@ public class AlwaysSuccessClient implements Client {
             streamClient.openStream(streamId, options).whenCompleteAsync((stream, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
-                        LOGGER.error("Create open stream[{}] fail, retry later", streamId, ex);
-                        STREAM_MANAGER_RETRY_SCHEDULER.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
+                        if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                            LOGGER.error("Open stream[{}](epoch) fail, retry later", streamId, options.epoch(), ex);
+                            streamManagerRetryScheduler.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
+                        }
                     } else {
                         cf.complete(new StreamImpl(stream));
                     }
                 }, LOGGER);
-            }, APPEND_CALLBACK_EXECUTORS);
+            }, generalCallbackExecutors);
         }
     }
 
-    static class StreamImpl implements Stream {
+    private class StreamImpl implements Stream {
 
         private final Stream stream;
-        private volatile boolean closed = false;
         private final Map<String, CompletableFuture<FetchResult>> holdUpFetchingFutureMap = new ConcurrentHashMap<>();
 
         public StreamImpl(Stream stream) {
@@ -156,15 +217,44 @@ public class AlwaysSuccessClient implements Client {
         @Override
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             CompletableFuture<AppendResult> cf = new CompletableFuture<>();
-            stream.append(recordBatch)
-                .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
-                    if (ex != null) {
-                        cf.completeExceptionally(ex);
-                    } else {
-                        cf.complete(rst);
-                    }
-                }, LOGGER));
+            if (appendCallbackAsync) {
+                append0(recordBatch, cf);
+            } else {
+                append0WithSyncCallback(recordBatch, cf);
+            }
             return cf;
+        }
+
+        private void append0(RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
+            stream.append(recordBatch).whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
+                if (ex != null) {
+                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                        LOGGER.error("Appending to stream[{}] failed, retry later", streamId(),  ex);
+                        appendRetryScheduler.schedule(() -> append0(recordBatch, cf), 3, TimeUnit.SECONDS);
+                    }
+                } else {
+                    cf.complete(rst);
+                }
+            }, LOGGER), appendCallbackExecutors);
+        }
+
+        /**
+         * Append to stream without using async callback threadPools.
+         * <strong> Used for tests only.</strong>
+         * @param recordBatch
+         * @param cf
+         */
+        private void append0WithSyncCallback(RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
+            stream.append(recordBatch).whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
+                if (ex != null) {
+                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                        LOGGER.error("Appending to stream[{}] failed, retry later", streamId(),  ex);
+                        appendRetryScheduler.schedule(() -> append0(recordBatch, cf), 3, TimeUnit.SECONDS);
+                    }
+                } else {
+                    cf.complete(rst);
+                }
+            }, LOGGER));
         }
 
         /**
@@ -189,7 +279,7 @@ public class AlwaysSuccessClient implements Client {
             }
 
             final CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            rawFuture.whenComplete(new CompleteFetchingFutureAndCancelTimeoutCheck(Delayer.delay(() -> {
+            rawFuture.whenComplete(new CompleteFetchingFutureAndCancelTimeoutCheck(delayer.delay(() -> {
                 if (rawFuture == null) {
                     return;
                 }
@@ -223,16 +313,16 @@ public class AlwaysSuccessClient implements Client {
                     fetch0(startOffset, endOffset, maxBytesHint, cf);
                 }
             } else {
-                // Try to have a quick fetch. If fetching is timeout, then complete with SlowFetchHintException.
-                timeoutAndStoreFuture(holdUpKey, stream.fetch(startOffset, endOffset, maxBytesHint), SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                CompletableFuture<FetchResult> firstFetchFuture = new CompletableFuture<>();
+                fetch0(startOffset, endOffset, maxBytesHint, firstFetchFuture);
+                // Try to have a quick fetch. If the first fetching is timeout, then complete with SlowFetchHintException.
+                timeoutAndStoreFuture(holdUpKey, firstFetchFuture, SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
                     .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
                         if (ex != null) {
-                            if (closed) {
-                                cf.completeExceptionally(new IllegalStateException("stream already closed"));
-                            } else if (ex instanceof SlowFetchHintException) {
+                            if (ex instanceof SlowFetchHintException) {
                                 LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
                                 cf.completeExceptionally(ex);
-                            } else {
+                            } else if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
                                 cf.completeExceptionally(ex);
                             }
                         } else {
@@ -247,71 +337,91 @@ public class AlwaysSuccessClient implements Client {
             stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
-                        LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset);
-                        if (!closed) {
-                            FETCH_RETRY_SCHEDULER.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
-                        } else {
-                            cf.completeExceptionally(new IllegalStateException("stream already closed"));
+                        if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                            LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset, ex);
+                            fetchRetryScheduler.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
                         }
                     } else {
                         cf.complete(rst);
                     }
                 }, LOGGER);
-            }, FETCH_CALLBACK_EXECUTORS);
+            }, fetchCallbackExecutors);
         }
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
             CompletableFuture<Void> cf = new CompletableFuture<>();
+            trim0(newStartOffset, cf);
+            return cf;
+        }
+
+        private void trim0(long newStartOffset, CompletableFuture<Void> cf) {
             stream.trim(newStartOffset).whenCompleteAsync((rst, ex) -> {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
-                        cf.completeExceptionally(ex);
+                        if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                            LOGGER.error("Trim stream[{}] (new offset = {}) failed, retry later", streamId(), newStartOffset, ex);
+                            generalRetryScheduler.schedule(() -> trim0(newStartOffset, cf), 3, TimeUnit.SECONDS);
+                        }
                     } else {
                         cf.complete(rst);
                     }
                 }, LOGGER);
-            }, APPEND_CALLBACK_EXECUTORS);
-            return cf;
+            }, generalCallbackExecutors);
         }
 
         @Override
         public CompletableFuture<Void> close() {
-            closed = true;
             CompletableFuture<Void> cf = new CompletableFuture<>();
+            close0(cf);
+            return cf;
+        }
+
+        private void close0(CompletableFuture<Void> cf) {
             stream.close().whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
                 if (ex != null) {
-                    cf.completeExceptionally(ex);
+                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                        LOGGER.error("Close stream[{}] failed, retry later", streamId(), ex);
+                        generalRetryScheduler.schedule(() -> close0(cf), 3, TimeUnit.SECONDS);
+                    }
                 } else {
                     cf.complete(rst);
                 }
-            }, LOGGER), APPEND_CALLBACK_EXECUTORS);
-            return cf;
+            }, LOGGER), generalCallbackExecutors);
         }
 
         @Override
         public CompletableFuture<Void> destroy() {
-            // TODO: restore when elastic stream supporting destroy.
-            return CompletableFuture.completedFuture(null);
-//            CompletableFuture<Void> cf = new CompletableFuture<>();
-//            stream.destroy().whenCompleteAsync((rst, ex) -> {
-//                FutureUtil.suppress(() -> {
-//                    if (ex != null) {
-//                        cf.completeExceptionally(ex);
-//                    } else {
-//                        cf.complete(rst);
-//                    }
-//                }, LOGGER);
-//            }, APPEND_CALLBACK_EXECUTORS);
-//            return cf;
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            destroy0(cf);
+            return cf;
+        }
+
+        private void destroy0(CompletableFuture<Void> cf) {
+            stream.destroy().whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
+                if (ex != null) {
+                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
+                        LOGGER.error("Destroy stream[{}] failed, retry later", streamId(), ex);
+                        generalRetryScheduler.schedule(() -> destroy0(cf), 3, TimeUnit.SECONDS);
+                    }
+                } else {
+                    cf.complete(rst);
+                }
+            }, LOGGER), generalCallbackExecutors);
         }
     }
 
-    static final class Delayer {
 
-        static ScheduledFuture<?> delay(Runnable command, long delay,
-                                        TimeUnit unit) {
-            return DELAY_FETCH_SCHEDULER.schedule(command, delay, unit);
+    static final class Delayer {
+        private final ScheduledExecutorService delayFetchScheduler;
+
+        public Delayer(ScheduledExecutorService delayFetchScheduler) {
+            this.delayFetchScheduler = delayFetchScheduler;
+        }
+
+        public ScheduledFuture<?> delay(Runnable command, long delay,
+            TimeUnit unit) {
+            return delayFetchScheduler.schedule(command, delay, unit);
         }
     }
 

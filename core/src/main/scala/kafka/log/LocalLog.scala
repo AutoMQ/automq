@@ -31,7 +31,9 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{Time, Utils}
 import kafka.log.es.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
+import kafka.log.es.ElasticLogManager
 
+import java.util.concurrent.ExecutionException
 import scala.jdk.CollectionConverters._
 import scala.collection.{Seq, immutable}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -808,6 +810,11 @@ object LocalLog extends Logging {
       case e: IOException =>
         logDirFailureChannel.maybeAddOfflineLogDir(logDir, errorMsg, e)
         throw new KafkaStorageException(errorMsg, e)
+      // elastic stream inject start
+      case e: ExecutionException if e.getCause.isInstanceOf[IOException] =>
+        logDirFailureChannel.maybeAddOfflineLogDir(logDir, errorMsg, e.getCause.asInstanceOf[IOException])
+        throw new KafkaStorageException(errorMsg, e.getCause)
+      // elastic stream inject end
     }
   }
 
@@ -1011,12 +1018,14 @@ object LocalLog extends Logging {
 
     def deleteSegments(): Unit = {
       info(s"${logPrefix}Deleting segment files ${segmentsToDelete.mkString(",")}")
-      val parentDir = dir.getParent
-      maybeHandleIOException(logDirFailureChannel, parentDir, s"Error while deleting segments for $topicPartition in dir $parentDir") {
+      // elastic stream inject start
+      val handlingDir = if (ElasticLogManager.enabled()) dir.getPath else dir.getParent
+      maybeHandleIOException(logDirFailureChannel, handlingDir, s"Error while deleting segments for $topicPartition in dir $handlingDir") {
         segmentsToDelete.foreach { segment =>
           segment.deleteIfExists()
         }
       }
+      // elastic stream inject end
     }
 
     if (asyncDelete)

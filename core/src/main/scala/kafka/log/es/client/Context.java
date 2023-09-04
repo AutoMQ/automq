@@ -23,4 +23,5 @@ import kafka.server.KafkaConfig;
 public class Context {
     public KafkaConfig config;
     public BrokerServer brokerServer;
+    public boolean appendWithAsyncCallbacks;
 }
