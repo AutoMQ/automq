@@ -41,11 +41,6 @@ public class S3WALObject implements Comparable<S3WALObject> {
 
     private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<S3ObjectStreamIndex>> streamsIndex) {
-        // default orderId is equal to objectId
-        this(objectId, brokerId, streamsIndex, objectId);
-    }
-
     public S3WALObject(long objectId, int brokerId, final Map<Long, List<S3ObjectStreamIndex>> streamsIndex, long orderId) {
         this.orderId = orderId;
         this.objectId = objectId;
@@ -71,6 +66,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
         return new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(objectId)
             .setBrokerId(brokerId)
+            .setOrderId(orderId)
             .setStreamsIndex(
                 streamsIndex.values().stream().flatMap(List::stream)
                     .map(S3ObjectStreamIndex::toRecordStreamIndex)
@@ -82,7 +78,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
             .map(index -> new S3ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset()))
             .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
         S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
-            collect);
+            collect, record.orderId());
         return s3WalObject;
     }
 

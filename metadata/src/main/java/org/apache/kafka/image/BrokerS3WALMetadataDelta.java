@@ -17,16 +17,16 @@
 
 package org.apache.kafka.image;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.SortedWALObjects;
+import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 
 public class BrokerS3WALMetadataDelta {
 
@@ -58,7 +58,7 @@ public class BrokerS3WALMetadataDelta {
     }
 
     public BrokerS3WALMetadataImage apply() {
-        List<S3WALObject> newS3WALObjects = new ArrayList<>(image.getWalObjects());
+        SortedWALObjects newS3WALObjects = new SortedWALObjectsList(image.getWalObjects());
         // add all changed WAL objects
         newS3WALObjects.addAll(addedS3WALObjects.values());
         // remove all removed WAL objects

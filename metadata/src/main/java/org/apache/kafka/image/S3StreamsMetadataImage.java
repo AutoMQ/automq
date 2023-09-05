@@ -142,7 +142,7 @@ public final class S3StreamsMetadataImage {
             if (wal == null) {
                 return InRangeObjects.INVALID;
             }
-            List<ObjectStreamRange> walObjects = wal.getWalObjects().stream()
+            List<ObjectStreamRange> walObjects = wal.getWalObjects().list().stream()
                 .filter(obj -> obj.streamsIndex().containsKey(streamId) && obj.streamsIndex().get(streamId).size() != 0)
                 .flatMap(obj -> {
                     List<S3ObjectStreamIndex> indexes = obj.streamsIndex().get(streamId);

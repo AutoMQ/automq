@@ -18,24 +18,26 @@
 
 package org.apache.kafka.image;
 
-import java.util.List;
+import java.util.Iterator;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.SortedWALObjects;
+import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class BrokerS3WALMetadataImage {
 
-    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(-1, List.of());
+    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID, new SortedWALObjectsList());
     private final int brokerId;
-    private final List<S3WALObject> s3WalObjects;
+    private final SortedWALObjects s3WalObjects;
 
-    public BrokerS3WALMetadataImage(int brokerId, List<S3WALObject> s3WalObjects) {
+    public BrokerS3WALMetadataImage(int brokerId, SortedWALObjects sourceWALObjects) {
         this.brokerId = brokerId;
-        this.s3WalObjects = s3WalObjects;
+        this.s3WalObjects = new SortedWALObjectsList(sourceWALObjects);
     }
 
     @Override
@@ -58,10 +60,14 @@ public class BrokerS3WALMetadataImage {
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
             .setBrokerId(brokerId), (short) 0));
-        s3WalObjects.forEach(walObject -> writer.write(walObject.toRecord()));
+        Iterator<S3WALObject> iterator = s3WalObjects.iterator();
+        while (iterator.hasNext()) {
+            S3WALObject s3WALObject = iterator.next();
+            writer.write(s3WALObject.toRecord());
+        }
     }
 
-    public List<S3WALObject> getWalObjects() {
+    public SortedWALObjects getWalObjects() {
         return s3WalObjects;
     }
 
@@ -73,9 +79,7 @@ public class BrokerS3WALMetadataImage {
     public String toString() {
         return "BrokerS3WALMetadataImage{" +
             "brokerId=" + brokerId +
-            ", s3WalObjects=" + s3WalObjects.stream()
-            .map(wal -> wal.toString())
-            .collect(Collectors.joining(", ")) +
+            ", s3WalObjects=" + s3WalObjects +
             '}';
     }
 }
