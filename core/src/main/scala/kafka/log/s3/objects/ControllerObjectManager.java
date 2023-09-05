@@ -65,8 +65,7 @@ public class ControllerObjectManager implements ObjectManager {
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
-                    // TODO: simply response's data structure, only return first object id is enough
-                    return resp.s3ObjectIds().stream().findFirst().get();
+                    return resp.firstS3ObjectId();
                 default:
                     LOGGER.error("Error while preparing {} object, code: {}", count, code);
                     throw code.exception();

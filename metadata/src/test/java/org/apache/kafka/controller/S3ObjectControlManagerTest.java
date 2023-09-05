@@ -27,9 +27,11 @@ import static org.mockito.ArgumentMatchers.anySet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
@@ -80,6 +82,7 @@ public class S3ObjectControlManagerTest {
             .setPreparedCount(3)
             .setTimeToLiveInMs(60 * 1000));
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
+        assertEquals(0L, result0.response().firstS3ObjectId());
         assertEquals(4, result0.records().size());
         ApiMessage message = result0.records().get(0).message();
         assertInstanceOf(AssignedS3ObjectIdRecord.class, message);
@@ -88,8 +91,7 @@ public class S3ObjectControlManagerTest {
         for (int i = 0; i < 3; i++) {
             verifyPrepareObjectRecord(result0.records().get(i + 1), i, 60 * 1000);
         }
-        manager.replay(assignedRecord);
-        result0.records().stream().skip(1).map(ApiMessageAndVersion::message).forEach(record -> manager.replay((S3ObjectRecord) record));
+        replay(manager, result0.records());
 
         // verify the 3 objects are prepared
         assertEquals(3, manager.objectsMetadata().size());
@@ -99,6 +101,46 @@ public class S3ObjectControlManagerTest {
             assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
         });
         assertEquals(3, manager.nextAssignedObjectId());
+
+        // 2. prepare 5 objects
+        ControllerResult<PrepareS3ObjectResponseData> result1 = manager.prepareObject(new PrepareS3ObjectRequestData()
+            .setBrokerId(BROKER1)
+            .setPreparedCount(5)
+            .setTimeToLiveInMs(60 * 1000));
+        assertEquals(Errors.NONE.code(), result1.response().errorCode());
+        assertEquals(3L, result1.response().firstS3ObjectId());
+        assertEquals(6, result1.records().size());
+        replay(manager, result1.records());
+
+        // verify the 5 objects are prepared
+        assertEquals(8, manager.objectsMetadata().size());
+        manager.objectsMetadata().forEach((id, s3Object) -> {
+            assertEquals(S3ObjectState.PREPARED, s3Object.getS3ObjectState());
+            assertEquals(id, s3Object.getObjectId());
+            assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
+        });
+        assertEquals(8, manager.nextAssignedObjectId());
+    }
+
+    private void replay(S3ObjectControlManager manager, List<ApiMessageAndVersion> records) {
+        List<ApiMessage> messages = records.stream().map(x -> x.message())
+            .collect(Collectors.toList());
+        for (ApiMessage message : messages) {
+            MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
+            switch (type) {
+                case ASSIGNED_S3_OBJECT_ID_RECORD:
+                    manager.replay((AssignedS3ObjectIdRecord) message);
+                    break;
+                case S3_OBJECT_RECORD:
+                    manager.replay((S3ObjectRecord) message);
+                    break;
+                case REMOVE_S3_OBJECT_RECORD:
+                    manager.replay((RemoveS3ObjectRecord) message);
+                    break;
+                default:
+                    throw new IllegalStateException("Unknown metadata record type " + type);
+            }
+        }
     }
 
     private void verifyPrepareObjectRecord(ApiMessageAndVersion result, long expectedObjectId, long expectedTimeToLiveInMs) {
