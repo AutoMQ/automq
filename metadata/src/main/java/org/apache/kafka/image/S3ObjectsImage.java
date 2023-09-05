@@ -77,6 +77,10 @@ public final class S3ObjectsImage {
             objectsMetadata.equals(that.objectsMetadata);
     }
 
+    public boolean isEmpty() {
+        return objectsMetadata.isEmpty();
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(nextAssignedObjectId, objectsMetadata);

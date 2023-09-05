@@ -40,7 +40,8 @@ public final class MetadataImage {
         ProducerIdsImage.EMPTY,
         AclsImage.EMPTY,
         S3StreamsMetadataImage.EMPTY,
-        S3ObjectsImage.EMPTY);
+        S3ObjectsImage.EMPTY,
+        KVImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -64,6 +65,8 @@ public final class MetadataImage {
 
     private final S3ObjectsImage objectsMetadata;
 
+    private final KVImage kv;
+
     // Kafka on S3 inject end
 
     public MetadataImage(
@@ -76,7 +79,8 @@ public final class MetadataImage {
         ProducerIdsImage producerIds,
         AclsImage acls,
         S3StreamsMetadataImage streamMetadata,
-        S3ObjectsImage s3ObjectsImage
+        S3ObjectsImage s3ObjectsImage,
+        KVImage kvImage
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -88,6 +92,7 @@ public final class MetadataImage {
         this.acls = acls;
         this.streamMetadata = streamMetadata;
         this.objectsMetadata = s3ObjectsImage;
+        this.kv = kvImage;
     }
 
     public boolean isEmpty() {
@@ -98,7 +103,9 @@ public final class MetadataImage {
             clientQuotas.isEmpty() &&
             producerIds.isEmpty() &&
             acls.isEmpty() &&
-            streamMetadata.isEmpty();
+            streamMetadata.isEmpty() &&
+            objectsMetadata.isEmpty() &&
+            kv.isEmpty();
     }
 
     public MetadataProvenance provenance() {
@@ -151,6 +158,10 @@ public final class MetadataImage {
         return objectsMetadata;
     }
 
+    public KVImage kv() {
+        return kv;
+    }
+
     // Kafka on S3 inject end
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -166,6 +177,7 @@ public final class MetadataImage {
         // Kafka on S3 inject start
         streamMetadata.write(writer, options);
         objectsMetadata.write(writer, options);
+        kv.write(writer, options);
         // Kafka on S3 inject end
         writer.close(true);
     }
@@ -183,7 +195,8 @@ public final class MetadataImage {
             producerIds.equals(other.producerIds) &&
             acls.equals(other.acls) &&
             streamMetadata.equals(other.streamMetadata) &&
-            objectsMetadata.equals(other.objectsMetadata);
+            objectsMetadata.equals(other.objectsMetadata) &&
+            kv.equals(other.kv);
     }
 
     @Override
@@ -198,7 +211,8 @@ public final class MetadataImage {
             producerIds,
             acls,
             streamMetadata,
-            objectsMetadata);
+            objectsMetadata,
+            kv);
     }
 
     @Override
@@ -214,6 +228,7 @@ public final class MetadataImage {
             ", acls=" + acls +
             ", streamMetadata=" + streamMetadata +
             ", objectsMetadata=" + objectsMetadata +
+            ", kv=" + kv +
             ")";
     }
 }

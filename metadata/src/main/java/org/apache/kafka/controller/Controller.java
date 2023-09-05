@@ -40,10 +40,14 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteKVRequestData;
+import org.apache.kafka.common.message.DeleteKVResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.GetKVRequestData;
+import org.apache.kafka.common.message.GetKVResponseData;
 import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
 import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -52,6 +56,8 @@ import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.PutKVRequestData;
+import org.apache.kafka.common.message.PutKVResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -449,6 +455,30 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(
         ControllerRequestContext context,
         GetStreamsOffsetRequestData request
+    );
+
+    /**
+     * Broker trys to get value from KV store embedded in controller.
+     */
+    CompletableFuture<GetKVResponseData> getKV(
+        ControllerRequestContext context,
+        GetKVRequestData request
+    );
+
+    /**
+     * Broker trys to put key-value into KV store embedded in controller.
+     */
+    CompletableFuture<PutKVResponseData> putKV(
+        ControllerRequestContext context,
+        PutKVRequestData request
+    );
+
+    /**
+     * Broker trys to delete key-value from KV store embedded in controller.
+     */
+    CompletableFuture<DeleteKVResponseData> deleteKV(
+        ControllerRequestContext context,
+        DeleteKVRequestData request
     );
 
     // Kafka on S3 inject end

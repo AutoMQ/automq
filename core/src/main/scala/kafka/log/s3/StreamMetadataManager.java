@@ -92,7 +92,7 @@ public class StreamMetadataManager {
                 }
                 obj.setObjectSize(metadata.getObjectSize());
             });
-            LOGGER.info(
+            LOGGER.trace(
                 "[GetObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and return all from metadataCache: startOffset: {}, endOffset: {}, object count: {}",
                 streamId, startOffset, endOffset, limit,
                 cachedInRangeObjects.startOffset(), cachedInRangeObjects.endOffset(), objects.size());
@@ -108,7 +108,7 @@ public class StreamMetadataManager {
                 return objects;
             }
             objects.addAll(inflightInRangeObjects.objects());
-            LOGGER.info(
+            LOGGER.trace(
                 "[GetObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and return all from inflight: startOffset: {}, endOffset: {}, object count: {}",
                 streamId, startOffset, endOffset, limit,
                 inflightInRangeObjects.startOffset(), inflightInRangeObjects.endOffset(), objects.size());
@@ -131,7 +131,7 @@ public class StreamMetadataManager {
             obj.setObjectSize(metadata.getObjectSize());
         });
         if (objects.size() >= limit) {
-            LOGGER.info(
+            LOGGER.trace(
                 "[GetObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and return all from metadataCache: startOffset: {}, endOffset: {}, object count: {}",
                 streamId, startOffset, endOffset, limit,
                 cachedInRangeObjects.startOffset(), cachedInRangeObjects.endOffset(), objects.size());
@@ -145,7 +145,7 @@ public class StreamMetadataManager {
             return objects;
         }
         objects.addAll(inflightinRangeObjects.objects());
-        LOGGER.info(
+        LOGGER.trace(
             "[GetObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and return all from metadataCache and inflight: startOffset: {}, endOffset: {}, object count: {}",
             streamId, startOffset, endOffset, limit,
             cachedInRangeObjects.startOffset(), inflightinRangeObjects.endOffset(), objects.size());
@@ -237,7 +237,7 @@ public class StreamMetadataManager {
             if (objects.size() == 1) {
                 firstObjectId = object.objectId();
             }
-            log.info("[AppendInflight]: append wal object: {}", object.objectId());
+            log.trace("[AppendInflight]: append wal object: {}", object.objectId());
             object.streamsIndex().forEach((stream, indexes) -> {
                 // wal object only contains one index for each stream
                 streamOffsets.putIfAbsent(stream, new OffsetRange(indexes.get(0).getStartOffset(), indexes.get(indexes.size() - 1).getEndOffset()));
@@ -246,7 +246,7 @@ public class StreamMetadataManager {
         }
 
         public void trim(long objectId) {
-            log.info("[TrimInflight]: trim wal object <= {}", objectId);
+            log.trace("[TrimInflight]: trim wal object <= {}", objectId);
             // TODO: speed up by binary search
             int clearEndIndex = objects.size();
             for (int i = 0; i < objects.size(); i++) {
@@ -324,12 +324,10 @@ public class StreamMetadataManager {
         public void onChange(MetadataDelta delta, MetadataImage newImage) {
             BrokerS3WALMetadataImage walMetadataImage = newImage.streamsMetadata().brokerWALMetadata().get(config.brokerId());
             if (walMetadataImage == null) {
-                LOGGER.warn("[CatchUpMetadataListener]: wal metadata image not exist");
                 return;
             }
             S3WALObject wal = walMetadataImage.getWalObjects().get(walMetadataImage.getWalObjects().size() - 1);
             if (wal == null) {
-                LOGGER.warn("[CatchUpMetadataListener]: wal object not exist");
                 return;
             }
             if (wal.objectId() < inflightWalObjects.firstObjectId) {

@@ -45,7 +45,8 @@ public class MetadataImageTest {
             ProducerIdsImageTest.IMAGE1,
             AclsImageTest.IMAGE1,
             S3StreamsMetadataImageTest.IMAGE1,
-            S3ObjectsImageTest.IMAGE1);
+            S3ObjectsImageTest.IMAGE1,
+            KVImageTest.IMAGE1);
 
         DELTA1 = new MetadataDelta.Builder().
                 setImage(IMAGE1).
@@ -58,6 +59,8 @@ public class MetadataImageTest {
         RecordTestUtils.replayAll(DELTA1, ProducerIdsImageTest.DELTA1_RECORDS);
         RecordTestUtils.replayAll(DELTA1, AclsImageTest.DELTA1_RECORDS);
         RecordTestUtils.replayAll(DELTA1, S3StreamsMetadataImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, S3ObjectsImageTest.DELTA1_RECORDS);
+        RecordTestUtils.replayAll(DELTA1, KVImageTest.DELTA1_RECORDS);
 
         IMAGE2 = new MetadataImage(
             new MetadataProvenance(200, 5, 4000),
@@ -69,7 +72,8 @@ public class MetadataImageTest {
             ProducerIdsImageTest.IMAGE2,
             AclsImageTest.IMAGE2,
             S3StreamsMetadataImageTest.IMAGE2,
-            S3ObjectsImageTest.IMAGE2);
+            S3ObjectsImageTest.IMAGE2,
+            KVImageTest.IMAGE2);
     }
 
     @Test

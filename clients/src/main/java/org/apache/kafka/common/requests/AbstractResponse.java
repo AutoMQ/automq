@@ -33,10 +33,13 @@ import org.apache.kafka.common.requests.s3.CloseStreamResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.CommitWALObjectResponse;
 import org.apache.kafka.common.requests.s3.CreateStreamResponse;
+import org.apache.kafka.common.requests.s3.DeleteKVResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamResponse;
+import org.apache.kafka.common.requests.s3.GetKVResponse;
 import org.apache.kafka.common.requests.s3.GetStreamsOffsetResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
+import org.apache.kafka.common.requests.s3.PutKVResponse;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
     public static final int DEFAULT_THROTTLE_TIME = 0;
@@ -274,6 +277,12 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return CommitWALObjectResponse.parse(responseBuffer, version);
             case GET_STREAMS_OFFSET:
                 return GetStreamsOffsetResponse.parse(responseBuffer, version);
+            case GET_KV:
+                return GetKVResponse.parse(responseBuffer, version);
+            case PUT_KV:
+                return PutKVResponse.parse(responseBuffer, version);
+            case DELETE_KV:
+                return DeleteKVResponse.parse(responseBuffer, version);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +
