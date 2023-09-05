@@ -683,6 +683,7 @@ object KafkaConfig {
   val S3StreamSplitSizeProp = "s3.stream.object.split.size"
   val S3ObjectBlockSizeProp = "s3.object.block.size"
   val S3ObjectPartSizeProp = "s3.object.part.size"
+  val S3CacheSizeProp = "s3.cache.size"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -691,6 +692,7 @@ object KafkaConfig {
   val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload WAL object or compact object."
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
+  val S3CacheSizeDoc = "The S3 block cache size in MiB."
 
   // Kafka on S3 inject end
 
@@ -1498,6 +1500,7 @@ object KafkaConfig {
       .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
+      .define(S3CacheSizeProp, INT, 1024, MEDIUM, S3CacheSizeDoc)
     // Kafka on S3 inject end
   }
 
@@ -2037,9 +2040,10 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3WALObjectSize = getLong(KafkaConfig.S3WALObjectSizeProp)
-  val s3StreamSplitSizeProp = getInt(KafkaConfig.S3StreamSplitSizeProp)
-  val s3ObjectBlockSizeProp = getInt(KafkaConfig.S3ObjectBlockSizeProp)
-  val s3ObjectPartSizeProp = getInt(KafkaConfig.S3ObjectPartSizeProp)
+  val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
+  val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
+  val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
+  val s3CacheSize = getInt(KafkaConfig.S3CacheSizeProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

@@ -48,7 +48,7 @@ public class DefaultS3BlockCacheTest {
     public void setup() {
         objectManager = mock(ObjectManager.class);
         s3Operator = new MemoryS3Operator();
-        s3BlockCache = new DefaultS3BlockCache(objectManager, s3Operator);
+        s3BlockCache = new DefaultS3BlockCache(0, objectManager, s3Operator);
     }
 
     @Test

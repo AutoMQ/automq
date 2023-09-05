@@ -82,7 +82,7 @@ public class WALObjectUploadTask {
 
         for (Long streamId : streamIds) {
             List<FlatStreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
-            long streamSize = streamRecords.stream().mapToLong(r -> r.encodedBuf.readableBytes()).sum();
+            long streamSize = streamRecords.stream().mapToLong(FlatStreamRecordBatch::size).sum();
             if (streamSize >= streamSplitSizeThreshold) {
                 streamObjectCfList.add(writeStreamObject(streamRecords));
             } else {

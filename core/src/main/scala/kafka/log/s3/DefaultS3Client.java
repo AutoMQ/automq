@@ -60,7 +60,7 @@ public class DefaultS3Client implements Client {
         this.requestSender = new ControllerRequestSender(brokerServer);
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
-        this.blockCache = new DefaultS3BlockCache(objectManager, operator);
+        this.blockCache = new DefaultS3BlockCache(config.s3CacheSize() * 1024 * 1024, objectManager, operator);
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage);
         this.kvClient = new ControllerKVClient(this.requestSender);

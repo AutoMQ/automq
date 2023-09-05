@@ -81,7 +81,7 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
         //TODO: copy to pooled bytebuffer to reduce gc, convert to flat record
         FlatStreamRecordBatch flatStreamRecordBatch = FlatStreamRecordBatch.from(streamRecord);
-        WriteAheadLog.AppendResult appendResult = log.append(flatStreamRecordBatch.encodedBuf.duplicate());
+        WriteAheadLog.AppendResult appendResult = log.append(flatStreamRecordBatch.encodedBuf());
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(flatStreamRecordBatch, appendResult.offset, cf);
         callbackSequencer.before(writeRequest);
@@ -153,7 +153,7 @@ public class S3Storage implements Storage {
 
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
         WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
-                config.s3ObjectBlockSizeProp(), config.s3ObjectPartSizeProp(), config.s3StreamSplitSizeProp());
+                config.s3ObjectBlockSize(), config.s3ObjectPartSize(), config.s3StreamSplitSize());
         WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
         context.task = walObjectUploadTask;
         context.cache = logCacheBlock;
