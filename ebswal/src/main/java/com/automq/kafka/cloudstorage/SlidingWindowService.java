@@ -21,13 +21,14 @@ public class SlidingWindowService extends ServiceThread {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
     private AtomicLong slidingWindowNextWriteOffset = new AtomicLong(0);
     private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
+    private AtomicLong slidingWindowMinOffset = new AtomicLong(0);
 
     private ConcurrentHashMap<Long, Long> tableIOTaskRequest = new ConcurrentHashMap<>();
 
     private BlockingQueue<IOTask> queueIOTaskRequest = new LinkedBlockingQueue<>();
 
     // 单线程读写，不需要加锁
-    private TreeMap<Long, IOTask> treeMapIOTaskRequest = new TreeMap<>();
+    private TreeMap<Long, IOTaskRequest> treeMapIOTaskRequest = new TreeMap<>();
 
     private static int BlockSize = Integer.parseInt(System.getProperty(//
             "automq.ebswal.blocksize", //
@@ -51,12 +52,10 @@ public class SlidingWindowService extends ServiceThread {
         return SlidingWindowService.class.getSimpleName();
     }
 
-    private boolean makeIOTaskHitWindow(final IOTask newIOTask) {
+    private boolean makeIOTaskHitWindow(final IOTaskRequest ioTaskRequest) {
         if (!treeMapIOTaskRequest.isEmpty()) {
             Long firstKey = treeMapIOTaskRequest.firstKey();
-            treeMapIOTaskRequest.lastKey();
-
-            long newWindowTail = newIOTask.writeOffset() + newIOTask.recordHeader().limit() + newIOTask.recordBody().limit();
+            long newWindowTail = ioTaskRequest.writeOffset() + ioTaskRequest.recordHeader().limit() + ioTaskRequest.recordBody().limit();
 
             if (newWindowTail - firstKey > slidingWindowMaxSize.get()) {
                 long newSlidingWindowMaxSize = newWindowTail - firstKey + SlidingWindowScaleUnit;
@@ -64,15 +63,15 @@ public class SlidingWindowService extends ServiceThread {
                     try {
                         // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
                         String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxSize, SlidingWindowUpperLimit);
-                        newIOTask.future().completeExceptionally(new FastWAL.OverCapacityException(exceptionMessage));
+                        ioTaskRequest.future().completeExceptionally(new FastWAL.OverCapacityException(exceptionMessage));
                     } catch (Throwable ignored) {
                     }
                     return false;
                 } else {
+                    slidingWindowMaxSize.set(newSlidingWindowMaxSize);
+                    ioTaskRequest.flushWALHeader(newSlidingWindowMaxSize);
                     LOGGER.info("[KEY_EVENT] Sliding window is too small to start the scale process, current window size [{}], new window size [{}]", //
                             slidingWindowMaxSize.get(), newSlidingWindowMaxSize);
-                    slidingWindowMaxSize.set(newSlidingWindowMaxSize);
-                    newIOTask.flushWALHeader(newSlidingWindowMaxSize);
                 }
             }
         }
@@ -117,13 +116,26 @@ public class SlidingWindowService extends ServiceThread {
             try {
                 IOTask ioTask = queueIOTaskRequest.poll(3000, TimeUnit.MILLISECONDS);
                 if (ioTask != null) {
-                    if (makeIOTaskHitWindow(ioTask)) {
-                        treeMapIOTaskRequest.put(ioTask.writeOffset(), ioTask);
+                    if (ioTask instanceof IOTaskRequest) {
+                        IOTaskRequest ioTaskRequest = (IOTaskRequest) ioTask;
+                        if (makeIOTaskHitWindow(ioTaskRequest)) {
+                            treeMapIOTaskRequest.put(ioTaskRequest.writeOffset(), ioTaskRequest);
 
-                        // TODO 发起异步写请求
+                            // TODO 发起异步写请求
+                        }
+
+                    } else if (ioTask instanceof IOTaskResponse) {
+                        IOTaskResponse ioTaskResponse = (IOTaskResponse) ioTask;
+                        // 更新滑动窗口的最小 Offset
+                        treeMapIOTaskRequest.remove(ioTaskResponse.writeOffset());
+
+                        if (!treeMapIOTaskRequest.isEmpty()) {
+                            slidingWindowMinOffset.set(treeMapIOTaskRequest.firstKey());
+                        } else {
+                            slidingWindowMinOffset.set(slidingWindowNextWriteOffset.get());
+                        }
                     }
                 }
-
             } catch (Throwable e) {
                 LOGGER.error(String.format("%s service has exception. ", getServiceName()), e);
             }
