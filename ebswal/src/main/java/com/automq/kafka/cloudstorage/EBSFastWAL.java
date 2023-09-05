@@ -151,7 +151,7 @@ public class EBSFastWAL implements FastWAL {
         fileChannel.write(buffer, position, null, new CompletionHandler<Integer, Object>() {
             @Override
             public void completed(Integer result, Object attachment) {
-                remainingBytes.set(remainingBytes.intValue() - result.intValue());
+                remainingBytes.addAndGet(-result.intValue());
 
                 if (remainingBytes.intValue() > 0) {
                     buffer.position(buffer.limit() - remainingBytes.intValue());
@@ -179,11 +179,13 @@ public class EBSFastWAL implements FastWAL {
     public void start() {
         // TODO WAL Header 要全部扫描数据才能还原。
         recoverWALFinished.set(true);
+
+        slidingWindowService.start();
     }
 
     @Override
     public void shutdownGracefully() {
-
+        slidingWindowService.shutdown();
     }
 
     @Override
@@ -197,8 +199,28 @@ public class EBSFastWAL implements FastWAL {
         // 计算写入 wal offset
         final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
 
-        int finalRecordBodyCRC = recordBodyCRC;
-        slidingWindowService.putIOTaskRequest(new IOTaskRequest() {
+        // AppendResult
+        final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
+        final AppendResult appendResult = new AppendResult() {
+            @Override
+            public long walOffset() {
+                return expectedWriteOffset - RecordMetaHeaderSize;
+            }
+
+            @Override
+            public int length() {
+                return record.limit();
+            }
+
+            @Override
+            public CompletableFuture<CallbackResult> future() {
+                return appendResultFuture;
+            }
+        };
+
+        // 生成写 IO 请求，入队执行异步 IO
+        final int finalRecordBodyCRC = recordBodyCRC;
+        slidingWindowService.submitIOTaskRequest(new IOTaskRequest() {
             @Override
             public long writeOffset() {
                 return expectedWriteOffset;
@@ -206,7 +228,7 @@ public class EBSFastWAL implements FastWAL {
 
             @Override
             public CompletableFuture<AppendResult.CallbackResult> future() {
-                return null;
+                return appendResultFuture;
             }
 
             @Override
@@ -238,7 +260,7 @@ public class EBSFastWAL implements FastWAL {
         });
 
 
-        return null;
+        return appendResult;
     }
 
     @Override

@@ -5,10 +5,15 @@ import com.automq.kafka.cloudstorage.util.ServiceThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.CompletionHandler;
 import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -43,6 +48,9 @@ public class SlidingWindowService extends ServiceThread {
     private long contentSize = 1024 * 1024 * 1024 * 8;
 
     public static final int RecordMetaHeaderSize = 4 + 4 + 8 + 4 + 4;
+
+
+    private AsynchronousFileChannel fileChannel;
 
 
     @Override
@@ -106,8 +114,81 @@ public class SlidingWindowService extends ServiceThread {
         return expectedWriteOffset;
     }
 
-    public void putIOTaskRequest(IOTaskRequest ioTask) {
+    public void submitIOTaskRequest(IOTaskRequest ioTask) {
         queueIOTaskRequest.offer(ioTask);
+    }
+
+
+    private void writeRecordAsynchronously(IOTaskRequest ioTask) {
+        final ByteBuffer totalRecord = ByteBuffer.allocate(ioTask.recordHeader().limit() + ioTask.recordBody().limit());
+
+        totalRecord.put(ioTask.recordHeader());
+
+        totalRecord.put(ioTask.recordBody());
+
+        totalRecord.flip();
+
+        final AtomicInteger remainingBytes = new AtomicInteger(totalRecord.limit());
+
+        fileChannel.write( //
+                totalRecord, //
+                ioTask.writeOffset(), //
+                ioTask, //
+                new CompletionHandler<Integer, IOTaskRequest>() {
+                    @Override
+                    public void completed(Integer result, IOTaskRequest attachment) {
+                        try {
+                            remainingBytes.addAndGet(-result.intValue());
+
+                            if (remainingBytes.intValue() > 0) {
+                                totalRecord.position(totalRecord.limit() - remainingBytes.intValue());
+
+                                fileChannel.write(totalRecord, ioTask.writeOffset() + totalRecord.position(), attachment, this);
+                                return;
+                            }
+
+                            // 回调 IO TASK Future，通知用户写入成功
+                            attachment.future().complete(new FastWAL.AppendResult.CallbackResult() {
+                                @Override
+                                public long slidingWindowMinOffset() {
+                                    return slidingWindowMinOffset.get();
+                                }
+
+                                @Override
+                                public FastWAL.AppendResult appendResult() {
+                                    return new FastWAL.AppendResult() {
+                                        @Override
+                                        public long walOffset() {
+                                            return attachment.writeOffset() - RecordMetaHeaderSize;
+                                        }
+
+                                        @Override
+                                        public int length() {
+                                            return attachment.recordBody().limit();
+                                        }
+
+                                        @Override
+                                        public CompletableFuture<CallbackResult> future() {
+                                            return null;
+                                        }
+                                    };
+                                }
+                            });
+                        } catch (Throwable ignored) {
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable exc, IOTaskRequest attachment) {
+                        try {
+                            // 回调 IO TASK Future，通知用户写入失败
+                            // TODO 未来考虑是否重试有意义
+                            attachment.future().completeExceptionally(exc);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+
     }
 
     @Override
@@ -122,7 +203,7 @@ public class SlidingWindowService extends ServiceThread {
                         if (makeIOTaskHitWindow(ioTaskRequest)) {
                             treeMapIOTaskRequest.put(ioTaskRequest.writeOffset(), ioTaskRequest);
 
-                            // TODO 发起异步写请求
+                            writeRecordAsynchronously(ioTaskRequest);
                         }
 
                     } else if (ioTask instanceof IOTaskResponse) {
