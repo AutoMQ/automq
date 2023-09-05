@@ -28,7 +28,7 @@ import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
-import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -80,10 +80,10 @@ public class BrokerS3WALMetadataImageTest {
         // verify delta and check image's write
         BrokerS3WALMetadataImage image1 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
             new S3WALObject(0L, BROKER0, Map.of(
-                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 0L, 100L)),
-                STREAM1, List.of(new S3ObjectStreamIndex(STREAM1, 0L, 200L))), 0L),
+                STREAM0, List.of(new StreamOffsetRange(STREAM0, 0L, 100L)),
+                STREAM1, List.of(new StreamOffsetRange(STREAM1, 0L, 200L))), 0L),
             new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 101L, 200L))), 1L))));
+                STREAM0, List.of(new StreamOffsetRange(STREAM0, 101L, 200L))), 1L))));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -96,7 +96,7 @@ public class BrokerS3WALMetadataImageTest {
         // verify delta and check image's write
         BrokerS3WALMetadataImage image2 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
             new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 101L, 200L))), 1L))));
+                STREAM0, List.of(new StreamOffsetRange(STREAM0, 101L, 200L))), 1L))));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
     }

@@ -56,7 +56,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -383,8 +383,8 @@ public class StreamControlManager {
             records.addAll(destroyResult.records());
         }
 
-        List<S3ObjectStreamIndex> indexes = streamRanges.stream()
-            .map(range -> new S3ObjectStreamIndex(range.streamId(), range.startOffset(), range.endOffset()))
+        List<StreamOffsetRange> indexes = streamRanges.stream()
+            .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
             .collect(Collectors.toList());
         // update broker's wal object
         BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
@@ -400,7 +400,7 @@ public class StreamControlManager {
             .setBrokerId(brokerId)
             .setStreamsIndex(
                 indexes.stream()
-                    .map(S3ObjectStreamIndex::toRecordStreamIndex)
+                    .map(StreamOffsetRange::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0));
         // generate compacted objects' remove record
         data.compactedObjectIds().forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
@@ -507,10 +507,10 @@ public class StreamControlManager {
         }
 
         // create wal object
-        Map<Long, List<S3ObjectStreamIndex>> indexMap = streamIndexes
+        Map<Long, List<StreamOffsetRange>> indexMap = streamIndexes
             .stream()
-            .map(S3ObjectStreamIndex::of)
-            .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
+            .map(StreamOffsetRange::of)
+            .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
         brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId));
 
         // update range

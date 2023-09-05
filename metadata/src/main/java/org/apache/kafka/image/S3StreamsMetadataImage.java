@@ -30,7 +30,7 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -145,7 +145,7 @@ public final class S3StreamsMetadataImage {
             List<ObjectStreamRange> walObjects = wal.getWalObjects().list().stream()
                 .filter(obj -> obj.streamsIndex().containsKey(streamId) && obj.streamsIndex().get(streamId).size() != 0)
                 .flatMap(obj -> {
-                    List<S3ObjectStreamIndex> indexes = obj.streamsIndex().get(streamId);
+                    List<StreamOffsetRange> indexes = obj.streamsIndex().get(streamId);
                     // TODO: pre filter useless objects
                     return indexes.stream().filter(index -> {
                         long objectStartOffset = index.getStartOffset();

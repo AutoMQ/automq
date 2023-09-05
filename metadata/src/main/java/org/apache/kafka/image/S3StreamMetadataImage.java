@@ -26,6 +26,7 @@ import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.StreamState;
 
 public class S3StreamMetadataImage {
@@ -105,6 +106,14 @@ public class S3StreamMetadataImage {
 
     public StreamState state() {
         return state;
+    }
+
+    public StreamOffsetRange offsetRange() {
+        long endOffset = startOffset;
+        if (ranges.containsKey(rangeIndex)) {
+            endOffset = ranges.get(rangeIndex).endOffset();
+        }
+        return new StreamOffsetRange(streamId, startOffset, endOffset);
     }
 
     @Override

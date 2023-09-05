@@ -15,28 +15,22 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.model;
+package kafka.log.s3.metadata;
 
-public class StreamOffset {
-    private final long streamId;
-    private final long startOffset;
-    private final long endOffset;
+import java.util.concurrent.CompletableFuture;
+import org.apache.kafka.metadata.stream.InRangeObjects;
 
-    public StreamOffset(long streamId, long startOffset, long endOffset) {
-        this.streamId = streamId;
-        this.startOffset = startOffset;
-        this.endOffset = endOffset;
-    }
+public interface InRangeObjectsFetcher {
 
-    public long streamId() {
-        return streamId;
-    }
+    /**
+     * fetch stream interval related objects
+     *
+     * @param streamId stream id
+     * @param startOffset start offset, inclusive, if not exist, return INVALID
+     * @param endOffset end offset, exclusive, if not exist, wait for it
+     * @param limit max object count
+     * @return {@link InRangeObjects}
+     */
+    CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit);
 
-    public long startOffset() {
-        return startOffset;
-    }
-
-    public long endOffset() {
-        return endOffset;
-    }
 }

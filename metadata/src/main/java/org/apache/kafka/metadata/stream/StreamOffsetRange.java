@@ -20,38 +20,41 @@ package org.apache.kafka.metadata.stream;
 import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 
 /**
- * ObjectStreamIndex is the index of a stream range in a WAL object or STREAM object.
+ * StreamOffsetRange represents <code>[startOffset, endOffset)</code> in the stream.
  */
-public class S3ObjectStreamIndex implements Comparable<S3ObjectStreamIndex> {
+public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
 
-    private final Long streamId;
+    public static final StreamOffsetRange INVALID = new StreamOffsetRange(S3StreamConstant.INVALID_STREAM_ID,
+        S3StreamConstant.INVALID_OFFSET, S3StreamConstant.INVALID_OFFSET);
 
-    private final Long startOffset;
+    private final long streamId;
 
-    private final Long endOffset;
+    private final long startOffset;
 
-    public S3ObjectStreamIndex(Long streamId, Long startOffset, Long endOffset) {
+    private final long endOffset;
+
+    public StreamOffsetRange(long streamId, long startOffset, long endOffset) {
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
     }
 
-    public Long getStreamId() {
+    public long getStreamId() {
         return streamId;
     }
 
-    public Long getStartOffset() {
+    public long getStartOffset() {
         return startOffset;
     }
 
-    public Long getEndOffset() {
+    public long getEndOffset() {
         return endOffset;
     }
 
     @Override
-    public int compareTo(S3ObjectStreamIndex o) {
-        int res = this.streamId.compareTo(o.streamId);
-        return res == 0 ? this.startOffset.compareTo(o.startOffset) : res;
+    public int compareTo(StreamOffsetRange o) {
+        int res = Long.compare(this.streamId, o.streamId);
+        return res == 0 ? Long.compare(this.startOffset, o.startOffset) : res;
     }
 
     public StreamIndex toRecordStreamIndex() {
@@ -61,7 +64,7 @@ public class S3ObjectStreamIndex implements Comparable<S3ObjectStreamIndex> {
             .setEndOffset(endOffset);
     }
 
-    public static S3ObjectStreamIndex of(StreamIndex index) {
-        return new S3ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset());
+    public static StreamOffsetRange of(StreamIndex index) {
+        return new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset());
     }
 }

@@ -40,7 +40,7 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{ApiVersionsResponse, MetadataResponse, UpdateMetadataRequest}
 import org.apache.kafka.common.security.auth.SecurityProtocol
-import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object}
+import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object, StreamOffsetRange}
 import org.apache.kafka.server.common.MetadataVersion
 
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
@@ -593,6 +593,10 @@ class ZkMetadataCache(
 
   override def getObjectMetadata(objectId: Long): S3Object = {
     throw new UnsupportedOperationException("getObjectMetadata is not supported in ZkMetadataCache")
+  }
+
+  override def getStreamOffsetRange(streamId: Long): StreamOffsetRange = {
+    throw new UnsupportedOperationException("getStreamOffsetRange is not supported in ZkMetadataCache")
   }
   // Kafka on S3 inject end
 }

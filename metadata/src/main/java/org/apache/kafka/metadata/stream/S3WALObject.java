@@ -37,11 +37,11 @@ public class S3WALObject implements Comparable<S3WALObject> {
     private final long objectId;
 
     private final int brokerId;
-    private final Map<Long/*streamId*/, List<S3ObjectStreamIndex>> streamsIndex;
+    private final Map<Long/*streamId*/, List<StreamOffsetRange>> streamsIndex;
 
     private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<S3ObjectStreamIndex>> streamsIndex, long orderId) {
+    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamsIndex, long orderId) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.brokerId = brokerId;
@@ -49,16 +49,16 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
-        List<S3ObjectStreamIndex> indexes = streamsIndex.get(streamId);
+        List<StreamOffsetRange> indexes = streamsIndex.get(streamId);
         if (indexes == null || indexes.isEmpty()) {
             return false;
         }
-        S3ObjectStreamIndex firstIndex = indexes.get(0);
-        S3ObjectStreamIndex lastIndex = indexes.get(indexes.size() - 1);
+        StreamOffsetRange firstIndex = indexes.get(0);
+        StreamOffsetRange lastIndex = indexes.get(indexes.size() - 1);
         return startOffset >= firstIndex.getStartOffset() && startOffset <= lastIndex.getEndOffset();
     }
 
-    public Map<Long, List<S3ObjectStreamIndex>> streamsIndex() {
+    public Map<Long, List<StreamOffsetRange>> streamsIndex() {
         return streamsIndex;
     }
 
@@ -69,14 +69,14 @@ public class S3WALObject implements Comparable<S3WALObject> {
             .setOrderId(orderId)
             .setStreamsIndex(
                 streamsIndex.values().stream().flatMap(List::stream)
-                    .map(S3ObjectStreamIndex::toRecordStreamIndex)
+                    .map(StreamOffsetRange::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0);
     }
 
     public static S3WALObject of(WALObjectRecord record) {
-        Map<Long, List<S3ObjectStreamIndex>> collect = record.streamsIndex().stream()
-            .map(index -> new S3ObjectStreamIndex(index.streamId(), index.startOffset(), index.endOffset()))
-            .collect(Collectors.groupingBy(S3ObjectStreamIndex::getStreamId));
+        Map<Long, List<StreamOffsetRange>> collect = record.streamsIndex().stream()
+            .map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset()))
+            .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
         S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
             collect, record.orderId());
         return s3WalObject;

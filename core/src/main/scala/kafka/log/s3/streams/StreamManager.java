@@ -19,8 +19,8 @@ package kafka.log.s3.streams;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.OpenStreamMetadata;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
 public interface StreamManager {
 
@@ -74,8 +74,8 @@ public interface StreamManager {
      * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
      *
      * @param streamIds stream ids.
-     * @return {@link StreamOffset}
+     * @return {@link StreamOffsetRange}
      */
-    CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds);
+    CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds);
 }
 

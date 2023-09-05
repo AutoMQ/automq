@@ -22,6 +22,7 @@ import com.automq.elasticstream.client.api.KVClient;
 import com.automq.elasticstream.client.api.StreamClient;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
+import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.objects.ControllerObjectManager;
 import kafka.log.s3.objects.ObjectManager;

@@ -22,7 +22,7 @@ import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
 import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.{Cluster, Node, TopicPartition, Uuid}
-import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object}
+import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object, StreamOffsetRange}
 import org.apache.kafka.server.common.MetadataVersion
 
 import java.util
@@ -122,6 +122,8 @@ trait MetadataCache {
   def getObjects(streamId: Long, startOffset: Long, endOffset: Long, limit: Int): InRangeObjects
 
   def getObjectMetadata(objectId: Long): S3Object
+
+  def getStreamOffsetRange(streamId: Long): StreamOffsetRange
   // Kafka on S3 inject end
 }
 
