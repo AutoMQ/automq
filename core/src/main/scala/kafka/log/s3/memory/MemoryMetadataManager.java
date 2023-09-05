@@ -41,7 +41,7 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import org.apache.kafka.common.errors.s3.StreamNotClosedException;
-import org.apache.kafka.controller.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.streams.StreamManager;
 import org.apache.kafka.metadata.stream.ObjectUtils;

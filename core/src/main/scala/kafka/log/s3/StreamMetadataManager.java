@@ -25,7 +25,7 @@ import java.util.Map;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
-import org.apache.kafka.controller.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.image.BrokerS3WALMetadataImage;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;

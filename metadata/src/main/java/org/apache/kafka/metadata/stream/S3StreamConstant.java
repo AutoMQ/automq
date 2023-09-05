@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream;
+package org.apache.kafka.metadata.stream;
 
 public class S3StreamConstant {
 
@@ -32,6 +32,8 @@ public class S3StreamConstant {
     public static final long INVALID_OBJECT_ID = -1L;
 
     public static final long INVALID_OFFSET = -1L;
+
+    public static final int INVALID_BROKER_ID = -1;
 
     public static final long MAX_OBJECT_ID = Long.MAX_VALUE;
 
