@@ -1,5 +1,6 @@
 package com.automq.kafka.cloudstorage;
 
+import com.automq.kafka.cloudstorage.api.FastWAL;
 import com.automq.kafka.cloudstorage.util.ServiceThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +43,7 @@ public class SlidingWindowService extends ServiceThread {
 
     }
 
-    public long allocateWriteOffset(final int recordBodySize, final long trimOffset) {
+    public long allocateWriteOffset(final int recordBodySize, final long trimOffset) throws FastWAL.OverCapacityException {
         // 计算要写入的总大小
         int totalWriteSize = RecordMetaHeaderSize + recordBodySize;
 
@@ -61,12 +62,12 @@ public class SlidingWindowService extends ServiceThread {
             }
 
             // 如果 trim 不及时，导致 RingBuffer 出现写覆盖有效数据，抛异常
-            if (expectedWriteOffset - trimOffset < totalWriteSize) {
-                throw new RuntimeException(String.format("Sliding window is full, please trim wal expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",//
+            if (expectedWriteOffset + totalWriteSize - trimOffset > contentSize) {
+                throw new FastWAL.OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",//
                         expectedWriteOffset, trimOffset, totalWriteSize));
             }
 
-        } while (!slidingWindowNextWriteOffset.compareAndSet(lastWriteOffset, expectedWriteOffset));
+        } while (!slidingWindowNextWriteOffset.compareAndSet(lastWriteOffset, expectedWriteOffset + totalWriteSize));
 
         return expectedWriteOffset;
     }
