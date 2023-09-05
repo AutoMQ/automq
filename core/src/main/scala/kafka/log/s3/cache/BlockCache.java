@@ -65,7 +65,13 @@ public class BlockCache {
                 break;
             }
             // overlap is a rare case, so removeIf is fine for the performance.
-            if (records.removeIf(record -> record.lastOffset() > cacheBlock.firstOffset && record.baseOffset < cacheBlock.lastOffset)) {
+            if (records.removeIf(record -> {
+                boolean remove = record.lastOffset() > cacheBlock.firstOffset && record.baseOffset < cacheBlock.lastOffset;
+                if (remove) {
+                    record.free();
+                }
+                return remove;
+            })) {
                 overlapped = true;
             }
         }
@@ -117,21 +123,9 @@ public class BlockCache {
             if (readahead == null && cacheBlock.readahead != null) {
                 readahead = cacheBlock.readahead;
             }
-            boolean matched = false;
-            for (FlatStreamRecordBatch record : cacheBlock.records) {
-                if (record.baseOffset <= nextStartOffset && record.lastOffset() > nextStartOffset) {
-                    records.add(record);
-                    nextStartOffset = record.lastOffset();
-                    nextMaxBytes -= record.size();
-                    matched = true;
-                    if (nextStartOffset >= endOffset || nextMaxBytes <= 0) {
-                        break;
-                    }
-                } else if (matched) {
-                    break;
-                }
-            }
-            boolean blockCompletedRead = records.getLast().lastOffset() >= cacheBlock.lastOffset;
+            nextMaxBytes = readFromCacheBlock(records, cacheBlock, nextStartOffset, endOffset, nextMaxBytes);
+            nextStartOffset = records.getLast().lastOffset();
+            boolean blockCompletedRead = nextStartOffset >= cacheBlock.lastOffset;
             CacheKey cacheKey = new CacheKey(streamId, cacheBlock.firstOffset);
             if (blockCompletedRead) {
                 active.remove(cacheKey);
@@ -148,6 +142,25 @@ public class BlockCache {
 
         }
         return GetCacheResult.of(records, readahead);
+    }
+
+    private int readFromCacheBlock(LinkedList<FlatStreamRecordBatch> records, CacheBlock cacheBlock,
+                                   long nextStartOffset, long endOffset, int nextMaxBytes) {
+        boolean matched = false;
+        for (FlatStreamRecordBatch record : cacheBlock.records) {
+            if (record.baseOffset <= nextStartOffset && record.lastOffset() > nextStartOffset) {
+                records.add(record);
+                nextStartOffset = record.lastOffset();
+                nextMaxBytes -= record.size();
+                matched = true;
+                if (nextStartOffset >= endOffset || nextMaxBytes <= 0) {
+                    break;
+                }
+            } else if (matched) {
+                break;
+            }
+        }
+        return nextMaxBytes;
     }
 
     private void ensureCapacity(int size) {
@@ -207,11 +220,16 @@ public class BlockCache {
         int size;
         Readahead readahead;
 
-        public CacheBlock(List<FlatStreamRecordBatch> records) {
+        public CacheBlock(List<FlatStreamRecordBatch> records, Readahead readahead) {
             this.records = records;
             this.firstOffset = records.get(0).baseOffset;
             this.lastOffset = records.get(records.size() - 1).lastOffset();
             this.size = records.stream().mapToInt(FlatStreamRecordBatch::size).sum();
+            this.readahead = readahead;
+        }
+
+        public CacheBlock(List<FlatStreamRecordBatch> records) {
+            this(records, null);
         }
 
         public void free() {
@@ -220,7 +238,7 @@ public class BlockCache {
         }
     }
 
-    static class GetCacheResult {
+    public static class GetCacheResult {
         private final List<FlatStreamRecordBatch> records;
         private final Readahead readahead;
 
@@ -250,7 +268,7 @@ public class BlockCache {
         }
     }
 
-    static class Readahead {
+    public static class Readahead {
         private final long startOffset;
         private final int size;
 
