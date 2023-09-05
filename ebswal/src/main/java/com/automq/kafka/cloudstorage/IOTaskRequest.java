@@ -5,7 +5,7 @@ import com.automq.kafka.cloudstorage.api.FastWAL;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
-public interface IOTaskRequest {
+public interface IOTaskRequest extends IOTask {
     // writeOffset 包含了 Record header 的大小
     long writeOffset();
 
@@ -15,5 +15,5 @@ public interface IOTaskRequest {
 
     ByteBuffer recordBody();
 
-    void flushWALHeader(final long slidingWindowMaxSize);
+    void flushWALHeader();
 }

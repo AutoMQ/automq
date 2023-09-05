@@ -166,7 +166,7 @@ public class EBSFastWAL implements FastWAL {
         });
 
         try {
-            latch.wait(10000);
+            latch.wait(6000);
         } catch (InterruptedException e) {
             LOGGER.error("writeFileSynchronously InterruptedException", e);
         }
@@ -181,7 +181,6 @@ public class EBSFastWAL implements FastWAL {
     @Override
     public void shutdownGracefully() {
 
-
     }
 
     @Override
@@ -193,25 +192,35 @@ public class EBSFastWAL implements FastWAL {
         }
 
         // 计算写入 wal offset
-        long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
+        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
 
-
-        AppendResult appendResult = new AppendResult() {
+        slidingWindowService.putIOTaskRequest(new IOTaskRequest() {
             @Override
-            public long walOffset() {
-                return 0;
+            public long writeOffset() {
+                return expectedWriteOffset;
             }
 
             @Override
-            public int length() {
-                return 0;
-            }
-
-            @Override
-            public CompletableFuture<CallbackResult> future() {
+            public CompletableFuture<AppendResult.CallbackResult> future() {
                 return null;
             }
-        };
+
+            @Override
+            public ByteBuffer recordHeader() {
+                return null;
+            }
+
+            @Override
+            public ByteBuffer recordBody() {
+                return null;
+            }
+
+            @Override
+            public void flushWALHeader() {
+                EBSFastWAL.this.flushWALHeader();
+            }
+        });
+
 
         return null;
     }

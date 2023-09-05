@@ -9,7 +9,6 @@ import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -68,7 +67,7 @@ public class SlidingWindowService extends ServiceThread {
                     return false;
                 } else {
                     slidingWindowMaxSize.set(newSlidingWindowMaxSize);
-                    ioTaskRequest.flushWALHeader(newSlidingWindowMaxSize);
+                    ioTaskRequest.flushWALHeader();
                     LOGGER.info("[KEY_EVENT] Sliding window is too small to start the scale process, current window size [{}], new window size [{}]", //
                             slidingWindowMaxSize.get(), newSlidingWindowMaxSize);
                 }
@@ -105,6 +104,10 @@ public class SlidingWindowService extends ServiceThread {
         } while (!slidingWindowNextWriteOffset.compareAndSet(lastWriteOffset, expectedWriteOffset + totalWriteSize));
 
         return expectedWriteOffset;
+    }
+
+    public void putIOTaskRequest(IOTaskRequest ioTask) {
+        queueIOTaskRequest.offer(ioTask);
     }
 
     @Override
