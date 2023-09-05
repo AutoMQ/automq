@@ -355,8 +355,6 @@ public class StreamControlManager {
     }
 
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
-        // TODO: deal with compacted objects, mark delete compacted object
-        // TODO: deal with stream objects, replay streamObjectRecord to advance stream's end offset
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         List<ApiMessageAndVersion> records = new ArrayList<>();
         long objectId = data.objectId();
@@ -402,11 +400,7 @@ public class StreamControlManager {
                 indexes.stream()
                     .map(S3ObjectStreamIndex::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0));
-        // generate compacted objects' remove record
-        data.compactedObjectIds().forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
-            .setObjectId(id), (short) 0)));
         // create stream object records
-        // TODO: deal with the lifecycle of stream object's source objects, when and how to delete them ?
         List<StreamObject> streamObjects = data.streamObjects();
         streamObjects.stream().forEach(obj -> {
             long streamId = obj.streamId();
@@ -414,6 +408,9 @@ public class StreamControlManager {
             long endOffset = obj.endOffset();
             records.add(new S3StreamObject(obj.objectId(), obj.objectSize(), streamId, startOffset, endOffset).toRecord());
         });
+        // generate compacted objects' remove record
+        data.compactedObjectIds().forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
+            .setObjectId(id), (short) 0)));
         log.info("[CommitWALObject]: broker: {} commit wal object {} success", brokerId, objectId);
         return ControllerResult.atomicOf(records, resp);
     }

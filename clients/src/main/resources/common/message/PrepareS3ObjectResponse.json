@@ -33,10 +33,10 @@
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
     },
     {
-      "name": "S3ObjectIds",
-      "type": "[]int64",
+      "name": "FirstS3ObjectId",
+      "type": "int64",
       "versions": "0+",
-      "about": "The prepared S3 objects' id"
+      "about": "The first of the prepared S3 objects' id"
     }
   ]
 }

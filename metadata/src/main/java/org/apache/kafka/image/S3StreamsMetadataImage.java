@@ -283,7 +283,6 @@ public final class S3StreamsMetadataImage {
         }
 
         public S3ObjectMetadata toS3ObjectMetadata() {
-            // TODO: fill object size later
             return new S3ObjectMetadata(objectId, -1, objectType);
         }
     }

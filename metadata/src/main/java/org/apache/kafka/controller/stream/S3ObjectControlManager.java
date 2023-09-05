@@ -132,16 +132,15 @@ public class S3ObjectControlManager {
         List<ApiMessageAndVersion> records = new ArrayList<>();
         PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData();
         int count = request.preparedCount();
-        List<Long> prepareObjectIds = new ArrayList<>(count);
 
         // update assigned stream id
         long newAssignedObjectId = nextAssignedObjectId.get() + count - 1;
         records.add(new ApiMessageAndVersion(new AssignedS3ObjectIdRecord()
             .setAssignedS3ObjectId(newAssignedObjectId), (short) 0));
 
+        long firstAssignedObjectId = nextAssignedObjectId.get();
         for (int i = 0; i < count; i++) {
             Long objectId = nextAssignedObjectId.get() + i;
-            prepareObjectIds.add(objectId);
             long preparedTs = System.currentTimeMillis();
             long expiredTs = preparedTs + request.timeToLiveInMs();
             S3ObjectRecord record = new S3ObjectRecord()
@@ -151,7 +150,7 @@ public class S3ObjectControlManager {
                 .setExpiredTimeInMs(expiredTs);
             records.add(new ApiMessageAndVersion(record, (short) 0));
         }
-        response.setS3ObjectIds(prepareObjectIds);
+        response.setFirstS3ObjectId(firstAssignedObjectId);
         return ControllerResult.atomicOf(records, response);
     }
 
