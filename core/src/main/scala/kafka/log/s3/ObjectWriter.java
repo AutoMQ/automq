@@ -83,10 +83,12 @@ public class ObjectWriter {
     private void tryUploadPart() {
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(DataBlock::size).sum();
         if (waitingUploadSize >= partSizeThreshold) {
+            CompositeByteBuf partBuf = Unpooled.compositeBuffer();
             for (DataBlock block : waitingUploadBlocks) {
-                writer.write(block.buffer());
+                partBuf.addComponent(true, block.buffer());
                 completedBlocks.add(block);
             }
+            writer.write(partBuf);
             waitingUploadBlocks.clear();
         }
     }
