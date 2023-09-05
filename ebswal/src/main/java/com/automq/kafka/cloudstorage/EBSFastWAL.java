@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
+import static com.automq.kafka.cloudstorage.SlidingWindowService.RecordMetaHeaderSize;
+
 /**
  * [不需要持久化]Position - 表示块存储的物理位置
  * [不需要持久化]RoundNum - 表示正在写第几轮，默认从第 0 轮开始
@@ -63,6 +65,7 @@ import java.util.zip.CRC32;
 public class EBSFastWAL implements FastWAL {
     private static final Logger LOGGER = LoggerFactory.getLogger(EBSFastWAL.class.getSimpleName());
     private static final int WALHeaderMagicCode = 0x12345678;
+    private static final int RecordHeaderMagicCode = 0x87654321;
     private static final int WALHeaderSize = 4 + 8 + 8 + 8 + 8 + 8 + 1 + 4;
     private ScheduledExecutorService scheduledExecutorService;
     private ExecutorService executorService;
@@ -194,6 +197,7 @@ public class EBSFastWAL implements FastWAL {
         // 计算写入 wal offset
         final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
 
+        int finalRecordBodyCRC = recordBodyCRC;
         slidingWindowService.putIOTaskRequest(new IOTaskRequest() {
             @Override
             public long writeOffset() {
@@ -207,12 +211,24 @@ public class EBSFastWAL implements FastWAL {
 
             @Override
             public ByteBuffer recordHeader() {
-                return null;
+                ByteBuffer byteBuffer = ByteBuffer.allocate(RecordMetaHeaderSize);
+                // MagicCode
+                byteBuffer.putInt(RecordHeaderMagicCode);
+                // RecordBodySize
+                byteBuffer.putInt(record.limit());
+                // RecordBodyOffset
+                byteBuffer.putLong(expectedWriteOffset + RecordMetaHeaderSize);
+                // RecordBodyCRC
+                byteBuffer.putInt(finalRecordBodyCRC);
+                // RecordHeaderCRC
+                byteBuffer.putInt(crc32(byteBuffer.array(), 0, RecordMetaHeaderSize - 4));
+
+                return byteBuffer.flip();
             }
 
             @Override
             public ByteBuffer recordBody() {
-                return null;
+                return record;
             }
 
             @Override
