@@ -23,8 +23,6 @@ public class SlidingWindowService extends ServiceThread {
     private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
     private AtomicLong slidingWindowMinOffset = new AtomicLong(0);
 
-    private ConcurrentHashMap<Long, Long> tableIOTaskRequest = new ConcurrentHashMap<>();
-
     private BlockingQueue<IOTask> queueIOTaskRequest = new LinkedBlockingQueue<>();
 
     // 单线程读写，不需要加锁
@@ -77,7 +75,6 @@ public class SlidingWindowService extends ServiceThread {
         }
 
         return true;
-
     }
 
     public long allocateWriteOffset(final int recordBodySize, final long trimOffset) throws FastWAL.OverCapacityException {
@@ -98,7 +95,7 @@ public class SlidingWindowService extends ServiceThread {
                 expectedWriteOffset = expectedWriteOffset + contentSize - expectedWriteOffset % contentSize;
             }
 
-            // 如果 trim 不及时，导致 RingBuffer 出现写覆盖有效数据，抛异常
+            // 如果 trim 不及时，会导致写 RingBuffer 覆盖有效数据，抛异常
             if (expectedWriteOffset + totalWriteSize - trimOffset > contentSize) {
                 throw new FastWAL.OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",//
                         expectedWriteOffset, trimOffset, totalWriteSize));
@@ -143,4 +140,3 @@ public class SlidingWindowService extends ServiceThread {
         LOGGER.info("{} service stopped", getServiceName());
     }
 }
-

@@ -1,6 +1,7 @@
 package com.automq.kafka.cloudstorage;
 
 import com.automq.kafka.cloudstorage.api.FastWAL;
+import com.automq.kafka.cloudstorage.util.ThreadFactoryImpl;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -11,9 +12,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
@@ -35,9 +35,9 @@ import java.util.zip.CRC32;
  */
 
 /**
- * Header 存储结构， 10s 写一次。
- * Header 1 [4K]
- * - HeaderMetaMagicCode [4B]
+ * WAL Header 1 10s 写一次。
+ * WAL Header 1 [4K]
+ * - MagicCode [4B]
  * - ContentSize [8B]
  * - SlidingWindowMaxSize [4B]
  * - TrimOffset [8B]
@@ -45,23 +45,35 @@ import java.util.zip.CRC32;
  * - NextWriteOffset [8B]
  * - ShutdownGracefully [1B]
  * - crc [4B]
- * Header 2 [4K]
+ * WAL Header 2 [4K]
  * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
- * Record 存储结构，每次写都以块大小对齐
+ * Record Header，每次写都以块大小对齐
  * - MagicCode [4B]
  * - RecordBodyLength [4B]
  * - RecordBodyOffset [8B]
  * - RecordBodyCRC [4B]
- * - RecordMetaCRC [4B]
+ * - RecordHeaderCRC [4B]
  * - Record [ByteBuffer]
  */
 
 public class EBSFastWAL implements FastWAL {
 
+    public EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath, int aioThreadNums) {
+        this.scheduledExecutorService = scheduledExecutorService;
+        this.executorService = executorService;
+        this.devicePath = devicePath;
+        this.aioThreadNums = aioThreadNums;
+    }
+
     static class EBSFastWALBuilder {
         private ScheduledExecutorService scheduledExecutorService;
 
         private ExecutorService executorService;
+
+
+        private int aioThreadNums = Integer.parseInt(System.getProperty(//
+                "automq.ebswal.aioThreadNums", //
+                "8"));
 
         private String devicePath;
 
@@ -81,15 +93,14 @@ public class EBSFastWAL implements FastWAL {
         }
 
         public EBSFastWAL createEBSFastWAL() {
-            return new EBSFastWAL(scheduledExecutorService, executorService, devicePath);
+            return new EBSFastWAL(scheduledExecutorService, executorService, devicePath, aioThreadNums);
+        }
+
+        public EBSFastWALBuilder setAioThreadNums(int aioThreadNums) {
+            this.aioThreadNums = aioThreadNums;
+            return this;
         }
     }
-
-
-    private static int AioThreadNums = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.aioThreadNums", //
-            "8"));
-
 
 
     private ScheduledExecutorService scheduledExecutorService;
@@ -98,18 +109,17 @@ public class EBSFastWAL implements FastWAL {
 
     private String devicePath;
 
+    private int aioThreadNums;
+
+
     private AsynchronousFileChannel fileChannel;
 
     private AtomicLong trimOffset = new AtomicLong(0);
 
     private SlidingWindowService slidingWindowService;
 
+    private AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
 
-    private EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath) {
-        this.scheduledExecutorService = scheduledExecutorService;
-        this.executorService = executorService;
-        this.devicePath = devicePath;
-    }
 
     private void init() {
         Path path = Paths.get(this.devicePath);
@@ -118,20 +128,43 @@ public class EBSFastWAL implements FastWAL {
         options.add(StandardOpenOption.WRITE);
         options.add(StandardOpenOption.READ);
         options.add(StandardOpenOption.DSYNC);
+
+        // 如果没有指定线程池，则创建一个
+        if (this.executorService == null) {
+            this.executorService = Executors.newFixedThreadPool(this.aioThreadNums, new ThreadFactoryImpl("ebswal-aio-thread"));
+        }
+
         try {
             fileChannel = AsynchronousFileChannel.open(path, options, executorService, null);
         } catch (IOException e) {
             throw new RuntimeException(String.format("open file [%s] exception", path.getFileName()), e);
         }
+
+        // 如果没有指定定时任务线程，则创建一个
+        if (this.scheduledExecutorService == null) {
+            this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("ebswal-scheduled-thread"));
+        }
+
+        // 定时写 WAL Header
+        this.scheduledExecutorService.scheduleAtFixedRate(EBSFastWAL.this::flushWALHeader, 10, 10, TimeUnit.SECONDS);
+    }
+
+    private void flushWALHeader() {
+        // TODO 定时写 Header
+        if (recoverWALFinished.get()) {
+            // TODO
+        }
     }
 
     @Override
     public void start() {
-
+        // TODO WAL Header 要全部扫描数据才能还原。
+        recoverWALFinished.set(true);
     }
 
     @Override
     public void shutdownGracefully() {
+
 
     }
 
@@ -148,7 +181,6 @@ public class EBSFastWAL implements FastWAL {
         if (recordBodyCRC == 0) {
             recordBodyCRC = crc32(record.array(), record.position(), record.limit());
         }
-
 
         // 计算写入 wal offset
         long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
