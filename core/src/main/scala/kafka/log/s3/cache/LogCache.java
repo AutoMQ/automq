@@ -113,7 +113,7 @@ public class LogCache {
         public boolean put(FlatStreamRecordBatch recordBatch) {
             List<FlatStreamRecordBatch> streamCache = map.computeIfAbsent(recordBatch.streamId, id -> new ArrayList<>());
             streamCache.add(recordBatch);
-            int recordSize = recordBatch.encodedBuf.readableBytes();
+            int recordSize = recordBatch.size();
             size += recordSize;
             return size >= maxSize;
         }

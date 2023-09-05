@@ -20,9 +20,9 @@ package kafka.log.s3.cache;
 import kafka.log.s3.ObjectReader;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.CloseableIterator;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 import java.util.Collections;
 import java.util.LinkedList;
@@ -30,10 +30,12 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultS3BlockCache implements S3BlockCache {
+    private final BlockCache cache;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
 
-    public DefaultS3BlockCache(ObjectManager objectManager, S3Operator s3Operator) {
+    public DefaultS3BlockCache(long cacheBytesSize, ObjectManager objectManager, S3Operator s3Operator) {
+        this.cache = new BlockCache(cacheBytesSize);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
     }
@@ -119,4 +121,6 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
 
     }
+
+
 }

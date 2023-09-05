@@ -64,7 +64,7 @@ public class S3StorageTest {
     public void setup() {
         objectManager = mock(ObjectManager.class);
         S3Operator s3Operator = new MemoryS3Operator();
-        storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(), objectManager, new DefaultS3BlockCache(objectManager, s3Operator), s3Operator);
+        storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(), objectManager, new DefaultS3BlockCache(0, objectManager, s3Operator), s3Operator);
     }
 
     @Test

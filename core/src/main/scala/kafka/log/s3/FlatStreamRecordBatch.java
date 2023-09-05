@@ -45,6 +45,14 @@ public class FlatStreamRecordBatch implements Comparable<FlatStreamRecordBatch> 
         return encodedBuf.duplicate();
     }
 
+    public int size() {
+        return encodedBuf.readableBytes();
+    }
+
+    public void free() {
+        encodedBuf.release();
+    }
+
     @Override
     public int compareTo(FlatStreamRecordBatch o) {
         @SuppressWarnings("DuplicatedCode")
