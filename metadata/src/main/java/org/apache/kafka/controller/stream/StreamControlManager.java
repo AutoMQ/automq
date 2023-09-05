@@ -57,6 +57,7 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.metadata.stream.StreamState;
