@@ -5,6 +5,7 @@ import com.automq.kafka.cloudstorage.util.ServiceThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,9 +26,20 @@ public class SlidingWindowService extends ServiceThread {
 
     private BlockingQueue<IOTask> queueIOTaskRequest = new LinkedBlockingQueue<>();
 
+    // 单线程读写，不需要加锁
+    private TreeMap<Long, IOTask> treeMapIOTaskRequest = new TreeMap<>();
+
     private static int BlockSize = Integer.parseInt(System.getProperty(//
             "automq.ebswal.blocksize", //
             "4096"));
+
+    private static long SlidingWindowUpperLimit = Long.parseLong(System.getProperty(//
+            "automq.ebswal.slidingWindowUpperLimit", //
+            String.valueOf(1024 * 1024 * 512)));
+
+    private static long SlidingWindowScaleUnit = Long.parseLong(System.getProperty(//
+            "automq.ebswal.slidingWindowScaleUnit", //
+            String.valueOf(1024 * 1024 * 16)));
 
     private long contentSize = 1024 * 1024 * 1024 * 8;
 
@@ -39,7 +51,33 @@ public class SlidingWindowService extends ServiceThread {
         return SlidingWindowService.class.getSimpleName();
     }
 
-    private void makeIOTaskHitWindow(final IOTask ioTask) {
+    private boolean makeIOTaskHitWindow(final IOTask newIOTask) {
+        if (!treeMapIOTaskRequest.isEmpty()) {
+            Long firstKey = treeMapIOTaskRequest.firstKey();
+            treeMapIOTaskRequest.lastKey();
+
+            long newWindowTail = newIOTask.writeOffset() + newIOTask.recordHeader().limit() + newIOTask.recordBody().limit();
+
+            if (newWindowTail - firstKey > slidingWindowMaxSize.get()) {
+                long newSlidingWindowMaxSize = newWindowTail - firstKey + SlidingWindowScaleUnit;
+                if (newSlidingWindowMaxSize > SlidingWindowUpperLimit) {
+                    try {
+                        // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
+                        String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxSize, SlidingWindowUpperLimit);
+                        newIOTask.future().completeExceptionally(new FastWAL.OverCapacityException(exceptionMessage));
+                    } catch (Throwable ignored) {
+                    }
+                    return false;
+                } else {
+                    LOGGER.info("[KEY_EVENT] Sliding window is too small to start the scale process, current window size [{}], new window size [{}]", //
+                            slidingWindowMaxSize.get(), newSlidingWindowMaxSize);
+                    slidingWindowMaxSize.set(newSlidingWindowMaxSize);
+                    newIOTask.flushWALHeader(newSlidingWindowMaxSize);
+                }
+            }
+        }
+
+        return true;
 
     }
 
@@ -79,7 +117,11 @@ public class SlidingWindowService extends ServiceThread {
             try {
                 IOTask ioTask = queueIOTaskRequest.poll(3000, TimeUnit.MILLISECONDS);
                 if (ioTask != null) {
-                    makeIOTaskHitWindow(ioTask);
+                    if (makeIOTaskHitWindow(ioTask)) {
+                        treeMapIOTaskRequest.put(ioTask.writeOffset(), ioTask);
+
+                        // TODO 发起异步写请求
+                    }
                 }
 
             } catch (Throwable e) {

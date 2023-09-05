@@ -14,4 +14,6 @@ public interface IOTask {
     ByteBuffer recordHeader();
 
     ByteBuffer recordBody();
+
+    void flushWALHeader(final long slidingWindowMaxSize);
 }

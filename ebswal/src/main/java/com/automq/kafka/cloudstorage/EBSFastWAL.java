@@ -90,13 +90,7 @@ public class EBSFastWAL implements FastWAL {
             "automq.ebswal.aioThreadNums", //
             "8"));
 
-    private static long SlidingWindowUpperLimit = Long.parseLong(System.getProperty(//
-            "automq.ebswal.slidingWindowUpperLimit", //
-            String.valueOf(1024 * 1024 * 512)));
 
-    private static long SlidingWindowScaleUnit = Long.parseLong(System.getProperty(//
-            "automq.ebswal.slidingWindowScaleUnit", //
-            String.valueOf(1024 * 1024 * 16)));
 
     private ScheduledExecutorService scheduledExecutorService;
 
