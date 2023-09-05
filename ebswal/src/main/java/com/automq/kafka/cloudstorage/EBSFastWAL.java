@@ -49,7 +49,7 @@ import java.util.zip.CRC32;
  * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
  * Record 存储结构，每次写都以块大小对齐
  * - MagicCode [4B]
- * - RecordBodySize [4B]
+ * - RecordBodyLength [4B]
  * - RecordBodyOffset [8B]
  * - RecordBodyCRC [4B]
  * - RecordMetaCRC [4B]
@@ -85,9 +85,6 @@ public class EBSFastWAL implements FastWAL {
         }
     }
 
-    private static int BlockSize = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.blocksize", //
-            "4096"));
 
     private static int AioThreadNums = Integer.parseInt(System.getProperty(//
             "automq.ebswal.aioThreadNums", //
@@ -109,16 +106,9 @@ public class EBSFastWAL implements FastWAL {
 
     private AsynchronousFileChannel fileChannel;
 
-    private AtomicLong slidingWindowNextWriteOffset = new AtomicLong(0);
-    private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
     private AtomicLong trimOffset = new AtomicLong(0);
 
-    private long contentSize = 1024 * 1024 * 1024 * 8;
-
-    private long refuseRequestWaterLevel = (long) (contentSize * 0.2);
-
-
-    private final int RecordMetaHeaderSize = 4 + 4 + 8 + 4 + 4;
+    private SlidingWindowService slidingWindowService;
 
 
     private EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath) {
@@ -165,24 +155,9 @@ public class EBSFastWAL implements FastWAL {
             recordBodyCRC = crc32(record.array(), record.position(), record.limit());
         }
 
-        // 暴力处理，预留 20% 的空间。
-        // TODO: 优化
-        if ((slidingWindowNextWriteOffset.get() - trimOffset.get()) < refuseRequestWaterLevel) {
-            throw new OverCapacityException(String.format("The ebs wal will soon be full, slidingWindowNextWriteOffset [%d], trimOffset [%d], refuseRequestWaterLevel [%d]", //
-                    slidingWindowNextWriteOffset.get(), trimOffset.get(), refuseRequestWaterLevel));
-        }
-
-        // 滑动窗口如果超限，需要扩容
 
         // 计算写入 wal offset
-        long lastWriteOffset = 0;
-        long expectedWriteOffset = 0;
-        do {
-            lastWriteOffset = slidingWindowNextWriteOffset.get();
-            expectedWriteOffset = lastWriteOffset % BlockSize == 0  //
-                    ? lastWriteOffset //
-                    : lastWriteOffset + BlockSize - lastWriteOffset % BlockSize;
-        } while (!slidingWindowNextWriteOffset.compareAndSet(lastWriteOffset, expectedWriteOffset));
+        long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), trimOffset.get());
 
 
         AppendResult appendResult = new AppendResult() {
