@@ -2,10 +2,13 @@ package com.automq.kafka.cloudstorage;
 
 import com.automq.kafka.cloudstorage.api.FastWAL;
 import com.automq.kafka.cloudstorage.util.ThreadFactoryImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.CompletionHandler;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
@@ -14,6 +17,7 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
@@ -39,7 +43,7 @@ import java.util.zip.CRC32;
  * WAL Header 1 [4K]
  * - MagicCode [4B]
  * - ContentSize [8B]
- * - SlidingWindowMaxSize [4B]
+ * - SlidingWindowMaxSize [8B]
  * - TrimOffset [8B]
  * - LastWriteTimestamp [8B]
  * - NextWriteOffset [8B]
@@ -57,69 +61,24 @@ import java.util.zip.CRC32;
  */
 
 public class EBSFastWAL implements FastWAL {
-
-    public EBSFastWAL(ScheduledExecutorService scheduledExecutorService, ExecutorService executorService, String devicePath, int aioThreadNums) {
-        this.scheduledExecutorService = scheduledExecutorService;
-        this.executorService = executorService;
-        this.devicePath = devicePath;
-        this.aioThreadNums = aioThreadNums;
-    }
-
-    static class EBSFastWALBuilder {
-        private ScheduledExecutorService scheduledExecutorService;
-
-        private ExecutorService executorService;
-
-
-        private int aioThreadNums = Integer.parseInt(System.getProperty(//
-                "automq.ebswal.aioThreadNums", //
-                "8"));
-
-        private String devicePath;
-
-        public EBSFastWALBuilder setScheduledExecutorService(ScheduledExecutorService scheduledExecutorService) {
-            this.scheduledExecutorService = scheduledExecutorService;
-            return this;
-        }
-
-        public EBSFastWALBuilder setExecutorService(ExecutorService executorService) {
-            this.executorService = executorService;
-            return this;
-        }
-
-        public EBSFastWALBuilder setDevicePath(String devicePath) {
-            this.devicePath = devicePath;
-            return this;
-        }
-
-        public EBSFastWAL createEBSFastWAL() {
-            return new EBSFastWAL(scheduledExecutorService, executorService, devicePath, aioThreadNums);
-        }
-
-        public EBSFastWALBuilder setAioThreadNums(int aioThreadNums) {
-            this.aioThreadNums = aioThreadNums;
-            return this;
-        }
-    }
-
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(EBSFastWAL.class.getSimpleName());
+    private static final int WALHeaderMagicCode = 0x12345678;
+    private static final int WALHeaderSize = 4 + 8 + 8 + 8 + 8 + 8 + 1 + 4;
     private ScheduledExecutorService scheduledExecutorService;
-
     private ExecutorService executorService;
-
     private String devicePath;
-
     private int aioThreadNums;
-
-
+    private long contentSize;
     private AsynchronousFileChannel fileChannel;
-
-    private AtomicLong trimOffset = new AtomicLong(0);
-
+    private final AtomicLong trimOffset = new AtomicLong(0);
     private SlidingWindowService slidingWindowService;
+    private final AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
 
-    private AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
-
+    public static int crc32(byte[] array, int offset, int length) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(array, offset, length);
+        return (int) (crc32.getValue() & 0x7FFFFFFF);
+    }
 
     private void init() {
         Path path = Paths.get(this.devicePath);
@@ -150,9 +109,66 @@ public class EBSFastWAL implements FastWAL {
     }
 
     private void flushWALHeader() {
+        final byte ShutdownGracefullyFalse = 0;
+        final byte ShutdownGracefullyTrue = 1;
         // TODO 定时写 Header
         if (recoverWALFinished.get()) {
             // TODO
+
+            ByteBuffer walHeaderBuffer = ByteBuffer.allocate(WALHeaderSize);
+
+            // MagicCode
+            walHeaderBuffer.putInt(WALHeaderMagicCode);
+            // ContentSize
+            walHeaderBuffer.putLong(contentSize);
+            // SlidingWindowMaxSize
+            walHeaderBuffer.putLong(slidingWindowService.getSlidingWindowMaxSize());
+            // TrimOffset
+            walHeaderBuffer.putLong(trimOffset.get());
+            // LastWriteTimestamp
+            walHeaderBuffer.putLong(System.currentTimeMillis());
+            // NextWriteOffset
+            walHeaderBuffer.putLong(slidingWindowService.getSlidingWindowNextWriteOffset());
+            // ShutdownGracefully
+            walHeaderBuffer.put(ShutdownGracefullyFalse);
+            // crc
+            walHeaderBuffer.putInt(crc32(walHeaderBuffer.array(), 0, WALHeaderSize - 4));
+
+            walHeaderBuffer.flip();
+
+            // TODO 计算写入第几个 WAL Header
+            long position = 0;
+            writeFileSynchronously(fileChannel, walHeaderBuffer, position);
+        }
+    }
+
+    public void writeFileSynchronously(final AsynchronousFileChannel fileChannel, final ByteBuffer buffer, long position) {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicInteger remainingBytes = new AtomicInteger(buffer.limit());
+        fileChannel.write(buffer, position, null, new CompletionHandler<Integer, Object>() {
+            @Override
+            public void completed(Integer result, Object attachment) {
+                remainingBytes.set(remainingBytes.intValue() - result.intValue());
+
+                if (remainingBytes.intValue() > 0) {
+                    buffer.position(buffer.limit() - remainingBytes.intValue());
+
+                    fileChannel.write(buffer, position + buffer.position(), attachment, this);
+                } else {
+                    latch.countDown();
+                }
+            }
+
+            @Override
+            public void failed(Throwable exc, Object attachment) {
+                LOGGER.error("writeFileSynchronously failed", exc);
+            }
+        });
+
+        try {
+            latch.wait(10000);
+        } catch (InterruptedException e) {
+            LOGGER.error("writeFileSynchronously InterruptedException", e);
         }
     }
 
@@ -166,12 +182,6 @@ public class EBSFastWAL implements FastWAL {
     public void shutdownGracefully() {
 
 
-    }
-
-    public static int crc32(byte[] array, int offset, int length) {
-        CRC32 crc32 = new CRC32();
-        crc32.update(array, offset, length);
-        return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 
     @Override
@@ -214,6 +224,51 @@ public class EBSFastWAL implements FastWAL {
     @Override
     public void trim(long offset) {
         trimOffset.set(offset);
+    }
+
+    static class EBSFastWALBuilder {
+        private ScheduledExecutorService scheduledExecutorService;
+
+        private ExecutorService executorService;
+
+
+        private int aioThreadNums = Integer.parseInt(System.getProperty(//
+                "automq.ebswal.aioThreadNums", //
+                "8"));
+
+        private String devicePath;
+
+        private final long contentSize = 0;
+
+        public EBSFastWALBuilder setScheduledExecutorService(ScheduledExecutorService scheduledExecutorService) {
+            this.scheduledExecutorService = scheduledExecutorService;
+            return this;
+        }
+
+        public EBSFastWALBuilder setExecutorService(ExecutorService executorService) {
+            this.executorService = executorService;
+            return this;
+        }
+
+        public EBSFastWALBuilder setDevicePath(String devicePath) {
+            this.devicePath = devicePath;
+            return this;
+        }
+
+        public EBSFastWAL createEBSFastWAL() {
+            EBSFastWAL ebsFastWAL = new EBSFastWAL();
+            ebsFastWAL.scheduledExecutorService = this.scheduledExecutorService;
+            ebsFastWAL.executorService = this.executorService;
+            ebsFastWAL.devicePath = this.devicePath;
+            ebsFastWAL.aioThreadNums = this.aioThreadNums;
+            ebsFastWAL.contentSize = this.contentSize;
+            return ebsFastWAL;
+        }
+
+        public EBSFastWALBuilder setAioThreadNums(int aioThreadNums) {
+            this.aioThreadNums = aioThreadNums;
+            return this;
+        }
     }
 }
 

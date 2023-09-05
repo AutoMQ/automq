@@ -7,9 +7,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -20,14 +20,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SlidingWindowService extends ServiceThread {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
     private AtomicLong slidingWindowNextWriteOffset = new AtomicLong(0);
-    private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
-    private AtomicLong slidingWindowMinOffset = new AtomicLong(0);
 
+    private AtomicLong slidingWindowMaxSize = new AtomicLong(0);
+
+    private AtomicLong slidingWindowMinOffset = new AtomicLong(0);
     private BlockingQueue<IOTask> queueIOTaskRequest = new LinkedBlockingQueue<>();
 
     // 单线程读写，不需要加锁
-    private TreeMap<Long, IOTaskRequest> treeMapIOTaskRequest = new TreeMap<>();
 
+    private TreeMap<Long, IOTaskRequest> treeMapIOTaskRequest = new TreeMap<>();
     private static int BlockSize = Integer.parseInt(System.getProperty(//
             "automq.ebswal.blocksize", //
             "4096"));
@@ -138,5 +139,13 @@ public class SlidingWindowService extends ServiceThread {
             }
         }
         LOGGER.info("{} service stopped", getServiceName());
+    }
+
+    public long getSlidingWindowMaxSize() {
+        return slidingWindowMaxSize.get();
+    }
+
+    public long getSlidingWindowNextWriteOffset() {
+        return slidingWindowNextWriteOffset.get();
     }
 }
