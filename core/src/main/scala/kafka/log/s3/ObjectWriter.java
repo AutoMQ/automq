@@ -20,12 +20,13 @@ package kafka.log.s3;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
-import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.common.compress.ZstdFactory;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import org.apache.kafka.metadata.stream.ObjectUtils;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -58,7 +59,7 @@ public class ObjectWriter {
         writer = s3Operator.writer(objectKey);
     }
 
-    public void write(FlatStreamRecordBatch record) {
+    public void write(StreamRecordBatch record) {
         if (dataBlock == null) {
             dataBlock = new DataBlock(nextDataBlockPosition);
         }
@@ -159,7 +160,7 @@ public class ObjectWriter {
             streamRanges = new LinkedList<>();
         }
 
-        public boolean write(FlatStreamRecordBatch record) {
+        public boolean write(StreamRecordBatch record) {
             try {
                 recordCount++;
                 return write0(record);
@@ -169,19 +170,18 @@ public class ObjectWriter {
             }
         }
 
-        public boolean write0(FlatStreamRecordBatch record) throws IOException {
-            if (streamRange == null || streamRange.getStreamId() != record.streamId) {
+        public boolean write0(StreamRecordBatch record) throws IOException {
+            if (streamRange == null || streamRange.getStreamId() != record.getStreamId()) {
                 streamRange = new ObjectStreamRange();
-                streamRange.setStreamId(record.streamId);
-                streamRange.setEpoch(record.epoch);
-                streamRange.setStartOffset(record.baseOffset);
+                streamRange.setStreamId(record.getStreamId());
+                streamRange.setEpoch(record.getEpoch());
+                streamRange.setStartOffset(record.getBaseOffset());
                 streamRanges.add(streamRange);
             }
-            streamRange.setEndOffset(record.lastOffset());
+            streamRange.setEndOffset(record.getLastOffset());
 
-            ByteBuf recordBuf = record.encodedBuf();
+            ByteBuf recordBuf = record.encoded();
             out.write(recordBuf.array(), recordBuf.arrayOffset(), recordBuf.readableBytes());
-            recordBuf.release();
             blockSize += recordBuf.readableBytes();
             if (blockSize >= blockSizeThreshold) {
                 close();

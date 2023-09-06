@@ -79,11 +79,9 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        //TODO: copy to pooled bytebuffer to reduce gc, convert to flat record
-        FlatStreamRecordBatch flatStreamRecordBatch = FlatStreamRecordBatch.from(streamRecord);
-        WriteAheadLog.AppendResult appendResult = log.append(flatStreamRecordBatch.encodedBuf());
+        WriteAheadLog.AppendResult appendResult = log.append(streamRecord.encoded());
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        WalWriteRequest writeRequest = new WalWriteRequest(flatStreamRecordBatch, appendResult.offset, cf);
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.offset, cf);
         callbackSequencer.before(writeRequest);
         appendResult.future.thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;
@@ -97,9 +95,9 @@ public class S3Storage implements Storage {
     }
 
     private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
-        List<FlatStreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
+        List<StreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
         if (!records.isEmpty()) {
-            return CompletableFuture.completedFuture(new ReadDataBlock(StreamRecordBatchCodec.decode(records)));
+            return CompletableFuture.completedFuture(new ReadDataBlock(records));
         }
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
             long nextStartOffset = readDataBlock.endOffset().orElse(startOffset);
@@ -108,7 +106,7 @@ public class S3Storage implements Storage {
                 return readDataBlock;
             }
             List<StreamRecordBatch> finalRecords = new LinkedList<>(readDataBlock.getRecords());
-            finalRecords.addAll(StreamRecordBatchCodec.decode(logCache.get(streamId, nextStartOffset, endOffset, maxBytes)));
+            finalRecords.addAll(logCache.get(streamId, nextStartOffset, endOffset, maxBytes));
             return new ReadDataBlock(finalRecords);
         });
     }
@@ -192,6 +190,8 @@ public class S3Storage implements Storage {
             // 1. poll out current task
             walObjectCommitQueue.poll();
             log.trim(context.cache.confirmOffset());
+            // transfer records ownership to block cache.
+            blockCache.put(context.cache.records());
             freeCache(context.cache.blockId());
             context.cf.complete(null);
 
@@ -219,7 +219,7 @@ public class S3Storage implements Storage {
         public void before(WalWriteRequest request) {
             try {
                 walRequests.put(request);
-                Queue<WalWriteRequest> streamRequests = stream2requests.computeIfAbsent(request.record.streamId, s -> new LinkedBlockingQueue<>());
+                Queue<WalWriteRequest> streamRequests = stream2requests.computeIfAbsent(request.record.getStreamId(), s -> new LinkedBlockingQueue<>());
                 streamRequests.add(request);
             } catch (InterruptedException ex) {
                 request.cf.completeExceptionally(ex);
@@ -244,7 +244,7 @@ public class S3Storage implements Storage {
             }
 
             // pop sequence success stream request.
-            long streamId = request.record.streamId;
+            long streamId = request.record.getStreamId();
             Queue<WalWriteRequest> streamRequests = stream2requests.get(streamId);
             WalWriteRequest peek = streamRequests.peek();
             if (peek == null || peek.offset != request.offset) {

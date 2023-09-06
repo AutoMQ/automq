@@ -17,7 +17,8 @@
 
 package kafka.log.s3.cache;
 
-import kafka.log.s3.FlatStreamRecordBatch;
+
+import kafka.log.s3.model.StreamRecordBatch;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,15 +47,15 @@ public class BlockCache {
         this.maxSize = maxSize;
     }
 
-    public void put(long streamId, List<FlatStreamRecordBatch> records) {
+    public void put(long streamId, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
             return;
         }
         boolean overlapped = false;
         records = new ArrayList<>(records);
         NavigableMap<Long, CacheBlock> streamCache = stream2cache.computeIfAbsent(streamId, id -> new TreeMap<>());
-        long startOffset = records.get(0).baseOffset;
-        long endOffset = records.get(records.size() - 1).lastOffset();
+        long startOffset = records.get(0).getBaseOffset();
+        long endOffset = records.get(records.size() - 1).getLastOffset();
         // TODO: generate readahead.
         Map.Entry<Long, CacheBlock> floorEntry = streamCache.floorEntry(startOffset);
         SortedMap<Long, CacheBlock> tailMap = streamCache.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset);
@@ -66,9 +67,9 @@ public class BlockCache {
             }
             // overlap is a rare case, so removeIf is fine for the performance.
             if (records.removeIf(record -> {
-                boolean remove = record.lastOffset() > cacheBlock.firstOffset && record.baseOffset < cacheBlock.lastOffset;
+                boolean remove = record.getLastOffset() > cacheBlock.firstOffset && record.getBaseOffset() < cacheBlock.lastOffset;
                 if (remove) {
-                    record.free();
+                    record.release();
                 }
                 return remove;
             })) {
@@ -77,23 +78,23 @@ public class BlockCache {
         }
 
         // ensure the cache size.
-        int size = records.stream().mapToInt(FlatStreamRecordBatch::size).sum();
+        int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
         ensureCapacity(size);
 
         // TODO: split records to 1MB blocks.
         if (overlapped) {
             // split to multiple cache blocks.
             long expectStartOffset = -1L;
-            List<FlatStreamRecordBatch> part = new ArrayList<>(records.size() / 2);
-            for (FlatStreamRecordBatch record : records) {
-                if (expectStartOffset == -1L || record.baseOffset == expectStartOffset) {
+            List<StreamRecordBatch> part = new ArrayList<>(records.size() / 2);
+            for (StreamRecordBatch record : records) {
+                if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) {
                     part.add(record);
                 } else {
                     put(streamId, streamCache, new CacheBlock(part));
                     part = new ArrayList<>(records.size() / 2);
                     part.add(record);
                 }
-                expectStartOffset = record.lastOffset();
+                expectStartOffset = record.getLastOffset();
             }
             if (!part.isEmpty()) {
                 put(streamId, streamCache, new CacheBlock(part));
@@ -104,6 +105,10 @@ public class BlockCache {
 
     }
 
+    /**
+     * Get records from cache.
+     * Note: the records is retained, the caller should release it.
+     */
     public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
         NavigableMap<Long, CacheBlock> streamCache = stream2cache.get(streamId);
         if (streamCache == null) {
@@ -114,7 +119,7 @@ public class BlockCache {
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
         Readahead readahead = null;
-        LinkedList<FlatStreamRecordBatch> records = new LinkedList<>();
+        LinkedList<StreamRecordBatch> records = new LinkedList<>();
         for (Map.Entry<Long, CacheBlock> entry : streamCache.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
             if (cacheBlock.lastOffset < nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
@@ -124,7 +129,7 @@ public class BlockCache {
                 readahead = cacheBlock.readahead;
             }
             nextMaxBytes = readFromCacheBlock(records, cacheBlock, nextStartOffset, endOffset, nextMaxBytes);
-            nextStartOffset = records.getLast().lastOffset();
+            nextStartOffset = records.getLast().getLastOffset();
             boolean blockCompletedRead = nextStartOffset >= cacheBlock.lastOffset;
             CacheKey cacheKey = new CacheKey(streamId, cacheBlock.firstOffset);
             if (blockCompletedRead) {
@@ -141,16 +146,18 @@ public class BlockCache {
             }
 
         }
+
+        records.forEach(StreamRecordBatch::retain);
         return GetCacheResult.of(records, readahead);
     }
 
-    private int readFromCacheBlock(LinkedList<FlatStreamRecordBatch> records, CacheBlock cacheBlock,
+    private int readFromCacheBlock(LinkedList<StreamRecordBatch> records, CacheBlock cacheBlock,
                                    long nextStartOffset, long endOffset, int nextMaxBytes) {
         boolean matched = false;
-        for (FlatStreamRecordBatch record : cacheBlock.records) {
-            if (record.baseOffset <= nextStartOffset && record.lastOffset() > nextStartOffset) {
+        for (StreamRecordBatch record : cacheBlock.records) {
+            if (record.getBaseOffset() <= nextStartOffset && record.getLastOffset() > nextStartOffset) {
                 records.add(record);
-                nextStartOffset = record.lastOffset();
+                nextStartOffset = record.getLastOffset();
                 nextMaxBytes -= record.size();
                 matched = true;
                 if (nextStartOffset >= endOffset || nextMaxBytes <= 0) {
@@ -214,35 +221,35 @@ public class BlockCache {
     }
 
     static class CacheBlock {
-        List<FlatStreamRecordBatch> records;
+        List<StreamRecordBatch> records;
         long firstOffset;
         long lastOffset;
         int size;
         Readahead readahead;
 
-        public CacheBlock(List<FlatStreamRecordBatch> records, Readahead readahead) {
+        public CacheBlock(List<StreamRecordBatch> records, Readahead readahead) {
             this.records = records;
-            this.firstOffset = records.get(0).baseOffset;
-            this.lastOffset = records.get(records.size() - 1).lastOffset();
-            this.size = records.stream().mapToInt(FlatStreamRecordBatch::size).sum();
+            this.firstOffset = records.get(0).getBaseOffset();
+            this.lastOffset = records.get(records.size() - 1).getLastOffset();
+            this.size = records.stream().mapToInt(StreamRecordBatch::size).sum();
             this.readahead = readahead;
         }
 
-        public CacheBlock(List<FlatStreamRecordBatch> records) {
+        public CacheBlock(List<StreamRecordBatch> records) {
             this(records, null);
         }
 
         public void free() {
-            records.forEach(r -> r.encodedBuf.release());
+            records.forEach(StreamRecordBatch::release);
             records = null;
         }
     }
 
     public static class GetCacheResult {
-        private final List<FlatStreamRecordBatch> records;
+        private final List<StreamRecordBatch> records;
         private final Readahead readahead;
 
-        private GetCacheResult(List<FlatStreamRecordBatch> records, Readahead readahead) {
+        private GetCacheResult(List<StreamRecordBatch> records, Readahead readahead) {
             this.records = records;
             this.readahead = readahead;
         }
@@ -251,11 +258,11 @@ public class BlockCache {
             return new GetCacheResult(Collections.emptyList(), null);
         }
 
-        public static GetCacheResult of(List<FlatStreamRecordBatch> records, Readahead readahead) {
+        public static GetCacheResult of(List<StreamRecordBatch> records, Readahead readahead) {
             return new GetCacheResult(records, readahead);
         }
 
-        public List<FlatStreamRecordBatch> getRecords() {
+        public List<StreamRecordBatch> getRecords() {
             return records;
         }
 

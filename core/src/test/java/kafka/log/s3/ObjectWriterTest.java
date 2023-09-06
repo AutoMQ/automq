@@ -17,12 +17,11 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -44,13 +43,13 @@ public class ObjectWriterTest {
         S3Operator s3Operator = new MemoryS3Operator();
         ObjectWriter objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(233, 10, 5, 512);
-        objectWriter.write(FlatStreamRecordBatch.from(r1));
+        objectWriter.write(r1);
         StreamRecordBatch r2 = newRecord(233, 15, 10, 512);
-        objectWriter.write(FlatStreamRecordBatch.from(r2));
+        objectWriter.write(r2);
         StreamRecordBatch r3 = newRecord(233, 25, 5, 512);
-        objectWriter.write(FlatStreamRecordBatch.from(r3));
+        objectWriter.write(r3);
         StreamRecordBatch r4 = newRecord(234, 0, 5, 512);
-        objectWriter.write(FlatStreamRecordBatch.from(r4));
+        objectWriter.write(r4);
         objectWriter.close().get();
 
         List<ObjectStreamRange> streamRanges = objectWriter.getStreamRanges();
@@ -111,7 +110,6 @@ public class ObjectWriterTest {
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
-        RecordBatch recordBatch = DefaultRecordBatch.of(count, payloadSize);
-        return new StreamRecordBatch(streamId, 0, offset, recordBatch);
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(payloadSize));
     }
 }

@@ -15,22 +15,12 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.cache;
+package kafka.log.s3;
 
-import kafka.log.s3.model.StreamRecordBatch;
+import io.netty.buffer.PooledByteBufAllocator;
 
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
+public class ByteBufAlloc {
 
-/**
- * Like linux page cache, S3BlockCache is responsible for:
- * 1. read from S3 when the data block is not in cache.
- * 2. caching the data blocks of S3 objects.
- */
-public interface S3BlockCache {
+    public static final PooledByteBufAllocator ALLOC = PooledByteBufAllocator.DEFAULT;
 
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
-
-    void put(Map<Long, List<StreamRecordBatch>> stream2records);
 }

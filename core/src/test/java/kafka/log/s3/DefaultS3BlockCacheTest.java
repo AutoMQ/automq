@@ -17,14 +17,13 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -54,20 +53,20 @@ public class DefaultS3BlockCacheTest {
     @Test
     public void testRead() throws Exception {
         ObjectWriter objectWriter = new ObjectWriter(0, s3Operator, 1024, 1024);
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 10, 5, 512)));
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 15, 10, 512)));
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 25, 5, 512)));
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(234, 0, 5, 512)));
+        objectWriter.write(newRecord(233, 10, 5, 512));
+        objectWriter.write(newRecord(233, 15, 10, 512));
+        objectWriter.write(newRecord(233, 25, 5, 512));
+        objectWriter.write(newRecord(234, 0, 5, 512));
         objectWriter.close();
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
         objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 30, 10, 512)));
+        objectWriter.write(newRecord(233, 30, 10, 512));
         objectWriter.close();
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
         objectWriter = new ObjectWriter(2, s3Operator, 1024, 1024);
-        objectWriter.write(FlatStreamRecordBatch.from(newRecord(233, 40, 20, 512)));
+        objectWriter.write(newRecord(233, 40, 20, 512));
         objectWriter.close();
         S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL_LOOSE);
 
@@ -85,8 +84,7 @@ public class DefaultS3BlockCacheTest {
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
-        RecordBatch recordBatch = DefaultRecordBatch.of(count, payloadSize);
-        return new StreamRecordBatch(streamId, 0, offset, recordBatch);
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(payloadSize));
     }
 
 

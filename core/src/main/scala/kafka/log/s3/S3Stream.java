@@ -25,6 +25,7 @@ import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.flatc.header.ErrorCode;
+import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;
 import kafka.log.s3.model.StreamRecordBatch;
@@ -90,7 +91,7 @@ public class S3Stream implements Stream {
             return FutureUtil.failedFuture(new ElasticStreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is not writable"));
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
-        StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch);
+        StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
         CompletableFuture<AppendResult> cf = storage.append(streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);
@@ -128,7 +129,7 @@ public class S3Stream implements Stream {
                     ));
         }
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
-            List<RecordBatchWithContext> records = dataBlock.getRecords().stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+            List<StreamRecordBatch> records = dataBlock.getRecords();
             LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
             return new DefaultFetchResult(records);
         });
@@ -184,16 +185,24 @@ public class S3Stream implements Stream {
         }
     }
 
-    static class DefaultFetchResult implements FetchResult {
-        private final List<RecordBatchWithContext> records;
 
-        public DefaultFetchResult(List<RecordBatchWithContext> records) {
+    static class DefaultFetchResult implements FetchResult {
+        private final List<StreamRecordBatch> records;
+
+        public DefaultFetchResult(List<StreamRecordBatch> records) {
             this.records = records;
         }
 
         @Override
         public List<RecordBatchWithContext> recordBatchList() {
-            return records;
+            return records.stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+        }
+
+        @Override
+        public void free() {
+            for (StreamRecordBatch record : records) {
+                record.release();
+            }
         }
     }
 

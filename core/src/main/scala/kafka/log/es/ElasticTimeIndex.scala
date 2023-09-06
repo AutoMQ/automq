@@ -74,6 +74,7 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
           cache.put(record.rawPayload())
         }
       })
+      rst.free()
     } else {
       return timestampOffset
     }

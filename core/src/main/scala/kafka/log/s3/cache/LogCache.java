@@ -17,7 +17,7 @@
 
 package kafka.log.s3.cache;
 
-import kafka.log.s3.FlatStreamRecordBatch;
+import kafka.log.s3.model.StreamRecordBatch;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,32 +39,39 @@ public class LogCache {
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
     }
 
-    public boolean put(FlatStreamRecordBatch recordBatch) {
+    public boolean put(StreamRecordBatch recordBatch) {
         return activeBlock.put(recordBatch);
     }
 
     /**
      * Get streamId [startOffset, endOffset) range records with maxBytes limit.
      * If the cache only contain records after startOffset, the return list is empty.
+     * Note: the records is retained, the caller should release it.
+     *
      */
-    public List<FlatStreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
-        List<FlatStreamRecordBatch> rst = new LinkedList<>();
+    public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
+        records.forEach(StreamRecordBatch::retain);
+        return records;
+    }
+    public List<StreamRecordBatch> get0(long streamId, long startOffset, long endOffset, int maxBytes) {
+        List<StreamRecordBatch> rst = new LinkedList<>();
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
         for (LogCacheBlock archiveBlock : archiveBlocks) {
             // TODO: fast break when cache doesn't contains the startOffset.
-            List<FlatStreamRecordBatch> records = archiveBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
+            List<StreamRecordBatch> records = archiveBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
             if (records.isEmpty()) {
                 continue;
             }
-            nextStartOffset = records.get(records.size() - 1).lastOffset();
-            nextMaxBytes -= Math.min(nextMaxBytes, records.stream().mapToInt(r -> r.encodedBuf().readableBytes()).sum());
+            nextStartOffset = records.get(records.size() - 1).getLastOffset();
+            nextMaxBytes -= Math.min(nextMaxBytes, records.stream().mapToInt(StreamRecordBatch::size).sum());
             rst.addAll(records);
             if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
                 return rst;
             }
         }
-        List<FlatStreamRecordBatch> records = activeBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
+        List<StreamRecordBatch> records = activeBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
         rst.addAll(records);
         return rst;
     }
@@ -97,7 +104,7 @@ public class LogCache {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
         private final long blockId;
         private final long maxSize;
-        private final Map<Long, List<FlatStreamRecordBatch>> map = new HashMap<>();
+        private final Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         private long size = 0;
         private long confirmOffset;
 
@@ -110,20 +117,20 @@ public class LogCache {
             return blockId;
         }
 
-        public boolean put(FlatStreamRecordBatch recordBatch) {
-            List<FlatStreamRecordBatch> streamCache = map.computeIfAbsent(recordBatch.streamId, id -> new ArrayList<>());
+        public boolean put(StreamRecordBatch recordBatch) {
+            List<StreamRecordBatch> streamCache = map.computeIfAbsent(recordBatch.getStreamId(), id -> new ArrayList<>());
             streamCache.add(recordBatch);
             int recordSize = recordBatch.size();
             size += recordSize;
             return size >= maxSize;
         }
 
-        public List<FlatStreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
-            List<FlatStreamRecordBatch> streamRecords = map.get(streamId);
+        public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+            List<StreamRecordBatch> streamRecords = map.get(streamId);
             if (streamRecords == null) {
                 return Collections.emptyList();
             }
-            if (streamRecords.get(0).baseOffset > startOffset || streamRecords.get(streamRecords.size() - 1).lastOffset() <= startOffset) {
+            if (streamRecords.get(0).getBaseOffset() > startOffset || streamRecords.get(streamRecords.size() - 1).getLastOffset() <= startOffset) {
                 return Collections.emptyList();
             }
             int startIndex = -1;
@@ -131,14 +138,14 @@ public class LogCache {
             int remainingBytesSize = maxBytes;
             // TODO: binary search the startOffset.
             for (int i = 0; i < streamRecords.size(); i++) {
-                FlatStreamRecordBatch record = streamRecords.get(i);
-                if (startIndex == -1 && record.baseOffset <= startOffset && record.lastOffset() > startOffset) {
+                StreamRecordBatch record = streamRecords.get(i);
+                if (startIndex == -1 && record.getBaseOffset() <= startOffset && record.getLastOffset() > startOffset) {
                     startIndex = i;
                 }
                 if (startIndex != -1) {
                     endIndex = i + 1;
-                    remainingBytesSize -= Math.min(remainingBytesSize, record.encodedBuf().readableBytes());
-                    if (record.lastOffset() >= endOffset || remainingBytesSize == 0) {
+                    remainingBytesSize -= Math.min(remainingBytesSize, record.size());
+                    if (record.getLastOffset() >= endOffset || remainingBytesSize == 0) {
                         break;
                     }
                 }
@@ -146,7 +153,7 @@ public class LogCache {
             return streamRecords.subList(startIndex, endIndex);
         }
 
-        public Map<Long, List<FlatStreamRecordBatch>> records() {
+        public Map<Long, List<StreamRecordBatch>> records() {
             return map;
         }
 

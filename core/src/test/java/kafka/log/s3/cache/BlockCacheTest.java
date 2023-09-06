@@ -17,8 +17,7 @@
 
 package kafka.log.s3.cache;
 
-import kafka.log.s3.DefaultRecordBatch;
-import kafka.log.s3.FlatStreamRecordBatch;
+import kafka.log.s3.TestUtils;
 import kafka.log.s3.model.StreamRecordBatch;
 import org.junit.jupiter.api.Test;
 
@@ -51,12 +50,12 @@ public class BlockCacheTest {
         ));
 
         BlockCache.GetCacheResult rst = blockCache.get(233L, 10L, 20L, 1024);
-        List<FlatStreamRecordBatch> records = rst.getRecords();
+        List<StreamRecordBatch> records = rst.getRecords();
         assertEquals(4, records.size());
-        assertEquals(10L, records.get(0).baseOffset);
-        assertEquals(12L, records.get(1).baseOffset);
-        assertEquals(14L, records.get(2).baseOffset);
-        assertEquals(16L, records.get(3).baseOffset);
+        assertEquals(10L, records.get(0).getBaseOffset());
+        assertEquals(12L, records.get(1).getBaseOffset());
+        assertEquals(14L, records.get(2).getBaseOffset());
+        assertEquals(16L, records.get(3).getBaseOffset());
     }
 
     @Test
@@ -90,9 +89,8 @@ public class BlockCacheTest {
         assertNull(lru.pop());
     }
 
-    private static FlatStreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
-        StreamRecordBatch recordBatch = new StreamRecordBatch(streamId, 0, offset, DefaultRecordBatch.of(count, size));
-        return FlatStreamRecordBatch.from(recordBatch);
+    private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
     }
 
 }
