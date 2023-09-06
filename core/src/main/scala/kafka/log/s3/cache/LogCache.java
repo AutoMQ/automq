@@ -33,6 +33,7 @@ public class LogCache {
     private final List<LogCacheBlock> archiveBlocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
+    private final AtomicLong size = new AtomicLong();
 
     public LogCache(long cacheBlockMaxSize) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
@@ -40,6 +41,7 @@ public class LogCache {
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
+        size.addAndGet(recordBatch.size());
         return activeBlock.put(recordBatch);
     }
 
@@ -47,13 +49,13 @@ public class LogCache {
      * Get streamId [startOffset, endOffset) range records with maxBytes limit.
      * If the cache only contain records after startOffset, the return list is empty.
      * Note: the records is retained, the caller should release it.
-     *
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
         records.forEach(StreamRecordBatch::retain);
         return records;
     }
+
     public List<StreamRecordBatch> get0(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<StreamRecordBatch> rst = new LinkedList<>();
         long nextStartOffset = startOffset;
@@ -93,11 +95,22 @@ public class LogCache {
     }
 
     public void free(long blockId) {
-        archiveBlocks.removeIf(b -> b.blockId == blockId);
+        archiveBlocks.removeIf(b -> {
+            boolean remove = b.blockId == blockId;
+            if (remove) {
+                size.addAndGet(-b.size);
+                b.records().clear();
+            }
+            return remove;
+        });
     }
 
     public void setConfirmOffset(long confirmOffset) {
         this.confirmOffset = confirmOffset;
+    }
+
+    public long size() {
+        return size.get();
     }
 
     public static class LogCacheBlock {

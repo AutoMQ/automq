@@ -87,14 +87,10 @@ public class WALObjectUploadTask {
             if (streamSize >= streamSplitSizeThreshold) {
                 streamObjectCfList.add(writeStreamObject(streamRecords));
             } else {
-                for (StreamRecordBatch record : streamRecords) {
-                    walObject.write(record);
-                }
+                walObject.write(streamId, streamRecords);
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
-                // log object block only contain single stream's data.
-                walObject.closeCurrentBlock();
             }
         }
         request.setObjectId(objectId);
@@ -126,10 +122,8 @@ public class WALObjectUploadTask {
         // TODO: retry until success
         return objectIdCf.thenCompose(objectId -> {
             ObjectWriter streamObjectWriter = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
-            for (StreamRecordBatch record : streamRecords) {
-                streamObjectWriter.write(record);
-            }
             long streamId = streamRecords.get(0).getStreamId();
+            streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
             long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
             StreamObject streamObject = new StreamObject();

@@ -19,6 +19,8 @@ package kafka.log.s3.operator;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import kafka.log.es.metrics.Counter;
+import kafka.log.es.metrics.Timer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -50,6 +52,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class DefaultS3Operator implements S3Operator {
@@ -58,6 +61,10 @@ public class DefaultS3Operator implements S3Operator {
     public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
     private final String bucket;
     private final S3AsyncClient s3;
+    private static final Timer PART_UPLOAD_COST = new Timer();
+    private static final Timer OBJECT_UPLOAD_COST = new Timer();
+    private static final Counter OBJECT_UPLOAD_SIZE = new Counter();
+    private static final AtomicLong LAST_LOG_TIMESTAMP = new AtomicLong(System.currentTimeMillis());
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
 
@@ -174,6 +181,7 @@ public class DefaultS3Operator implements S3Operator {
         private final List<CompletableFuture<CompletedPart>> parts = new LinkedList<>();
         private final AtomicInteger nextPartNumber = new AtomicInteger(1);
         private CompletableFuture<Void> closeCf;
+        private final long start = System.nanoTime();
 
         public DefaultWriter(String path) {
             this.path = path;
@@ -199,10 +207,16 @@ public class DefaultS3Operator implements S3Operator {
 
         @Override
         public void write(ByteBuf part) {
+            long start = System.nanoTime();
+            OBJECT_UPLOAD_SIZE.inc(part.readableBytes());
             int partNumber = nextPartNumber.getAndIncrement();
             CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
             parts.add(partCf);
             uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, part, partCf));
+            partCf.whenComplete((nil, ex) -> {
+                PART_UPLOAD_COST.update(System.nanoTime() - start);
+                part.release();
+            });
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
@@ -255,12 +269,24 @@ public class DefaultS3Operator implements S3Operator {
             if (closeCf != null) {
                 return closeCf;
             }
+            System.out.println("start await close: " + (System.nanoTime() - start) / 1000 / 1000);
             closeCf = new CompletableFuture<>();
             CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
             uploadDoneCf.thenAccept(nil -> {
+                System.out.println("start complete: " + (System.nanoTime() - start) / 1000 / 1000);
                 CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(genCompleteParts()).build();
                 CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
                 close0(request);
+            });
+            closeCf.whenComplete((nil, ex) -> {
+                System.out.println("complete: " + (System.nanoTime() - start) / 1000 / 1000);
+                OBJECT_UPLOAD_COST.update(System.nanoTime() - start);
+                long now = System.currentTimeMillis();
+                if (now - LAST_LOG_TIMESTAMP.get() > 10000) {
+                    LAST_LOG_TIMESTAMP.set(now);
+                    LOGGER.info("upload s3 metrics, object_timer {}, object_size {}, part_timer {}",
+                            OBJECT_UPLOAD_COST.getAndReset(), OBJECT_UPLOAD_SIZE.getAndReset(), PART_UPLOAD_COST.getAndReset());
+                }
             });
             return closeCf;
         }

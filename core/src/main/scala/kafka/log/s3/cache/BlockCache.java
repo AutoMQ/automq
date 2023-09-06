@@ -49,6 +49,7 @@ public class BlockCache {
 
     public void put(long streamId, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
+            records.forEach(StreamRecordBatch::release);
             return;
         }
         boolean overlapped = false;
