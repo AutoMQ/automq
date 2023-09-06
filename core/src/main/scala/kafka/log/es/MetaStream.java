@@ -35,6 +35,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+
+import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -177,7 +179,7 @@ public class MetaStream implements Stream {
                 FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
-                        MetaKeyValue kv = MetaKeyValue.decode(context.rawPayload());
+                        MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());
                         metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
                     } catch (Exception e) {
                         LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
@@ -187,6 +189,7 @@ public class MetaStream implements Stream {
                 if (pos >= endOffset) {
                     done = true;
                 }
+                fetchRst.free();
             }
         } catch (ExecutionException e) {
             if (e.getCause() instanceof IOException) {

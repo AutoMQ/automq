@@ -19,7 +19,6 @@ package kafka.log.s3;
 
 import com.automq.elasticstream.client.api.ElasticStreamClientException;
 import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatch;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
@@ -75,8 +74,7 @@ public class S3StreamTest {
     }
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
-        RecordBatch recordBatch = DefaultRecordBatch.of((int) (end - start), size);
-        StreamRecordBatch record = new StreamRecordBatch(0, 0, start, recordBatch);
+        StreamRecordBatch record = new StreamRecordBatch(0, 0, start, (int) (end - start), TestUtils.random(size));
         return new ReadDataBlock(List.of(record));
     }
 }

@@ -17,21 +17,15 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.DefaultRecordBatch;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import kafka.log.s3.model.StreamRecordBatch;
 
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 
 public class StreamRecordBatchCodec {
-    private static final byte MAGIC_V0 = 0x22;
-    private static final PooledByteBufAllocator ALLOCATOR = PooledByteBufAllocator.DEFAULT;
+    public static final byte MAGIC_V0 = 0x22;
 
     public static ByteBuf encode(StreamRecordBatch streamRecord) {
         int totalLength = 1 // magic
@@ -42,7 +36,7 @@ public class StreamRecordBatchCodec {
                 + 4 // payload length
                 + streamRecord.getRecordBatch().rawPayload().remaining(); // payload
 
-        ByteBuf buf = ALLOCATOR.heapBuffer(totalLength);
+        ByteBuf buf = ByteBufAlloc.ALLOC.heapBuffer(totalLength);
         buf.writeByte(MAGIC_V0);
         buf.writeLong(streamRecord.getStreamId());
         buf.writeLong(streamRecord.getEpoch());
@@ -65,10 +59,10 @@ public class StreamRecordBatchCodec {
             long baseOffset = in.readLong();
             int lastOffsetDelta = in.readInt();
             int payloadLength = in.readInt();
-            ByteBuffer payload = ByteBuffer.allocate(payloadLength);
-            in.readFully(payload.array());
-            DefaultRecordBatch defaultRecordBatch = new DefaultRecordBatch(lastOffsetDelta, 0, Collections.emptyMap(), payload);
-            return new StreamRecordBatch(streamId, epoch, baseOffset, defaultRecordBatch);
+            ByteBuf payload = ByteBufAlloc.ALLOC.heapBuffer(payloadLength);
+            in.readFully(payload.array(), payload.arrayOffset(), payloadLength);
+            payload.writerIndex(payload.readerIndex() + payloadLength);
+            return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -81,13 +75,8 @@ public class StreamRecordBatchCodec {
         long baseOffset = buf.readLong();
         int lastOffsetDelta = buf.readInt();
         int payloadLength = buf.readInt();
-        ByteBuffer payload = buf.slice(buf.readerIndex(), payloadLength).nioBuffer();
+        ByteBuf payload = buf.slice(buf.readerIndex(), payloadLength);
         buf.skipBytes(payloadLength);
-        DefaultRecordBatch defaultRecordBatch = new DefaultRecordBatch(lastOffsetDelta, 0, Collections.emptyMap(), payload);
-        return new StreamRecordBatch(streamId, epoch, baseOffset, defaultRecordBatch);
-    }
-
-    public static List<StreamRecordBatch> decode(List<FlatStreamRecordBatch> records) {
-        return records.stream().map(r -> decode(r.encodedBuf())).collect(Collectors.toList());
+        return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
     }
 }

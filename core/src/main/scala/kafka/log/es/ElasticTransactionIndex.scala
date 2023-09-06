@@ -93,7 +93,8 @@ class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupp
           return queue.dequeue()
         }
         try {
-          val records = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).recordBatchList()
+          val rst = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128)
+          val records = rst.recordBatchList()
           records.forEach(recordBatch => {
             val readBuf = Unpooled.wrappedBuffer(recordBatch.rawPayload())
             val size = readBuf.readableBytes()
@@ -110,6 +111,7 @@ class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupp
             }
             position += size
           })
+          rst.free()
           queue.dequeue()
         } catch {
           case e: IOException =>

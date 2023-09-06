@@ -27,6 +27,7 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultS3BlockCache implements S3BlockCache {
@@ -48,6 +49,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
         List<S3ObjectMetadata> objects = objectManager.getObjects(streamId, startOffset, endOffset, 2);
         ReadContext context = new ReadContext(objects, startOffset, maxBytes);
         return read0(streamId, endOffset, context);
+    }
+
+    @Override
+    public void put(Map<Long, List<StreamRecordBatch>> stream2records) {
+        stream2records.forEach(cache::put);
     }
 
     private CompletableFuture<ReadDataBlock> read0(long streamId, long endOffset, ReadContext context) {
@@ -74,6 +80,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     while (it.hasNext()) {
                         StreamRecordBatch recordBatch = it.next();
                         if (recordBatch.getStreamId() != streamId) {
+                            recordBatch.release();
                             if (matched) {
                                 break;
                             }
@@ -81,6 +88,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                         }
                         matched = true;
                         if (recordBatch.getLastOffset() <= nextStartOffset) {
+                            recordBatch.release();
                             continue;
                         }
                         context.records.add(recordBatch);

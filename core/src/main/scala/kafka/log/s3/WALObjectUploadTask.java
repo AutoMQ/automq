@@ -17,6 +17,7 @@
 
 package kafka.log.s3;
 
+import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
@@ -37,7 +38,7 @@ import static kafka.log.es.FutureUtil.exec;
 
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
-    private final Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap;
+    private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
     private final int objectBlockSize;
     private final int objectPartSize;
     private final int streamSplitSizeThreshold;
@@ -47,7 +48,7 @@ public class WALObjectUploadTask {
     private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
 
-    public WALObjectUploadTask(Map<Long, List<FlatStreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+    public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
                                int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold) {
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = objectBlockSize;
@@ -81,16 +82,16 @@ public class WALObjectUploadTask {
         List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
 
         for (Long streamId : streamIds) {
-            List<FlatStreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
-            long streamSize = streamRecords.stream().mapToLong(FlatStreamRecordBatch::size).sum();
+            List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
+            long streamSize = streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
             if (streamSize >= streamSplitSizeThreshold) {
                 streamObjectCfList.add(writeStreamObject(streamRecords));
             } else {
-                for (FlatStreamRecordBatch record : streamRecords) {
+                for (StreamRecordBatch record : streamRecords) {
                     walObject.write(record);
                 }
-                long startOffset = streamRecords.get(0).baseOffset;
-                long endOffset = streamRecords.get(streamRecords.size() - 1).lastOffset();
+                long startOffset = streamRecords.get(0).getBaseOffset();
+                long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
                 // log object block only contain single stream's data.
                 walObject.closeCurrentBlock();
@@ -120,17 +121,17 @@ public class WALObjectUploadTask {
         }));
     }
 
-    private CompletableFuture<StreamObject> writeStreamObject(List<FlatStreamRecordBatch> streamRecords) {
+    private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords) {
         CompletableFuture<Long> objectIdCf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
         // TODO: retry until success
         return objectIdCf.thenCompose(objectId -> {
             ObjectWriter streamObjectWriter = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
-            for (FlatStreamRecordBatch record : streamRecords) {
+            for (StreamRecordBatch record : streamRecords) {
                 streamObjectWriter.write(record);
             }
-            long streamId = streamRecords.get(0).streamId;
-            long startOffset = streamRecords.get(0).baseOffset;
-            long endOffset = streamRecords.get(streamRecords.size() - 1).lastOffset();
+            long streamId = streamRecords.get(0).getStreamId();
+            long startOffset = streamRecords.get(0).getBaseOffset();
+            long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
             StreamObject streamObject = new StreamObject();
             streamObject.setObjectId(objectId);
             streamObject.setStreamId(streamId);

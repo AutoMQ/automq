@@ -43,6 +43,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static kafka.log.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -73,9 +74,15 @@ public class S3StorageTest {
         CommitWALObjectResponse resp = new CommitWALObjectResponse();
         when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
-        CompletableFuture<Void> cf1 = storage.append(new StreamRecordBatch(233, 1, 10, DefaultRecordBatch.of(1, 100)));
-        CompletableFuture<Void> cf2 = storage.append(new StreamRecordBatch(233, 1, 11, DefaultRecordBatch.of(2, 100)));
-        CompletableFuture<Void> cf3 = storage.append(new StreamRecordBatch(234, 3, 100, DefaultRecordBatch.of(1, 100)));
+        CompletableFuture<Void> cf1 = storage.append(
+                new StreamRecordBatch(233, 1, 10, 1, random(100))
+        );
+        CompletableFuture<Void> cf2 = storage.append(
+                new StreamRecordBatch(233, 1, 11, 2, random(100))
+        );
+        CompletableFuture<Void> cf3 = storage.append(
+                new StreamRecordBatch(234, 3, 100, 1, random(100))
+        );
 
         cf1.get(3, TimeUnit.SECONDS);
         cf2.get(3, TimeUnit.SECONDS);
@@ -168,8 +175,7 @@ public class S3StorageTest {
         cf2.get(1, TimeUnit.SECONDS);
     }
 
-    private static FlatStreamRecordBatch newRecord(long streamId, long offset) {
-        StreamRecordBatch recordBatch = new StreamRecordBatch(streamId, 0, offset, DefaultRecordBatch.of(1, 1024));
-        return FlatStreamRecordBatch.from(recordBatch);
+    private static StreamRecordBatch newRecord(long streamId, long offset) {
+        return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
     }
 }

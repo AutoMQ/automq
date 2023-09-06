@@ -18,15 +18,17 @@
 package kafka.log.s3;
 
 
+import kafka.log.s3.model.StreamRecordBatch;
+
 import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {
-    final FlatStreamRecordBatch record;
+    final StreamRecordBatch record;
     final long offset;
     final CompletableFuture<Void> cf;
     boolean persisted;
 
-    public WalWriteRequest(FlatStreamRecordBatch record, long offset, CompletableFuture<Void> cf) {
+    public WalWriteRequest(StreamRecordBatch record, long offset, CompletableFuture<Void> cf) {
         this.record = record;
         this.offset = offset;
         this.cf = cf;
