@@ -118,12 +118,6 @@
           "type": "int64",
           "versions": "0+",
           "about": "The end offset of the stream range"
-        },
-        {
-          "name": "sourceObjectIds",
-          "type": "[]int64",
-          "versions": "0+",
-          "about": "The IDs of the source S3 objects"
         }
       ]
     },
