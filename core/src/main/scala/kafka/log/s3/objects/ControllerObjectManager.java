@@ -20,7 +20,6 @@ package kafka.log.s3.objects;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import kafka.log.s3.metadata.StreamMetadataManager;
@@ -35,7 +34,6 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest.Builder;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

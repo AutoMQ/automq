@@ -92,6 +92,11 @@ public class S3StreamMetadataImage {
         return startOffset;
     }
 
+    public long getEndOffset() {
+        RangeMetadata range = ranges.get(rangeIndex);
+        return range == null ? startOffset : range.endOffset();
+    }
+
     public long getStreamId() {
         return streamId;
     }
@@ -109,11 +114,7 @@ public class S3StreamMetadataImage {
     }
 
     public StreamOffsetRange offsetRange() {
-        long endOffset = startOffset;
-        if (ranges.containsKey(rangeIndex)) {
-            endOffset = ranges.get(rangeIndex).endOffset();
-        }
-        return new StreamOffsetRange(streamId, startOffset, endOffset);
+        return new StreamOffsetRange(streamId, startOffset, getEndOffset());
     }
 
     @Override

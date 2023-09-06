@@ -19,13 +19,18 @@ package kafka.log.s3.metadata;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import kafka.log.es.FutureUtil;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
@@ -46,7 +51,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     private final CatchUpMetadataListener catchUpMetadataListener;
     private final Map<Long/*stream id*/, Map<Long/*end offset*/, List<GetObjectsTask>>> pendingGetObjectsTasks;
     private final ExecutorService pendingExecutorService;
-
     private final ReplayedWalObjects replayedWalObjects;
 
     public StreamMetadataManager(BrokerServer broker, KafkaConfig config) {
@@ -57,13 +61,25 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         this.broker.metadataListener().registerStreamMetadataListener(this.catchUpMetadataListener);
         this.replayedWalObjects = new ReplayedWalObjects();
         // TODO: optimize by more suitable data structure for pending tasks
-        this.pendingGetObjectsTasks = new HashMap<>();
+        this.pendingGetObjectsTasks = new ConcurrentHashMap<>();
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
     }
 
     @Override
     public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
         return this.replayedWalObjects.fetch(streamId, startOffset, endOffset, limit);
+    }
+
+    public void retryPendingTasks(List<GetObjectsTask> tasks) {
+        LOGGER.warn("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
+        tasks.forEach(task -> {
+            long streamId = task.streamId;
+            long startOffset = task.startOffset;
+            long endOffset = task.endOffset;
+            int limit = task.limit;
+            CompletableFuture<InRangeObjects> newCf = this.fetch(streamId, startOffset, endOffset, limit);
+            FutureUtil.propagate(newCf, task.cf);
+        });
     }
 
 
@@ -122,13 +138,12 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
 
         private CompletableFuture<InRangeObjects> pendingFetch(long streamId, long startOffset, long endOffset, int limit) {
             GetObjectsTask task = GetObjectsTask.of(streamId, startOffset, endOffset, limit);
-            synchronized (StreamMetadataManager.this) {
-                Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.computeIfAbsent(task.streamId,
-                    k -> new TreeMap<>());
-                List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
-                getObjectsTasks.add(task);
-            }
-            LOGGER.info("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset, limit);
+            Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.computeIfAbsent(task.streamId,
+                k -> new ConcurrentSkipListMap<>());
+            List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
+            getObjectsTasks.add(task);
+            LOGGER.info("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
+                limit);
             return task.cf;
         }
 
@@ -159,6 +174,43 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
 
         @Override
         public void onChange(MetadataDelta delta, MetadataImage newImage) {
+            // TODO: pre filter unnecessary situations
+            Set<Long> pendingStreams = pendingGetObjectsTasks.keySet();
+            List<StreamOffsetRange> pendingStreamsOffsetRange = pendingStreams
+                .stream()
+                .map(metadataCache::getStreamOffsetRange)
+                .filter(offset -> offset != StreamOffsetRange.INVALID)
+                .collect(Collectors.toList());
+            if (pendingStreamsOffsetRange.isEmpty()) {
+                return;
+            }
+            List<GetObjectsTask> retryTasks = new ArrayList<>();
+            pendingStreamsOffsetRange.forEach(offsetRange -> {
+                long streamId = offsetRange.getStreamId();
+                long endOffset = offsetRange.getEndOffset();
+                Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.get(streamId);
+                if (tasks == null) {
+                    return;
+                }
+                Iterator<Entry<Long, List<GetObjectsTask>>> iterator =
+                    tasks.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Entry<Long, List<GetObjectsTask>> entry = iterator.next();
+                    long pendingEndOffset = entry.getKey();
+                    if (pendingEndOffset > endOffset) {
+                        break;
+                    }
+                    iterator.remove();
+                    List<GetObjectsTask> getObjectsTasks = entry.getValue();
+                    retryTasks.addAll(getObjectsTasks);
+                }
+                if (tasks.isEmpty()) {
+                    StreamMetadataManager.this.pendingGetObjectsTasks.remove(streamId);
+                }
+            });
+            pendingExecutorService.submit(() -> {
+                retryPendingTasks(retryTasks);
+            });
         }
     }
 

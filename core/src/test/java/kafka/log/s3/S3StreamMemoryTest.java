@@ -113,7 +113,7 @@ public class S3StreamMemoryTest {
         streamManager = manager;
         objectManager = manager;
         operator = new MemoryS3Operator();
-        blockCache = new DefaultS3BlockCache(0, objectManager, operator);
+        blockCache = new DefaultS3BlockCache(0L, objectManager, operator);
         storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         streamClient = new S3StreamClient(streamManager, storage);
     }
