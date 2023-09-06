@@ -41,18 +41,22 @@ public class ObjectReader {
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final S3Operator s3Operator;
-    private final CompletableFuture<IndexBlock> indexBlockCf;
+    private final CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
 
     public ObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
-        this.indexBlockCf = new CompletableFuture<>();
-        asyncGetIndexBlock();
+        this.basicObjectInfoCf = new CompletableFuture<>();
+        asyncGetBasicObjectInfo();
+    }
+
+    public CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+        return basicObjectInfoCf;
     }
 
     public CompletableFuture<List<DataBlockIndex>> find(long streamId, long startOffset, long endOffset) {
-        return indexBlockCf.thenApply(indexBlock -> indexBlock.find(streamId, startOffset, endOffset));
+        return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset));
     }
 
     public CompletableFuture<DataBlock> read(DataBlockIndex block) {
@@ -60,37 +64,66 @@ public class ObjectReader {
         return rangeReadCf.thenApply(buf -> new DataBlock(buf, block.recordCount()));
     }
 
-    private void asyncGetIndexBlock() {
-        asyncGetIndexBlock0(Math.max(0, metadata.getObjectSize() - 1024 * 1024));
+    private void asyncGetBasicObjectInfo() {
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.getObjectSize() - 1024 * 1024));
     }
 
-    private void asyncGetIndexBlock0(long startPosition) {
+    private void asyncGetBasicObjectInfo0(long startPosition) {
         CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.getObjectSize());
-        cf.thenAccept(buf -> {
-            try {
-                IndexBlock indexBlock = IndexBlock.parse(buf, metadata.getObjectSize());
-                indexBlockCf.complete(indexBlock);
-            } catch (IndexBlockParseException ex) {
-                asyncGetIndexBlock0(ex.indexBlockPosition);
+        cf.whenComplete((buf, ex) -> {
+            if (ex != null) {
+                LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
+                basicObjectInfoCf.completeExceptionally(ex);
+            } else {
+                try {
+                    BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
+                    basicObjectInfoCf.complete(basicObjectInfo);
+                } catch (IndexBlockParseException ex1) {
+                    basicObjectInfoCf.completeExceptionally(ex1);
+                }
             }
-        }).exceptionally(ex -> {
-            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
-            // TODO: delay retry.
-            asyncGetIndexBlock0(startPosition);
-            return null;
         });
+//        cf.thenAccept(buf -> {
+//            try {
+//                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
+//                basicObjectInfoCf.complete(basicObjectInfo);
+//            } catch (IndexBlockParseException ex) {
+//                asyncGetBasicObjectInfo0(ex.indexBlockPosition);
+//            }
+//        }).exceptionally(ex -> {
+//            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
+//            // TODO: delay retry.
+//            asyncGetBasicObjectInfo0(startPosition);
+//            return null;
+//        });
     }
 
-    static class IndexBlock {
-        private final ByteBuf blocks;
-        private final ByteBuf streamRanges;
+    static class BasicObjectInfo {
+        /**
+         * The total size of the data blocks, which equals to index start position.
+         */
+        private final long dataBlockSize;
+        /**
+         * raw index data.
+         */
+        private final IndexBlock indexBlock;
+        /**
+         * The number of data blocks in the object.
+         */
+        private final int blockCount;
+        /**
+         * The size of the index blocks.
+         */
+        private final int indexBlockSize;
 
-        public IndexBlock(ByteBuf blocks, ByteBuf streamRanges) {
-            this.blocks = blocks;
-            this.streamRanges = streamRanges;
+        public BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
+            this.dataBlockSize = dataBlockSize;
+            this.indexBlock = indexBlock;
+            this.blockCount = blockCount;
+            this.indexBlockSize = indexBlockSize;
         }
 
-        public static IndexBlock parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
+        public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
@@ -102,8 +135,42 @@ public class ObjectReader {
                 ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
                 indexBlockBuf.skipBytes(blockCount * 16);
                 ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
-                return new IndexBlock(blocks, streamRanges);
+                return new BasicObjectInfo(indexBlockPosition, new IndexBlock(blocks, streamRanges), blockCount, indexBlockSize);
             }
+        }
+
+        public long dataBlockSize() {
+            return dataBlockSize;
+        }
+
+        public IndexBlock indexBlock() {
+            return indexBlock;
+        }
+
+        public int blockCount() {
+            return blockCount;
+        }
+
+        public int indexBlockSize() {
+            return indexBlockSize;
+        }
+    }
+
+    static class IndexBlock {
+        private final ByteBuf blocks;
+        private final ByteBuf streamRanges;
+
+        public IndexBlock(ByteBuf blocks, ByteBuf streamRanges) {
+            this.blocks = blocks;
+            this.streamRanges = streamRanges;
+        }
+
+        public ByteBuf blocks() {
+            return blocks.slice();
+        }
+
+        public ByteBuf streamRanges() {
+            return streamRanges.slice();
         }
 
         public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset) {
@@ -141,6 +208,15 @@ public class ObjectReader {
         long indexBlockPosition;
 
         public IndexBlockParseException(long indexBlockPosition) {
+            this.indexBlockPosition = indexBlockPosition;
+        }
+
+    }
+
+    static class BasicObjectInfoParseException extends Exception {
+        long indexBlockPosition;
+
+        public BasicObjectInfoParseException(long indexBlockPosition) {
             this.indexBlockPosition = indexBlockPosition;
         }
 
