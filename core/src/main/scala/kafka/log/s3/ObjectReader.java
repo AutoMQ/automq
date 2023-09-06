@@ -70,32 +70,19 @@ public class ObjectReader {
 
     private void asyncGetBasicObjectInfo0(long startPosition) {
         CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.getObjectSize());
-        cf.whenComplete((buf, ex) -> {
-            if (ex != null) {
-                LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
-                basicObjectInfoCf.completeExceptionally(ex);
-            } else {
-                try {
-                    BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
-                    basicObjectInfoCf.complete(basicObjectInfo);
-                } catch (IndexBlockParseException ex1) {
-                    basicObjectInfoCf.completeExceptionally(ex1);
-                }
+        cf.thenAccept(buf -> {
+            try {
+                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
+                basicObjectInfoCf.complete(basicObjectInfo);
+            } catch (IndexBlockParseException ex) {
+                asyncGetBasicObjectInfo0(ex.indexBlockPosition);
             }
+        }).exceptionally(ex -> {
+            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
+            // TODO: delay retry.
+            asyncGetBasicObjectInfo0(startPosition);
+            return null;
         });
-//        cf.thenAccept(buf -> {
-//            try {
-//                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
-//                basicObjectInfoCf.complete(basicObjectInfo);
-//            } catch (IndexBlockParseException ex) {
-//                asyncGetBasicObjectInfo0(ex.indexBlockPosition);
-//            }
-//        }).exceptionally(ex -> {
-//            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
-//            // TODO: delay retry.
-//            asyncGetBasicObjectInfo0(startPosition);
-//            return null;
-//        });
     }
 
     static class BasicObjectInfo {
