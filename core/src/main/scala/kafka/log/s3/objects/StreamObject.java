@@ -86,8 +86,7 @@ public class StreamObject {
             .setObjectId(objectId)
             .setObjectSize(objectSize)
             .setStartOffset(startOffset)
-            .setEndOffset(endOffset)
-            .setSourceObjectIds(sourceObjectIds);
+            .setEndOffset(endOffset);
     }
 
     @Override
