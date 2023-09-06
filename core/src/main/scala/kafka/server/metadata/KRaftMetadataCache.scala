@@ -35,7 +35,6 @@ import java.util.concurrent.ThreadLocalRandom
 import kafka.admin.BrokerMetadata
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.message.{DescribeClientQuotasRequestData, DescribeClientQuotasResponseData}
-import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object, StreamOffsetRange}
 import org.apache.kafka.metadata.{PartitionRegistration, Replicas}
 import org.apache.kafka.server.common.MetadataVersion
 
@@ -393,33 +392,4 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
       features.toMap,
       image.highestOffsetAndEpoch().offset)
   }
-
-  // Kafka on S3 inject start
-  override def getObjects(streamId: Long, startOffset: Long, endOffset: Long, limit: Int): InRangeObjects = {
-    val image = _currentImage
-    val inRangeObjects = image.streamsMetadata().getObjects(streamId, startOffset, endOffset, limit)
-    inRangeObjects.objects().forEach(obj => {
-      val objMetadata = image.objectsMetadata().getObjectMetadata(obj.getObjectId)
-      Option(objMetadata) match {
-        case None => throw new RuntimeException(s"Object metadata not found for object ${obj.getObjectId}")
-        case Some(metadata) => obj.setObjectSize(metadata.getObjectSize)
-      }
-    })
-    inRangeObjects
-  }
-
-  override def getObjectMetadata(objectId: Long): S3Object = {
-    val image = _currentImage
-    image.objectsMetadata().getObjectMetadata(objectId)
-  }
-
-  override def getStreamOffsetRange(streamId: Long): StreamOffsetRange = {
-    val image = _currentImage
-    Option(image.streamsMetadata().streamsMetadata().get(streamId)) match {
-      case None => StreamOffsetRange.INVALID
-      case Some(metadata) =>
-      metadata.offsetRange()
-    }
-  }
-  // Kafka on S3 inject end
 }

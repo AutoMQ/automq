@@ -82,6 +82,7 @@ public final class S3StreamsMetadataImage {
         List<S3ObjectMetadata> objects = new ArrayList<>();
         long realEndOffset = startOffset;
         List<RangeSearcher> rangeSearchers = rangeSearchers(streamId, startOffset, endOffset);
+        // TODO: if one stream object in multiple ranges, we may get duplicate objects
         for (RangeSearcher rangeSearcher : rangeSearchers) {
             InRangeObjects inRangeObjects = rangeSearcher.getObjects(limit);
             if (inRangeObjects == InRangeObjects.INVALID) {
@@ -90,7 +91,7 @@ public final class S3StreamsMetadataImage {
             realEndOffset = inRangeObjects.endOffset();
             objects.addAll(inRangeObjects.objects());
             limit -= inRangeObjects.objects().size();
-            if (limit <= 0) {
+            if (limit <= 0 || realEndOffset >= endOffset) {
                 break;
             }
         }
@@ -274,6 +275,15 @@ public final class S3StreamsMetadataImage {
     public Map<Long, S3StreamMetadataImage> streamsMetadata() {
         return streamsMetadata;
     }
+
+    public StreamOffsetRange offsetRange(long streamId) {
+        S3StreamMetadataImage streamMetadata = streamsMetadata.get(streamId);
+        if (streamMetadata == null) {
+            return StreamOffsetRange.INVALID;
+        }
+        return streamMetadata.offsetRange();
+    }
+
 
     public long nextAssignedStreamId() {
         return nextAssignedStreamId;

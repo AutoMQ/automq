@@ -18,6 +18,8 @@
 package org.apache.kafka.metadata.stream;
 
 
+import java.util.Objects;
+
 public class S3ObjectMetadata {
     private final long objectId;
     private long objectSize;
@@ -47,5 +49,22 @@ public class S3ObjectMetadata {
 
     public String key() {
         return ObjectUtils.genKey(0, "todocluster", objectId);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        S3ObjectMetadata that = (S3ObjectMetadata) o;
+        return objectId == that.objectId && objectSize == that.objectSize && type == that.type;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(objectId, objectSize, type);
     }
 }

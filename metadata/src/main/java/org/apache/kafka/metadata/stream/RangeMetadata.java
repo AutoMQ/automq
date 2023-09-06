@@ -41,11 +41,11 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
      */
     private int rangeIndex;
     /**
-     * Range start offer. (Inclusive)
+     * Range start offset. (Inclusive)
      */
     private long startOffset;
     /**
-     * Range end offer. (Exclusive)
+     * Range end offset. (Exclusive)
      */
     private long endOffset;
     /**

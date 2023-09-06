@@ -22,7 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -31,10 +32,20 @@ import kafka.log.s3.metadata.StreamMetadataManager.StreamMetadataListener;
 import kafka.server.BrokerServer;
 import kafka.server.metadata.BrokerMetadataListener;
 import kafka.server.metadata.KRaftMetadataCache;
+import org.apache.kafka.image.BrokerS3WALMetadataImage;
+import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.image.MetadataProvenance;
+import org.apache.kafka.image.S3ObjectsImage;
+import org.apache.kafka.image.S3StreamMetadataImage;
+import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -44,6 +55,11 @@ import org.mockito.Mockito;
 @Timeout(40)
 @Tag("S3Unit")
 public class StreamMetadataManagerTest {
+
+    private static final int BROKER0 = 0;
+    private static final int BROKER1 = 1;
+    private static final long STREAM0 = 0;
+    private static final long STREAM1 = 1;
 
     private BrokerServer mockBroker;
     private KRaftMetadataCache mockMetadataCache;
@@ -62,69 +78,115 @@ public class StreamMetadataManagerTest {
             this.streamMetadataListener = invocation.getArgument(0);
             return null;
         }).when(this.mockBrokerMetadataListener).registerStreamMetadataListener(any());
+        Mockito.when(this.mockMetadataCache.currentImage()).thenReturn(MetadataImage.EMPTY);
         this.manager = new StreamMetadataManager(this.mockBroker, null);
+    }
+
+    private static MetadataImage image0;
+    private static MetadataImage image1;
+    private static MetadataImage image2;
+
+    static {
+        S3ObjectsImage objectsImage = new S3ObjectsImage(2L, Map.of(
+            0L, new S3Object(0L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
+            1L, new S3Object(1L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
+            2L, new S3Object(2L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED)
+        ));
+
+        Map<Integer, RangeMetadata> ranges = Map.of(
+            0, new RangeMetadata(STREAM0, 0L, 0, 10L, 100L, BROKER0)
+        );
+        Map<Long, S3StreamObject> streamObjects = Map.of(
+            0L, new S3StreamObject(0L, 128, STREAM0, 10L, 100L));
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
+            Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
+        image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
+
+        ranges = new HashMap<>(ranges);
+        ranges.put(1, new RangeMetadata(STREAM0, 1L, 1, 100L, 150L, BROKER0));
+        streamObjects = new HashMap<>(streamObjects);
+        streamObjects.put(1L, new S3StreamObject(1L, 128, STREAM0, 100L, 150L));
+        streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 1, 10L, ranges, streamObjects);
+        streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
+            Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
+        image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
+
+        ranges = new HashMap<>(ranges);
+        ranges.put(2, new RangeMetadata(STREAM0, 2L, 2, 150L, 200L, BROKER0));
+        streamObjects = new HashMap<>(streamObjects);
+        streamObjects.put(2L, new S3StreamObject(2L, 128, STREAM0, 150L, 200L));
+        streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 2, 10L, ranges, streamObjects);
+        streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
+            Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
+        image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
     }
 
     @Test
     public void testFetch() throws Exception {
-        Mockito.when(this.mockMetadataCache.getStreamOffsetRange(1L)).thenReturn(new StreamOffsetRange(1L, 0L, 100L));
-        S3ObjectMetadata object0 = new S3ObjectMetadata(1L, 128, S3ObjectType.WAL_LOOSE);
-        Mockito.when(this.mockMetadataCache.getObjects(1L, 10L, 100L, 5))
-            .thenReturn(new InRangeObjects(1L, 10L, 100L, List.of(object0)));
+        S3ObjectMetadata object0 = new S3ObjectMetadata(0L, 128, S3ObjectType.STREAM);
+        S3ObjectMetadata object1 = new S3ObjectMetadata(1L, 128, S3ObjectType.STREAM);
+        S3ObjectMetadata object2 = new S3ObjectMetadata(2L, 128, S3ObjectType.STREAM);
+
+        this.streamMetadataListener.onChange(null, image0);
 
         // 1. normal fetch
-        CompletableFuture<InRangeObjects> result = this.manager.fetch(1L, 10L, 100L, 5);
-        Mockito.verify(this.mockMetadataCache).getStreamOffsetRange(1L);
-        Mockito.verify(this.mockMetadataCache).getObjects(1L, 10L, 100L, 5);
-        Mockito.verifyNoMoreInteractions(this.mockMetadataCache);
+        CompletableFuture<InRangeObjects> result = this.manager.fetch(STREAM0, 10L, 100L, 5);
         InRangeObjects inRangeObjects = result.get();
-        assertEquals(1L, inRangeObjects.streamId());
+        assertEquals(STREAM0, inRangeObjects.streamId());
         assertEquals(10L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
         assertEquals(object0, inRangeObjects.objects().get(0));
 
         // 2. fetch with invalid streamId
-        result = this.manager.fetch(2L, 0L, 100L, 5);
+        result = this.manager.fetch(STREAM1, 0L, 100L, 5);
         inRangeObjects = result.get();
         assertEquals(InRangeObjects.INVALID, inRangeObjects);
 
+        // 3. fetch with larger startOffset
+        result = this.manager.fetch(STREAM0, 20L, 100L, 5);
+        inRangeObjects = result.get();
+        assertEquals(STREAM0, inRangeObjects.streamId());
+        assertEquals(20L, inRangeObjects.startOffset());
+        assertEquals(100L, inRangeObjects.endOffset());
+        assertEquals(1, inRangeObjects.objects().size());
+        assertEquals(object0, inRangeObjects.objects().get(0));
+
+        // 4. fetch with smaller endOffset
+        result = this.manager.fetch(STREAM0, 10L, 50L, 5);
+        inRangeObjects = result.get();
+        assertEquals(STREAM0, inRangeObjects.streamId());
+        assertEquals(10L, inRangeObjects.startOffset());
+        assertEquals(100L, inRangeObjects.endOffset());
+        assertEquals(1, inRangeObjects.objects().size());
+        assertEquals(object0, inRangeObjects.objects().get(0));
+
         // 5. fetch with smaller startOffset
-        result = this.manager.fetch(1L, 5L, 100L, 5);
+        result = this.manager.fetch(STREAM0, 5L, 100L, 5);
         inRangeObjects = result.get();
         assertEquals(InRangeObjects.INVALID, inRangeObjects);
 
         // 6. fetch with larger endOffset
-        result = this.manager.fetch(1L, 10L, 200L, 5);
+        result = this.manager.fetch(STREAM0, 10L, 200L, 5);
         CompletableFuture<InRangeObjects> finalResult = result;
         assertThrows(TimeoutException.class, () -> {
             finalResult.get(1, TimeUnit.SECONDS);
         });
 
         // 7. notify the manager that streams' end offset has been advanced
-        Mockito.when(this.mockMetadataCache.getStreamOffsetRange(1L)).thenReturn(new StreamOffsetRange(1L, 0L, 150L));
-        Mockito.when(this.mockMetadataCache.getStreamOffsetRange(2L)).thenReturn(new StreamOffsetRange(2L, 0L, 150L));
-        S3ObjectMetadata object1 = new S3ObjectMetadata(2L, 128, S3ObjectType.WAL_LOOSE);
-        Mockito.when(this.mockMetadataCache.getObjects(1L, 10L, 150L, 5))
-            .thenReturn(new InRangeObjects(1L, 10L, 200L, List.of(object0, object1)));
-
-        streamMetadataListener.onChange(null, null);
+        streamMetadataListener.onChange(null, image1);
 
         assertThrows(TimeoutException.class, () -> {
             finalResult.get(1, TimeUnit.SECONDS);
         });
 
         // 8. notify with correct end offset
-        Mockito.when(this.mockMetadataCache.getStreamOffsetRange(1L)).thenReturn(new StreamOffsetRange(1L, 0L, 200L));
-        S3ObjectMetadata object2 = new S3ObjectMetadata(3L, 128, S3ObjectType.WAL_LOOSE);
-        Mockito.when(this.mockMetadataCache.getObjects(1L, 10L, 200L, 5))
-            .thenReturn(new InRangeObjects(1L, 10L, 200L, List.of(object0, object1, object2)));
-
-        streamMetadataListener.onChange(null, null);
+        streamMetadataListener.onChange(null, image2);
 
         assertDoesNotThrow(() -> {
             InRangeObjects rangeObjects = finalResult.get(1, TimeUnit.SECONDS);
-            assertEquals(1L, rangeObjects.streamId());
+            assertEquals(STREAM0, rangeObjects.streamId());
             assertEquals(10L, rangeObjects.startOffset());
             assertEquals(200L, rangeObjects.endOffset());
             assertEquals(3, rangeObjects.objects().size());
@@ -134,4 +196,5 @@ public class StreamMetadataManagerTest {
         });
 
     }
+
 }
