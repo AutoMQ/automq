@@ -71,7 +71,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     }
 
     public void retryPendingTasks(List<GetObjectsTask> tasks) {
-        LOGGER.warn("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
+        LOGGER.info("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
         tasks.forEach(task -> {
             long streamId = task.streamId;
             long startOffset = task.startOffset;
@@ -104,14 +104,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             this.endOffset = endOffset;
             this.limit = limit;
         }
-
-        void complete(InRangeObjects objects) {
-            cf.complete(objects);
-        }
-
-        void completeExceptionally(Throwable ex) {
-            cf.completeExceptionally(ex);
-        }
     }
 
     class ReplayedWalObjects implements InRangeObjectsFetcher {
@@ -142,7 +134,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                 k -> new ConcurrentSkipListMap<>());
             List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
             getObjectsTasks.add(task);
-            LOGGER.info("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
+            LOGGER.warn("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
                 limit);
             return task.cf;
         }
@@ -156,7 +148,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                     streamId, startOffset, endOffset, limit);
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
-            LOGGER.info(
+            LOGGER.trace(
                 "[GetObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache success with result: {}",
                 streamId, startOffset, endOffset, limit, cachedInRangeObjects);
             return CompletableFuture.completedFuture(cachedInRangeObjects);
