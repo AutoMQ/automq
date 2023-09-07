@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeoutException;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.metadata.StreamMetadataManager.StreamMetadataListener;
 import kafka.server.BrokerServer;
+import kafka.server.KafkaConfig;
 import kafka.server.metadata.BrokerMetadataListener;
 import kafka.server.metadata.KRaftMetadataCache;
 import org.apache.kafka.image.BrokerS3WALMetadataImage;
@@ -45,6 +47,10 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
+import org.apache.kafka.metadata.stream.SortedWALObjectsList;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.StreamState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -60,6 +66,7 @@ public class StreamMetadataManagerTest {
     private static final int BROKER1 = 1;
     private static final long STREAM0 = 0;
     private static final long STREAM1 = 1;
+    private static final long STREAM2 = 2;
 
     private BrokerServer mockBroker;
     private KRaftMetadataCache mockMetadataCache;
@@ -79,7 +86,9 @@ public class StreamMetadataManagerTest {
             return null;
         }).when(this.mockBrokerMetadataListener).registerStreamMetadataListener(any());
         Mockito.when(this.mockMetadataCache.currentImage()).thenReturn(MetadataImage.EMPTY);
-        this.manager = new StreamMetadataManager(this.mockBroker, null);
+        KafkaConfig config = Mockito.mock(KafkaConfig.class);
+        Mockito.when(config.brokerId()).thenReturn(BROKER0);
+        this.manager = new StreamMetadataManager(this.mockBroker, config);
     }
 
     private static MetadataImage image0;
@@ -99,8 +108,15 @@ public class StreamMetadataManagerTest {
         Map<Long, S3StreamObject> streamObjects = Map.of(
             0L, new S3StreamObject(0L, 128, STREAM0, 10L, 100L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
+
+        BrokerS3WALMetadataImage walMetadataImage0 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
+                new S3WALObject(1L, BROKER0, Map.of(
+                        STREAM1, List.of(new StreamOffsetRange(STREAM1, 0L, 100L))), 1L),
+                new S3WALObject(2L, BROKER0, Map.of(
+                        STREAM2, List.of(new StreamOffsetRange(STREAM2, 0L, 100L))), 1L))));
+
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-            Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
+            Map.of(BROKER0, walMetadataImage0));
         image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
 
         ranges = new HashMap<>(ranges);
@@ -195,6 +211,19 @@ public class StreamMetadataManagerTest {
             assertEquals(object2, rangeObjects.objects().get(2));
         });
 
+    }
+
+    @Test
+    public void testGetWALObjects() {
+        this.streamMetadataListener.onChange(null, image0);
+        List<S3WALObjectMetadata> objectMetadata = this.manager.getWALObjects();
+        List<S3ObjectMetadata> expected = List.of(new S3ObjectMetadata(1L, 128, S3ObjectType.UNKNOWN),
+                new S3ObjectMetadata(2L, 128, S3ObjectType.UNKNOWN));
+        // compare objectMetadata with expected
+        assertEquals(expected.size(), objectMetadata.size());
+        for (int i = 0; i < expected.size(); i++) {
+            assertEquals(expected.get(i), objectMetadata.get(i).getObjectMetadata());
+        }
     }
 
 }

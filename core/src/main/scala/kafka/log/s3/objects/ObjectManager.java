@@ -17,9 +17,10 @@
 
 package kafka.log.s3.objects;
 
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 /**
  * Object metadata registry.
@@ -55,10 +56,10 @@ public interface ObjectManager {
      * When obj1 contains stream0 <code>[0, 100) [200, 300)</code> and obj2 contains stream1 <code>[100, 200)</code>,
      * expect getObjects(streamId, 0, 300) return <code>[obj1, obj2, obj1]</code>
      *
-     * @param streamId stream id.
+     * @param streamId    stream id.
      * @param startOffset get range start offset.
-     * @param endOffset get range end offset.
-     * @param limit max object count. Why use limit instead of maxBytes? Because we cannot get stream size from object metadata.
+     * @param endOffset   get range end offset.
+     * @param limit       max object count. Why use limit instead of maxBytes? Because we cannot get stream size from object metadata.
      * @return {@link S3ObjectMetadata}
      */
     List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit);

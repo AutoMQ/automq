@@ -35,6 +35,7 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public final class S3StreamsMetadataImage {
@@ -96,6 +97,14 @@ public final class S3StreamsMetadataImage {
             }
         }
         return new InRangeObjects(streamId, startOffset, realEndOffset, objects);
+    }
+
+    public List<S3WALObject> getWALObjects(int brokerId) {
+        BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
+        if (wal == null) {
+            return Collections.emptyList();
+        }
+        return wal.getWalObjects().list();
     }
 
     private List<RangeSearcher> rangeSearchers(long streamId, long startOffset, long endOffset) {

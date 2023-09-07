@@ -15,36 +15,9 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.operator;
+package kafka.log.s3.compact.objects;
 
-import io.netty.buffer.ByteBuf;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-
-import java.util.concurrent.CompletableFuture;
-
-/**
- * Multi-part object writer.
- */
-public interface Writer {
-    /**
-     * Write a part of the object. The parts will parallel upload to S3.
-     *
-     * @param part object part.
-     */
-    CompletableFuture<CompletedPart> write(ByteBuf part);
-
-    /**
-     * Copy a part of the object.
-     *
-     * @param sourcePath source object path.
-     * @param start      start position of the source object.
-     * @param end        end position of the source object.
-     */
-    void copyWrite(String sourcePath, long start, long end);
-
-    /**
-     * Complete the object.
-     */
-    CompletableFuture<Void> close();
-
+public enum CompactionType {
+    COMPACT,
+    SPLIT,
 }

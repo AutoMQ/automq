@@ -18,10 +18,6 @@
 package kafka.log.s3.objects;
 
 
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.server.KafkaConfig;
@@ -36,6 +32,11 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 public class ControllerObjectManager implements ObjectManager {
 
@@ -54,10 +55,10 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         PrepareS3ObjectRequest.Builder request = new Builder(
-            new PrepareS3ObjectRequestData()
-                .setBrokerId(config.brokerId())
-                .setPreparedCount(count)
-                .setTimeToLiveInMs(ttl)
+                new PrepareS3ObjectRequestData()
+                        .setBrokerId(config.brokerId())
+                        .setPreparedCount(count)
+                        .setTimeToLiveInMs(ttl)
         );
         return requestSender.send(request, PrepareS3ObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
@@ -115,7 +116,7 @@ public class ControllerObjectManager implements ObjectManager {
             }).get();
         } catch (Exception e) {
             LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
-                e);
+                    e);
             return Collections.emptyList();
         }
     }

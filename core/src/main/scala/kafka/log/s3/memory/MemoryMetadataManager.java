@@ -17,6 +17,28 @@
 
 package kafka.log.s3.memory;
 
+import kafka.log.s3.objects.CommitStreamObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectResponse;
+import kafka.log.s3.objects.ObjectManager;
+import kafka.log.s3.objects.ObjectStreamRange;
+import kafka.log.s3.objects.OpenStreamMetadata;
+import kafka.log.s3.streams.StreamManager;
+import org.apache.kafka.common.errors.s3.StreamFencedException;
+import org.apache.kafka.common.errors.s3.StreamNotClosedException;
+import org.apache.kafka.common.errors.s3.StreamNotExistException;
+import org.apache.kafka.metadata.stream.ObjectUtils;
+import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import org.apache.kafka.metadata.stream.StreamState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,30 +51,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
-import kafka.log.s3.objects.CommitStreamObjectRequest;
-import kafka.log.s3.objects.CommitWALObjectRequest;
-import kafka.log.s3.objects.CommitWALObjectResponse;
-import kafka.log.s3.objects.ObjectManager;
-import kafka.log.s3.objects.ObjectStreamRange;
-import kafka.log.s3.objects.OpenStreamMetadata;
-import org.apache.kafka.common.errors.s3.StreamNotClosedException;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import kafka.log.s3.streams.StreamManager;
-import org.apache.kafka.metadata.stream.ObjectUtils;
-import org.apache.kafka.common.errors.s3.StreamFencedException;
-import org.apache.kafka.common.errors.s3.StreamNotExistException;
-import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
@@ -61,14 +62,14 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final EventDriver eventDriver;
     private volatile long nextAssignedObjectId = 0;
     private final Map<Long/*objectId*/, S3Object> objectsMetadata;
-    private volatile long nextAssignedStreamId = 0;
+    private final AtomicLong nextAssignedStreamId = new AtomicLong(0L);
     private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
     private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
 
     private static class MemoryStreamMetadata {
 
         private final long streamId;
-        private StreamState state = StreamState.CLOSED;
+        private StreamState state;
         private long epoch = S3StreamConstant.INIT_EPOCH;
         private long startOffset = S3StreamConstant.INIT_START_OFFSET;
         private long endOffset = S3StreamConstant.INIT_END_OFFSET;
@@ -115,7 +116,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     public <T> CompletableFuture<T> submitEvent(Supplier<T> eventHandler) {
         CompletableFuture<T> cb = new CompletableFuture<>();
-        MemoryMetadataEvent event = new MemoryMetadataEvent(cb, eventHandler);
+        MemoryMetadataEvent<T> event = new MemoryMetadataEvent<>(cb, eventHandler);
         if (!eventDriver.submit(event)) {
             throw new RuntimeException("Offer event failed");
         }
@@ -269,7 +270,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Long> createStream() {
         return this.submitEvent(() -> {
-            long streamId = this.nextAssignedStreamId++;
+            long streamId = this.nextAssignedStreamId.getAndIncrement();
             this.streamsMetadata.put(streamId,
                     new MemoryStreamMetadata(streamId));
             return streamId;
