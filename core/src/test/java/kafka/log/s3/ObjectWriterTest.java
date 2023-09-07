@@ -43,13 +43,12 @@ public class ObjectWriterTest {
         S3Operator s3Operator = new MemoryS3Operator();
         ObjectWriter objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(233, 10, 5, 512);
-        objectWriter.write(r1);
         StreamRecordBatch r2 = newRecord(233, 15, 10, 512);
-        objectWriter.write(r2);
         StreamRecordBatch r3 = newRecord(233, 25, 5, 512);
-        objectWriter.write(r3);
+        objectWriter.write(233, List.of(r1, r2, r3));
+
         StreamRecordBatch r4 = newRecord(234, 0, 5, 512);
-        objectWriter.write(r4);
+        objectWriter.write(234, List.of(r4));
         objectWriter.close().get();
 
         List<ObjectStreamRange> streamRanges = objectWriter.getStreamRanges();
@@ -91,22 +90,20 @@ public class ObjectWriterTest {
             assertEquals(25L, r.getBaseOffset());
             assertEquals(5L, r.getRecordBatch().count());
             assertEquals(r3.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
-            r = it.next();
+        }
+
+        blockIndexes = objectReader.find(234, 1, 2).get();
+        assertEquals(1, blockIndexes.size());
+        assertEquals(2, blockIndexes.get(0).blockId());
+        {
+            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(0)).get().iterator();
+            StreamRecordBatch r = it.next();
             assertEquals(234L, r.getStreamId());
             assertEquals(0L, r.getBaseOffset());
             assertEquals(5L, r.getRecordBatch().count());
             assertEquals(r4.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
             assertFalse(it.hasNext());
         }
-
-        blockIndexes = objectReader.find(234, 1, 2).get();
-        assertEquals(1, blockIndexes.size());
-        assertEquals(1, blockIndexes.get(0).blockId());
-    }
-
-    @Test
-    public void testWrite_closeBlock() {
-
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {

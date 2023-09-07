@@ -725,7 +725,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       PRODUCE_ACK_TIMER.update(System.nanoTime() - callbackStartNanos)
       val now = System.currentTimeMillis()
       val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
-      if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+      if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
         val produceStatistics = PRODUCE_TIMER.getAndReset()
         val produceCallbackStatistics = PRODUCE_CALLBACK_TIMER.getAndReset()
         val produceAckStatistics = PRODUCE_ACK_TIMER.getAndReset()

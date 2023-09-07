@@ -229,13 +229,13 @@ class ElasticLog(val metaStream: MetaStream,
   private def tryAppendStatistics(): Unit = {
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
-    if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+    if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
       val permitAcquireFailStatistics = APPEND_PERMIT_ACQUIRE_FAIL_TIMER.getAndReset()
       val remainingPermits = APPEND_PERMIT_SEMAPHORE.availablePermits()
       val appendStatistics = APPEND_TIMER.getAndReset()
       val callbackStatistics = APPEND_CALLBACK_TIMER.getAndReset()
       val ackStatistics = APPEND_ACK_TIMER.getAndReset()
-      logger.warn(s"log append cost, permitAcquireFail=$permitAcquireFailStatistics, remainingPermit=$remainingPermits/$APPEND_PERMIT ,append=$appendStatistics, callback=$callbackStatistics, ack=$ackStatistics")
+      logger.info(s"log append cost, permitAcquireFail=$permitAcquireFailStatistics, remainingPermit=$remainingPermits/$APPEND_PERMIT ,append=$appendStatistics, callback=$callbackStatistics, ack=$ackStatistics")
     }
   }
 

@@ -24,18 +24,19 @@ import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
-import org.apache.kafka.common.compress.ZstdFactory;
-import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.metadata.stream.ObjectUtils;
 
-import java.io.IOException;
-import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 // TODO: memory optimization
 public class ObjectWriter {
+
+    private static final byte DATA_BLOCK_MAGIC = 0x01;
+    // TODO: first n bit is the compressed flag
+    private static final byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
     private final int blockSizeThreshold;
     private final int partSizeThreshold;
     private final List<DataBlock> waitingUploadBlocks;
@@ -43,11 +44,8 @@ public class ObjectWriter {
     private IndexBlock indexBlock;
     private final Writer writer;
     private final long objectId;
-    private long nextDataBlockPosition;
 
     private long size;
-
-    private DataBlock dataBlock;
 
     public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
         this.objectId = objectId;
@@ -60,78 +58,103 @@ public class ObjectWriter {
         writer = s3Operator.writer(objectKey);
     }
 
-    public void write(StreamRecordBatch record) {
-        if (dataBlock == null) {
-            dataBlock = new DataBlock(nextDataBlockPosition);
-        }
-        if (dataBlock.write(record)) {
-            waitingUploadBlocks.add(dataBlock);
-            nextDataBlockPosition += dataBlock.size();
-            dataBlock = null;
-            tryUploadPart();
-        }
+    public void write(long streamId, List<StreamRecordBatch> records) {
+        List<List<StreamRecordBatch>> blocks = groupByBlock(records);
+        List<CompletableFuture<Void>> closeCf = new ArrayList<>(blocks.size());
+        blocks.forEach(blockRecords -> {
+            DataBlock block = new DataBlock(streamId, blockRecords);
+            waitingUploadBlocks.add(block);
+            closeCf.add(block.close());
+        });
+        CompletableFuture.allOf(closeCf.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> tryUploadPart());
+
     }
 
-    public void closeCurrentBlock() {
-        if (dataBlock != null) {
-            dataBlock.close();
-            waitingUploadBlocks.add(dataBlock);
-            nextDataBlockPosition += dataBlock.size();
-            dataBlock = null;
-            tryUploadPart();
-        }
-    }
-
-    private void tryUploadPart() {
-        long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(DataBlock::size).sum();
-        if (waitingUploadSize >= partSizeThreshold) {
-            CompositeByteBuf partBuf = Unpooled.compositeBuffer();
-            for (DataBlock block : waitingUploadBlocks) {
-                partBuf.addComponent(true, block.buffer());
-                completedBlocks.add(block);
+    private List<List<StreamRecordBatch>> groupByBlock(List<StreamRecordBatch> records) {
+        List<List<StreamRecordBatch>> blocks = new LinkedList<>();
+        List<StreamRecordBatch> blockRecords = new ArrayList<>(records.size());
+        for (StreamRecordBatch record : records) {
+            size += record.size();
+            blockRecords.add(record);
+            if (size >= blockSizeThreshold) {
+                blocks.add(blockRecords);
+                blockRecords = new ArrayList<>(records.size());
+                size = 0;
             }
-            writer.write(partBuf);
-            waitingUploadBlocks.clear();
+        }
+        if (!blockRecords.isEmpty()) {
+            blocks.add(blockRecords);
+        }
+        return blocks;
+    }
+
+    private synchronized void tryUploadPart() {
+        for (; ; ) {
+            List<DataBlock> uploadBlocks = new ArrayList<>(32);
+            boolean partFull = false;
+            int size = 0;
+            for (DataBlock block : waitingUploadBlocks) {
+                if (!block.close().isDone()) {
+                    break;
+                }
+                uploadBlocks.add(block);
+                size += block.size();
+                if (size >= partSizeThreshold) {
+                    partFull = true;
+                    break;
+                }
+            }
+            if (partFull) {
+                CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+                for (DataBlock block : uploadBlocks) {
+                    partBuf.addComponent(true, block.buffer());
+                }
+                writer.write(partBuf);
+                completedBlocks.addAll(uploadBlocks);
+                waitingUploadBlocks.removeIf(uploadBlocks::contains);
+            } else {
+                break;
+            }
         }
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = Unpooled.compositeBuffer();
-        if (dataBlock != null) {
-            dataBlock.close();
-            nextDataBlockPosition += dataBlock.size();
-            waitingUploadBlocks.add(dataBlock);
-            dataBlock = null;
-        }
-        for (DataBlock block : waitingUploadBlocks) {
-            buf.addComponent(true, block.buffer());
-            completedBlocks.add(block);
-        }
-        waitingUploadBlocks.clear();
-        indexBlock = new IndexBlock();
-        buf.addComponent(true, indexBlock.buffer());
-        Footer footer = new Footer(indexBlock.position(), indexBlock.size());
-        buf.addComponent(true, footer.buffer());
-        writer.write(buf.duplicate());
-        size = indexBlock.position() + indexBlock.size() + footer.size();
-        return writer.close();
+        CompletableFuture<Void> waitBlocksCloseCf = CompletableFuture.allOf(waitingUploadBlocks.stream().map(DataBlock::close).toArray(CompletableFuture[]::new));
+        return waitBlocksCloseCf.thenCompose(nil -> {
+            CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
+            for (DataBlock block : waitingUploadBlocks) {
+                buf.addComponent(true, block.buffer());
+                completedBlocks.add(block);
+            }
+            waitingUploadBlocks.clear();
+            indexBlock = new IndexBlock();
+            buf.addComponent(true, indexBlock.buffer());
+            Footer footer = new Footer(indexBlock.position(), indexBlock.size());
+            buf.addComponent(true, footer.buffer());
+            writer.write(buf.duplicate());
+            size = indexBlock.position() + indexBlock.size() + footer.size();
+            return writer.close();
+        });
     }
 
     public List<ObjectStreamRange> getStreamRanges() {
         List<ObjectStreamRange> streamRanges = new LinkedList<>();
         ObjectStreamRange lastStreamRange = null;
         for (DataBlock block : completedBlocks) {
-            for (ObjectStreamRange streamRange : block.getStreamRanges()) {
-                if (lastStreamRange == null || lastStreamRange.getStreamId() != streamRange.getStreamId()) {
-                    lastStreamRange = new ObjectStreamRange();
-                    lastStreamRange.setStreamId(streamRange.getStreamId());
-                    lastStreamRange.setEpoch(streamRange.getEpoch());
-                    lastStreamRange.setStartOffset(streamRange.getStartOffset());
+            ObjectStreamRange streamRange = block.getStreamRange();
+            if (lastStreamRange == null || lastStreamRange.getStreamId() != streamRange.getStreamId()) {
+                if (lastStreamRange != null) {
                     streamRanges.add(lastStreamRange);
                 }
-                lastStreamRange.setEndOffset(streamRange.getEndOffset());
-
+                lastStreamRange = new ObjectStreamRange();
+                lastStreamRange.setStreamId(streamRange.getStreamId());
+                lastStreamRange.setEpoch(streamRange.getEpoch());
+                lastStreamRange.setStartOffset(streamRange.getStartOffset());
             }
+            lastStreamRange.setEndOffset(streamRange.getEndOffset());
+        }
+        if (lastStreamRange != null) {
+            streamRanges.add(lastStreamRange);
         }
         return streamRanges;
     }
@@ -144,87 +167,41 @@ public class ObjectWriter {
         return size;
     }
 
-    class DataBlock {
-        private final long position;
-        private ByteBufferOutputStream compressedBlock;
-        private OutputStream out;
-        private ByteBuf compressedBlockBuf;
-        private int blockSize;
-        private final List<ObjectStreamRange> streamRanges;
-        private ObjectStreamRange streamRange;
-        private int recordCount = 0;
+    static class DataBlock {
+        private final ByteBuf encodedBuf;
+        private final ObjectStreamRange streamRange;
+        private final int recordCount;
+        private final int size;
 
-        public DataBlock(long position) {
-            this.position = position;
-            compressedBlock = new ByteBufferOutputStream(blockSizeThreshold * 3 / 2);
-            out = ZstdFactory.wrapForOutput(compressedBlock);
-            streamRanges = new LinkedList<>();
+        public DataBlock(long streamId, List<StreamRecordBatch> records) {
+            this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset());
+            this.recordCount = records.size();
+            int dataSize = records.stream().mapToInt(r -> r.encoded().readableBytes()).sum();
+            this.encodedBuf = ByteBufAlloc.ALLOC.directBuffer(2 + 2 + dataSize);
+            encodedBuf.writeByte(DATA_BLOCK_MAGIC);
+            encodedBuf.writeByte(DATA_BLOCK_DEFAULT_FLAG);
+            records.forEach(r -> encodedBuf.writeBytes(r.encoded()));
+            this.size = encodedBuf.readableBytes();
         }
 
-        public boolean write(StreamRecordBatch record) {
-            try {
-                recordCount++;
-                return write0(record);
-            } catch (IOException ex) {
-                // won't happen
-                throw new RuntimeException(ex);
-            }
-        }
-
-        public boolean write0(StreamRecordBatch record) throws IOException {
-            if (streamRange == null || streamRange.getStreamId() != record.getStreamId()) {
-                streamRange = new ObjectStreamRange();
-                streamRange.setStreamId(record.getStreamId());
-                streamRange.setEpoch(record.getEpoch());
-                streamRange.setStartOffset(record.getBaseOffset());
-                streamRanges.add(streamRange);
-            }
-            streamRange.setEndOffset(record.getLastOffset());
-
-            ByteBuf recordBuf = record.encoded();
-            out.write(recordBuf.array(), recordBuf.arrayOffset(), recordBuf.readableBytes());
-            blockSize += recordBuf.readableBytes();
-            if (blockSize >= blockSizeThreshold) {
-                close();
-                return true;
-            }
-            return false;
-        }
-
-        public void close() {
-            try {
-                close0();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        private void close0() throws IOException {
-            out.close();
-            compressedBlock.close();
-            compressedBlockBuf = Unpooled.wrappedBuffer(compressedBlock.buffer().duplicate().flip());
-            out = null;
-            compressedBlock = null;
-        }
-
-        public long position() {
-            return position;
+        public CompletableFuture<Void> close() {
+            return CompletableFuture.completedFuture(null);
         }
 
         public int size() {
-            return compressedBlockBuf.readableBytes();
+            return size;
         }
 
         public int recordCount() {
             return recordCount;
         }
 
-        public List<ObjectStreamRange> getStreamRanges() {
-            return streamRanges;
+        public ObjectStreamRange getStreamRange() {
+            return streamRange;
         }
 
         public ByteBuf buffer() {
-            return compressedBlockBuf.duplicate();
+            return encodedBuf.duplicate();
         }
     }
 
@@ -233,31 +210,32 @@ public class ObjectWriter {
         private final long position;
 
         public IndexBlock() {
-            position = nextDataBlockPosition;
+            long nextPosition = 0;
             buf = Unpooled.buffer(1024 * 1024);
             buf.writeInt(completedBlocks.size()); // block count
             // block index
             for (DataBlock block : completedBlocks) {
                 // start position in the object
-                buf.writeLong(block.position());
+                buf.writeLong(nextPosition);
                 // byte size of the block
                 buf.writeInt(block.size());
                 // how many ranges in the block
                 buf.writeInt(block.recordCount());
+                nextPosition += block.size();
             }
+            position = nextPosition;
             // object stream range
             for (int blockIndex = 0; blockIndex < completedBlocks.size(); blockIndex++) {
                 DataBlock block = completedBlocks.get(blockIndex);
-                for (ObjectStreamRange range : block.getStreamRanges()) {
-                    // stream id of this range
-                    buf.writeLong(range.getStreamId());
-                    // start offset of the related stream
-                    buf.writeLong(range.getStartOffset());
-                    // record count of the related stream in this range
-                    buf.writeInt((int) (range.getEndOffset() - range.getStartOffset()));
-                    // the index of block where this range is in
-                    buf.writeInt(blockIndex);
-                }
+                ObjectStreamRange range = block.getStreamRange();
+                // stream id of this range
+                buf.writeLong(range.getStreamId());
+                // start offset of the related stream
+                buf.writeLong(range.getStartOffset());
+                // record count of the related stream in this range
+                buf.writeInt((int) (range.getEndOffset() - range.getStartOffset()));
+                // the index of block where this range is in
+                buf.writeInt(blockIndex);
             }
         }
 

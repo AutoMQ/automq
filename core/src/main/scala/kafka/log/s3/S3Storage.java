@@ -79,6 +79,21 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
+        for (;;) {
+            if (logCache.size() < 2L * 1024 * 1024 * 1024) {
+                break;
+            } else {
+                // TODO: log limit
+                LOGGER.warn("log cache size {} is larger than 2GB, wait 100ms", logCache.size());
+                try {
+                    //noinspection BusyWait
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }
+
         WriteAheadLog.AppendResult appendResult = log.append(streamRecord.encoded());
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.offset, cf);
@@ -191,8 +206,7 @@ public class S3Storage implements Storage {
             walObjectCommitQueue.poll();
             log.trim(context.cache.confirmOffset());
             // transfer records ownership to block cache.
-            blockCache.put(context.cache.records());
-            freeCache(context.cache.blockId());
+            freeCache(context.cache);
             context.cf.complete(null);
 
             // 2. trigger next task to commit.
@@ -203,8 +217,11 @@ public class S3Storage implements Storage {
         }, backgroundExecutor);
     }
 
-    private void freeCache(long blockId) {
-        mainExecutor.execute(() -> logCache.free(blockId));
+    private void freeCache(LogCache.LogCacheBlock cacheBlock) {
+        mainExecutor.execute(() -> {
+            blockCache.put(cacheBlock.records());
+            logCache.free(cacheBlock.blockId());
+        });
     }
 
     static class WALCallbackSequencer {

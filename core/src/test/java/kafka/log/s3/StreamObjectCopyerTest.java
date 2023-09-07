@@ -20,6 +20,7 @@ package kafka.log.s3;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
@@ -43,25 +44,23 @@ public class StreamObjectCopyerTest {
 
         ObjectWriter objectWriter1 = new ObjectWriter(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(streamId, 10, 5, 512);
-        objectWriter1.write(r1);
         StreamRecordBatch r2 = newRecord(streamId, 15, 10, 512);
-        objectWriter1.write(r2);
+        objectWriter1.write(streamId, List.of(r1, r2));
         objectWriter1.close().get();
 
         ObjectWriter objectWriter2 = new ObjectWriter(2, s3Operator, 1024, 1024);
         StreamRecordBatch r3 = newRecord(streamId, 25, 8, 512);
-        objectWriter2.write(r3);
         StreamRecordBatch r4 = newRecord(streamId, 33, 6, 512);
-        objectWriter2.write(r4);
+        objectWriter2.write(streamId, List.of(r3, r4));
         objectWriter2.close().get();
 
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(1, objectWriter1.size(), S3ObjectType.STREAM);
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(2, objectWriter2.size(), S3ObjectType.STREAM);
 
         StreamObjectCopyer streamObjectCopyer = new StreamObjectCopyer(targetObjectId,
-            s3Operator,
-            // TODO: use a better clusterName
-            s3Operator.writer(ObjectUtils.genKey(0, "todocluster", targetObjectId))
+                s3Operator,
+                // TODO: use a better clusterName
+                s3Operator.writer(ObjectUtils.genKey(0, "todocluster", targetObjectId))
         );
         streamObjectCopyer.write(metadata1);
         streamObjectCopyer.write(metadata2);

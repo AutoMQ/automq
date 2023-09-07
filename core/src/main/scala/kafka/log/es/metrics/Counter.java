@@ -29,6 +29,10 @@ public class Counter {
         count.add(1);
     }
 
+    public void inc(int n) {
+        count.add(n);
+    }
+
     public Statistics getAndReset() {
         long count = this.count.sumThenReset();
         return new Statistics(count);

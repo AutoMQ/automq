@@ -1102,10 +1102,10 @@ class Partition(val topicPartition: TopicPartition,
     }
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
-    if (now - lastRecordTimestamp > 1000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+    if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
       val updateWatermarkStatistics = UPDATE_WATERMARK_TIMER.getAndReset()
       val tryCompleteStatistics = TRY_COMPLETE_TIMER.getAndReset()
-      logger.warn(s"handle offset move cost, maybeIncrementLeaderHW=$updateWatermarkStatistics, tryCompleteDelayedRequests=$tryCompleteStatistics")
+      logger.trace(s"handle offset move cost, maybeIncrementLeaderHW=$updateWatermarkStatistics, tryCompleteDelayedRequests=$tryCompleteStatistics")
     }
   }
   // elastic stream inject end

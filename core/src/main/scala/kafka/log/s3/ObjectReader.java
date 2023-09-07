@@ -21,8 +21,7 @@ import io.netty.buffer.ByteBuf;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.compress.ZstdFactory;
-import org.apache.kafka.common.utils.BufferSupplier;
+import org.apache.kafka.common.utils.ByteBufferInputStream;
 import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.slf4j.Logger;
@@ -253,7 +252,11 @@ public class ObjectReader {
         public CloseableIterator<StreamRecordBatch> iterator() {
             ByteBuf buf = this.buf.duplicate();
             AtomicInteger remainingRecordCount = new AtomicInteger(recordCount);
-            DataInputStream in = new DataInputStream(ZstdFactory.wrapForInput(buf.nioBuffer(), (byte) 0, BufferSupplier.NO_CACHING));
+            // skip magic and flag
+            buf.skipBytes(2);
+            // TODO: check flag, use uncompressed stream or compressed stream.
+//            DataInputStream in = new DataInputStream(ZstdFactory.wrapForInput(buf.nioBuffer(), (byte) 0, BufferSupplier.NO_CACHING));
+            DataInputStream in = new DataInputStream(new ByteBufferInputStream(buf.nioBuffer()));
             return new CloseableIterator<>() {
                 @Override
                 public boolean hasNext() {

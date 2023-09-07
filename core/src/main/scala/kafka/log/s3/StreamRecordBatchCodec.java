@@ -36,7 +36,7 @@ public class StreamRecordBatchCodec {
                 + 4 // payload length
                 + streamRecord.getRecordBatch().rawPayload().remaining(); // payload
 
-        ByteBuf buf = ByteBufAlloc.ALLOC.heapBuffer(totalLength);
+        ByteBuf buf = ByteBufAlloc.ALLOC.directBuffer(totalLength);
         buf.writeByte(MAGIC_V0);
         buf.writeLong(streamRecord.getStreamId());
         buf.writeLong(streamRecord.getEpoch());
@@ -59,9 +59,10 @@ public class StreamRecordBatchCodec {
             long baseOffset = in.readLong();
             int lastOffsetDelta = in.readInt();
             int payloadLength = in.readInt();
-            ByteBuf payload = ByteBufAlloc.ALLOC.heapBuffer(payloadLength);
-            in.readFully(payload.array(), payload.arrayOffset(), payloadLength);
-            payload.writerIndex(payload.readerIndex() + payloadLength);
+            byte[] payloadBytes = new byte[payloadLength];
+            in.readFully(payloadBytes);
+            ByteBuf payload = ByteBufAlloc.ALLOC.directBuffer(payloadLength);
+            payload.writeBytes(payloadBytes);
             return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
         } catch (IOException e) {
             throw new RuntimeException(e);
