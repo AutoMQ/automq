@@ -35,6 +35,7 @@ import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
@@ -154,11 +155,20 @@ public class S3ObjectControlManager {
         return ControllerResult.atomicOf(records, response);
     }
 
-    public ControllerResult<Boolean> commitObject(long objectId, long objectSize) {
+    public ControllerResult<Errors> commitObject(long objectId, long objectSize) {
         S3Object object = this.objectsMetadata.get(objectId);
         if (object == null) {
             log.error("object {} not exist when commit wal object", objectId);
-            return ControllerResult.of(Collections.emptyList(), false);
+            return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
+        }
+        // verify the state
+        if (object.getS3ObjectState() == S3ObjectState.COMMITTED) {
+            log.warn("object {} already committed", objectId);
+            return ControllerResult.of(Collections.emptyList(), Errors.REDUNDANT_OPERATION);
+        }
+        if (object.getS3ObjectState() != S3ObjectState.PREPARED) {
+            log.error("object {} is not prepared but try to commit", objectId);
+            return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
         }
         S3ObjectRecord record = new S3ObjectRecord()
             .setObjectId(objectId)
@@ -168,14 +178,14 @@ public class S3ObjectControlManager {
             .setExpiredTimeInMs(object.getExpiredTimeInMs())
             .setCommittedTimeInMs(System.currentTimeMillis());
         return ControllerResult.of(List.of(
-            new ApiMessageAndVersion(record, (short) 0)), true);
+            new ApiMessageAndVersion(record, (short) 0)), Errors.NONE);
     }
 
     public ControllerResult<Boolean> markDestroyObjects(List<Long> objects) {
         List<ApiMessageAndVersion> records = new ArrayList<>();
         for (Long objectId : objects) {
             S3Object object = this.objectsMetadata.get(objectId);
-            if (object == null) {
+            if (object == null || object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 log.error("object {} not exist when mark destroy object", objectId);
                 // TODO: Maybe we can ignore this situation, because this object is already destroyed ?
                 return ControllerResult.of(Collections.emptyList(), false);

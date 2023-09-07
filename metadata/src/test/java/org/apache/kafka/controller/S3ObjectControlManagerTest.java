@@ -18,7 +18,6 @@
 package org.apache.kafka.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -158,18 +157,23 @@ public class S3ObjectControlManagerTest {
         prepareOneObject(60 * 1000);
 
         // 2. commit an object which not exist in controller
-        ControllerResult<Boolean> result1 = manager.commitObject(1, 1024);
-        assertFalse(result1.response());
+        ControllerResult<Errors> result1 = manager.commitObject(1, 1024);
+        assertEquals(Errors.OBJECT_NOT_EXIST, result1.response());
         assertEquals(0, result1.records().size());
 
         // 3. commit an valid object
-        ControllerResult<Boolean> result2 = manager.commitObject(0, 1024);
-        assertTrue(result2.response());
+        ControllerResult<Errors> result2 = manager.commitObject(0, 1024);
+        assertEquals(Errors.NONE, result2.response());
         assertEquals(1, result2.records().size());
         S3ObjectRecord record = (S3ObjectRecord) result2.records().get(0).message();
         manager.replay(record);
 
-        // 4. verify the object is committed
+        // 4. commit again
+        ControllerResult<Errors> result3 = manager.commitObject(0, 1024);
+        assertEquals(Errors.REDUNDANT_OPERATION, result3.response());
+        assertEquals(0, result3.records().size());
+
+        // 5. verify the object is committed
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.COMMITTED, object.getS3ObjectState());

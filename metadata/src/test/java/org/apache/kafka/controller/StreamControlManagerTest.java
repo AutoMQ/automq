@@ -273,9 +273,9 @@ public class StreamControlManagerTest {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
-                return ControllerResult.of(Collections.emptyList(), false);
+                return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
             }
-            return ControllerResult.of(Collections.emptyList(), true);
+            return ControllerResult.of(Collections.emptyList(), Errors.NONE);
         });
         // 1. create and open stream_0
         CreateStreamRequestData request0 = new CreateStreamRequestData();
@@ -376,7 +376,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalCompacted() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -449,7 +449,8 @@ public class StreamControlManagerTest {
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
 
-        // 6. commit a second level wal object which compact wal_0 and wal_1
+        // 6. commit an invalid wal object which contains the destroyed or not exist wal object
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         List<ObjectStreamRange> streamRanges2 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -467,12 +468,25 @@ public class StreamControlManagerTest {
             .setBrokerId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
-            .setCompactedObjectIds(List.of(0L, 1L));
+            .setCompactedObjectIds(List.of(0L, 1L, 10L));
         ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result6.response().errorCode());
+        assertEquals(0, result6.records().size());
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 7. commit a second level wal object which compact wal_0 and wal_1
+        commitRequest2 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2)
+            .setCompactedObjectIds(List.of(0L, 1L));
+        result6 = manager.commitWALObject(commitRequest2);
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         replay(manager, result6.records());
 
-        // 7. fetch range end offset
+        // 8. fetch range end offset
         streamsOffset = manager.getStreamsOffset(request);
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
@@ -482,15 +496,16 @@ public class StreamControlManagerTest {
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
 
-        // 8. verify compacted wal objects is removed
+        // 9. verify compacted wal objects is removed
         assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
         assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).objectId());
         assertEquals(0, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).orderId());
+
     }
 
     @Test
     public void testCommitWalWithStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -540,7 +555,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -620,6 +635,19 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(400L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 6. compact a stream object from invalid source object
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
+        streamObjectRequest = new CommitStreamObjectRequestData()
+            .setObjectId(5L)
+            .setStreamId(STREAM1)
+            .setStartOffset(400L)
+            .setEndOffset(1000L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(10L));
+        result2 = manager.commitStreamObject(streamObjectRequest);
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result2.response().errorCode());
+        replay(manager, result2.records());
 
         // 6. verify stream objects
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
