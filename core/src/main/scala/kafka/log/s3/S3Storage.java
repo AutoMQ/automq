@@ -30,8 +30,10 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +43,6 @@ import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -99,7 +100,7 @@ public class S3Storage implements Storage {
         WriteAheadLog.AppendResult appendResult = log.append(streamRecord.encoded());
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.offset, cf);
-        callbackSequencer.before(writeRequest);
+        handleAppendRequest(writeRequest);
         appendResult.future.thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;
     }
@@ -138,8 +139,13 @@ public class S3Storage implements Storage {
             } else {
                 cf.complete(null);
             }
+            callbackSequencer.tryFree(streamId);
         });
         return cf;
+    }
+
+    private void handleAppendRequest(WalWriteRequest request) {
+        mainExecutor.execute(() -> callbackSequencer.before(request));
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
@@ -226,9 +232,13 @@ public class S3Storage implements Storage {
         });
     }
 
+    /**
+     * WALCallbackSequencer is modified in single thread mainExecutor.
+     */
+    @NotThreadSafe
     static class WALCallbackSequencer {
         public static final long NOOP_OFFSET = -1L;
-        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new ConcurrentHashMap<>();
+        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new HashMap<>();
         private final BlockingQueue<WalWriteRequest> walRequests = new ArrayBlockingQueue<>(4096);
         private long walConfirmOffset = NOOP_OFFSET;
 
@@ -278,9 +288,6 @@ public class S3Storage implements Storage {
                 }
                 rst.add(streamRequests.poll());
             }
-            if (streamRequests.isEmpty()) {
-                stream2requests.computeIfPresent(streamId, (id, requests) -> requests.isEmpty() ? null : requests);
-            }
             return rst;
         }
 
@@ -293,6 +300,15 @@ public class S3Storage implements Storage {
             return walConfirmOffset;
         }
 
+        /**
+         * Try free stream related resources.
+         */
+        public void tryFree(long streamId) {
+            Queue<?> queue = stream2requests.get(streamId);
+            if (queue != null && queue.isEmpty()) {
+                stream2requests.remove(streamId, queue);
+            }
+        }
     }
 
     static class WALObjectUploadTaskContext {
