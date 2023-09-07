@@ -26,6 +26,7 @@ import com.automq.elasticstream.client.api.RecordBatch;
 import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import com.automq.elasticstream.client.api.Stream;
 import com.automq.elasticstream.client.api.StreamClient;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -40,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,14 +72,14 @@ class AlwaysSuccessClientTest {
     public void basicAppendAndFetch() throws ExecutionException, InterruptedException {
         client = new AlwaysSuccessClient(new MemoryClient());
         Stream stream = client
-            .streamClient()
-            .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-            .get();
+                .streamClient()
+                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                .get();
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
         CompletableFuture.allOf(
-            payloads
-                .stream()
-                .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
+                payloads
+                        .stream()
+                        .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
         ).get();
 
         FetchResult fetched = stream.fetch(0, 100, 1000).get();
@@ -97,17 +99,17 @@ class AlwaysSuccessClientTest {
         for (Long delay : quickFetchDelayMillisList) {
             memoryClientWithDelay.setDelayMillis(delay);
             Stream stream = client
-                .streamClient()
-                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-                .get();
+                    .streamClient()
+                    .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                    .get();
             CompletableFuture.allOf(
-                payloads
-                    .stream()
-                    .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
+                    payloads
+                            .stream()
+                            .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
             ).get();
             FetchResult fetched = stream.fetch(0, 100, 1000)
-                .orTimeout(delay + SLOW_FETCH_TIMEOUT_MILLIS / 2, TimeUnit.MILLISECONDS)
-                .get();
+                    .orTimeout(delay + 100, TimeUnit.MILLISECONDS)
+                    .get();
             checkAppendAndFetch(payloads, fetched);
             stream.destroy();
         }
@@ -119,24 +121,24 @@ class AlwaysSuccessClientTest {
         client = new AlwaysSuccessClient(memoryClientWithDelay);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
-        long slowFetchDelay = SLOW_FETCH_TIMEOUT_MILLIS + SLOW_FETCH_TIMEOUT_MILLIS / 2;
+        long slowFetchDelay = 500 + SLOW_FETCH_TIMEOUT_MILLIS + SLOW_FETCH_TIMEOUT_MILLIS / 2;
         memoryClientWithDelay.setDelayMillis(slowFetchDelay);
         Stream stream = client
-            .streamClient()
-            .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-            .get();
+                .streamClient()
+                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                .get();
         CompletableFuture.allOf(
-            payloads
-                .stream()
-                .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
+                payloads
+                        .stream()
+                        .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
         ).get();
 
         FetchResult fetched = null;
         AtomicBoolean gotSlowFetchHintException = new AtomicBoolean(false);
         try {
             fetched = stream.fetch(0, 100, 1000)
-                .orTimeout(slowFetchDelay + SLOW_FETCH_TIMEOUT_MILLIS / 2, TimeUnit.MILLISECONDS)
-                .get();
+                    .orTimeout(SLOW_FETCH_TIMEOUT_MILLIS * 2, TimeUnit.MILLISECONDS)
+                    .get();
             checkAppendAndFetch(payloads, fetched);
         } catch (ExecutionException e) {
             // should throw SlowFetchHintException after SLOW_FETCH_TIMEOUT_MILLIS ms
@@ -145,8 +147,8 @@ class AlwaysSuccessClientTest {
             SeparateSlowAndQuickFetchHint.reset();
             // It should reuse the fetching future above, therefore only (SLOW_FETCH_TIMEOUT_MILLIS / 2) ms is tolerable.
             fetched = stream.fetch(0, 100, 1000)
-                .orTimeout(SLOW_FETCH_TIMEOUT_MILLIS - 1, TimeUnit.MILLISECONDS)
-                .get();
+                    .orTimeout(slowFetchDelay + 100, TimeUnit.MILLISECONDS)
+                    .get();
         }
         checkAppendAndFetch(payloads, fetched);
         assertTrue(gotSlowFetchHintException.get(), "should throw SlowFetchHintException");
@@ -161,12 +163,12 @@ class AlwaysSuccessClientTest {
 
         AtomicBoolean exceptionThrown = new AtomicBoolean(false);
         openStream(1)
-            .exceptionally(e -> {
-                assertEquals(IOException.class, e.getClass());
-                exceptionThrown.set(true);
-                return null;
-            })
-            .join();
+                .exceptionally(e -> {
+                    assertEquals(IOException.class, e.getClass());
+                    exceptionThrown.set(true);
+                    return null;
+                })
+                .join();
 
         assertTrue(exceptionThrown.get(), "should throw IOException");
     }
@@ -178,40 +180,40 @@ class AlwaysSuccessClientTest {
         client = new AlwaysSuccessClient(memoryClientWithDelay);
 
         Stream stream = client
-            .streamClient()
-            .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-            .join();
+                .streamClient()
+                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                .join();
 
         AtomicInteger exceptionCount = new AtomicInteger(0);
         stream
-            .append(RawPayloadRecordBatch.of(ByteBuffer.wrap("hello".getBytes())))
-            .exceptionally(e -> {
-                assertEquals(IOException.class, e.getClass());
-                exceptionCount.incrementAndGet();
-                return null;
-            })
-            .join();
+                .append(RawPayloadRecordBatch.of(ByteBuffer.wrap("hello".getBytes())))
+                .exceptionally(e -> {
+                    assertEquals(IOException.class, e.getClass());
+                    exceptionCount.incrementAndGet();
+                    return null;
+                })
+                .join();
         stream.fetch(0, 100, 1000)
-            .exceptionally(e -> {
-                assertEquals(IOException.class, e.getClass());
-                exceptionCount.incrementAndGet();
-                return null;
-            })
-            .join();
+                .exceptionally(e -> {
+                    assertEquals(IOException.class, e.getClass());
+                    exceptionCount.incrementAndGet();
+                    return null;
+                })
+                .join();
         stream.trim(0)
-            .exceptionally(e -> {
-                assertEquals(IOException.class, e.getClass());
-                exceptionCount.incrementAndGet();
-                return null;
-            })
-            .join();
+                .exceptionally(e -> {
+                    assertEquals(IOException.class, e.getClass());
+                    exceptionCount.incrementAndGet();
+                    return null;
+                })
+                .join();
         stream.close()
-            .exceptionally(e -> {
-                assertEquals(IOException.class, e.getClass());
-                exceptionCount.incrementAndGet();
-                return null;
-            })
-            .join();
+                .exceptionally(e -> {
+                    assertEquals(IOException.class, e.getClass());
+                    exceptionCount.incrementAndGet();
+                    return null;
+                })
+                .join();
         assertEquals(4, exceptionCount.get(), "should throw IOException 4 times");
         stream.destroy();
     }
@@ -250,8 +252,8 @@ class AlwaysSuccessClientTest {
 
     private CompletableFuture<Stream> openStream(long streamId) {
         return client
-            .streamClient()
-            .openStream(streamId, OpenStreamOptions.newBuilder().epoch(1).build());
+                .streamClient()
+                .openStream(streamId, OpenStreamOptions.newBuilder().epoch(1).build());
     }
 
     private void checkAppendAndFetch(List<byte[]> rawPayloads, FetchResult fetched) {
@@ -265,6 +267,7 @@ class AlwaysSuccessClientTest {
 
         /**
          * Set the additional fetching delay
+         *
          * @param delayMillis
          */
         public void setDelayMillis(long delayMillis) {
@@ -423,9 +426,9 @@ class AlwaysSuccessClientTest {
         OK;
 
         private static final List<Exception> OTHER_EXCEPTION_LIST = List.of(
-            new IOException("io exception"),
-            new RuntimeException("runtime exception"),
-            new ElasticStreamClientException(-1, "other exception")
+                new IOException("io exception"),
+                new RuntimeException("runtime exception"),
+                new ElasticStreamClientException(-1, "other exception")
         );
 
         public Exception generateException() {

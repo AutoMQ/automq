@@ -203,15 +203,17 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     }
 
     public void retryPendingTasks(List<GetObjectsTask> tasks) {
-        LOGGER.info("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
-        tasks.forEach(task -> {
-            long streamId = task.streamId;
-            long startOffset = task.startOffset;
-            long endOffset = task.endOffset;
-            int limit = task.limit;
-            CompletableFuture<InRangeObjects> newCf = this.fetch(streamId, startOffset, endOffset, limit);
-            FutureUtil.propagate(newCf, task.cf);
-        });
+        if (!tasks.isEmpty()) {
+            LOGGER.info("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
+            tasks.forEach(task -> {
+                long streamId = task.streamId;
+                long startOffset = task.startOffset;
+                long endOffset = task.endOffset;
+                int limit = task.limit;
+                CompletableFuture<InRangeObjects> newCf = this.fetch(streamId, startOffset, endOffset, limit);
+                FutureUtil.propagate(newCf, task.cf);
+            });
+        }
     }
 
     static class GetObjectsTask {
