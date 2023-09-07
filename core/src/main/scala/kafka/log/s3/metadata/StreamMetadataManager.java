@@ -167,25 +167,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
 
     public CompletableFuture<List<S3StreamObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
         synchronized (StreamMetadataManager.this) {
-            S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
-            if (streamImage == null) {
-                LOGGER.warn(
-                    "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and streamImage is null",
-                    streamId, startOffset, endOffset, limit);
-                return CompletableFuture.failedFuture(new IllegalArgumentException("streamImage not found"));
-            }
-            StreamOffsetRange offsetRange = streamImage.offsetRange();
-            if (offsetRange == null || offsetRange == StreamOffsetRange.INVALID) {
-                return CompletableFuture.failedFuture(new RuntimeException("offsetRange not found"));
-            }
-            long streamStartOffset = offsetRange.getStartOffset();
-            if (startOffset < streamStartOffset) {
-                LOGGER.warn(
-                    "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and startOffset < streamStartOffset: {}",
-                    streamId, startOffset, endOffset, limit, streamStartOffset);
-                return CompletableFuture.failedFuture(new IllegalArgumentException("startOffset < streamStartOffset"));
-            }
-
             try {
                 List<S3StreamObject> streamObjects = streamsImage.getStreamObjects(streamId, startOffset, endOffset, limit);
                 List<S3StreamObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
