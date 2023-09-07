@@ -38,6 +38,7 @@
   <allow pkg="org.apache.kafka.common" />
   <allow pkg="org.mockito" />
   <allow pkg="software.amazon.awssdk" />
+  <allow pkg="com.github.luben.zstd" />
 
 
   <!-- see KIP-544 for why KafkaYammerMetrics should be used instead of the global default yammer metrics registry
