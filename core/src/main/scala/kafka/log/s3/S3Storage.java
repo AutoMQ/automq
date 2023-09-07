@@ -235,7 +235,6 @@ public class S3Storage implements Storage {
     /**
      * WALCallbackSequencer is modified in single thread mainExecutor.
      */
-    @NotThreadSafe
     static class WALCallbackSequencer {
         public static final long NOOP_OFFSET = -1L;
         private final Map<Long, Queue<WalWriteRequest>> stream2requests = new HashMap<>();
