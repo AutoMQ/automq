@@ -624,8 +624,8 @@ public class StreamControlManagerTest {
         // 6. verify stream objects
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
         assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
-        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamIndex().getStartOffset());
-        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamIndex().getEndOffset());
+        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getStartOffset());
+        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());
     }
 
     private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {

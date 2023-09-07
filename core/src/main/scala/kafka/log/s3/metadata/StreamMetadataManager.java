@@ -42,6 +42,8 @@ import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
@@ -160,6 +162,24 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                 return pendingFetch(streamId, startOffset, endOffset, limit);
             }
             return fetch0(streamId, startOffset, endOffset, limit);
+        }
+    }
+
+    public CompletableFuture<List<S3StreamObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        synchronized (StreamMetadataManager.this) {
+            try {
+                List<S3StreamObject> streamObjects = streamsImage.getStreamObjects(streamId, startOffset, endOffset, limit);
+                List<S3StreamObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
+                    long committedTimeInMs = objectsImage.getObjectMetadata(object.objectId()).getCommittedTimeInMs();
+                    return new S3StreamObjectMetadata(object, committedTimeInMs);
+                }).collect(Collectors.toList());
+                return CompletableFuture.completedFuture(s3StreamObjectMetadataList);
+            } catch (Exception e) {
+                LOGGER.warn(
+                    "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with exception: {}",
+                    streamId, startOffset, endOffset, limit, e.getMessage());
+                return CompletableFuture.failedFuture(e);
+            }
         }
     }
 

@@ -58,7 +58,7 @@ public class S3Storage implements Storage {
     private final ScheduledExecutorService mainExecutor = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main", false));
     private final ScheduledExecutorService backgroundExecutor = Executors.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-storage-main", true));
+            ThreadUtils.createThreadFactory("s3-storage-background", true));
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
