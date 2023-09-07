@@ -51,6 +51,7 @@ public class ObjectWriter {
 
     public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
         this.objectId = objectId;
+        // TODO: use a better clusterName
         String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.blockSizeThreshold = blockSizeThreshold;
         this.partSizeThreshold = partSizeThreshold;
@@ -109,7 +110,7 @@ public class ObjectWriter {
         waitingUploadBlocks.clear();
         indexBlock = new IndexBlock();
         buf.addComponent(true, indexBlock.buffer());
-        Footer footer = new Footer();
+        Footer footer = new Footer(indexBlock.position(), indexBlock.size());
         buf.addComponent(true, footer.buffer());
         writer.write(buf.duplicate());
         size = indexBlock.position() + indexBlock.size() + footer.size();
@@ -237,17 +238,24 @@ public class ObjectWriter {
             buf.writeInt(completedBlocks.size()); // block count
             // block index
             for (DataBlock block : completedBlocks) {
+                // start position in the object
                 buf.writeLong(block.position());
+                // byte size of the block
                 buf.writeInt(block.size());
+                // how many ranges in the block
                 buf.writeInt(block.recordCount());
             }
             // object stream range
             for (int blockIndex = 0; blockIndex < completedBlocks.size(); blockIndex++) {
                 DataBlock block = completedBlocks.get(blockIndex);
                 for (ObjectStreamRange range : block.getStreamRanges()) {
+                    // stream id of this range
                     buf.writeLong(range.getStreamId());
+                    // start offset of the related stream
                     buf.writeLong(range.getStartOffset());
+                    // record count of the related stream in this range
                     buf.writeInt((int) (range.getEndOffset() - range.getStartOffset()));
+                    // the index of block where this range is in
                     buf.writeInt(blockIndex);
                 }
             }
@@ -266,15 +274,18 @@ public class ObjectWriter {
         }
     }
 
-    class Footer {
+    static class Footer {
         private static final int FOOTER_SIZE = 48;
         private static final long MAGIC = 0x88e241b785f4cff7L;
         private final ByteBuf buf;
 
-        public Footer() {
+        public Footer(long indexStartPosition, int indexBlockLength) {
             buf = Unpooled.buffer(FOOTER_SIZE);
-            buf.writeLong(indexBlock.position());
-            buf.writeInt(indexBlock.size());
+            // start position of index block
+            buf.writeLong(indexStartPosition);
+            // size of index block
+            buf.writeInt(indexBlockLength);
+            // reserved for future
             buf.writeZero(40 - 8 - 4);
             buf.writeLong(MAGIC);
         }
