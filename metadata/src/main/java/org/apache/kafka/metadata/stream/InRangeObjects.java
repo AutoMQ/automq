@@ -53,6 +53,16 @@ public class InRangeObjects {
     }
 
     @Override
+    public String toString() {
+        return "InRangeObjects{" +
+            "streamId=" + streamId +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", objects=" + objects +
+            '}';
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

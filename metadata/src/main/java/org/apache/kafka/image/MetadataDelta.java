@@ -584,6 +584,7 @@ public final class MetadataDelta {
             ", aclsDelta=" + aclsDelta +
             ", streamMetadataDelta=" + s3StreamsMetadataDelta +
             ", objectsMetadataDelta=" + s3ObjectsDelta +
+            ", kvDelta=" + kvDelta +
             ')';
     }
 }

@@ -17,7 +17,6 @@
 
 package kafka.log.s3.streams;
 
-import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
@@ -34,6 +33,7 @@ import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,7 +135,7 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds) {
+    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
         GetStreamsOffsetRequest.Builder request = new GetStreamsOffsetRequest.Builder(
                 new GetStreamsOffsetRequestData()
                         .setStreamIds(streamIds));
@@ -143,7 +143,7 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return resp.streamsOffset().stream()
-                            .map(streamOffset -> new StreamOffset(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
+                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
                             .collect(Collectors.toList());
                 default:
                     LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));

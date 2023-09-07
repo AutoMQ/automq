@@ -32,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import kafka.log.s3.model.StreamOffset;
 import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectRequest;
@@ -49,7 +48,7 @@ import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.metadata.stream.StreamState;
@@ -168,12 +167,12 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
                     k -> new MemoryBrokerWALMetadata(k));
-            Map<Long, List<S3ObjectStreamIndex>> index = new HashMap<>();
+            Map<Long, List<StreamOffsetRange>> index = new HashMap<>();
             streamRanges.stream().forEach(range -> {
                 long streamId = range.getStreamId();
                 long startOffset = range.getStartOffset();
                 long endOffset = range.getEndOffset();
-                index.put(streamId, List.of(new S3ObjectStreamIndex(streamId, startOffset, endOffset)));
+                index.put(streamId, List.of(new StreamOffsetRange(streamId, startOffset, endOffset)));
                 // update range endOffset
                 MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
                 streamMetadata.endOffset = endOffset;
@@ -357,10 +356,10 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<List<StreamOffset>> getStreamsOffset(List<Long> streamIds) {
+    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
         return this.submitEvent(() -> {
             return streamIds.stream().filter(this.streamsMetadata::containsKey).map(id -> {
-                return new StreamOffset(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
+                return new StreamOffsetRange(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
             }).collect(Collectors.toList());
         });
     }

@@ -21,18 +21,36 @@ import java.util.Objects;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+/**
+ * RangeMetadata is the metadata of a range of the stream.
+ * <p>
+ * The range represents a continuous sequence of data <code>[startOffset, endOffset)</code> in the stream.
+ */
 public class RangeMetadata implements Comparable<RangeMetadata> {
+
+    /**
+     * The id of the stream that the range belongs to.
+     */
     private long streamId;
+    /**
+     * The epoch of the stream when the range is created.
+     */
     private long epoch;
+    /**
+     * The index of the range in the stream.
+     */
     private int rangeIndex;
     /**
-     * Inclusive
+     * Range start offset. (Inclusive)
      */
     private long startOffset;
     /**
-     * Exclusive
+     * Range end offset. (Exclusive)
      */
     private long endOffset;
+    /**
+     * The broker id of the broker that owns the range.
+     */
     private int brokerId;
 
     public RangeMetadata(long streamId, long epoch, int rangeIndex, long startOffset, long endOffset, int brokerId) {

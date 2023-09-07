@@ -30,7 +30,7 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectStreamIndex;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.metadata.stream.SortedWALObjectsList;
@@ -100,16 +100,16 @@ public class S3StreamsMetadataImageTest {
     @Test
     public void testGetObjects() {
         List<S3WALObject> broker0WalObjects = List.of(
-            new S3WALObject(0, BROKER0, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 100L, 120L))), 0L),
-            new S3WALObject(1, BROKER0, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 120L, 140L))), 1L),
-            new S3WALObject(2, BROKER0, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 180L, 200L))), 2L),
+            new S3WALObject(0, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 100L, 120L))), 0L),
+            new S3WALObject(1, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 120L, 140L))), 1L),
+            new S3WALObject(2, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 180L, 200L))), 2L),
             new S3WALObject(3, BROKER0, Map.of(STREAM0, List.of(
-                new S3ObjectStreamIndex(STREAM0, 400L, 420L), new S3ObjectStreamIndex(STREAM0, 500L, 520L))), 3L),
-            new S3WALObject(4, BROKER0, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 520L, 600L))), 4L));
+                new StreamOffsetRange(STREAM0, 400L, 420L), new StreamOffsetRange(STREAM0, 500L, 520L))), 3L),
+            new S3WALObject(4, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 520L, 600L))), 4L));
         List<S3WALObject> broker1WalObjects = List.of(
-            new S3WALObject(5, BROKER1, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 140L, 160L))), 0L),
-            new S3WALObject(6, BROKER1, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 160L, 180L))), 1L),
-            new S3WALObject(7, BROKER1, Map.of(STREAM0, List.of(new S3ObjectStreamIndex(STREAM0, 420L, 500L))), 2L));
+            new S3WALObject(5, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 140L, 160L))), 0L),
+            new S3WALObject(6, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 160L, 180L))), 1L),
+            new S3WALObject(7, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 420L, 500L))), 2L));
         BrokerS3WALMetadataImage broker0WALMetadataImage = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(broker0WalObjects));
         BrokerS3WALMetadataImage broker1WALMetadataImage = new BrokerS3WALMetadataImage(BROKER1, new SortedWALObjectsList(broker1WalObjects));
         Map<Integer, RangeMetadata> ranges = Map.of(

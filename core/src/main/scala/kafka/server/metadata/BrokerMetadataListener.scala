@@ -16,7 +16,7 @@
  */
 package kafka.server.metadata
 
-import kafka.log.s3.StreamMetadataManager.StreamMetadataListener
+import kafka.log.s3.metadata.StreamMetadataManager.StreamMetadataListener
 
 import java.util
 import java.util.concurrent.atomic.AtomicBoolean

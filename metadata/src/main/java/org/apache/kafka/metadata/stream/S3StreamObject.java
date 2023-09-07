@@ -27,15 +27,15 @@ public class S3StreamObject {
 
     private final long objectSize;
 
-    private final S3ObjectStreamIndex streamIndex;
+    private final StreamOffsetRange streamIndex;
 
     public S3StreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {
         this.objectId = objectId;
         this.objectSize = objectSize;
-        this.streamIndex = new S3ObjectStreamIndex(streamId, startOffset, endOffset);
+        this.streamIndex = new StreamOffsetRange(streamId, startOffset, endOffset);
     }
 
-    public S3ObjectStreamIndex streamIndex() {
+    public StreamOffsetRange streamIndex() {
         return streamIndex;
     }
 

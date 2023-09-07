@@ -40,7 +40,6 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{ApiVersionsResponse, MetadataResponse, UpdateMetadataRequest}
 import org.apache.kafka.common.security.auth.SecurityProtocol
-import org.apache.kafka.metadata.stream.{InRangeObjects, S3Object}
 import org.apache.kafka.server.common.MetadataVersion
 
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
@@ -585,14 +584,4 @@ class ZkMetadataCache(
   def getFeatureOption: Option[FinalizedFeaturesAndEpoch] = {
     featuresAndEpoch
   }
-
-  // Kafka on S3 inject start
-  override def getObjects(streamId: Long, startOffset: Long, endOffset: Long, limit: Int): InRangeObjects = {
-    throw new UnsupportedOperationException("getObjects is not supported in ZkMetadataCache")
-  }
-
-  override def getObjectMetadata(objectId: Long): S3Object = {
-    throw new UnsupportedOperationException("getObjectMetadata is not supported in ZkMetadataCache")
-  }
-  // Kafka on S3 inject end
 }
