@@ -48,6 +48,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
+    private final long maxWALCacheSize;
     private final KafkaConfig config;
     private final WriteAheadLog log;
     private final LogCache logCache;
@@ -64,6 +65,7 @@ public class S3Storage implements Storage {
 
     public S3Storage(KafkaConfig config, WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
         this.config = config;
+        this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
         this.logCache = new LogCache(config.s3WALObjectSize());
         this.objectManager = objectManager;
@@ -79,12 +81,12 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        for (;;) {
-            if (logCache.size() < 2L * 1024 * 1024 * 1024) {
+        for (; ; ) {
+            if (logCache.size() < maxWALCacheSize) {
                 break;
             } else {
                 // TODO: log limit
-                LOGGER.warn("log cache size {} is larger than 2GB, wait 100ms", logCache.size());
+                LOGGER.warn("log cache size {} is larger than {}, wait 100ms", maxWALCacheSize, logCache.size());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
