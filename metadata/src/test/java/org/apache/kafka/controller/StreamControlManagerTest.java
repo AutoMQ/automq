@@ -29,6 +29,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
@@ -536,6 +538,96 @@ public class StreamControlManagerTest {
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
     }
 
+    @Test
+    public void testCommitStreamObject() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 1. create and open stream_0 and stream_1
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        // 2. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
+        List<ObjectStreamRange> streamRanges0 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(1L)
+                    .setObjectSize(999)
+                    .setStartOffset(0L)
+                    .setEndOffset(200L)
+            ));
+        ControllerResult<CommitWALObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result0.response().errorCode());
+        replay(manager, result0.records());
+
+        // 3. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
+        List<ObjectStreamRange> streamRanges1 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100L)
+                .setEndOffset(200L));
+        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setOrderId(1L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(3L)
+                    .setObjectSize(999)
+                    .setStartOffset(200L)
+                    .setEndOffset(400L)
+            ));
+        ControllerResult<CommitWALObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
+        assertEquals(Errors.NONE.code(), result1.response().errorCode());
+        replay(manager, result1.records());
+
+        // 4. compact these two stream objects
+        CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
+            .setObjectId(4L)
+            .setStreamId(STREAM1)
+            .setStartOffset(0L)
+            .setEndOffset(400L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(1L, 3L));
+        ControllerResult<CommitStreamObjectResponseData> result2 = manager.commitStreamObject(streamObjectRequest);
+        assertEquals(Errors.NONE.code(), result2.response().errorCode());
+        replay(manager, result2.records());
+
+        // 5. fetch stream offset range
+        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
+            .setStreamIds(List.of(STREAM0, STREAM1));
+        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(400L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 6. verify stream objects
+        assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+        assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
+        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamIndex().getStartOffset());
+        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamIndex().getEndOffset());
+    }
+
     private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {
         List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
             .setStreamId(streamId)
@@ -586,7 +678,7 @@ public class StreamControlManagerTest {
                 case S3_STREAM_OBJECT_RECORD:
                     manager.replay((S3StreamObjectRecord) message);
                     break;
-                case REMOVE_S3_OBJECT_RECORD:
+                case REMOVE_S3_STREAM_OBJECT_RECORD:
                     manager.replay((RemoveS3StreamObjectRecord) message);
                     break;
                 default:

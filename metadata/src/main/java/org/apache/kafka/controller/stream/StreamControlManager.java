@@ -365,7 +365,7 @@ public class StreamControlManager {
         // commit object
         ControllerResult<Boolean> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
         if (!commitResult.response()) {
-            log.error("object {} not exist when commit wal object", objectId);
+            log.error("[CommitWALObject]: object {} not exist when commit wal object", objectId);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -374,7 +374,7 @@ public class StreamControlManager {
         if (data.compactedObjectIds() != null && !data.compactedObjectIds().isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(data.compactedObjectIds());
             if (!destroyResult.response()) {
-                log.error("Mark destroy compacted objects {} failed", String.join(",", data.compactedObjectIds().toArray(new String[0])));
+                log.error("[CommitWALObject]: Mark destroy compacted objects: {} failed", data.compactedObjectIds());
                 resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -411,12 +411,54 @@ public class StreamControlManager {
         // generate compacted objects' remove record
         data.compactedObjectIds().forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
             .setObjectId(id), (short) 0)));
-        log.info("[CommitWALObject]: broker: {} commit wal object {} success", brokerId, objectId);
+        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}", brokerId, objectId, data.compactedObjectIds());
         return ControllerResult.atomicOf(records, resp);
     }
 
     public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
-        throw new UnsupportedOperationException();
+        long streamObjectId = data.objectId();
+        long streamId = data.streamId();
+        long startOffset = data.startOffset();
+        long endOffset = data.endOffset();
+        long objectSize = data.objectSize();
+        List<Long> sourceObjectIds = data.sourceObjectIds();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
+
+        // commit object
+        ControllerResult<Boolean> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize);
+        if (!commitResult.response()) {
+            log.error("[CommitStreamObject]: object {} not exist when commit stream object", streamObjectId);
+            resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
+        // mark destroy compacted object
+        if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
+            ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds);
+            if (!destroyResult.response()) {
+                log.error("[CommitStreamObject]: Mark destroy compacted objects: {} failed", sourceObjectIds);
+                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
+        }
+
+        // generate stream object record
+        records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
+            .setObjectId(streamObjectId)
+            .setStreamId(streamId)
+            .setObjectSize(objectSize)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset), (short) 0));
+
+        // generate compacted objects' remove record
+        if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
+            sourceObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveS3StreamObjectRecord()
+                .setObjectId(id)
+                .setStreamId(streamId), (short) 0)));
+        }
+        log.info("[CommitStreamObject]: stream object: {} commit success, compacted objects: {}", streamObjectId, sourceObjectIds);
+        return ControllerResult.atomicOf(records, resp);
     }
 
     public GetStreamsOffsetResponseData getStreamsOffset(GetStreamsOffsetRequestData data) {
@@ -541,6 +583,7 @@ public class StreamControlManager {
         }
         walMetadata.walObjects.remove(objectId);
     }
+
     public void replay(S3StreamObjectRecord record) {
         long objectId = record.objectId();
         long streamId = record.streamId();
