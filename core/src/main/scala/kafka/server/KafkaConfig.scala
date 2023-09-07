@@ -679,6 +679,8 @@ object KafkaConfig {
   val S3EndpointProp = "s3.endpoint"
   val S3RegionProp = "s3.region"
   val S3BucketProp = "s3.bucket"
+  val S3WALCacheSizeProp = "s3.wal.cache.size"
+  val S3WALLogSizeProp = "s3.wal.log.size"
   val S3WALObjectSizeProp = "s3.wal.object.size"
   val S3StreamSplitSizeProp = "s3.stream.object.split.size"
   val S3ObjectBlockSizeProp = "s3.object.block.size"
@@ -688,6 +690,9 @@ object KafkaConfig {
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
   val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
+  val S3WALCacheSizeDoc = "The S3 storage max WAL cache size. When WAL cache is full, storage will hang the request, \n" +
+    "until WAL cache is free by S3 WAL object upload."
+  val S3WALLogSizeDoc = "The S3 WAL log max size. The value should be larger than s3.wal.cache.size cause of log storage format may not compact."
   val S3WALObjectSizeDoc = "The S3 WAL object size threshold."
   val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload WAL object or compact object."
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
@@ -1496,11 +1501,13 @@ object KafkaConfig {
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
-      .define(S3WALObjectSizeProp, LONG, 524288000, MEDIUM, S3WALObjectSizeDoc)
+      .define(S3WALCacheSizeProp, LONG, 1073741824L, MEDIUM, S3WALCacheSizeDoc)
+      .define(S3WALLogSizeProp, LONG, 2147483648L, MEDIUM, S3WALLogSizeDoc)
+      .define(S3WALObjectSizeProp, LONG, 524288000L, MEDIUM, S3WALObjectSizeDoc)
       .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
-      .define(S3CacheSizeProp, LONG, 1073741824, MEDIUM, S3CacheSizeDoc)
+      .define(S3CacheSizeProp, LONG, 1073741824L, MEDIUM, S3CacheSizeDoc)
     // Kafka on S3 inject end
   }
 
@@ -2039,6 +2046,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+  val s3WALLogSize = getLong(KafkaConfig.S3WALLogSizeProp)
   val s3WALObjectSize = getLong(KafkaConfig.S3WALObjectSizeProp)
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)

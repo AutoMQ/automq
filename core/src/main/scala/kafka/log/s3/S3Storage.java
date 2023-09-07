@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -41,13 +42,13 @@ import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
+    private final long maxWALCacheSize;
     private final KafkaConfig config;
     private final WriteAheadLog log;
     private final LogCache logCache;
@@ -64,6 +65,7 @@ public class S3Storage implements Storage {
 
     public S3Storage(KafkaConfig config, WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
         this.config = config;
+        this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
         this.logCache = new LogCache(config.s3WALObjectSize());
         this.objectManager = objectManager;
@@ -79,12 +81,12 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        for (;;) {
-            if (logCache.size() < 2L * 1024 * 1024 * 1024) {
+        for (; ; ) {
+            if (logCache.size() < maxWALCacheSize) {
                 break;
             } else {
                 // TODO: log limit
-                LOGGER.warn("log cache size {} is larger than 2GB, wait 100ms", logCache.size());
+                LOGGER.warn("log cache size {} is larger than {}, wait 100ms", maxWALCacheSize, logCache.size());
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
@@ -97,7 +99,7 @@ public class S3Storage implements Storage {
         WriteAheadLog.AppendResult appendResult = log.append(streamRecord.encoded());
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.offset, cf);
-        callbackSequencer.before(writeRequest);
+        handleAppendRequest(writeRequest);
         appendResult.future.thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;
     }
@@ -136,8 +138,13 @@ public class S3Storage implements Storage {
             } else {
                 cf.complete(null);
             }
+            callbackSequencer.tryFree(streamId);
         });
         return cf;
+    }
+
+    private void handleAppendRequest(WalWriteRequest request) {
+        mainExecutor.execute(() -> callbackSequencer.before(request));
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
@@ -224,9 +231,12 @@ public class S3Storage implements Storage {
         });
     }
 
+    /**
+     * WALCallbackSequencer is modified in single thread mainExecutor.
+     */
     static class WALCallbackSequencer {
         public static final long NOOP_OFFSET = -1L;
-        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new ConcurrentHashMap<>();
+        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new HashMap<>();
         private final BlockingQueue<WalWriteRequest> walRequests = new ArrayBlockingQueue<>(4096);
         private long walConfirmOffset = NOOP_OFFSET;
 
@@ -276,9 +286,6 @@ public class S3Storage implements Storage {
                 }
                 rst.add(streamRequests.poll());
             }
-            if (streamRequests.isEmpty()) {
-                stream2requests.computeIfPresent(streamId, (id, requests) -> requests.isEmpty() ? null : requests);
-            }
             return rst;
         }
 
@@ -291,6 +298,15 @@ public class S3Storage implements Storage {
             return walConfirmOffset;
         }
 
+        /**
+         * Try free stream related resources.
+         */
+        public void tryFree(long streamId) {
+            Queue<?> queue = stream2requests.get(streamId);
+            if (queue != null && queue.isEmpty()) {
+                stream2requests.remove(streamId, queue);
+            }
+        }
     }
 
     static class WALObjectUploadTaskContext {
