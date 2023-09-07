@@ -22,6 +22,7 @@ import com.automq.elasticstream.client.api.KVClient;
 import com.automq.elasticstream.client.api.StreamClient;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
+import kafka.log.s3.compact.CompactionManager;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.objects.ControllerObjectManager;
@@ -50,6 +51,8 @@ public class DefaultS3Client implements Client {
 
     private final StreamManager streamManager;
 
+    private final CompactionManager compactionManager;
+
     private final StreamClient streamClient;
 
     private final KVClient kvClient;
@@ -62,6 +65,7 @@ public class DefaultS3Client implements Client {
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.metadataManager, this.operator);
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage);
         this.kvClient = new ControllerKVClient(this.requestSender);

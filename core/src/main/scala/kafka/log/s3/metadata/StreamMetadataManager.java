@@ -18,6 +18,23 @@
 package kafka.log.s3.metadata;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
+import kafka.log.es.FutureUtil;
+import kafka.server.BrokerServer;
+import kafka.server.KafkaConfig;
+import org.apache.kafka.image.MetadataDelta;
+import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.image.S3ObjectsImage;
+import org.apache.kafka.image.S3StreamMetadataImage;
+import org.apache.kafka.image.S3StreamsMetadataImage;
+import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import org.apache.kafka.raft.OffsetAndEpoch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,21 +48,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
-import kafka.log.es.FutureUtil;
-import kafka.server.BrokerServer;
-import kafka.server.KafkaConfig;
-import org.apache.kafka.image.MetadataDelta;
-import org.apache.kafka.image.MetadataImage;
-import org.apache.kafka.image.S3ObjectsImage;
-import org.apache.kafka.image.S3StreamMetadataImage;
-import org.apache.kafka.image.S3StreamsMetadataImage;
-import org.apache.kafka.metadata.stream.InRangeObjects;
-import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.raft.OffsetAndEpoch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher {
 
@@ -92,6 +94,18 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
     }
 
+    public List<S3WALObjectMetadata> getWALObjects() {
+        synchronized (this) {
+            return this.streamsImage.getWALObjects(config.brokerId()).stream()
+                    .map(walObject -> {
+                        S3Object s3Object = this.objectsImage.getObjectMetadata(walObject.objectId());
+                        S3ObjectMetadata metadata = new S3ObjectMetadata(walObject.objectId(), s3Object.getObjectSize(), walObject.objectType());
+                        return new S3WALObjectMetadata(walObject, metadata);
+                    })
+                    .collect(Collectors.toList());
+        }
+    }
+
     // must access thread safe
     private List<GetObjectsTask> removePendingTasks() {
         if (this.pendingGetObjectsTasks == null || this.pendingGetObjectsTasks.isEmpty()) {
@@ -99,10 +113,10 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
         Set<Long> pendingStreams = pendingGetObjectsTasks.keySet();
         List<StreamOffsetRange> pendingStreamsOffsetRange = pendingStreams
-            .stream()
-            .map(streamsImage::offsetRange)
-            .filter(offset -> offset != StreamOffsetRange.INVALID)
-            .collect(Collectors.toList());
+                .stream()
+                .map(streamsImage::offsetRange)
+                .filter(offset -> offset != StreamOffsetRange.INVALID)
+                .collect(Collectors.toList());
         if (pendingStreamsOffsetRange.isEmpty()) {
             return Collections.emptyList();
         }
@@ -115,7 +129,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                 return;
             }
             Iterator<Entry<Long, List<GetObjectsTask>>> iterator =
-                tasks.entrySet().iterator();
+                    tasks.entrySet().iterator();
             while (iterator.hasNext()) {
                 Entry<Long, List<GetObjectsTask>> entry = iterator.next();
                 long pendingEndOffset = entry.getKey();
@@ -139,8 +153,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
             if (streamImage == null) {
                 LOGGER.warn(
-                    "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and streamImage is null",
-                    streamId, startOffset, endOffset, limit);
+                        "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and streamImage is null",
+                        streamId, startOffset, endOffset, limit);
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
             StreamOffsetRange offsetRange = streamImage.offsetRange();
@@ -151,8 +165,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             long streamEndOffset = offsetRange.getEndOffset();
             if (startOffset < streamStartOffset) {
                 LOGGER.warn(
-                    "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and startOffset < streamStartOffset: {}",
-                    streamId, startOffset, endOffset, limit, streamStartOffset);
+                        "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and startOffset < streamStartOffset: {}",
+                        streamId, startOffset, endOffset, limit, streamStartOffset);
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
             if (endOffset > streamEndOffset) {
@@ -167,11 +181,11 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     private CompletableFuture<InRangeObjects> pendingFetch(long streamId, long startOffset, long endOffset, int limit) {
         GetObjectsTask task = GetObjectsTask.of(streamId, startOffset, endOffset, limit);
         Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.computeIfAbsent(task.streamId,
-            k -> new TreeMap<>());
+                k -> new TreeMap<>());
         List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
         getObjectsTasks.add(task);
         LOGGER.warn("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
-            limit);
+                limit);
         return task.cf;
     }
 
@@ -180,8 +194,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         InRangeObjects cachedInRangeObjects = streamsImage.getObjects(streamId, startOffset, endOffset, limit);
         if (cachedInRangeObjects == null || cachedInRangeObjects == InRangeObjects.INVALID) {
             LOGGER.warn(
-                "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with empty result",
-                streamId, startOffset, endOffset, limit);
+                    "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with empty result",
+                    streamId, startOffset, endOffset, limit);
             return CompletableFuture.completedFuture(InRangeObjects.INVALID);
         }
         // fill the objects' size
@@ -190,15 +204,15 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             if (objectMetadata == null) {
                 // should not happen
                 LOGGER.error(
-                    "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with empty result",
-                    streamId, startOffset, endOffset, limit);
+                        "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with empty result",
+                        streamId, startOffset, endOffset, limit);
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
             object.setObjectSize(objectMetadata.getObjectSize());
         }
         LOGGER.trace(
-            "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache success with result: {}",
-            streamId, startOffset, endOffset, limit, cachedInRangeObjects);
+                "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache success with result: {}",
+                streamId, startOffset, endOffset, limit, cachedInRangeObjects);
         return CompletableFuture.completedFuture(cachedInRangeObjects);
     }
 

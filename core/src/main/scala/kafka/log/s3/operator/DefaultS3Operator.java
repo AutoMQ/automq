@@ -206,7 +206,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         @Override
-        public void write(ByteBuf part) {
+        public CompletableFuture<CompletedPart> write(ByteBuf part) {
             long start = System.nanoTime();
             OBJECT_UPLOAD_SIZE.inc(part.readableBytes());
             int partNumber = nextPartNumber.getAndIncrement();
@@ -217,6 +217,7 @@ public class DefaultS3Operator implements S3Operator {
                 PART_UPLOAD_COST.update(System.nanoTime() - start);
                 part.release();
             });
+            return partCf;
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {

@@ -15,36 +15,22 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.operator;
+package org.apache.kafka.metadata.stream;
 
-import io.netty.buffer.ByteBuf;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
+public class S3WALObjectMetadata {
+    private final S3WALObject walObject;
+    private final S3ObjectMetadata objectMetadata;
 
-import java.util.concurrent.CompletableFuture;
+    public S3WALObjectMetadata(S3WALObject walObject, S3ObjectMetadata objectMetadata) {
+        this.walObject = walObject;
+        this.objectMetadata = objectMetadata;
+    }
 
-/**
- * Multi-part object writer.
- */
-public interface Writer {
-    /**
-     * Write a part of the object. The parts will parallel upload to S3.
-     *
-     * @param part object part.
-     */
-    CompletableFuture<CompletedPart> write(ByteBuf part);
+    public S3WALObject getWalObject() {
+        return walObject;
+    }
 
-    /**
-     * Copy a part of the object.
-     *
-     * @param sourcePath source object path.
-     * @param start      start position of the source object.
-     * @param end        end position of the source object.
-     */
-    void copyWrite(String sourcePath, long start, long end);
-
-    /**
-     * Complete the object.
-     */
-    CompletableFuture<Void> close();
-
+    public S3ObjectMetadata getObjectMetadata() {
+        return objectMetadata;
+    }
 }

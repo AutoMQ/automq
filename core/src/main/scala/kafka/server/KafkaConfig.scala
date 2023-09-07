@@ -309,6 +309,14 @@ object Defaults {
   val QuorumLingerMs = RaftConfig.DEFAULT_QUORUM_LINGER_MS
   val QuorumRequestTimeoutMs = RaftConfig.DEFAULT_QUORUM_REQUEST_TIMEOUT_MS
   val QuorumRetryBackoffMs = RaftConfig.DEFAULT_QUORUM_RETRY_BACKOFF_MS
+
+  /** ********* Kafka on S3 Configuration *********/
+  val S3ObjectCompactionCacheSize: Long = 2 * 1024 * 1024 * 1024 // 2GB
+  val S3ObjectCompactionNWInBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
+  val S3ObjectCompactionNWOutBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
+  val S3ObjectCompactionUploadConcurrency: Int = 8
+  val S3ObjectCompactionExecutionScoreThreshold: Double = 0.5
+  val S3ObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
 }
 
 object KafkaConfig {
@@ -684,6 +692,12 @@ object KafkaConfig {
   val S3ObjectBlockSizeProp = "s3.object.block.size"
   val S3ObjectPartSizeProp = "s3.object.part.size"
   val S3CacheSizeProp = "s3.cache.size"
+  val S3ObjectCompactionCacheSize = "s3.object.compaction.cache.size"
+  val S3ObjectCompactionNWInBandwidth = "s3.object.compaction.network.in.bandwidth"
+  val S3ObjectCompactionNWOutBandwidth = "s3.object.compaction.network.out.bandwidth"
+  val S3ObjectCompactionUploadConcurrency = "s3.object.compaction.upload.concurrency"
+  val S3ObjectCompactionExecutionScoreThreshold = "s3.object.compaction.execution.score.threshold"
+  val S3ObjectCompactionStreamSplitSize = "s3.object.compaction.stream.split.size"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -693,6 +707,12 @@ object KafkaConfig {
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3CacheSizeDoc = "The S3 block cache size in MiB."
+  val S3ObjectCompactionCacheSizeDoc = "The S3 object compaction cache size in Bytes."
+  val S3ObjectCompactionNWInBandwidthDoc = "The S3 object compaction network in bandwidth in Bytes/s."
+  val S3ObjectCompactionNWOutBandwidthDoc = "The S3 object compaction network out bandwidth in Bytes/s."
+  val S3ObjectCompactionUploadConcurrencyDoc = "The S3 object compaction upload concurrency."
+  val S3ObjectCompactionExecutionScoreThresholdDoc = "The S3 object compaction execution score threshold."
+  val S3ObjectCompactionStreamSplitSizeDoc = "The S3 object compaction stream split size threshold in Bytes."
 
   // Kafka on S3 inject end
 
@@ -1501,6 +1521,13 @@ object KafkaConfig {
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3CacheSizeProp, LONG, 1073741824, MEDIUM, S3CacheSizeDoc)
+      .define(S3ObjectCompactionCacheSize, LONG, Defaults.S3ObjectCompactionCacheSize, MEDIUM, S3ObjectCompactionCacheSizeDoc)
+      .define(S3ObjectCompactionNWInBandwidth, LONG, Defaults.S3ObjectCompactionNWInBandwidth, MEDIUM, S3ObjectCompactionNWInBandwidthDoc)
+      .define(S3ObjectCompactionNWOutBandwidth, LONG, Defaults.S3ObjectCompactionNWOutBandwidth, MEDIUM, S3ObjectCompactionNWOutBandwidthDoc)
+      .define(S3ObjectCompactionUploadConcurrency, INT, Defaults.S3ObjectCompactionUploadConcurrency, MEDIUM, S3ObjectCompactionUploadConcurrencyDoc)
+      .define(S3ObjectCompactionExecutionScoreThreshold, DOUBLE, Defaults.S3ObjectCompactionExecutionScoreThreshold, MEDIUM, S3ObjectCompactionExecutionScoreThresholdDoc)
+      .define(S3ObjectCompactionStreamSplitSize, LONG, Defaults.S3ObjectCompactionStreamSplitSize, MEDIUM, S3ObjectCompactionStreamSplitSizeDoc)
+      .define(S3CacheSizeProp, INT, 1024, MEDIUM, S3CacheSizeDoc)
     // Kafka on S3 inject end
   }
 
@@ -2044,6 +2071,12 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
   val s3CacheSize = getLong(KafkaConfig.S3CacheSizeProp)
+  val s3ObjectCompactionCacheSize = getLong(KafkaConfig.S3ObjectCompactionCacheSize)
+  val s3ObjectCompactionNWInBandwidth = getLong(KafkaConfig.S3ObjectCompactionNWInBandwidth)
+  val s3ObjectCompactionNWOutBandwidth = getLong(KafkaConfig.S3ObjectCompactionNWInBandwidth)
+  val s3ObjectCompactionUploadConcurrency = getInt(KafkaConfig.S3ObjectCompactionUploadConcurrency)
+  val s3ObjectCompactionExecutionScoreThreshold = getDouble(KafkaConfig.S3ObjectCompactionExecutionScoreThreshold)
+  val s3ObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3ObjectCompactionStreamSplitSize)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

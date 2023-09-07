@@ -17,18 +17,19 @@
 
 package kafka.log.s3.metadata;
 
-import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+
+import java.util.concurrent.CompletableFuture;
 
 public interface InRangeObjectsFetcher {
 
     /**
      * fetch stream interval related objects
      *
-     * @param streamId stream id
+     * @param streamId    stream id
      * @param startOffset start offset, inclusive, if not exist, return INVALID
-     * @param endOffset end offset, exclusive, if not exist, wait for it
-     * @param limit max object count
+     * @param endOffset   end offset, exclusive, if not exist, wait for it
+     * @param limit       max object count
      * @return {@link InRangeObjects}
      */
     CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit);
