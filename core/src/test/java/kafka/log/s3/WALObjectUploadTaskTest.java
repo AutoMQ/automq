@@ -103,7 +103,7 @@ public class WALObjectUploadTaskTest {
         assertEquals(16, streamObject.getEndOffset());
 
         {
-            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.WAL_LOOSE);
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.WAL);
             ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get().get(0);
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();

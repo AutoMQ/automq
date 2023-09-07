@@ -32,7 +32,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import kafka.log.s3.objects.CommitCompactObjectRequest;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectResponse;
@@ -207,11 +206,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             return false;
         }
         return true;
-    }
-
-    @Override
-    public CompletableFuture<Void> commitMajorCompactObject(CommitCompactObjectRequest request) {
-        return null;
     }
 
     @Override
