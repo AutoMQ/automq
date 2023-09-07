@@ -19,22 +19,12 @@ package org.apache.kafka.metadata.stream;
 
 public enum S3ObjectType {
     /**
-     * WAL object with loose records
+     * WAL object
      */
-    WAL_LOOSE,
+    WAL,
 
     /**
-     * WAL object with minor compaction records
-     */
-    WAL_MINOR,
-
-    /**
-     * WAL object with major compaction records
-     */
-    WAL_MAJOR,
-
-    /**
-     * STREAM object with stream records of one stream
+     * STREAM object
      */
     STREAM,
 

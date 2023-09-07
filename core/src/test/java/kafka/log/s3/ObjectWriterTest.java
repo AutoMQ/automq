@@ -38,7 +38,7 @@ public class ObjectWriterTest {
 
     @Test
     public void testWrite() throws ExecutionException, InterruptedException {
-        S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.WAL_LOOSE);
+        S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.WAL);
 
         S3Operator s3Operator = new MemoryS3Operator();
         ObjectWriter objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
@@ -65,7 +65,7 @@ public class ObjectWriterTest {
         int objectSize = s3Operator.rangeRead(metadata.key(), 0L, objectWriter.size()).get().readableBytes();
         assertEquals(objectSize, objectWriter.size());
 
-        metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.WAL_LOOSE);
+        metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.WAL);
         ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
         List<ObjectReader.DataBlockIndex> blockIndexes = objectReader.find(233, 10, 30).get();
         assertEquals(2, blockIndexes.size());

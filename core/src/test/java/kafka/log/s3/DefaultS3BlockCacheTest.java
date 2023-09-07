@@ -58,17 +58,17 @@ public class DefaultS3BlockCacheTest {
         objectWriter.write(newRecord(233, 25, 5, 512));
         objectWriter.write(newRecord(234, 0, 5, 512));
         objectWriter.close();
-        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL_LOOSE);
+        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL);
 
         objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
         objectWriter.write(newRecord(233, 30, 10, 512));
         objectWriter.close();
-        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL_LOOSE);
+        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL);
 
         objectWriter = new ObjectWriter(2, s3Operator, 1024, 1024);
         objectWriter.write(newRecord(233, 40, 20, 512));
         objectWriter.close();
-        S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL_LOOSE);
+        S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL);
 
         when(objectManager.getObjects(eq(233L), eq(11L), eq(60L), eq(2))).thenReturn(List.of(
                 metadata1, metadata2

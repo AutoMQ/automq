@@ -84,7 +84,8 @@ public class ControllerObjectManager implements ObjectManager {
                     .map(ObjectStreamRange::toObjectStreamRangeInRequest).collect(Collectors.toList()))
                 .setStreamObjects(request.getStreamObjects()
                     .stream()
-                    .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList())));
+                    .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList()))
+                .setCompactedObjectIds(request.getCompactedObjectIds()));
         return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
@@ -95,11 +96,6 @@ public class ControllerObjectManager implements ObjectManager {
                     throw code.exception();
             }
         });
-    }
-
-    @Override
-    public CompletableFuture<Void> commitMajorCompactObject(CommitCompactObjectRequest request) {
-        return null;
     }
 
     @Override

@@ -44,13 +44,6 @@ public interface ObjectManager {
     CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request);
 
     /**
-     * Commit major compact object. Use major compact object and stream objects to substitute minor compact object.
-     *
-     * @param request {@link CommitCompactObjectRequest}
-     */
-    CompletableFuture<Void> commitMajorCompactObject(CommitCompactObjectRequest request);
-
-    /**
      * Commit stream object. When the source object has no reference, then delete it.
      *
      * @param request {@link CommitStreamObjectRequest}
