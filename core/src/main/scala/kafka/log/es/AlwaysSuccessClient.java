@@ -48,7 +48,7 @@ public class AlwaysSuccessClient implements Client {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
     public static final Set<Short> HALT_ERROR_CODES = Set.of(ErrorCode.EXPIRED_STREAM_EPOCH, ErrorCode.STREAM_ALREADY_CLOSED);
-    public static final long SLOW_FETCH_TIMEOUT_MILLIS = 10;
+    public static final long DEFAULT_SLOW_FETCH_TIMEOUT_MILLIS = 10;
     private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
@@ -77,16 +77,22 @@ public class AlwaysSuccessClient implements Client {
      * due to the delay in updating the committed offset.
      */
     private final boolean appendCallbackAsync;
+    private final long slowFetchTimeoutMillis;
 
     public AlwaysSuccessClient(Client client) {
-        this(client, true);
+        this(client, true, DEFAULT_SLOW_FETCH_TIMEOUT_MILLIS);
     }
 
     public AlwaysSuccessClient(Client client, boolean appendCallbackAsync) {
+        this(client, appendCallbackAsync, DEFAULT_SLOW_FETCH_TIMEOUT_MILLIS);
+    }
+
+    public AlwaysSuccessClient(Client client, boolean appendCallbackAsync, long slowFetchTimeoutMillis) {
         this.streamClient = new StreamClientImpl(client.streamClient());
         this.kvClient = client.kvClient();
         this.delayer = new Delayer(delayFetchScheduler);
         this.appendCallbackAsync = appendCallbackAsync;
+        this.slowFetchTimeoutMillis = slowFetchTimeoutMillis;
     }
 
     @Override
@@ -316,11 +322,11 @@ public class AlwaysSuccessClient implements Client {
                 CompletableFuture<FetchResult> firstFetchFuture = new CompletableFuture<>();
                 fetch0(startOffset, endOffset, maxBytesHint, firstFetchFuture);
                 // Try to have a quick fetch. If the first fetching is timeout, then complete with SlowFetchHintException.
-                timeoutAndStoreFuture(holdUpKey, firstFetchFuture, SLOW_FETCH_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                timeoutAndStoreFuture(holdUpKey, firstFetchFuture, slowFetchTimeoutMillis, TimeUnit.MILLISECONDS)
                     .whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
                         if (ex != null) {
                             if (ex instanceof SlowFetchHintException) {
-                                LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, SLOW_FETCH_TIMEOUT_MILLIS);
+                                LOGGER.debug("Fetch stream[{}] [{},{}) timeout for {} ms, retry later with slow fetching", streamId(), startOffset, endOffset, DEFAULT_SLOW_FETCH_TIMEOUT_MILLIS);
                                 cf.completeExceptionally(ex);
                             } else if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
                                 cf.completeExceptionally(ex);
