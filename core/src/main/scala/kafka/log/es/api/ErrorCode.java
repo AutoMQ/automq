@@ -15,22 +15,10 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.s3;
+package kafka.log.es.api;
 
-import kafka.log.es.api.Client;
-import kafka.log.es.AlwaysSuccessClient;
-import kafka.log.es.client.Context;
-import kafka.log.s3.DefaultS3Client;
-import kafka.log.s3.operator.DefaultS3Operator;
-import kafka.log.s3.operator.S3Operator;
-
-public class ClientFactory {
-    public static Client get(Context context) {
-        String endpoint = context.config.s3Endpoint();
-        String region = context.config.s3Region();
-        String bucket = context.config.s3Bucket();
-        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket);
-        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config, s3Operator);
-        return new AlwaysSuccessClient(client);
-    }
+public class ErrorCode {
+    public static final short OFFSET_OUT_OF_RANGE_BOUNDS = 1463;
+    public static final short STREAM_ALREADY_CLOSED = 1478;
+    public static final short EXPIRED_STREAM_EPOCH = 1489;
 }

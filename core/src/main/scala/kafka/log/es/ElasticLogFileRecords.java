@@ -17,8 +17,8 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.RecordBatchWithContext;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
@@ -150,7 +150,7 @@ public class ElasticLogFileRecords {
         int appendSize = records.sizeInBytes();
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset.get());
-        com.automq.elasticstream.client.DefaultRecordBatch batch = new com.automq.elasticstream.client.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
+        kafka.log.es.DefaultRecordBatch batch = new kafka.log.es.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
         CompletableFuture<?> cf = streamSegment.append(batch);
         nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);

@@ -17,7 +17,7 @@
 
 package kafka.log.es
 
-import com.automq.elasticstream.client.api.Client
+import kafka.log.es.api.Client
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.client.{ClientFactoryProxy, Context}

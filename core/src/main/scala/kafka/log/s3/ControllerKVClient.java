@@ -17,8 +17,8 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.KVClient;
-import com.automq.elasticstream.client.api.KeyValue;
+import kafka.log.es.api.KVClient;
+import kafka.log.es.api.KeyValue;
 
 import java.nio.ByteBuffer;
 import java.util.List;

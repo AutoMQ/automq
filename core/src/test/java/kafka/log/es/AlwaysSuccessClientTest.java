@@ -17,15 +17,15 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.AppendResult;
-import com.automq.elasticstream.client.api.CreateStreamOptions;
-import com.automq.elasticstream.client.api.ElasticStreamClientException;
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.OpenStreamOptions;
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
-import com.automq.elasticstream.client.api.Stream;
-import com.automq.elasticstream.client.api.StreamClient;
+import kafka.log.es.api.AppendResult;
+import kafka.log.es.api.CreateStreamOptions;
+import kafka.log.es.api.ElasticStreamClientException;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.OpenStreamOptions;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.RecordBatchWithContext;
+import kafka.log.es.api.Stream;
+import kafka.log.es.api.StreamClient;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

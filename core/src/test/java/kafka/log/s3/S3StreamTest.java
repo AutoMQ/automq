@@ -17,8 +17,8 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.ElasticStreamClientException;
-import com.automq.elasticstream.client.api.FetchResult;
+import kafka.log.es.api.ElasticStreamClientException;
+import kafka.log.es.api.FetchResult;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;

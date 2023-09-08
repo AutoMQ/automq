@@ -15,42 +15,43 @@
  * limitations under the License.
  */
 
-package kafka.log.es;
+package kafka.log.es.api;
 
-import kafka.log.es.api.RecordBatch;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.Map;
+import java.util.Objects;
 
-public class RawPayloadRecordBatch implements RecordBatch {
-    private final ByteBuffer rawPayload;
+public class KeyValue {
+    private final String key;
+    private final ByteBuffer value;
 
-    private RawPayloadRecordBatch(ByteBuffer rawPayload) {
-        this.rawPayload = rawPayload.duplicate();
+    private KeyValue(String key, ByteBuffer value) {
+        this.key = key;
+        this.value = value;
     }
 
-    public static RecordBatch of(ByteBuffer rawPayload) {
-        return new RawPayloadRecordBatch(rawPayload);
+    public static KeyValue of(String key, ByteBuffer value) {
+        return new KeyValue(key, value);
     }
 
-    @Override
-    public int count() {
-        return rawPayload.remaining();
+    public String key() {
+        return key;
     }
 
-    @Override
-    public long baseTimestamp() {
-        return 0;
-    }
-
-    @Override
-    public Map<String, String> properties() {
-        return Collections.emptyMap();
+    public ByteBuffer value() {
+        return value;
     }
 
     @Override
-    public ByteBuffer rawPayload() {
-        return rawPayload.duplicate();
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        KeyValue keyValue = (KeyValue) o;
+        return Objects.equals(key, keyValue.key) && Objects.equals(value, keyValue.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(key, value);
     }
 }

@@ -17,14 +17,14 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.DefaultAppendResult;
-import com.automq.elasticstream.client.api.AppendResult;
-import com.automq.elasticstream.client.api.ElasticStreamClientException;
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
-import com.automq.elasticstream.client.api.Stream;
-import com.automq.elasticstream.client.flatc.header.ErrorCode;
+import kafka.log.es.DefaultAppendResult;
+import kafka.log.es.api.AppendResult;
+import kafka.log.es.api.ElasticStreamClientException;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.RecordBatchWithContext;
+import kafka.log.es.api.Stream;
+import kafka.log.es.api.ErrorCode;
 import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;

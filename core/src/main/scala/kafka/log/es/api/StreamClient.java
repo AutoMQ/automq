@@ -15,22 +15,28 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.s3;
+package kafka.log.es.api;
 
-import kafka.log.es.api.Client;
-import kafka.log.es.AlwaysSuccessClient;
-import kafka.log.es.client.Context;
-import kafka.log.s3.DefaultS3Client;
-import kafka.log.s3.operator.DefaultS3Operator;
-import kafka.log.s3.operator.S3Operator;
+import java.util.concurrent.CompletableFuture;
 
-public class ClientFactory {
-    public static Client get(Context context) {
-        String endpoint = context.config.s3Endpoint();
-        String region = context.config.s3Region();
-        String bucket = context.config.s3Bucket();
-        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket);
-        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config, s3Operator);
-        return new AlwaysSuccessClient(client);
-    }
+/**
+ * Stream client, support stream create and open operation.
+ */
+public interface StreamClient {
+    /**
+     * Create and open stream.
+     *
+     * @param options create stream options.
+     * @return {@link Stream}.
+     */
+    CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options);
+
+    /**
+     * Open stream.
+     *
+     * @param streamId stream id.
+     * @param options  open stream options.
+     * @return {@link Stream}.
+     */
+    CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
 }

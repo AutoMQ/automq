@@ -15,22 +15,41 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.s3;
+package kafka.log.es.api;
 
-import kafka.log.es.api.Client;
-import kafka.log.es.AlwaysSuccessClient;
-import kafka.log.es.client.Context;
-import kafka.log.s3.DefaultS3Client;
-import kafka.log.s3.operator.DefaultS3Operator;
-import kafka.log.s3.operator.S3Operator;
+import java.nio.ByteBuffer;
+import java.util.Map;
 
-public class ClientFactory {
-    public static Client get(Context context) {
-        String endpoint = context.config.s3Endpoint();
-        String region = context.config.s3Region();
-        String bucket = context.config.s3Bucket();
-        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket);
-        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config, s3Operator);
-        return new AlwaysSuccessClient(client);
-    }
+/**
+ * Record batch.
+ */
+public interface RecordBatch {
+
+    /**
+     * Get payload record count.
+     *
+     * @return record count.
+     */
+    int count();
+
+    /**
+     * Get min timestamp of records.
+     *
+     * @return min timestamp of records.
+     */
+    long baseTimestamp();
+
+    /**
+     * Get record batch extension properties.
+     *
+     * @return batch extension properties.
+     */
+    Map<String, String> properties();
+
+    /**
+     * Get raw payload.
+     *
+     * @return raw payload.
+     */
+    ByteBuffer rawPayload();
 }

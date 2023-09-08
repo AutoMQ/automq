@@ -17,7 +17,7 @@
 
 package kafka.log.s3.model;
 
-import com.automq.elasticstream.client.api.RecordBatch;
+import kafka.log.es.api.RecordBatch;
 import io.netty.buffer.ByteBuf;
 import kafka.log.s3.StreamRecordBatchCodec;
 

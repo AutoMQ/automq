@@ -15,20 +15,14 @@
  * limitations under the License.
  */
 
-package kafka.log.s3;
+package kafka.log.es;
 
-import kafka.log.es.api.RecordBatch;
-import kafka.log.es.api.RecordBatchWithContext;
+import kafka.log.es.api.AppendResult;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
-
-public class DefaultRecordBatchWithContext implements RecordBatchWithContext {
-    private final RecordBatch recordBatch;
+public class DefaultAppendResult implements AppendResult {
     private final long baseOffset;
 
-    public DefaultRecordBatchWithContext(RecordBatch recordBatch, long baseOffset) {
-        this.recordBatch = recordBatch;
+    public DefaultAppendResult(long baseOffset) {
         this.baseOffset = baseOffset;
     }
     @Override
@@ -36,28 +30,8 @@ public class DefaultRecordBatchWithContext implements RecordBatchWithContext {
         return baseOffset;
     }
 
-    @Override
-    public long lastOffset() {
-        return baseOffset + recordBatch.count();
-    }
-
-    @Override
-    public int count() {
-        return recordBatch.count();
-    }
-
-    @Override
-    public long baseTimestamp() {
-        return recordBatch.baseTimestamp();
-    }
-
-    @Override
-    public Map<String, String> properties() {
-        return recordBatch.properties();
-    }
-
-    @Override
-    public ByteBuffer rawPayload() {
-        return recordBatch.rawPayload();
+    public String toString() {
+        return "AppendResult(baseOffset=" + baseOffset + ")";
     }
 }
+

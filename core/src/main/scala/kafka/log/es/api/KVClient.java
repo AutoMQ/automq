@@ -15,22 +15,36 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.s3;
+package kafka.log.es.api;
 
-import kafka.log.es.api.Client;
-import kafka.log.es.AlwaysSuccessClient;
-import kafka.log.es.client.Context;
-import kafka.log.s3.DefaultS3Client;
-import kafka.log.s3.operator.DefaultS3Operator;
-import kafka.log.s3.operator.S3Operator;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
-public class ClientFactory {
-    public static Client get(Context context) {
-        String endpoint = context.config.s3Endpoint();
-        String region = context.config.s3Region();
-        String bucket = context.config.s3Bucket();
-        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket);
-        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config, s3Operator);
-        return new AlwaysSuccessClient(client);
-    }
+/**
+ * Light KV client, support light & simple kv operations.
+ */
+public interface KVClient {
+    /**
+     * Put key value.
+     *
+     * @param keyValues {@link KeyValue} list.
+     * @return async put result.
+     */
+    CompletableFuture<Void> putKV(List<KeyValue> keyValues);
+
+    /**
+     * Get value by key.
+     *
+     * @param keys key list.
+     * @return {@link KeyValue} list.
+     */
+    CompletableFuture<List<KeyValue>> getKV(List<String> keys);
+
+    /**
+     * Delete key value by key.
+     *
+     * @param keys key list.
+     * @return async delete result.
+     */
+    CompletableFuture<Void> delKV(List<String> keys);
 }

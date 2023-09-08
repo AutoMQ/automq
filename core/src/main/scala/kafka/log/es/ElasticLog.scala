@@ -17,7 +17,7 @@
 
 package kafka.log.es
 
-import com.automq.elasticstream.client.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import kafka.log.es.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
 import kafka.log.es.metrics.Timer

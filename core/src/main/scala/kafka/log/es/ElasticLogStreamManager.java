@@ -17,8 +17,8 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.Stream;
-import com.automq.elasticstream.client.api.StreamClient;
+import kafka.log.es.api.Stream;
+import kafka.log.es.api.StreamClient;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
