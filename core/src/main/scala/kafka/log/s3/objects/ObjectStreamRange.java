@@ -25,7 +25,8 @@ public class ObjectStreamRange {
     private long startOffset;
     private long endOffset;
 
-    public ObjectStreamRange() {}
+    public ObjectStreamRange() {
+    }
 
     public ObjectStreamRange(long streamId, long epoch, long startOffset, long endOffset) {
         this.streamId = streamId;
@@ -41,6 +42,7 @@ public class ObjectStreamRange {
     public long getEpoch() {
         return epoch;
     }
+
     public long getStartOffset() {
         return startOffset;
     }
@@ -67,9 +69,9 @@ public class ObjectStreamRange {
 
     public CommitWALObjectRequestData.ObjectStreamRange toObjectStreamRangeInRequest() {
         return new CommitWALObjectRequestData.ObjectStreamRange()
-            .setStreamId(streamId)
-            .setStartOffset(startOffset)
-            .setEndOffset(endOffset);
+                .setStreamId(streamId)
+                .setStartOffset(startOffset)
+                .setEndOffset(endOffset);
     }
 
     @Override

@@ -15,18 +15,36 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.redis;
+package kafka.log.es.api;
 
-import kafka.log.es.ElasticRedisClient;
-import kafka.log.es.api.Client;
-import kafka.log.es.client.Context;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
+/**
+ * Light KV client, support light & simple kv operations.
+ */
+public interface KVClient {
+    /**
+     * Put key value.
+     *
+     * @param keyValues {@link KeyValue} list.
+     * @return async put result.
+     */
+    CompletableFuture<Void> putKV(List<KeyValue> keyValues);
 
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
-    }
+    /**
+     * Get value by key.
+     *
+     * @param keys key list.
+     * @return {@link KeyValue} list.
+     */
+    CompletableFuture<List<KeyValue>> getKV(List<String> keys);
 
+    /**
+     * Delete key value by key.
+     *
+     * @param keys key list.
+     * @return async delete result.
+     */
+    CompletableFuture<Void> delKV(List<String> keys);
 }

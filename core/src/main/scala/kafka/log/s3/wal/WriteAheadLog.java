@@ -27,18 +27,21 @@ public interface WriteAheadLog {
 
     /**
      * Get log start offset.
+     *
      * @return start offset.
      */
     long startOffset();
 
     /**
      * Get log end offset.
+     *
      * @return exclusive end offset.
      */
     long endOffset();
 
     /**
      * Read data from log.
+     *
      * @return list of {@link WalRecord}.
      */
     List<WalRecord> read();

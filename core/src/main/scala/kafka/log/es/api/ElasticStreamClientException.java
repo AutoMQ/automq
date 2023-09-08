@@ -15,44 +15,22 @@
  * limitations under the License.
  */
 
-package kafka.log.es;
+package kafka.log.es.api;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.concurrent.ExecutionException;
 
-public class SliceRange {
-    @JsonProperty("s")
-    private long start = Offsets.NOOP_OFFSET;
-    @JsonProperty("e")
-    private long end = Offsets.NOOP_OFFSET;
+/**
+ * All stream client exceptions will list extends ElasticStreamClientException and list here.
+ */
+public class ElasticStreamClientException extends ExecutionException {
+    private final int code;
 
-    public SliceRange() {
+    public ElasticStreamClientException(int code, String str) {
+        super("code: " + code + ", " + str);
+        this.code = code;
     }
 
-    public static SliceRange of(long start, long end) {
-        SliceRange sliceRange = new SliceRange();
-        sliceRange.start(start);
-        sliceRange.end(end);
-        return sliceRange;
-    }
-
-    public long start() {
-        return start;
-    }
-
-    public void start(long start) {
-        this.start = start;
-    }
-
-    public long end() {
-        return end;
-    }
-
-    public void end(long end) {
-        this.end = end;
-    }
-
-    @Override
-    public String toString() {
-        return "[" + start + ", " + end + ']';
+    public int getCode() {
+        return this.code;
     }
 }

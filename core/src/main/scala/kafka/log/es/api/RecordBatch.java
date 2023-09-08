@@ -15,18 +15,41 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.redis;
+package kafka.log.es.api;
 
-import kafka.log.es.ElasticRedisClient;
-import kafka.log.es.api.Client;
-import kafka.log.es.client.Context;
+import java.nio.ByteBuffer;
+import java.util.Map;
 
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
+/**
+ * Record batch.
+ */
+public interface RecordBatch {
 
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
-    }
+    /**
+     * Get payload record count.
+     *
+     * @return record count.
+     */
+    int count();
 
+    /**
+     * Get min timestamp of records.
+     *
+     * @return min timestamp of records.
+     */
+    long baseTimestamp();
+
+    /**
+     * Get record batch extension properties.
+     *
+     * @return batch extension properties.
+     */
+    Map<String, String> properties();
+
+    /**
+     * Get raw payload.
+     *
+     * @return raw payload.
+     */
+    ByteBuffer rawPayload();
 }

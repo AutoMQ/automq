@@ -36,6 +36,7 @@ public class StreamSliceSupplier {
 
     /**
      * reset the slice to an open empty slice. This is used in segment index recovery.
+     *
      * @return a new open empty slice
      */
     public ElasticStreamSlice reset() throws IOException {

@@ -17,42 +17,22 @@
 
 package kafka.log.es;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import kafka.log.es.api.AppendResult;
 
-public class SliceRange {
-    @JsonProperty("s")
-    private long start = Offsets.NOOP_OFFSET;
-    @JsonProperty("e")
-    private long end = Offsets.NOOP_OFFSET;
+public class DefaultAppendResult implements AppendResult {
+    private final long baseOffset;
 
-    public SliceRange() {
-    }
-
-    public static SliceRange of(long start, long end) {
-        SliceRange sliceRange = new SliceRange();
-        sliceRange.start(start);
-        sliceRange.end(end);
-        return sliceRange;
-    }
-
-    public long start() {
-        return start;
-    }
-
-    public void start(long start) {
-        this.start = start;
-    }
-
-    public long end() {
-        return end;
-    }
-
-    public void end(long end) {
-        this.end = end;
+    public DefaultAppendResult(long baseOffset) {
+        this.baseOffset = baseOffset;
     }
 
     @Override
+    public long baseOffset() {
+        return baseOffset;
+    }
+
     public String toString() {
-        return "[" + start + ", " + end + ']';
+        return "AppendResult(baseOffset=" + baseOffset + ")";
     }
 }
+

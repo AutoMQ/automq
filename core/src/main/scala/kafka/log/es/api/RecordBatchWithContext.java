@@ -15,18 +15,21 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.redis;
+package kafka.log.es.api;
 
-import kafka.log.es.ElasticRedisClient;
-import kafka.log.es.api.Client;
-import kafka.log.es.client.Context;
+public interface RecordBatchWithContext extends RecordBatch {
 
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
+    /**
+     * Get record batch base offset.
+     *
+     * @return base offset.
+     */
+    long baseOffset();
 
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
-    }
-
+    /**
+     * Get record batch exclusive last offset.
+     *
+     * @return exclusive last offset.
+     */
+    long lastOffset();
 }

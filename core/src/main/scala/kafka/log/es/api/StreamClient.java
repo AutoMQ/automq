@@ -15,18 +15,28 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.redis;
+package kafka.log.es.api;
 
-import kafka.log.es.ElasticRedisClient;
-import kafka.log.es.api.Client;
-import kafka.log.es.client.Context;
+import java.util.concurrent.CompletableFuture;
 
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
+/**
+ * Stream client, support stream create and open operation.
+ */
+public interface StreamClient {
+    /**
+     * Create and open stream.
+     *
+     * @param options create stream options.
+     * @return {@link Stream}.
+     */
+    CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options);
 
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
-    }
-
+    /**
+     * Open stream.
+     *
+     * @param streamId stream id.
+     * @param options  open stream options.
+     * @return {@link Stream}.
+     */
+    CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
 }

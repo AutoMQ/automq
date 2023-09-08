@@ -17,7 +17,6 @@
 
 package kafka.log.s3.network;
 
-import java.util.concurrent.CompletableFuture;
 import kafka.server.BrokerServer;
 import kafka.server.BrokerToControllerChannelManager;
 import kafka.server.ControllerRequestCompletionHandler;
@@ -27,6 +26,8 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.CompletableFuture;
 
 public class ControllerRequestSender {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
@@ -40,7 +41,7 @@ public class ControllerRequestSender {
     }
 
     public <T extends AbstractRequest, R extends ApiMessage> CompletableFuture<R> send(AbstractRequest.Builder<T> requestBuilder,
-        Class<R> responseDataType) {
+                                                                                       Class<R> responseDataType) {
         CompletableFuture<R> cf = new CompletableFuture<>();
         LOGGER.debug("Sending request {}", requestBuilder);
         channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
@@ -65,7 +66,7 @@ public class ControllerRequestSender {
                 }
                 if (!responseDataType.isInstance(response.responseBody().data())) {
                     LOGGER.error("Unexpected response type: {} while sending request: {}",
-                        response.responseBody().data().getClass().getSimpleName(), requestBuilder);
+                            response.responseBody().data().getClass().getSimpleName(), requestBuilder);
                     cf.completeExceptionally(new RuntimeException("Unexpected response type while sending request"));
                 }
                 cf.complete((R) response.responseBody().data());

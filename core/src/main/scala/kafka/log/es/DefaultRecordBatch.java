@@ -23,30 +23,35 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
 
-public class RawPayloadRecordBatch implements RecordBatch {
+public class DefaultRecordBatch implements RecordBatch {
+    private final int count;
+    private final long baseTimestamp;
+    private final Map<String, String> properties;
     private final ByteBuffer rawPayload;
 
-    private RawPayloadRecordBatch(ByteBuffer rawPayload) {
-        this.rawPayload = rawPayload.duplicate();
-    }
-
-    public static RecordBatch of(ByteBuffer rawPayload) {
-        return new RawPayloadRecordBatch(rawPayload);
+    public DefaultRecordBatch(int count, long baseTimestamp, Map<String, String> properties, ByteBuffer rawPayload) {
+        this.count = count;
+        this.baseTimestamp = baseTimestamp;
+        this.properties = properties;
+        this.rawPayload = rawPayload;
     }
 
     @Override
     public int count() {
-        return rawPayload.remaining();
+        return count;
     }
 
     @Override
     public long baseTimestamp() {
-        return 0;
+        return baseTimestamp;
     }
 
     @Override
     public Map<String, String> properties() {
-        return Collections.emptyMap();
+        if (properties == null) {
+            return Collections.emptyMap();
+        }
+        return properties;
     }
 
     @Override

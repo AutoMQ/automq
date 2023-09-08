@@ -15,44 +15,43 @@
  * limitations under the License.
  */
 
-package kafka.log.es;
+package kafka.log.es.api;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 
-public class SliceRange {
-    @JsonProperty("s")
-    private long start = Offsets.NOOP_OFFSET;
-    @JsonProperty("e")
-    private long end = Offsets.NOOP_OFFSET;
+import java.nio.ByteBuffer;
+import java.util.Objects;
 
-    public SliceRange() {
+public class KeyValue {
+    private final String key;
+    private final ByteBuffer value;
+
+    private KeyValue(String key, ByteBuffer value) {
+        this.key = key;
+        this.value = value;
     }
 
-    public static SliceRange of(long start, long end) {
-        SliceRange sliceRange = new SliceRange();
-        sliceRange.start(start);
-        sliceRange.end(end);
-        return sliceRange;
+    public static KeyValue of(String key, ByteBuffer value) {
+        return new KeyValue(key, value);
     }
 
-    public long start() {
-        return start;
+    public String key() {
+        return key;
     }
 
-    public void start(long start) {
-        this.start = start;
-    }
-
-    public long end() {
-        return end;
-    }
-
-    public void end(long end) {
-        this.end = end;
+    public ByteBuffer value() {
+        return value;
     }
 
     @Override
-    public String toString() {
-        return "[" + start + ", " + end + ']';
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        KeyValue keyValue = (KeyValue) o;
+        return Objects.equals(key, keyValue.key) && Objects.equals(value, keyValue.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(key, value);
     }
 }

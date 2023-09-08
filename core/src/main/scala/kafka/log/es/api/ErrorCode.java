@@ -15,18 +15,10 @@
  * limitations under the License.
  */
 
-package kafka.log.es.client.redis;
+package kafka.log.es.api;
 
-import kafka.log.es.ElasticRedisClient;
-import kafka.log.es.api.Client;
-import kafka.log.es.client.Context;
-
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
-
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
-    }
-
+public class ErrorCode {
+    public static final short OFFSET_OUT_OF_RANGE_BOUNDS = 1463;
+    public static final short STREAM_ALREADY_CLOSED = 1478;
+    public static final short EXPIRED_STREAM_EPOCH = 1489;
 }

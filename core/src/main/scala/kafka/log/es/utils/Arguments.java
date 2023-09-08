@@ -15,44 +15,20 @@
  * limitations under the License.
  */
 
-package kafka.log.es;
+package kafka.log.es.utils;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+public class Arguments {
 
-public class SliceRange {
-    @JsonProperty("s")
-    private long start = Offsets.NOOP_OFFSET;
-    @JsonProperty("e")
-    private long end = Offsets.NOOP_OFFSET;
-
-    public SliceRange() {
+    public static void check(boolean checkResult, String errorMessage) {
+        if (!checkResult) {
+            throw new IllegalArgumentException(errorMessage);
+        }
     }
 
-    public static SliceRange of(long start, long end) {
-        SliceRange sliceRange = new SliceRange();
-        sliceRange.start(start);
-        sliceRange.end(end);
-        return sliceRange;
+    public static void isNotNull(Object obj, String errorMessage) {
+        if (obj == null) {
+            throw new IllegalArgumentException(errorMessage);
+        }
     }
 
-    public long start() {
-        return start;
-    }
-
-    public void start(long start) {
-        this.start = start;
-    }
-
-    public long end() {
-        return end;
-    }
-
-    public void end(long end) {
-        this.end = end;
-    }
-
-    @Override
-    public String toString() {
-        return "[" + start + ", " + end + ']';
-    }
 }
