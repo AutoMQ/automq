@@ -17,12 +17,12 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.Stream;
+import java.util.function.Supplier;
+import kafka.log.es.api.Stream;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import kafka.log.es.FutureUtil;
 import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;

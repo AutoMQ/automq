@@ -21,7 +21,6 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 
 /**

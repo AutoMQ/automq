@@ -17,7 +17,7 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.Stream;
+import kafka.log.es.api.Stream;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
