@@ -17,12 +17,8 @@
 
 package kafka.log.s3;
 
-import java.util.function.Supplier;
-import kafka.log.es.api.Stream;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 import kafka.log.es.utils.Threads;
 import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;
@@ -70,7 +66,6 @@ public class S3Storage implements Storage {
 
     private final ScheduledExecutorService streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER);
-    private final Map<Long, Long> streamObjectCompactionStartSearchingOffsets = new ConcurrentHashMap<>();
 
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
@@ -162,28 +157,27 @@ public class S3Storage implements Storage {
     }
 
     @Override
-    public void startStreamObjectsCompactions(Supplier<List<Stream>> openedStreamIdsSupplier, Predicate<Long> predicate) {
-        streamObjectCompactionExecutor.scheduleWithFixedDelay(() -> {
-            List<Stream> openedStreams = openedStreamIdsSupplier.get();
-            openedStreams.forEach(stream -> {
-                try {
-                    long startSearchingOffset = streamObjectCompactionStartSearchingOffsets.computeIfAbsent(stream.streamId(), s -> stream.startOffset());
-                    StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream,
-                        config.s3StreamObjectCompactionMaxSize(), config.s3StreamObjectCompactionLivingTimeThreshold(),
-                        predicate
-                    );
-                    task.prepare(startSearchingOffset);
-                    streamObjectCompactionStartSearchingOffsets.put(stream.streamId(), task.getNextStartSearchingOffset());
-                    task.doCompactions().get();
-                } catch (InterruptedException | ExecutionException e) {
-                    LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
-                    if (e.getCause() instanceof StreamObjectsCompactionTask.HaltException) {
-                        LOGGER.error("halt stream objects compaction for stream {}", stream.streamId());
-                        streamObjectCompactionStartSearchingOffsets.remove(stream.streamId());
-                    }
+    public void startStreamObjectsCompactions(S3Stream stream) {
+        streamObjectCompactionExecutor.schedule(() -> {
+            try {
+                StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream,
+                    config.s3StreamObjectCompactionMaxSize(), config.s3StreamObjectCompactionLivingTimeThreshold(),
+                    v -> stream.isClosed()
+                );
+                task.prepare();
+                stream.setStartSearchingOffset(task.getNextStartSearchingOffset());
+                task.doCompactions().get();
+            } catch (InterruptedException | ExecutionException e) {
+                LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
+                if (e.getCause() instanceof StreamObjectsCompactionTask.HaltException) {
+                    LOGGER.error("halt stream objects compaction for stream {}", stream.streamId());
                 }
-            });
-        }, 60, config.s3StreamObjectCompactionTaskInterval(), TimeUnit.MINUTES);
+            } finally {
+                if (!stream.isClosed()) {
+                    startStreamObjectsCompactions(stream);
+                }
+            }
+        }, config.s3StreamObjectCompactionTaskInterval(), TimeUnit.MINUTES);
     }
 
     private void handleAppendRequest(WalWriteRequest request) {

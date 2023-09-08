@@ -102,8 +102,24 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
-        //TODO: SUPPORT
-        return CompletableFuture.completedFuture(null);
+        org.apache.kafka.common.requests.s3.CommitStreamObjectRequest.Builder wrapRequestBuilder = new org.apache.kafka.common.requests.s3.CommitStreamObjectRequest.Builder(
+                new org.apache.kafka.common.message.CommitStreamObjectRequestData()
+                        .setObjectId(request.getObjectId())
+                        .setObjectSize(request.getObjectSize())
+                        .setStreamId(request.getStreamId())
+                        .setStartOffset(request.getStartOffset())
+                        .setEndOffset(request.getEndOffset())
+                        .setSourceObjectIds(request.getSourceObjectIds()));
+        return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    return null;
+                default:
+                    LOGGER.error("Error while committing stream object: {}, code: {}", request, code);
+                    throw code.exception();
+            }
+        });
     }
 
     @Override

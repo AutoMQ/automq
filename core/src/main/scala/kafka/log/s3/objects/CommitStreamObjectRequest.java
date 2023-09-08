@@ -17,6 +17,8 @@
 
 package kafka.log.s3.objects;
 
+import java.util.List;
+
 public class CommitStreamObjectRequest {
     private long objectId;
     private long objectSize;
@@ -26,9 +28,9 @@ public class CommitStreamObjectRequest {
     /**
      * The source objects' id of the stream object.
      */
-    private long[] sourceObjectIds;
+    private List<Long> sourceObjectIds;
 
-    public CommitStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, long[] sourceObjectIds) {
+    public CommitStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.streamId = streamId;
@@ -77,11 +79,23 @@ public class CommitStreamObjectRequest {
         this.endOffset = endOffset;
     }
 
-    public long[] getSourceObjectIds() {
+    public List<Long> getSourceObjectIds() {
         return sourceObjectIds;
     }
 
-    public void setSourceObjectIds(long[] sourceObjectIds) {
+    public void setSourceObjectIds(List<Long> sourceObjectIds) {
         this.sourceObjectIds = sourceObjectIds;
+    }
+
+    @Override
+    public String toString() {
+        return "CommitStreamObjectRequest{" +
+                "objectId=" + objectId +
+                ", objectSize=" + objectSize +
+                ", streamId=" + streamId +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                ", sourceObjectIds=" + sourceObjectIds +
+                '}';
     }
 }

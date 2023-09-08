@@ -17,7 +17,6 @@
 
 package kafka.log.s3;
 
-import kafka.log.es.api.Stream;
 import java.util.List;
 import java.util.Queue;
 import kafka.log.s3.objects.ObjectManager;
@@ -35,13 +34,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class StreamObjectsCompactionTaskTest {
     private ObjectManager objectManager;
     private S3Operator s3Operator;
-    private Stream stream;
+    private S3Stream stream;
 
     @BeforeEach
     void setUp() {
         objectManager = Mockito.mock(ObjectManager.class);
         s3Operator = Mockito.mock(S3Operator.class);
-        stream = Mockito.mock(Stream.class);
+        stream = Mockito.mock(S3Stream.class);
         Mockito.when(stream.streamId()).thenReturn(1L);
         Mockito.when(stream.startOffset()).thenReturn(5L);
         Mockito.when(stream.nextOffset()).thenReturn(100L);
@@ -50,7 +49,7 @@ class StreamObjectsCompactionTaskTest {
     @Test
     void prepareCompactGroups() {
         // check if we can filter groups without limit of timestamp
-        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0, x -> true);
+        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0, x -> false);
 
         long currentTimestamp = System.currentTimeMillis();
         Mockito.when(objectManager.getStreamObjects(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt()))
@@ -72,7 +71,7 @@ class StreamObjectsCompactionTaskTest {
         assertEquals(10, task1.getNextStartSearchingOffset());
 
         // check if we can filter two groups with limit of timestamp
-        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000, x -> true);
+        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000, x -> false);
 
         currentTimestamp = System.currentTimeMillis();
         Mockito.when(objectManager.getStreamObjects(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt()))

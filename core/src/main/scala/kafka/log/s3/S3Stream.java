@@ -52,6 +52,10 @@ public class S3Stream implements Stream {
     private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
+    /**
+     * The starting searching offset for stream objects compaction tasks
+     */
+    private long startSearchingOffset;
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager) {
         this.streamId = streamId;
@@ -63,6 +67,19 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
+        this.startSearchingOffset = startOffset;
+    }
+
+    public boolean isClosed() {
+        return status.isClosed();
+    }
+
+    public long getStartSearchingOffset() {
+        return startSearchingOffset;
+    }
+
+    public void setStartSearchingOffset(long startSearchingOffset) {
+        this.startSearchingOffset = startSearchingOffset;
     }
 
 

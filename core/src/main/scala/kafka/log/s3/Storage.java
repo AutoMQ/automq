@@ -17,10 +17,6 @@
 
 package kafka.log.s3;
 
-import kafka.log.es.api.Stream;
-import java.util.List;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 
@@ -47,11 +43,9 @@ public interface Storage {
 
     /**
      * Start stream objects compactions.
-     * @param openedStreamIdsSupplier supplier of opened stream
-     * @param predicate predicate to check if stream is opened
+     * @param stream an opened stream
      */
-    void startStreamObjectsCompactions(
-        Supplier<List<Stream>> openedStreamIdsSupplier, Predicate<Long> predicate);
+    void startStreamObjectsCompactions(S3Stream stream);
 
     void close();
 }

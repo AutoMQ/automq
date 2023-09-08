@@ -347,7 +347,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             // update epoch
             streamMetadata.state = StreamState.CLOSED;
-            removeFromOpenedStreams(streamId);
             return null;
         });
     }

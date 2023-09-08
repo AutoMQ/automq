@@ -17,6 +17,7 @@
 
 package kafka.log.s3;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -26,7 +27,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import kafka.log.es.api.Stream;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
@@ -37,19 +37,23 @@ import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Stream objects compaction task.
+ * It intends to compact some stream objects with the same stream ID into one new stream object.
+ */
 public class StreamObjectsCompactionTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectsCompactionTask.class);
     private Queue<List<S3StreamObjectMetadata>> compactGroups;
     private final long compactedStreamObjectMaxSize; //= 10 * 1024 * 1024 * 1024L;
     private final long compactableStreamObjectLivingTimeInMs; // = TimeUnit.HOURS.toMillis(1);
     private long nextStartSearchingOffset; //= 0L;
-    private final Stream stream;
+    private final S3Stream stream;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
-    private final Predicate<Long> shouldHalt;
+    private final Predicate<Void> shouldHalt;
 
-    public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, Stream stream,
-        long compactedStreamObjectMaxSize, long compactableStreamObjectLivingTimeInMs, Predicate<Long> shouldHalt) {
+    public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
+        long compactedStreamObjectMaxSize, long compactableStreamObjectLivingTimeInMs, Predicate<Void> shouldHalt) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
@@ -63,13 +67,21 @@ public class StreamObjectsCompactionTask {
             new S3ObjectMetadata(metadata.objectId(), metadata.objectSize(), S3ObjectType.STREAM)
         ).collect(Collectors.toList());
 
-        if (shouldHalt.test(stream.streamId())) {
-            return CompletableFuture.failedFuture(new HaltException("halt compaction task"));
-        }
-
         long startOffset = streamObjectMetadataList.get(0).startOffset();
         long endOffset = streamObjectMetadataList.get(streamObjectMetadataList.size() - 1).endOffset();
-        long[] sourceObjectIds = streamObjectMetadataList.stream().mapToLong(S3StreamObjectMetadata::objectId).toArray();
+        List<Long> sourceObjectIds = streamObjectMetadataList
+            .stream()
+            .map(S3StreamObjectMetadata::objectId)
+            .collect(Collectors.toList());
+
+        if (shouldHalt.test(null)) {
+            return CompletableFuture.failedFuture(new HaltException("halt compaction task with stream "
+                + stream.streamId()
+                + " with offset range from "
+                + startOffset
+                + " to "
+                + endOffset));
+        }
 
         return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
             .thenCompose(objId -> {
@@ -113,8 +125,8 @@ public class StreamObjectsCompactionTask {
         return lastCompactionFuture;
     }
 
-    public void prepare(long startSearchingOffset) {
-        this.compactGroups = prepareCompactGroups(startSearchingOffset);
+    public void prepare() {
+        this.compactGroups = prepareCompactGroups(stream.getStartSearchingOffset());
     }
 
     /**
@@ -137,9 +149,9 @@ public class StreamObjectsCompactionTask {
             .collect(Collectors.toList());
         Collections.sort(streamObjects);
 
-        return filterMajorCompactGroups(streamObjects)
+        return groupContinuousObjects(streamObjects)
             .stream()
-            .map(this::filterMinorCompactGroups)
+            .map(this::groupEligibleObjects)
             .reduce(new LinkedList<>(), (acc, item) -> {
                 acc.addAll(item);
                 return acc;
@@ -175,12 +187,12 @@ public class StreamObjectsCompactionTask {
     }
 
     /**
-     * Filter major compact groups. Items in one group should have continuous offsets.
+     * Group stream objects with continuous offsets. Each group should have more than one stream object.
      *
      * @param streamObjects stream objects.
-     * @return major compact groups.
+     * @return object groups.
      */
-    private List<List<S3StreamObjectMetadata>> filterMajorCompactGroups(List<S3StreamObjectMetadata> streamObjects) {
+    private List<List<S3StreamObjectMetadata>> groupContinuousObjects(List<S3StreamObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }
@@ -209,19 +221,19 @@ public class StreamObjectsCompactionTask {
         return stackList
             .stream()
             .filter(s -> s.size() > 1)
-            .map(LinkedList::new)
+            .map(ArrayList::new)
             .collect(Collectors.toList());
     }
 
     /**
-     * Filter minor compact groups. Each group will be compacted into one new stream object.
-     * It tries to filter some groups which just have a size less than {@link #compactedStreamObjectMaxSize} and have
+     * Further split the stream object group.
+     * It tries to filter some subgroups which just have a size less than {@link #compactedStreamObjectMaxSize} and have
      * a living time more than {@link #compactableStreamObjectLivingTimeInMs}.
      *
      * @param streamObjects stream objects.
-     * @return minor compact groups.
+     * @return stream object subgroups.
      */
-    private Queue<List<S3StreamObjectMetadata>> filterMinorCompactGroups(List<S3StreamObjectMetadata> streamObjects) {
+    private Queue<List<S3StreamObjectMetadata>> groupEligibleObjects(List<S3StreamObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }

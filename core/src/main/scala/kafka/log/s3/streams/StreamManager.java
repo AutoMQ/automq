@@ -17,19 +17,13 @@
 
 package kafka.log.s3.streams;
 
-import kafka.log.es.api.Stream;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
 
 public interface StreamManager {
-    Map<Long, Stream> OPENED_STREAMS = new ConcurrentHashMap<>();
-
     /**
      * Create a new stream.
      *
@@ -83,21 +77,5 @@ public interface StreamManager {
      * @return {@link StreamOffsetRange}
      */
     CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds);
-
-    default void addToOpenedStreams(long streamId, Stream stream) {
-        OPENED_STREAMS.put(streamId, stream);
-    }
-
-    default void removeFromOpenedStreams(long streamId) {
-        OPENED_STREAMS.remove(streamId);
-    }
-
-    default List<Stream> getOpenedStreams() {
-        return new LinkedList<>(OPENED_STREAMS.values());
-    }
-
-    default boolean isStreamOpened(long streamId) {
-        return OPENED_STREAMS.containsKey(streamId);
-    }
 }
 
