@@ -17,9 +17,9 @@
 
 package kafka.log.es
 
-import kafka.log.es.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
+import kafka.log.es.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import kafka.log.es.metrics.Timer
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
@@ -306,7 +306,7 @@ class ElasticLog(val metaStream: MetaStream,
    * Directly close all streams of the log. This method may throw IOException.
    */
   def closeStreams(): Unit = {
-    try{
+    try {
       CompletableFuture.allOf(streamManager.close(), metaStream.close()).get()
     } catch {
       case e: ExecutionException =>
@@ -367,8 +367,8 @@ object ElasticLog extends Logging {
         val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
         // open partition meta stream
         val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
-            .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
-            .get()
+          .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+          .get()
         info(s"${logIdent}opened existing meta stream: stream_id=$metaStreamId")
         stream
       }
@@ -387,7 +387,7 @@ object ElasticLog extends Logging {
 
       def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
         metaMap.filter(kv => kv._1.startsWith(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX))
-            .map(kv => (kv._1.stripPrefix(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
+          .map(kv => (kv._1.stripPrefix(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
       }
 
       //load producer snapshots for this partition
@@ -474,14 +474,14 @@ object ElasticLog extends Logging {
         // We have to close streams here since this log has not been added to currentLogs yet. It will not be handled
         // by LogDirFailureChannel.
         CoreUtils.swallow({
-            if (metaStream != null) {
-                metaStream.close().get
-            }
-            if (logStreamManager != null) {
-                logStreamManager.close().get()
-            }
-            client.kvClient().delKV(java.util.Arrays.asList(key)).get()
-            }, this)
+          if (metaStream != null) {
+            metaStream.close().get
+          }
+          if (logStreamManager != null) {
+            logStreamManager.close().get()
+          }
+          client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+        }, this)
         error(s"${logIdent}failed to open elastic log, trying to close streams and delete key. Error msg: ${e.getMessage}")
         throw e
     }
@@ -525,8 +525,8 @@ object ElasticLog extends Logging {
       // Finally, destroy meta stream.
       metaStream.destroy()
     } finally {
-        // remove kv info
-        client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+      // remove kv info
+      client.kvClient().delKV(java.util.Arrays.asList(key)).get()
     }
 
     info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
@@ -534,19 +534,19 @@ object ElasticLog extends Logging {
 
   private def openStreamWithRetry(client: Client, streamId: Long, epoch: Long, logIdent: String): MetaStream = {
     client.streamClient()
-        .openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build())
-        .exceptionally(_ => client.streamClient()
-            .openStream(streamId, OpenStreamOptions.newBuilder().build()).join()
-        ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
-        .join()
+      .openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build())
+      .exceptionally(_ => client.streamClient()
+        .openStream(streamId, OpenStreamOptions.newBuilder().build()).join()
+      ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+      .join()
   }
 
   private[es] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, logIdent: String): MetaStream = {
     val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.newBuilder()
         .replicaCount(replicaCount)
         .epoch(leaderEpoch).build()
-    ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
-        .get()
+      ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+      .get()
     // save partition meta stream id relation to PM
     val streamId = metaStream.streamId()
     info(s"${logIdent}created meta stream for $key, streamId: $streamId")
@@ -567,7 +567,7 @@ object ElasticLog extends Logging {
    * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
    */
   private def createAndSaveSegment(logSegmentManager: ElasticLogSegmentManager, suffix: String = "", logIdent: String)(baseOffset: Long, dir: File,
-                                   config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+                                                                                                                       config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }

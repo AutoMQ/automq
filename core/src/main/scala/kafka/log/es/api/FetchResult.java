@@ -31,5 +31,6 @@ public interface FetchResult {
     /**
      * Free fetch result backend memory.
      */
-    default void free() {};
+    default void free() {
+    }
 }

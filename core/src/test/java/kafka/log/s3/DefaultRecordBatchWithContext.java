@@ -31,6 +31,7 @@ public class DefaultRecordBatchWithContext implements RecordBatchWithContext {
         this.recordBatch = recordBatch;
         this.baseOffset = baseOffset;
     }
+
     @Override
     public long baseOffset() {
         return baseOffset;

@@ -18,6 +18,7 @@
 package kafka.log.es;
 
 import io.netty.util.concurrent.FastThreadLocal;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**

@@ -65,10 +65,10 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
 
     public byte[] encode() {
         ByteBuffer buffer = ByteBuffer.allocate(8 + 4 + recordBatch.rawPayload().remaining())
-            .putLong(baseOffset)
-            .putInt(recordBatch.count())
-            .put(recordBatch.rawPayload().duplicate())
-            .flip();
+                .putLong(baseOffset)
+                .putInt(recordBatch.count())
+                .put(recordBatch.rawPayload().duplicate())
+                .flip();
         return buffer.array();
     }
 

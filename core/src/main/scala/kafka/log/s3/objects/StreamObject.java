@@ -17,8 +17,9 @@
 
 package kafka.log.s3.objects;
 
-import java.util.List;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
+
+import java.util.List;
 
 public class StreamObject {
     private long objectId;
@@ -82,11 +83,11 @@ public class StreamObject {
 
     public CommitWALObjectRequestData.StreamObject toStreamObjectInRequest() {
         return new CommitWALObjectRequestData.StreamObject()
-            .setStreamId(streamId)
-            .setObjectId(objectId)
-            .setObjectSize(objectSize)
-            .setStartOffset(startOffset)
-            .setEndOffset(endOffset);
+                .setStreamId(streamId)
+                .setObjectId(objectId)
+                .setObjectSize(objectSize)
+                .setStartOffset(startOffset)
+                .setEndOffset(endOffset);
     }
 
     @Override

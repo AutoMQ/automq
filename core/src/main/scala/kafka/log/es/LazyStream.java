@@ -24,14 +24,14 @@ import kafka.log.es.api.OpenStreamOptions;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.Stream;
 import kafka.log.es.api.StreamClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Lazy stream, create stream when append record.

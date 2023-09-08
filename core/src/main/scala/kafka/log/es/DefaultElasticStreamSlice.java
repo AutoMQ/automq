@@ -22,6 +22,8 @@ import kafka.log.es.api.FetchResult;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.RecordBatchWithContext;
 import kafka.log.es.api.Stream;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
+import org.apache.kafka.common.utils.Utils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -30,8 +32,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
-import org.apache.kafka.common.utils.Utils;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     /**

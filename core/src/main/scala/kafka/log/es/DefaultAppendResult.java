@@ -25,6 +25,7 @@ public class DefaultAppendResult implements AppendResult {
     public DefaultAppendResult(long baseOffset) {
         this.baseOffset = baseOffset;
     }
+
     @Override
     public long baseOffset() {
         return baseOffset;

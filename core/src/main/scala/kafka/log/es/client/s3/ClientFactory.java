@@ -17,8 +17,8 @@
 
 package kafka.log.es.client.s3;
 
-import kafka.log.es.api.Client;
 import kafka.log.es.AlwaysSuccessClient;
+import kafka.log.es.api.Client;
 import kafka.log.es.client.Context;
 import kafka.log.s3.DefaultS3Client;
 import kafka.log.s3.operator.DefaultS3Operator;

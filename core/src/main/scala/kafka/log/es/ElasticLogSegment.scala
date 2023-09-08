@@ -33,7 +33,6 @@ import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters._
 
 
-
 class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         val _log: ElasticLogFileRecords,
                         val timeIdx: ElasticTimeIndex,
@@ -117,6 +116,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   def asyncLogFlush(): CompletableFuture[Void] = {
     _log.asyncFlush()
   }
+
   def appendFromFile(records: FileRecords, start: Int): Int = {
     throw new UnsupportedOperationException()
   }
@@ -250,6 +250,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   /**
    * get appended offset. It can be used to show whether the segment contains any valid data.
+   *
    * @return appended offset
    */
   def appendedOffset: Long = _log.appendedOffset()

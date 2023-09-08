@@ -25,7 +25,8 @@ public class SliceRange {
     @JsonProperty("e")
     private long end = Offsets.NOOP_OFFSET;
 
-    public SliceRange() {}
+    public SliceRange() {
+    }
 
     public static SliceRange of(long start, long end) {
         SliceRange sliceRange = new SliceRange();

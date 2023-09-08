@@ -17,9 +17,6 @@
 
 package kafka.log.es;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import redis.clients.jedis.JedisPooled;
 import kafka.log.es.api.AppendResult;
 import kafka.log.es.api.Client;
 import kafka.log.es.api.CreateStreamOptions;
@@ -31,6 +28,9 @@ import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.RecordBatchWithContext;
 import kafka.log.es.api.Stream;
 import kafka.log.es.api.StreamClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import redis.clients.jedis.JedisPooled;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

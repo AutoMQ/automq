@@ -17,6 +17,28 @@
 
 package kafka.log.s3.memory;
 
+import kafka.log.s3.objects.CommitStreamObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectRequest;
+import kafka.log.s3.objects.CommitWALObjectResponse;
+import kafka.log.s3.objects.ObjectManager;
+import kafka.log.s3.objects.ObjectStreamRange;
+import kafka.log.s3.objects.OpenStreamMetadata;
+import kafka.log.s3.streams.StreamManager;
+import org.apache.kafka.common.errors.s3.StreamFencedException;
+import org.apache.kafka.common.errors.s3.StreamNotClosedException;
+import org.apache.kafka.common.errors.s3.StreamNotExistException;
+import org.apache.kafka.metadata.stream.ObjectUtils;
+import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import org.apache.kafka.metadata.stream.StreamState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,28 +53,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
-import kafka.log.s3.objects.CommitStreamObjectRequest;
-import kafka.log.s3.objects.CommitWALObjectRequest;
-import kafka.log.s3.objects.CommitWALObjectResponse;
-import kafka.log.s3.objects.ObjectManager;
-import kafka.log.s3.objects.ObjectStreamRange;
-import kafka.log.s3.objects.OpenStreamMetadata;
-import org.apache.kafka.common.errors.s3.StreamNotClosedException;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import kafka.log.s3.streams.StreamManager;
-import org.apache.kafka.metadata.stream.ObjectUtils;
-import org.apache.kafka.common.errors.s3.StreamFencedException;
-import org.apache.kafka.common.errors.s3.StreamNotExistException;
-import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
 

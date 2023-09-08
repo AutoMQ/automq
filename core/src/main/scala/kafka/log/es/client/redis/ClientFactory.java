@@ -17,8 +17,8 @@
 
 package kafka.log.es.client.redis;
 
-import kafka.log.es.api.Client;
 import kafka.log.es.ElasticRedisClient;
+import kafka.log.es.api.Client;
 import kafka.log.es.client.Context;
 
 public class ClientFactory {

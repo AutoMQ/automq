@@ -17,17 +17,17 @@
 
 package kafka.log.s3;
 
+import io.netty.buffer.Unpooled;
 import kafka.log.es.DefaultAppendResult;
+import kafka.log.es.FutureUtil;
+import kafka.log.es.RecordBatchWithContextWrapper;
 import kafka.log.es.api.AppendResult;
 import kafka.log.es.api.ElasticStreamClientException;
+import kafka.log.es.api.ErrorCode;
 import kafka.log.es.api.FetchResult;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.RecordBatchWithContext;
 import kafka.log.es.api.Stream;
-import kafka.log.es.api.ErrorCode;
-import io.netty.buffer.Unpooled;
-import kafka.log.es.FutureUtil;
-import kafka.log.es.RecordBatchWithContextWrapper;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.streams.StreamManager;
 import org.slf4j.Logger;

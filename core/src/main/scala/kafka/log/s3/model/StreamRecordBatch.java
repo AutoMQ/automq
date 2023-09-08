@@ -17,8 +17,8 @@
 
 package kafka.log.s3.model;
 
-import kafka.log.es.api.RecordBatch;
 import io.netty.buffer.ByteBuf;
+import kafka.log.es.api.RecordBatch;
 import kafka.log.s3.StreamRecordBatchCodec;
 
 import java.nio.ByteBuffer;

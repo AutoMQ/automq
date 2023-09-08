@@ -25,7 +25,7 @@ public class Arguments {
         }
     }
 
-    public static void isNotNull(Object obj, String errorMessage)  {
+    public static void isNotNull(Object obj, String errorMessage) {
         if (obj == null) {
             throw new IllegalArgumentException(errorMessage);
         }

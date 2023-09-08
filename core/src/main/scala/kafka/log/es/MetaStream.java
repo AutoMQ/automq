@@ -17,11 +17,16 @@
 
 package kafka.log.es;
 
+import io.netty.buffer.Unpooled;
 import kafka.log.es.api.AppendResult;
 import kafka.log.es.api.FetchResult;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.RecordBatchWithContext;
 import kafka.log.es.api.Stream;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -35,11 +40,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-
-import io.netty.buffer.Unpooled;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Meta stream is a wrapper of stream, it is used to record basic info of a topicPartition.
@@ -125,6 +125,7 @@ public class MetaStream implements Stream {
 
     /**
      * Append a batch of meta key values without trims.
+     *
      * @return a future of append result
      */
     private CompletableFuture<AppendResult> append0(MetaKeyValue kv) {
@@ -147,7 +148,7 @@ public class MetaStream implements Stream {
             trimFuture.cancel(true);
         }
         return innerStream.close()
-            .thenAccept(result -> fenced = true);
+                .thenAccept(result -> fenced = true);
     }
 
     public boolean isFenced() {
@@ -164,6 +165,7 @@ public class MetaStream implements Stream {
 
     /**
      * Replay meta stream and return a map of meta keyValues. KeyValues will be cached in metaCache.
+     *
      * @return meta keyValues map
      */
     public Map<String, Object> replay() throws IOException {

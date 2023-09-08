@@ -18,11 +18,6 @@
 package kafka.log.s3;
 
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import kafka.log.es.api.AppendResult;
 import kafka.log.es.api.CreateStreamOptions;
 import kafka.log.es.api.FetchResult;
@@ -30,19 +25,6 @@ import kafka.log.es.api.OpenStreamOptions;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.RecordBatchWithContext;
 import kafka.log.es.api.Stream;
-
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicLong;
-
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.memory.MemoryMetadataManager;
@@ -58,6 +40,23 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Tag("S3Unit")
 public class S3StreamMemoryTest {
