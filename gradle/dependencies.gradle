@@ -223,4 +223,5 @@ libs += [
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
   s3Client: "software.amazon.awssdk:s3:$versions.s3Client",
   commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
+  nettyAll: "io.netty:netty-all:$versions.netty",
 ]
