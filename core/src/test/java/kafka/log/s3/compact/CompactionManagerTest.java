@@ -26,12 +26,16 @@ import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Timeout(30)
+@Tag("S3Unit")
 public class CompactionManagerTest extends CompactionTestBase {
     private static final int BROKER0 = 0;
     private StreamMetadataManager streamMetadataManager;

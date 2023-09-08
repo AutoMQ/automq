@@ -318,6 +318,7 @@ object Defaults {
   val S3ObjectCompactionUploadConcurrency: Int = 8
   val S3ObjectCompactionExecutionScoreThreshold: Double = 0.5
   val S3ObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
+  val S3ObjectCompactionForceSplitPeriod: Int = 60 // 60min
 }
 
 object KafkaConfig {
@@ -702,6 +703,7 @@ object KafkaConfig {
   val S3ObjectCompactionUploadConcurrencyProp = "s3.object.compaction.upload.concurrency"
   val S3ObjectCompactionExecutionScoreThresholdProp = "s3.object.compaction.execution.score.threshold"
   val S3ObjectCompactionStreamSplitSizeProp = "s3.object.compaction.stream.split.size"
+  val S3ObjectCompactionForceSplitPeriodProp = "s3.object.compaction.force.split.time"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -721,6 +723,7 @@ object KafkaConfig {
   val S3ObjectCompactionUploadConcurrencyDoc = "The S3 object compaction upload concurrency."
   val S3ObjectCompactionExecutionScoreThresholdDoc = "The S3 object compaction execution score threshold."
   val S3ObjectCompactionStreamSplitSizeDoc = "The S3 object compaction stream split size threshold in Bytes."
+  val S3ObjectCompactionForceSplitPeriodDoc = "The S3 object compaction force split period in minutes."
 
   // Kafka on S3 inject end
 
@@ -1538,7 +1541,7 @@ object KafkaConfig {
       .define(S3ObjectCompactionUploadConcurrencyProp, INT, Defaults.S3ObjectCompactionUploadConcurrency, MEDIUM, S3ObjectCompactionUploadConcurrencyDoc)
       .define(S3ObjectCompactionExecutionScoreThresholdProp, DOUBLE, Defaults.S3ObjectCompactionExecutionScoreThreshold, MEDIUM, S3ObjectCompactionExecutionScoreThresholdDoc)
       .define(S3ObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3ObjectCompactionStreamSplitSize, MEDIUM, S3ObjectCompactionStreamSplitSizeDoc)
-      .define(S3CacheSizeProp, INT, 1024, MEDIUM, S3CacheSizeDoc)
+      .define(S3ObjectCompactionForceSplitPeriodProp, INT, Defaults.S3ObjectCompactionForceSplitPeriod, MEDIUM, S3ObjectCompactionForceSplitPeriodDoc)
     // Kafka on S3 inject end
   }
 
