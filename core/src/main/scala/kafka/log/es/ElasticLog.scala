@@ -291,15 +291,16 @@ class ElasticLog(val metaStream: MetaStream,
     partitionMeta.setRecoverOffset(recoveryPoint)
 
     maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
-      persistPartitionMeta()
+      CoreUtils.swallow(persistPartitionMeta(), this)
       if (modified) {
         // update log size
-        persistLogMeta()
+        CoreUtils.swallow(persistLogMeta(), this)
       }
-      checkIfMemoryMappedBufferClosed()
-      segments.close()
-      closeStreams()
+      CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
+      CoreUtils.swallow(segments.close(), this)
+      CoreUtils.swallow(closeStreams(), this)
     }
+    info("log closed");
   }
 
   /**
