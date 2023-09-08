@@ -66,6 +66,9 @@ public class CompactionManager {
         this.uploader = new CompactionUploader(objectManager, s3Operator, config);
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, executionScoreThreshold, streamSplitSize, s3Operator);
         this.executorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("object-compaction-manager"));
+    }
+
+    public void start() {
         this.executorService.scheduleWithFixedDelay(this::compact, 0, 600, TimeUnit.SECONDS);
     }
 
@@ -78,80 +81,86 @@ public class CompactionManager {
     public CompletableFuture<CompactResult> compact() {
         List<S3WALObjectMetadata> s3ObjectMetadata = this.streamMetadataManager.getWALObjects();
         try {
-            Map<Long, S3WALObjectMetadata> s3ObjectMetadataMap = s3ObjectMetadata.stream()
-                    .collect(Collectors.toMap(e -> e.getWalObject().objectId(), e -> e));
             List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(s3ObjectMetadata);
             if (compactionPlans.isEmpty()) {
                 return CompletableFuture.completedFuture(CompactResult.SKIPPED);
             }
-            CommitWALObjectRequest request = new CommitWALObjectRequest();
-            for (CompactionPlan compactionPlan : compactionPlans) {
-                List<CompletableFuture<StreamObject>> streamObjectFutureList = new ArrayList<>();
-                List<CompletableFuture<List<ObjectStreamRange>>> walObjStreamRangeFutureList = new ArrayList<>();
-                // iterate over each compaction plan
-                for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
-                    S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey()).getObjectMetadata();
-                    List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
-                    List<DataBlockReader.DataBlockIndex> blockIndices = buildBlockIndicesFromStreamDataBlock(streamDataBlocks);
-                    networkInThrottle.throttle(streamDataBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum());
-                    DataBlockReader reader = new DataBlockReader(metadata, s3Operator);
-                    reader.readBlocks(blockIndices).thenAccept(dataBlocks -> {
-                        for (int i = 0; i < blockIndices.size(); i++) {
-                            StreamDataBlock streamDataBlock = streamDataBlocks.get(i);
-                            streamDataBlock.getDataCf().complete(dataBlocks.get(i).buffer());
-                        }
-                    }).exceptionally(ex -> {
-                        LOGGER.error("read on invalid object {}, ex ", metadata.key(), ex);
-                        for (int i = 0; i < blockIndices.size(); i++) {
-                            StreamDataBlock streamDataBlock = streamDataBlocks.get(i);
-                            streamDataBlock.getDataCf().completeExceptionally(ex);
-                        }
-                        return null;
-                    });
-                }
-                for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
-                    if (compactedObject.type() == CompactionType.COMPACT) {
-                        walObjStreamRangeFutureList.add(uploader.writeWALObject(compactedObject));
-                    } else {
-                        streamObjectFutureList.add(uploader.writeStreamObject(compactedObject));
-                    }
-                }
-                // wait for all stream objects and wal object parts to be uploaded
-                try {
-                    walObjStreamRangeFutureList.stream().map(CompletableFuture::join).forEach(e -> e.forEach(request::addStreamRange));
-                    streamObjectFutureList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
-                } catch (Exception ex) {
-                    LOGGER.error("Error while uploading compaction objects", ex);
-                    uploader.reset();
-                    return CompletableFuture.failedFuture(ex);
-                }
-                compactionPlan.streamDataBlocksMap().values().forEach(e -> e.forEach(StreamDataBlock::free));
-            }
-            request.setObjectId(uploader.getWALObjectId());
-            // set wal object id to be the first object id of compacted objects
-            request.setOrderId(s3ObjectMetadata.get(0).getObjectMetadata().getObjectId());
-            request.setCompactedObjectIds(s3ObjectMetadata.stream().map(s -> s.getObjectMetadata().getObjectId()).collect(Collectors.toList()));
-            uploader.getWalObjectWriter().close().thenAccept(nil -> request.setObjectSize(uploader.getWalObjectWriter().size())).join();
-            uploader.reset();
+            CommitWALObjectRequest request = buildCompactRequest(compactionPlans, s3ObjectMetadata);
             return objectManager.commitWALObject(request).thenApply(nil -> {
                 LOGGER.info("Compaction success, WAL object id: {}, size: {}, stream object num: {}",
                         request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size());
                 return CompactResult.SUCCESS;
             });
         } catch (Exception e) {
-            LOGGER.error("Error while analyzing compaction objects", e);
+            LOGGER.error("Error while compaction objects", e);
             return CompletableFuture.failedFuture(e);
         }
 
     }
 
-    private List<DataBlockReader.DataBlockIndex> buildBlockIndicesFromStreamDataBlock(List<StreamDataBlock> streamDataBlocks) {
-        List<DataBlockReader.DataBlockIndex> blockIndices = new ArrayList<>();
-        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            blockIndices.add(new DataBlockReader.DataBlockIndex(streamDataBlock.getBlockId(), streamDataBlock.getBlockPosition(),
-                    streamDataBlock.getBlockSize(), streamDataBlock.getRecordCount()));
+    CommitWALObjectRequest buildCompactRequest(List<CompactionPlan> compactionPlans, List<S3WALObjectMetadata> s3ObjectMetadata)
+            throws IllegalArgumentException {
+        CommitWALObjectRequest request = new CommitWALObjectRequest();
+        Map<Long, S3WALObjectMetadata> s3ObjectMetadataMap = s3ObjectMetadata.stream()
+                .collect(Collectors.toMap(e -> e.getWalObject().objectId(), e -> e));
+        for (CompactionPlan compactionPlan : compactionPlans) {
+            // iterate over each compaction plan
+            for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
+                S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey()).getObjectMetadata();
+                List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
+                List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocks);
+                networkInThrottle.throttle(streamDataBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum());
+                DataBlockReader reader = new DataBlockReader(metadata, s3Operator);
+                reader.readBlocks(blockIndices).thenAccept(dataBlocks -> {
+                    for (int i = 0; i < blockIndices.size(); i++) {
+                        StreamDataBlock streamDataBlock = streamDataBlocks.get(i);
+                        streamDataBlock.getDataCf().complete(dataBlocks.get(i).buffer());
+                    }
+                }).exceptionally(ex -> {
+                    LOGGER.error("read on invalid object {}, ex ", metadata.key(), ex);
+                    for (int i = 0; i < blockIndices.size(); i++) {
+                        StreamDataBlock streamDataBlock = streamDataBlocks.get(i);
+                        streamDataBlock.getDataCf().completeExceptionally(ex);
+                    }
+                    return null;
+                });
+            }
+            List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
+            CompletableFuture<CompletableFuture<Void>> walObjectCF = null;
+            List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
+            for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                if (compactedObject.type() == CompactionType.COMPACT) {
+                    objectStreamRanges = CompactionUtils.buildObjectStreamRange(compactedObject);
+                    walObjectCF = uploader.writeWALObject(compactedObject);
+                } else {
+                    streamObjectCFList.add(uploader.writeStreamObject(compactedObject));
+                }
+            }
+            // wait for all stream objects and wal object part to be uploaded
+            try {
+                if (walObjectCF != null) {
+                    // wait for all blocks to be uploaded or added to waiting list
+                    CompletableFuture<Void> writeObjectCF = walObjectCF.join();
+                    // force upload all blocks still in waiting list
+                    uploader.forceUploadWAL();
+                    // wait for all blocks to be uploaded
+                    writeObjectCF.join();
+                    objectStreamRanges.forEach(request::addStreamRange);
+                }
+                streamObjectCFList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
+            } catch (Exception ex) {
+                LOGGER.error("Error while uploading compaction objects", ex);
+                uploader.reset();
+                throw new IllegalArgumentException("Error while uploading compaction objects", ex);
+            }
+//            compactionPlan.streamDataBlocksMap().values().forEach(e -> e.forEach(StreamDataBlock::free));
         }
-        return blockIndices;
+        request.setObjectId(uploader.getWALObjectId());
+        // set wal object id to be the first object id of compacted objects
+        request.setOrderId(s3ObjectMetadata.get(0).getObjectMetadata().getObjectId());
+        request.setCompactedObjectIds(s3ObjectMetadata.stream().map(s -> s.getObjectMetadata().getObjectId()).collect(Collectors.toList()));
+        request.setObjectSize(uploader.completeWAL());
+        uploader.reset();
+        return request;
     }
-
 }

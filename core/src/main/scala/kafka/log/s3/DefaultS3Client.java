@@ -66,6 +66,7 @@ public class DefaultS3Client implements Client {
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.metadataManager, this.operator);
+        this.compactionManager.start();
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage);
         this.kvClient = new ControllerKVClient(this.requestSender);

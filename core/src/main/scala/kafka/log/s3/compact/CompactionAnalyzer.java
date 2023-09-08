@@ -155,7 +155,7 @@ public class CompactionAnalyzer {
                 List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
                 S3WALObject s3WALObject = s3WALObjectMap.get(streamDataBlocks.get(0).getObjectId());
                 // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
-                for (StreamDataBlock streamDataBlock: streamDataBlocks) {
+                for (StreamDataBlock streamDataBlock : streamDataBlocks) {
                     if (s3WALObject.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
                         validStreamDataBlocks.add(streamDataBlock);
                     }
