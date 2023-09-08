@@ -17,8 +17,6 @@
 
 package kafka.log.s3;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import kafka.log.es.utils.Threads;
 import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;
@@ -154,30 +152,6 @@ public class S3Storage implements Storage {
             callbackSequencer.tryFree(streamId);
         });
         return cf;
-    }
-
-    @Override
-    public void startStreamObjectsCompactions(S3Stream stream) {
-        streamObjectCompactionExecutor.schedule(() -> {
-            try {
-                StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream,
-                    config.s3StreamObjectCompactionMaxSize(), config.s3StreamObjectCompactionLivingTimeThreshold(),
-                    v -> stream.isClosed()
-                );
-                task.prepare();
-                stream.setStartSearchingOffset(task.getNextStartSearchingOffset());
-                task.doCompactions().get();
-            } catch (InterruptedException | ExecutionException e) {
-                LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
-                if (e.getCause() instanceof StreamObjectsCompactionTask.HaltException) {
-                    LOGGER.error("halt stream objects compaction for stream {}", stream.streamId());
-                }
-            } finally {
-                if (!stream.isClosed()) {
-                    startStreamObjectsCompactions(stream);
-                }
-            }
-        }, config.s3StreamObjectCompactionTaskInterval(), TimeUnit.MINUTES);
     }
 
     private void handleAppendRequest(WalWriteRequest request) {

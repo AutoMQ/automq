@@ -41,11 +41,5 @@ public interface Storage {
      */
     CompletableFuture<Void> forceUpload(long streamId);
 
-    /**
-     * Start stream objects compactions.
-     * @param stream an opened stream
-     */
-    void startStreamObjectsCompactions(S3Stream stream);
-
     void close();
 }

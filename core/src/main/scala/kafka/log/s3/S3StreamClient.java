@@ -17,11 +17,23 @@
 
 package kafka.log.s3;
 
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import kafka.log.es.api.CreateStreamOptions;
 import kafka.log.es.api.OpenStreamOptions;
 import kafka.log.es.api.Stream;
 import kafka.log.es.api.StreamClient;
+import kafka.log.es.utils.Threads;
+import kafka.log.s3.objects.ObjectManager;
+import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.StreamManager;
+import kafka.server.KafkaConfig;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,13 +43,24 @@ import static kafka.log.es.FutureUtil.exec;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
+    private final ScheduledExecutorService streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
+        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER);
+    private final Map<Long, S3Stream> openedStreams;
 
     private final StreamManager streamManager;
     private final Storage storage;
+    private final ObjectManager objectManager;
+    private final S3Operator s3Operator;
+    private final KafkaConfig config;
 
-    public S3StreamClient(StreamManager streamManager, Storage storage) {
+    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager, S3Operator s3Operator, KafkaConfig config) {
         this.streamManager = streamManager;
         this.storage = storage;
+        this.openedStreams = new ConcurrentHashMap<>();
+        this.objectManager = objectManager;
+        this.s3Operator = s3Operator;
+        this.config = config;
+        startStreamObjectsCompactions();
     }
 
     @Override
@@ -51,15 +74,52 @@ public class S3StreamClient implements StreamClient {
         return exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
     }
 
+    /**
+     * Start stream objects compactions.
+     */
+    private void startStreamObjectsCompactions() {
+        streamObjectCompactionExecutor.scheduleWithFixedDelay(() -> {
+            List<S3Stream> operationStreams = new LinkedList<>(openedStreams.values());
+            operationStreams.forEach(stream -> {
+                if (stream.isClosed()) {
+                    return;
+                }
+                try {
+                    stream.triggerCompactionTask();
+                } catch (InterruptedException | ExecutionException e) {
+                    LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
+                    if (e.getCause() instanceof StreamObjectsCompactionTask.HaltException) {
+                        LOGGER.error("halt stream objects compaction for stream {}", stream.streamId());
+                    }
+                } catch (Throwable e) {
+                    LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
+                }
+            });
+        }, 60, config.s3StreamObjectCompactionTaskInterval(), TimeUnit.MINUTES);
+    }
+
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getNextOffset(),
-                        storage, streamManager);
-                    storage.startStreamObjectsCompactions(stream);
+                        storage, streamManager, id -> {
+                            openedStreams.remove(id);
+                            return null;
+                        });
+                    stream.initCompactionTask(generateStreamObjectsCompactionTask(stream));
+                    openedStreams.put(streamId, stream);
                     return stream;
                 });
+    }
+
+    private StreamObjectsCompactionTask generateStreamObjectsCompactionTask(S3Stream stream) {
+        return new StreamObjectsCompactionTask(objectManager, s3Operator, stream,
+            config.s3StreamObjectCompactionMaxSize(), config.s3StreamObjectCompactionLivingTimeThreshold());
+    }
+
+    public void shutdown() {
+        streamObjectCompactionExecutor.shutdown();
     }
 }

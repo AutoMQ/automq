@@ -49,7 +49,7 @@ class StreamObjectsCompactionTaskTest {
     @Test
     void prepareCompactGroups() {
         // check if we can filter groups without limit of timestamp
-        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0, x -> false);
+        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0);
 
         long currentTimestamp = System.currentTimeMillis();
         Mockito.when(objectManager.getStreamObjects(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt()))
@@ -71,7 +71,7 @@ class StreamObjectsCompactionTaskTest {
         assertEquals(10, task1.getNextStartSearchingOffset());
 
         // check if we can filter two groups with limit of timestamp
-        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000, x -> false);
+        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000);
 
         currentTimestamp = System.currentTimeMillis();
         Mockito.when(objectManager.getStreamObjects(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt()))

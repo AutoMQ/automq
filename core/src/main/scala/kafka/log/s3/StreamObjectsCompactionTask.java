@@ -25,7 +25,6 @@ import java.util.Queue;
 import java.util.Stack;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
@@ -44,22 +43,20 @@ import org.slf4j.LoggerFactory;
 public class StreamObjectsCompactionTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectsCompactionTask.class);
     private Queue<List<S3StreamObjectMetadata>> compactGroups;
-    private final long compactedStreamObjectMaxSize; //= 10 * 1024 * 1024 * 1024L;
-    private final long compactableStreamObjectLivingTimeInMs; // = TimeUnit.HOURS.toMillis(1);
-    private long nextStartSearchingOffset; //= 0L;
+    private final long compactedStreamObjectMaxSize;
+    private final long compactableStreamObjectLivingTimeInMs;
+    private long nextStartSearchingOffset;
     private final S3Stream stream;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
-    private final Predicate<Void> shouldHalt;
-
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-        long compactedStreamObjectMaxSize, long compactableStreamObjectLivingTimeInMs, Predicate<Void> shouldHalt) {
+        long compactedStreamObjectMaxSize, long compactableStreamObjectLivingTimeInMs) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
         this.compactedStreamObjectMaxSize = compactedStreamObjectMaxSize;
         this.compactableStreamObjectLivingTimeInMs = compactableStreamObjectLivingTimeInMs;
-        this.shouldHalt = shouldHalt;
+        this.nextStartSearchingOffset = stream.startOffset();
     }
 
     private CompletableFuture<Void> doCompaction(List<S3StreamObjectMetadata> streamObjectMetadataList) {
@@ -74,7 +71,7 @@ public class StreamObjectsCompactionTask {
             .map(S3StreamObjectMetadata::objectId)
             .collect(Collectors.toList());
 
-        if (shouldHalt.test(null)) {
+        if (stream.isClosed()) {
             return CompletableFuture.failedFuture(new HaltException("halt compaction task with stream "
                 + stream.streamId()
                 + " with offset range from "
@@ -126,7 +123,7 @@ public class StreamObjectsCompactionTask {
     }
 
     public void prepare() {
-        this.compactGroups = prepareCompactGroups(stream.getStartSearchingOffset());
+        this.compactGroups = prepareCompactGroups(this.nextStartSearchingOffset);
     }
 
     /**
@@ -161,6 +158,9 @@ public class StreamObjectsCompactionTask {
     public long getNextStartSearchingOffset() {
         return nextStartSearchingOffset;
     }
+
+    // no operation for now.
+    public void close() {}
 
     /**
      * Calculate next start searching offset. It will be used for next compaction task.

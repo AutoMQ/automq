@@ -18,6 +18,8 @@
 package kafka.log.s3;
 
 import io.netty.buffer.Unpooled;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 import kafka.log.es.DefaultAppendResult;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;
@@ -52,12 +54,14 @@ public class S3Stream implements Stream {
     private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
-    /**
-     * The starting searching offset for stream objects compaction tasks
-     */
-    private long startSearchingOffset;
+    private final Function<Long, Void> closeHook;
+    private StreamObjectsCompactionTask streamObjectsCompactionTask;
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager) {
+        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, x -> null);
+    }
+
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager, Function<Long, Void> closeHook) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -67,21 +71,25 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
-        this.startSearchingOffset = startOffset;
+        this.closeHook = closeHook;
+    }
+
+    public void initCompactionTask(StreamObjectsCompactionTask streamObjectsCompactionTask) {
+        this.streamObjectsCompactionTask = streamObjectsCompactionTask;
+    }
+
+    public void triggerCompactionTask() throws ExecutionException, InterruptedException {
+        if (streamObjectsCompactionTask == null) {
+            throw new RuntimeException("stream objects compaction task is null");
+        }
+
+        streamObjectsCompactionTask.prepare();
+        streamObjectsCompactionTask.doCompactions().get();
     }
 
     public boolean isClosed() {
         return status.isClosed();
     }
-
-    public long getStartSearchingOffset() {
-        return startSearchingOffset;
-    }
-
-    public void setStartSearchingOffset(long startSearchingOffset) {
-        this.startSearchingOffset = startSearchingOffset;
-    }
-
 
     @Override
     public long streamId() {
@@ -175,6 +183,8 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> close0() {
         status.markClosed();
+        streamObjectsCompactionTask.close();
+        closeHook.apply(streamId);
         return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
@@ -185,6 +195,8 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> destroy0() {
         status.markDestroy();
+        streamObjectsCompactionTask.close();
+        closeHook.apply(streamId);
         startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);
     }
