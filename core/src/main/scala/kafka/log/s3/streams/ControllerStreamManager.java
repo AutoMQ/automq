@@ -114,6 +114,7 @@ public class ControllerStreamManager implements StreamManager {
             LOGGER.info("close stream {} response: {}", streamId, resp);
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
+                    removeFromOpenedStreams(streamId);
                     return null;
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:

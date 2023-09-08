@@ -28,6 +28,15 @@ public class CommitStreamObjectRequest {
      */
     private long[] sourceObjectIds;
 
+    public CommitStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, long[] sourceObjectIds) {
+        this.objectId = objectId;
+        this.objectSize = objectSize;
+        this.streamId = streamId;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+        this.sourceObjectIds = sourceObjectIds;
+    }
+
     public long getObjectId() {
         return objectId;
     }

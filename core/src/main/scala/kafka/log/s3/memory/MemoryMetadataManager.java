@@ -31,6 +31,7 @@ import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -210,7 +211,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
-        return null;
+        //TODO: SUPPORT
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -264,6 +266,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             LOGGER.error("Error in getObjects", e);
             return Collections.emptyList();
         }
+    }
+
+    @Override
+    public List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        return Collections.emptyList();
     }
 
     @Override
@@ -340,6 +347,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             // update epoch
             streamMetadata.state = StreamState.CLOSED;
+            removeFromOpenedStreams(streamId);
             return null;
         });
     }

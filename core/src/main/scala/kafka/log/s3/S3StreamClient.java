@@ -38,6 +38,7 @@ public class S3StreamClient implements StreamClient {
     public S3StreamClient(StreamManager streamManager, Storage storage) {
         this.streamManager = streamManager;
         this.storage = storage;
+        this.storage.startStreamObjectsCompactions(streamManager::getOpenedStreams, streamManager::isStreamOpened);
     }
 
     @Override
@@ -53,9 +54,13 @@ public class S3StreamClient implements StreamClient {
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         return streamManager.openStream(streamId, epoch).
-                thenApply(metadata -> new S3Stream(
+                thenApply(metadata -> {
+                    S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getNextOffset(),
-                        storage, streamManager));
+                        storage, streamManager);
+                    streamManager.addToOpenedStreams(streamId, stream);
+                    return stream;
+                });
     }
 }

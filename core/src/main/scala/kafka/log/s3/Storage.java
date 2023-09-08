@@ -17,6 +17,10 @@
 
 package kafka.log.s3;
 
+import com.automq.elasticstream.client.api.Stream;
+import java.util.List;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import kafka.log.s3.cache.ReadDataBlock;
 import kafka.log.s3.model.StreamRecordBatch;
 
@@ -40,6 +44,14 @@ public interface Storage {
      * Force stream record in WAL upload to s3
      */
     CompletableFuture<Void> forceUpload(long streamId);
+
+    /**
+     * Start stream objects compactions.
+     * @param openedStreamIdsSupplier supplier of opened stream
+     * @param predicate predicate to check if stream is opened
+     */
+    void startStreamObjectsCompactions(
+        Supplier<List<Stream>> openedStreamIdsSupplier, Predicate<Long> predicate);
 
     void close();
 }

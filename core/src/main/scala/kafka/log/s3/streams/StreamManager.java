@@ -17,13 +17,18 @@
 
 package kafka.log.s3.streams;
 
+import com.automq.elasticstream.client.api.Stream;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 public interface StreamManager {
+    final Map<Long, Stream> openedStreams = new ConcurrentHashMap<>();
 
     /**
      * Create a new stream.
@@ -71,12 +76,28 @@ public interface StreamManager {
 
     /**
      * Get streams offset.
-     * <p>
+     *
      * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
      *
      * @param streamIds stream ids.
      * @return {@link StreamOffsetRange}
      */
     CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds);
+
+    default void addToOpenedStreams(long streamId, Stream stream) {
+        openedStreams.put(streamId, stream);
+    }
+
+    default void removeFromOpenedStreams(long streamId) {
+        openedStreams.remove(streamId);
+    }
+
+    default List<Stream> getOpenedStreams() {
+        return new LinkedList<>(openedStreams.values());
+    }
+
+    default boolean isStreamOpened(long streamId) {
+        return openedStreams.containsKey(streamId);
+    }
 }
 

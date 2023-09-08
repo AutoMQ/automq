@@ -17,6 +17,8 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.Objects;
+
 public class S3StreamObjectMetadata implements Comparable<S3StreamObjectMetadata> {
     private final S3StreamObject s3StreamObject;
     private final long timestamp;
@@ -42,6 +44,10 @@ public class S3StreamObjectMetadata implements Comparable<S3StreamObjectMetadata
         return s3StreamObject.objectId();
     }
 
+    public long objectSize() {
+        return s3StreamObject.objectSize();
+    }
+
     public long timestamp() {
         return timestamp;
     }
@@ -49,5 +55,18 @@ public class S3StreamObjectMetadata implements Comparable<S3StreamObjectMetadata
     @Override
     public int compareTo(S3StreamObjectMetadata o) {
         return s3StreamObject.streamOffsetRange().compareTo(o.s3StreamObject.streamOffsetRange());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(s3StreamObject, timestamp);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof S3StreamObjectMetadata)) return false;
+        S3StreamObjectMetadata that = (S3StreamObjectMetadata) o;
+        return s3StreamObject.equals(that.s3StreamObject) && timestamp == that.timestamp;
     }
 }
