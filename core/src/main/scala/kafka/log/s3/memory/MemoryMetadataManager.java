@@ -60,7 +60,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private static final int MOCK_BROKER_ID = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(MemoryMetadataManager.class);
     private final EventDriver eventDriver;
-    private volatile long nextAssignedObjectId = 0;
+    private final AtomicLong nextAssignedObjectId = new AtomicLong(0L);
     private final Map<Long/*objectId*/, S3Object> objectsMetadata;
     private final AtomicLong nextAssignedStreamId = new AtomicLong(0L);
     private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
@@ -134,13 +134,14 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         return this.submitEvent(() -> {
-            long objectRangeStart = this.nextAssignedObjectId;
+            List<Long> objectIds = new ArrayList<>();
             for (int i = 0; i < count; i++) {
-                long objectId = this.nextAssignedObjectId++;
+                long objectId = this.nextAssignedObjectId.getAndIncrement();
+                objectIds.add(objectId);
                 S3Object object = prepareObject(objectId, ttl);
                 this.objectsMetadata.put(objectId, object);
             }
-            return objectRangeStart;
+            return objectIds.get(0);
         });
     }
 
@@ -168,7 +169,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
                     k -> new MemoryBrokerWALMetadata(k));
             Map<Long, List<StreamOffsetRange>> index = new HashMap<>();
-            streamRanges.stream().forEach(range -> {
+            streamRanges.forEach(range -> {
                 long streamId = range.getStreamId();
                 long startOffset = range.getStartOffset();
                 long endOffset = range.getEndOffset();
@@ -381,7 +382,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
 
         public void start() {
-            this.service.submit(this::run);
+            this.service.submit(this);
         }
 
         public void stop() {

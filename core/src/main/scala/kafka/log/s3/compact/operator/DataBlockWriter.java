@@ -25,11 +25,11 @@ import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
 import org.apache.kafka.metadata.stream.ObjectUtils;
 
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockWriter {
@@ -48,9 +48,13 @@ public class DataBlockWriter {
         String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.partSizeThreshold = partSizeThreshold;
         waitingUploadBlocks = new LinkedList<>();
-        waitingUploadBlockCfs = new HashMap<>();
+        waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
         writer = s3Operator.writer(objectKey);
+    }
+
+    public long getObjectId() {
+        return objectId;
     }
 
     public CompletableFuture<Void> write(StreamDataBlock dataBlock) {
@@ -59,21 +63,26 @@ public class DataBlockWriter {
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
         if (waitingUploadSize >= partSizeThreshold) {
-            CompositeByteBuf partBuf = Unpooled.compositeBuffer();
-            for (StreamDataBlock block : waitingUploadBlocks) {
-                partBuf.addComponent(true, dataBlock.getDataCf().join());
-                completedBlocks.add(block);
-                nextDataBlockPosition += block.getBlockSize();
-            }
-            List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
-            writer.write(partBuf).thenAccept(v -> {
-                for (StreamDataBlock block : blocks) {
-                    waitingUploadBlockCfs.get(block).complete(null);
-                }
-            });
-            waitingUploadBlocks.clear();
+            uploadWaitingList();
         }
         return writeCf;
+    }
+
+    public void uploadWaitingList() {
+        CompositeByteBuf partBuf = Unpooled.compositeBuffer();
+        for (StreamDataBlock block : waitingUploadBlocks) {
+            partBuf.addComponent(true, block.getDataCf().join());
+            completedBlocks.add(block);
+            nextDataBlockPosition += block.getBlockSize();
+        }
+        List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
+        writer.write(partBuf).thenAccept(v -> {
+            for (StreamDataBlock block : blocks) {
+                waitingUploadBlockCfs.get(block).complete(null);
+                waitingUploadBlockCfs.remove(block);
+            }
+        });
+        waitingUploadBlocks.clear();
     }
 
     public CompletableFuture<Void> close() {

@@ -19,8 +19,8 @@ package kafka.log.s3.compact.objects;
 
 import io.netty.buffer.ByteBuf;
 
-import java.util.Objects;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public class StreamDataBlock {
