@@ -41,9 +41,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
   elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
+
   def confirmOffset(): LogOffsetMetadata = {
     elasticLog.confirmOffset.get()
   }
+
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
     val deletedSegments = elasticLog.replaceSegments(newSegments, oldSegments)
     deleteProducerSnapshots(deletedSegments, asyncDelete = true)
@@ -75,7 +77,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
   // only for testing
   private[log] def removeAndDeleteSegments(segmentsToDelete: Iterable[LogSegment],
-      asyncDelete: Boolean): Unit = {
+                                           asyncDelete: Boolean): Unit = {
     elasticLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete, LogDeletion(elasticLog))
   }
 
@@ -169,8 +171,8 @@ object ElasticUnifiedLog extends Logging {
    * @return The new LeaderEpochFileCache instance (if created), none otherwise
    */
   private[log] def maybeCreateLeaderEpochCache(topicPartition: TopicPartition,
-      recordVersion: RecordVersion,
-      leaderEpochCheckpoint: ElasticLeaderEpochCheckpoint): Option[LeaderEpochFileCache] = {
+                                               recordVersion: RecordVersion,
+                                               leaderEpochCheckpoint: ElasticLeaderEpochCheckpoint): Option[LeaderEpochFileCache] = {
 
     def newLeaderEpochFileCache(): LeaderEpochFileCache = new LeaderEpochFileCache(topicPartition, leaderEpochCheckpoint)
 

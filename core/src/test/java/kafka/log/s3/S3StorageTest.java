@@ -36,9 +36,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Collections;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -132,7 +132,7 @@ public class S3StorageTest {
 
     @Test
     public void testUploadWALObject_sequence() throws ExecutionException, InterruptedException, TimeoutException {
-        List<CompletableFuture<Long>> objectIdCfList = new LinkedList<>();
+        List<CompletableFuture<Long>> objectIdCfList = new CopyOnWriteArrayList<>();
         doAnswer(invocation -> {
             CompletableFuture<Long> objectIdCf = new CompletableFuture<>();
             objectIdCfList.add(objectIdCf);
@@ -152,7 +152,7 @@ public class S3StorageTest {
         // sequence get objectId
         verify(objectManager, timeout(1000).times(1)).prepareObject(anyInt(), anyLong());
 
-        List<CompletableFuture<CommitWALObjectResponse>> commitCfList = new LinkedList<>();
+        List<CompletableFuture<CommitWALObjectResponse>> commitCfList = new CopyOnWriteArrayList<>();
         doAnswer(invocation -> {
             CompletableFuture<CommitWALObjectResponse> cf = new CompletableFuture<>();
             commitCfList.add(cf);

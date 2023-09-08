@@ -27,20 +27,24 @@ public class S3StreamObject {
 
     private final long objectSize;
 
-    private final StreamOffsetRange streamIndex;
+    private final StreamOffsetRange streamOffsetRange;
 
     public S3StreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {
         this.objectId = objectId;
         this.objectSize = objectSize;
-        this.streamIndex = new StreamOffsetRange(streamId, startOffset, endOffset);
+        this.streamOffsetRange = new StreamOffsetRange(streamId, startOffset, endOffset);
     }
 
-    public StreamOffsetRange streamIndex() {
-        return streamIndex;
+    public StreamOffsetRange streamOffsetRange() {
+        return streamOffsetRange;
     }
 
     public long objectId() {
         return objectId;
+    }
+
+    public long objectSize() {
+        return objectSize;
     }
 
     public S3ObjectType objectType() {
@@ -50,9 +54,9 @@ public class S3StreamObject {
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
-            .setStreamId(streamIndex.getStreamId())
-            .setStartOffset(streamIndex.getStartOffset())
-            .setEndOffset(streamIndex.getEndOffset()), (short) 0);
+            .setStreamId(streamOffsetRange.getStreamId())
+            .setStartOffset(streamOffsetRange.getStartOffset())
+            .setEndOffset(streamOffsetRange.getEndOffset()), (short) 0);
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {

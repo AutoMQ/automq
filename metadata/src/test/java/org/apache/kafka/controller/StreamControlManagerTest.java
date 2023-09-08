@@ -29,6 +29,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
@@ -271,9 +273,9 @@ public class StreamControlManagerTest {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
-                return ControllerResult.of(Collections.emptyList(), false);
+                return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
             }
-            return ControllerResult.of(Collections.emptyList(), true);
+            return ControllerResult.of(Collections.emptyList(), Errors.NONE);
         });
         // 1. create and open stream_0
         CreateStreamRequestData request0 = new CreateStreamRequestData();
@@ -374,7 +376,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalCompacted() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -447,7 +449,8 @@ public class StreamControlManagerTest {
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
 
-        // 6. commit a second level wal object which compact wal_0 and wal_1
+        // 6. commit an invalid wal object which contains the destroyed or not exist wal object
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         List<ObjectStreamRange> streamRanges2 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -465,12 +468,25 @@ public class StreamControlManagerTest {
             .setBrokerId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
-            .setCompactedObjectIds(List.of(0L, 1L));
+            .setCompactedObjectIds(List.of(0L, 1L, 10L));
         ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result6.response().errorCode());
+        assertEquals(0, result6.records().size());
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 7. commit a second level wal object which compact wal_0 and wal_1
+        commitRequest2 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2)
+            .setCompactedObjectIds(List.of(0L, 1L));
+        result6 = manager.commitWALObject(commitRequest2);
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         replay(manager, result6.records());
 
-        // 7. fetch range end offset
+        // 8. fetch range end offset
         streamsOffset = manager.getStreamsOffset(request);
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
@@ -480,15 +496,16 @@ public class StreamControlManagerTest {
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
 
-        // 8. verify compacted wal objects is removed
+        // 9. verify compacted wal objects is removed
         assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
         assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).objectId());
         assertEquals(0, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).orderId());
+
     }
 
     @Test
     public void testCommitWalWithStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -534,6 +551,109 @@ public class StreamControlManagerTest {
 
         // 4. verify stream object is added
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+    }
+
+    @Test
+    public void testCommitStreamObject() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 1. create and open stream_0 and stream_1
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        // 2. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
+        List<ObjectStreamRange> streamRanges0 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L));
+        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(1L)
+                    .setObjectSize(999)
+                    .setStartOffset(0L)
+                    .setEndOffset(200L)
+            ));
+        ControllerResult<CommitWALObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result0.response().errorCode());
+        replay(manager, result0.records());
+
+        // 3. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
+        List<ObjectStreamRange> streamRanges1 = List.of(
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100L)
+                .setEndOffset(200L));
+        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+            .setObjectId(2L)
+            .setOrderId(1L)
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(3L)
+                    .setObjectSize(999)
+                    .setStartOffset(200L)
+                    .setEndOffset(400L)
+            ));
+        ControllerResult<CommitWALObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
+        assertEquals(Errors.NONE.code(), result1.response().errorCode());
+        replay(manager, result1.records());
+
+        // 4. compact these two stream objects
+        CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
+            .setObjectId(4L)
+            .setStreamId(STREAM1)
+            .setStartOffset(0L)
+            .setEndOffset(400L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(1L, 3L));
+        ControllerResult<CommitStreamObjectResponseData> result2 = manager.commitStreamObject(streamObjectRequest);
+        assertEquals(Errors.NONE.code(), result2.response().errorCode());
+        replay(manager, result2.records());
+
+        // 5. fetch stream offset range
+        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
+            .setStreamIds(List.of(STREAM0, STREAM1));
+        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        assertEquals(2, streamsOffset.streamsOffset().size());
+        assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
+        assertEquals(200L, streamsOffset.streamsOffset().get(0).endOffset());
+        assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
+        assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
+        assertEquals(400L, streamsOffset.streamsOffset().get(1).endOffset());
+
+        // 6. compact a stream object from invalid source object
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
+        streamObjectRequest = new CommitStreamObjectRequestData()
+            .setObjectId(5L)
+            .setStreamId(STREAM1)
+            .setStartOffset(400L)
+            .setEndOffset(1000L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(10L));
+        result2 = manager.commitStreamObject(streamObjectRequest);
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result2.response().errorCode());
+        replay(manager, result2.records());
+
+        // 6. verify stream objects
+        assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+        assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
+        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getStartOffset());
+        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());
     }
 
     private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {
@@ -586,7 +706,7 @@ public class StreamControlManagerTest {
                 case S3_STREAM_OBJECT_RECORD:
                     manager.replay((S3StreamObjectRecord) message);
                     break;
-                case REMOVE_S3_OBJECT_RECORD:
+                case REMOVE_S3_STREAM_OBJECT_RECORD:
                     manager.replay((RemoveS3StreamObjectRecord) message);
                     break;
                 default:

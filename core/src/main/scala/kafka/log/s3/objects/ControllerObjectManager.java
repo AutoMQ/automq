@@ -75,18 +75,18 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
         org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder wrapRequestBuilder = new org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder(
-            new CommitWALObjectRequestData()
-                .setBrokerId(config.brokerId())
-                .setOrderId(request.getOrderId())
-                .setObjectId(request.getObjectId())
-                .setObjectSize(request.getObjectSize())
-                .setObjectStreamRanges(request.getStreamRanges()
-                    .stream()
-                    .map(ObjectStreamRange::toObjectStreamRangeInRequest).collect(Collectors.toList()))
-                .setStreamObjects(request.getStreamObjects()
-                    .stream()
-                    .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList()))
-                .setCompactedObjectIds(request.getCompactedObjectIds()));
+                new CommitWALObjectRequestData()
+                        .setBrokerId(config.brokerId())
+                        .setOrderId(request.getOrderId())
+                        .setObjectId(request.getObjectId())
+                        .setObjectSize(request.getObjectSize())
+                        .setObjectStreamRanges(request.getStreamRanges()
+                                .stream()
+                                .map(ObjectStreamRange::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+                        .setStreamObjects(request.getStreamObjects()
+                                .stream()
+                                .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList()))
+                        .setCompactedObjectIds(request.getCompactedObjectIds()));
         return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {

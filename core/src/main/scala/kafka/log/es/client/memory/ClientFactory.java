@@ -17,10 +17,10 @@
 
 package kafka.log.es.client.memory;
 
-import com.automq.elasticstream.client.api.Client;
-import kafka.log.es.client.Context;
 import kafka.log.es.AlwaysSuccessClient;
 import kafka.log.es.MemoryClient;
+import kafka.log.es.api.Client;
+import kafka.log.es.client.Context;
 
 public class ClientFactory {
 

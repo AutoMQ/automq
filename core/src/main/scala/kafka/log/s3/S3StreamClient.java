@@ -17,10 +17,10 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.CreateStreamOptions;
-import com.automq.elasticstream.client.api.OpenStreamOptions;
-import com.automq.elasticstream.client.api.Stream;
-import com.automq.elasticstream.client.api.StreamClient;
+import kafka.log.es.api.CreateStreamOptions;
+import kafka.log.es.api.OpenStreamOptions;
+import kafka.log.es.api.Stream;
+import kafka.log.es.api.StreamClient;
 import kafka.log.s3.streams.StreamManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

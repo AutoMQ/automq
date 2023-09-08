@@ -17,18 +17,18 @@
 
 package kafka.log.es.client;
 
-import com.automq.elasticstream.client.api.Client;
+import kafka.log.es.api.Client;
 
 import java.lang.reflect.Method;
 
 public class ClientFactoryProxy {
-    private static final String PROTOCOL_SEPERATOR = ":";
+    private static final String PROTOCOL_SEPARATOR = ":";
     private static final String FACTORY_CLASS_FORMAT = "kafka.log.es.client.%s.ClientFactory";
 
     public static Client get(Context context) {
         String endpoint = context.config.elasticStreamEndpoint();
-        String protocal = endpoint.split(PROTOCOL_SEPERATOR)[0];
-        String className = String.format(FACTORY_CLASS_FORMAT, protocal);
+        String protocol = endpoint.split(PROTOCOL_SEPARATOR)[0];
+        String className = String.format(FACTORY_CLASS_FORMAT, protocol);
         try {
             Class<?> clazz = Class.forName(className);
             Method method = clazz.getDeclaredMethod("get", Context.class);

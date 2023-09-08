@@ -17,10 +17,10 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.RecordBatchWithContext;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -37,6 +37,7 @@ import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.RecordsUtil;
 import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,8 +52,6 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-
-import org.apache.kafka.common.utils.Utils;
 
 public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
@@ -135,7 +134,8 @@ public class ElasticLogFileRecords {
      * Append records to segment.
      * Note that lastOffset is the expected value of nextOffset after append. lastOffset = (the real last offset of the
      * records) + 1
-     * @param records records to append
+     *
+     * @param records    records to append
      * @param lastOffset expected next offset after append
      * @return the size of the appended records
      * @throws IOException
@@ -150,7 +150,7 @@ public class ElasticLogFileRecords {
         int appendSize = records.sizeInBytes();
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset.get());
-        com.automq.elasticstream.client.DefaultRecordBatch batch = new com.automq.elasticstream.client.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
+        kafka.log.es.DefaultRecordBatch batch = new kafka.log.es.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
         CompletableFuture<?> cf = streamSegment.append(batch);
         nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
@@ -223,6 +223,7 @@ public class ElasticLogFileRecords {
 
     /**
      * Return the largest timestamp of the messages after a given offset
+     *
      * @param startOffset The starting offset.
      * @return The largest timestamp of the messages after the given position.
      */
@@ -240,7 +241,7 @@ public class ElasticLogFileRecords {
             }
         }
         return new FileRecords.TimestampAndOffset(maxTimestamp, offsetOfMaxTimestamp,
-            maybeLeaderEpoch(leaderEpochOfMaxTimestamp));
+                maybeLeaderEpoch(leaderEpochOfMaxTimestamp));
     }
 
     public ElasticStreamSlice streamSegment() {

@@ -19,13 +19,14 @@ package kafka.log.es;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import org.slf4j.Logger;
 
 /**
  * logical meta data for a Kafka topicPartition.
@@ -87,8 +88,8 @@ public class ElasticLogMeta {
         int size = segmentMetas.size();
         List<ElasticStreamSegmentMeta> lastNthSegmentMetas = segmentMetas.subList(Math.max(0, size - 5), size);
         return "ElasticLogMeta{" +
-            "streamMap=" + streamMap +
-            ", lastNthSegmentMetas=" + lastNthSegmentMetas +
-            '}';
+                "streamMap=" + streamMap +
+                ", lastNthSegmentMetas=" + lastNthSegmentMetas +
+                '}';
     }
 }

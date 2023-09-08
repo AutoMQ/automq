@@ -132,12 +132,12 @@ public class CommitWALObjectRequest {
     @Override
     public String toString() {
         return "CommitWALObjectRequest{" +
-            "objectId=" + objectId +
-            ", orderId=" + orderId +
-            ", objectSize=" + objectSize +
-            ", streamRanges=" + streamRanges +
-            ", streamObjects=" + streamObjects +
-            ", compactedObjectIds=" + compactedObjectIds +
-            '}';
+                "objectId=" + objectId +
+                ", orderId=" + orderId +
+                ", objectSize=" + objectSize +
+                ", streamRanges=" + streamRanges +
+                ", streamObjects=" + streamObjects +
+                ", compactedObjectIds=" + compactedObjectIds +
+                '}';
     }
 }
