@@ -17,7 +17,6 @@
 
 package kafka.log.s3.compact;
 
-import com.automq.elasticstream.client.flatc.header.ObjectMetadata;
 import kafka.log.s3.ObjectWriter;
 import kafka.log.s3.TestUtils;
 import kafka.log.s3.compact.objects.CompactedObject;
@@ -53,7 +52,7 @@ public class CompactionTestBase {
     protected static final List<S3WALObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
     protected MemoryMetadataManager objectManager;
     protected S3Operator s3Operator;
-    
+
     public void setUp() throws Exception {
         objectManager = new MemoryMetadataManager();
         objectManager.start();
@@ -118,7 +117,7 @@ public class CompactionTestBase {
             S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
         }).join();
     }
-    
+
     public void tearDown() {
         S3_WAL_OBJECT_METADATA_LIST.clear();
         objectManager.shutdown();

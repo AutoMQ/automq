@@ -17,11 +17,11 @@
 
 package kafka.log.es
 
-import com.automq.elasticstream.client.api.Client
-import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.log.es.ElasticLogManager.NAMESPACE
+import kafka.log.es.api.Client
 import kafka.log.es.client.{ClientFactoryProxy, Context}
 import kafka.log.s3.DefaultS3Client
+import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
@@ -31,20 +31,20 @@ import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
-class ElasticLogManager(val client: Client) extends Logging{
+class ElasticLogManager(val client: Client) extends Logging {
   this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
 
   def getOrCreateLog(dir: File,
-             config: LogConfig,
-             scheduler: Scheduler,
-             time: Time,
-             topicPartition: TopicPartition,
-             logDirFailureChannel: LogDirFailureChannel,
-             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-             maxTransactionTimeoutMs: Int,
-             producerStateManagerConfig: ProducerStateManagerConfig,
-             leaderEpoch: Long): ElasticLog = {
+                     config: LogConfig,
+                     scheduler: Scheduler,
+                     time: Time,
+                     topicPartition: TopicPartition,
+                     logDirFailureChannel: LogDirFailureChannel,
+                     numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+                     maxTransactionTimeoutMs: Int,
+                     producerStateManagerConfig: ProducerStateManagerConfig,
+                     leaderEpoch: Long): ElasticLog = {
     elasticLogs.computeIfAbsent(topicPartition, _ => {
       var elasticLog: ElasticLog = null
       ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
@@ -59,8 +59,9 @@ class ElasticLogManager(val client: Client) extends Logging{
 
   /**
    * Delete elastic log by topic partition. Note that this method may not be called by the broker holding the partition.
+   *
    * @param topicPartition topic partition
-   * @param epoch epoch of the partition
+   * @param epoch          epoch of the partition
    */
   def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
     // Removal may have happened in partition's closure. This is a defensive work.
@@ -76,6 +77,7 @@ class ElasticLogManager(val client: Client) extends Logging{
 
   /**
    * Remove elastic log in the map.
+   *
    * @param topicPartition topic partition
    */
   def removeLog(topicPartition: TopicPartition): Unit = {
@@ -114,6 +116,7 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
   var DEFAULT_CLIENT: Option[DefaultS3Client] = None
+
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null, appendWithAsyncCallbacks: Boolean = true): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
@@ -136,7 +139,7 @@ object ElasticLogManager {
     context.config = config
     context.brokerServer = broker
     context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
-    INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context))) 
+    INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
 
     val namespace = config.elasticStreamNamespace
     NAMESPACE = if (namespace == null || namespace.isEmpty) {
@@ -163,15 +166,15 @@ object ElasticLogManager {
 
   // visible for testing
   def getOrCreateLog(dir: File,
-             config: LogConfig,
-             scheduler: Scheduler,
-             time: Time,
-             topicPartition: TopicPartition,
-             logDirFailureChannel: LogDirFailureChannel,
-             maxTransactionTimeoutMs: Int,
-             producerStateManagerConfig: ProducerStateManagerConfig,
-             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-             leaderEpoch: Long): ElasticLog = {
+                     config: LogConfig,
+                     scheduler: Scheduler,
+                     time: Time,
+                     topicPartition: TopicPartition,
+                     logDirFailureChannel: LogDirFailureChannel,
+                     maxTransactionTimeoutMs: Int,
+                     producerStateManagerConfig: ProducerStateManagerConfig,
+                     numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+                     leaderEpoch: Long): ElasticLog = {
     INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
       maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
   }

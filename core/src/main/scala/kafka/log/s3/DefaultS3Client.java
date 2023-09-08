@@ -17,9 +17,9 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.Client;
-import com.automq.elasticstream.client.api.KVClient;
-import com.automq.elasticstream.client.api.StreamClient;
+import kafka.log.es.api.Client;
+import kafka.log.es.api.KVClient;
+import kafka.log.es.api.StreamClient;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.compact.CompactionManager;

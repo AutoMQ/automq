@@ -89,7 +89,7 @@ public class TestKitNodes {
                     nextId = controllerNodes.lastKey() + 1;
                 }
                 controllerNodes.put(nextId, new ControllerNode.Builder().
-                    setId(nextId).build());
+                        setId(nextId).build());
             }
             return this;
         }
@@ -107,7 +107,7 @@ public class TestKitNodes {
                     nextId = brokerNodes.lastKey() + 1;
                 }
                 brokerNodes.put(nextId, new BrokerNode.Builder().
-                    setId(nextId).build());
+                        setId(nextId).build());
             }
             return this;
         }
@@ -191,13 +191,13 @@ public class TestKitNodes {
         for (Entry<Integer, ControllerNode> entry : controllerNodes.entrySet()) {
             ControllerNode node = entry.getValue();
             newControllerNodes.put(entry.getKey(), new ControllerNode(node.id(),
-                absolutize(baseDirectory, node.metadataDirectory()), node.propertyOverrides()));
+                    absolutize(baseDirectory, node.metadataDirectory()), node.propertyOverrides()));
         }
         for (Entry<Integer, BrokerNode> entry : brokerNodes.entrySet()) {
             BrokerNode node = entry.getValue();
             newBrokerNodes.put(entry.getKey(), new BrokerNode(node.id(),
-                node.incarnationId(), absolutize(baseDirectory, node.metadataDirectory()),
-                absolutize(baseDirectory, node.logDataDirectories()), node.propertyOverrides()));
+                    node.incarnationId(), absolutize(baseDirectory, node.metadataDirectory()),
+                    absolutize(baseDirectory, node.logDataDirectories()), node.propertyOverrides()));
         }
         return new TestKitNodes(clusterId, bootstrapMetadataVersion, newControllerNodes, newBrokerNodes);
     }

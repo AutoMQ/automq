@@ -54,7 +54,7 @@ import java.util.stream.Stream;
 /**
  * Wraps a {@link KafkaClusterTestKit} inside lifecycle methods for a test invocation. Each instance of this
  * class is provided with a configuration for the cluster.
- *
+ * <p>
  * This context also provides parameter resolvers for:
  *
  * <ul>
@@ -80,8 +80,8 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
     @Override
     public String getDisplayName(int invocationIndex) {
         String clusterDesc = clusterConfig.nameTags().entrySet().stream()
-            .map(Object::toString)
-            .collect(Collectors.joining(", "));
+                .map(Object::toString)
+                .collect(Collectors.joining(", "));
         return String.format("[%d] Type=Raft-%s, %s", invocationIndex, isCoResident ? "CoReside" : "Distributed", clusterDesc);
     }
 
@@ -89,39 +89,39 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
     public List<Extension> getAdditionalExtensions() {
         RaftClusterInstance clusterInstance = new RaftClusterInstance(clusterReference, zkReference, clusterConfig);
         return Arrays.asList(
-            (BeforeTestExecutionCallback) context -> {
-                TestKitNodes nodes = new TestKitNodes.Builder().
-                        setBootstrapMetadataVersion(clusterConfig.metadataVersion()).
-                        setCoResident(isCoResident).
-                        setNumBrokerNodes(clusterConfig.numBrokers()).
-                        setNumControllerNodes(clusterConfig.numControllers()).build();
-                nodes.brokerNodes().forEach((brokerId, brokerNode) -> {
-                    clusterConfig.brokerServerProperties(brokerId).forEach(
-                            (key, value) -> brokerNode.propertyOverrides().put(key.toString(), value.toString()));
-                });
-                KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);
+                (BeforeTestExecutionCallback) context -> {
+                    TestKitNodes nodes = new TestKitNodes.Builder().
+                            setBootstrapMetadataVersion(clusterConfig.metadataVersion()).
+                            setCoResident(isCoResident).
+                            setNumBrokerNodes(clusterConfig.numBrokers()).
+                            setNumControllerNodes(clusterConfig.numControllers()).build();
+                    nodes.brokerNodes().forEach((brokerId, brokerNode) -> {
+                        clusterConfig.brokerServerProperties(brokerId).forEach(
+                                (key, value) -> brokerNode.propertyOverrides().put(key.toString(), value.toString()));
+                    });
+                    KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);
 
-                if (Boolean.parseBoolean(clusterConfig.serverProperties().getProperty("zookeeper.metadata.migration.enable", "false"))) {
-                    zkReference.set(new EmbeddedZookeeper());
-                    builder.setConfigProp("zookeeper.connect", String.format("localhost:%d", zkReference.get().port()));
-                }
+                    if (Boolean.parseBoolean(clusterConfig.serverProperties().getProperty("zookeeper.metadata.migration.enable", "false"))) {
+                        zkReference.set(new EmbeddedZookeeper());
+                        builder.setConfigProp("zookeeper.connect", String.format("localhost:%d", zkReference.get().port()));
+                    }
 
-                // Copy properties into the TestKit builder
-                clusterConfig.serverProperties().forEach((key, value) -> builder.setConfigProp(key.toString(), value.toString()));
-                // KAFKA-12512 need to pass security protocol and listener name here
-                KafkaClusterTestKit cluster = builder.build();
-                clusterReference.set(cluster);
-                cluster.format();
-                cluster.startup();
-                kafka.utils.TestUtils.waitUntilTrue(
-                    () -> cluster.brokers().get(0).brokerState() == BrokerState.RUNNING,
-                    () -> "Broker never made it to RUNNING state.",
-                    org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS,
-                    100L);
-            },
-            (AfterTestExecutionCallback) context -> clusterInstance.stop(),
-            new ClusterInstanceParameterResolver(clusterInstance),
-            new GenericParameterResolver<>(clusterConfig, ClusterConfig.class)
+                    // Copy properties into the TestKit builder
+                    clusterConfig.serverProperties().forEach((key, value) -> builder.setConfigProp(key.toString(), value.toString()));
+                    // KAFKA-12512 need to pass security protocol and listener name here
+                    KafkaClusterTestKit cluster = builder.build();
+                    clusterReference.set(cluster);
+                    cluster.format();
+                    cluster.startup();
+                    kafka.utils.TestUtils.waitUntilTrue(
+                            () -> cluster.brokers().get(0).brokerState() == BrokerState.RUNNING,
+                            () -> "Broker never made it to RUNNING state.",
+                            org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS,
+                            100L);
+                },
+                (AfterTestExecutionCallback) context -> clusterInstance.stop(),
+                new ClusterInstanceParameterResolver(clusterInstance),
+                new GenericParameterResolver<>(clusterConfig, ClusterConfig.class)
         );
     }
 
@@ -148,8 +148,8 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
         @Override
         public Collection<SocketServer> brokerSocketServers() {
             return brokers()
-                .map(BrokerServer::socketServer)
-                .collect(Collectors.toList());
+                    .map(BrokerServer::socketServer)
+                    .collect(Collectors.toList());
         }
 
         @Override
@@ -165,39 +165,39 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
         @Override
         public Collection<SocketServer> controllerSocketServers() {
             return controllers()
-                .map(ControllerServer::socketServer)
-                .collect(Collectors.toList());
+                    .map(ControllerServer::socketServer)
+                    .collect(Collectors.toList());
         }
 
         @Override
         public SocketServer anyBrokerSocketServer() {
             return brokers()
-                .map(BrokerServer::socketServer)
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No broker SocketServers found"));
+                    .map(BrokerServer::socketServer)
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("No broker SocketServers found"));
         }
 
         @Override
         public SocketServer anyControllerSocketServer() {
             return controllers()
-                .map(ControllerServer::socketServer)
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No controller SocketServers found"));
+                    .map(ControllerServer::socketServer)
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("No controller SocketServers found"));
         }
 
         @Override
         public Map<Integer, BrokerFeatures> brokerFeatures() {
             return brokers().collect(Collectors.toMap(
-                brokerServer -> brokerServer.config().nodeId(),
-                BrokerServer::brokerFeatures
+                    brokerServer -> brokerServer.config().nodeId(),
+                    BrokerServer::brokerFeatures
             ));
         }
 
         @Override
         public String clusterId() {
             return controllers().findFirst().map(ControllerServer::clusterId).orElse(
-                brokers().findFirst().map(BrokerServer::clusterId).orElseThrow(
-                    () -> new RuntimeException("No controllers or brokers!"))
+                    brokers().findFirst().map(BrokerServer::clusterId).orElseThrow(
+                            () -> new RuntimeException("No controllers or brokers!"))
             );
         }
 
@@ -218,15 +218,15 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
         @Override
         public Set<Integer> controllerIds() {
             return controllers()
-                .map(controllerServer -> controllerServer.config().nodeId())
-                .collect(Collectors.toSet());
+                    .map(controllerServer -> controllerServer.config().nodeId())
+                    .collect(Collectors.toSet());
         }
 
         @Override
         public Set<Integer> brokerIds() {
             return brokers()
-                .map(brokerServer -> brokerServer.config().nodeId())
-                .collect(Collectors.toSet());
+                    .map(brokerServer -> brokerServer.config().nodeId())
+                    .collect(Collectors.toSet());
         }
 
         @Override
@@ -289,7 +289,7 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
 
         private BrokerServer findBrokerOrThrow(int brokerId) {
             return Optional.ofNullable(clusterReference.get().brokers().get(brokerId))
-                .orElseThrow(() -> new IllegalArgumentException("Unknown brokerId " + brokerId));
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown brokerId " + brokerId));
         }
 
         public Stream<BrokerServer> brokers() {

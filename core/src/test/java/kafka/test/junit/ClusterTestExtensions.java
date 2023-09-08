@@ -19,10 +19,10 @@ package kafka.test.junit;
 
 import kafka.test.ClusterConfig;
 import kafka.test.ClusterGenerator;
-import kafka.test.annotation.ClusterTestDefaults;
 import kafka.test.annotation.ClusterConfigProperty;
 import kafka.test.annotation.ClusterTemplate;
 import kafka.test.annotation.ClusterTest;
+import kafka.test.annotation.ClusterTestDefaults;
 import kafka.test.annotation.ClusterTests;
 import kafka.test.annotation.Type;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -43,7 +43,7 @@ import java.util.stream.Stream;
  * of a few custom annotations. These annotations are placed on so-called test template methods. Template methods look
  * like normal JUnit test methods, but instead of being invoked directly, they are used as templates for generating
  * multiple test invocations.
- *
+ * <p>
  * Test class that use this extension should use one of the following annotations on each template method:
  *
  * <ul>
@@ -51,14 +51,14 @@ import java.util.stream.Stream;
  *     <li>{@link ClusterTests}, provide multiple instances of @ClusterTest</li>
  *     <li>{@link ClusterTemplate}, define a static method that generates cluster configurations</li>
  * </ul>
- *
+ * <p>
  * Any combination of these annotations may be used on a given test template method. If no test invocations are
  * generated after processing the annotations, an error is thrown.
- *
+ * <p>
  * Depending on which annotations are used, and what values are given, different {@link ClusterConfig} will be
  * generated. Each ClusterConfig is used to create an underlying Kafka cluster that is used for the actual test
  * invocation.
- *
+ * <p>
  * For example:
  *
  * <pre>
@@ -70,10 +70,9 @@ import java.util.stream.Stream;
  *   }
  * }
  * </pre>
- *
+ * <p>
  * will generate two invocations of "someTest" (since ClusterType.Both was given). For each invocation, the test class
  * SomeIntegrationTest will be instantiated, lifecycle methods (before/after) will be run, and "someTest" will be invoked.
- *
  **/
 public class ClusterTestExtensions implements TestTemplateInvocationContextProvider {
     @Override
@@ -180,7 +179,7 @@ public class ClusterTestExtensions implements TestTemplateInvocationContextProvi
         }
 
         ClusterConfig.Builder builder = ClusterConfig.clusterBuilder(type, brokers, controllers, autoStart,
-            annot.securityProtocol(), annot.metadataVersion());
+                annot.securityProtocol(), annot.metadataVersion());
         if (!annot.name().isEmpty()) {
             builder.name(annot.name());
         } else {
@@ -202,7 +201,7 @@ public class ClusterTestExtensions implements TestTemplateInvocationContextProvi
 
     private ClusterTestDefaults getClusterTestDefaults(Class<?> testClass) {
         return Optional.ofNullable(testClass.getDeclaredAnnotation(ClusterTestDefaults.class))
-            .orElseGet(() -> EmptyClass.class.getDeclaredAnnotation(ClusterTestDefaults.class));
+                .orElseGet(() -> EmptyClass.class.getDeclaredAnnotation(ClusterTestDefaults.class));
     }
 
     @ClusterTestDefaults

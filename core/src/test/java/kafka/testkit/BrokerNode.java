@@ -58,13 +58,13 @@ public class BrokerNode implements TestKitNode {
             }
             if (logDataDirectories == null) {
                 logDataDirectories = Collections.
-                    singletonList(String.format("broker_%d_data0", id));
+                        singletonList(String.format("broker_%d_data0", id));
             }
             if (metadataDirectory == null) {
                 metadataDirectory = logDataDirectories.get(0);
             }
             return new BrokerNode(id, incarnationId, metadataDirectory,
-                logDataDirectories);
+                    logDataDirectories);
         }
     }
 

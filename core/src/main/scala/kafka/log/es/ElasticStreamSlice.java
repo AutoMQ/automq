@@ -17,14 +17,14 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.AppendResult;
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.Stream;
+import kafka.log.es.api.AppendResult;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.Stream;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
 /**
  * Elastic stream slice is a slice from elastic stream, <strong> the startOffset of a slice is 0. </strong>
@@ -68,6 +68,7 @@ public interface ElasticStreamSlice {
 
     /**
      * Get slice range which is the relative offset range in stream.
+     *
      * @return {@link SliceRange}
      */
     SliceRange sliceRange();

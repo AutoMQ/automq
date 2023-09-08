@@ -17,15 +17,20 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.AppendResult;
-import com.automq.elasticstream.client.api.CreateStreamOptions;
-import com.automq.elasticstream.client.api.ElasticStreamClientException;
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.OpenStreamOptions;
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
-import com.automq.elasticstream.client.api.Stream;
-import com.automq.elasticstream.client.api.StreamClient;
+import kafka.log.es.api.AppendResult;
+import kafka.log.es.api.CreateStreamOptions;
+import kafka.log.es.api.ElasticStreamClientException;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.OpenStreamOptions;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.RecordBatchWithContext;
+import kafka.log.es.api.Stream;
+import kafka.log.es.api.StreamClient;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -42,19 +47,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
 import static kafka.log.es.AlwaysSuccessClient.HALT_ERROR_CODES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("esUnit")
 class AlwaysSuccessClientTest {
-    private static final long SLOW_FETCH_TIMEOUT_MILLIS = AlwaysSuccessClient.SLOW_FETCH_TIMEOUT_MILLIS;
     private AlwaysSuccessClient client;
 
     @BeforeEach
@@ -91,8 +89,9 @@ class AlwaysSuccessClientTest {
     @Test
     public void testQuickFetch() throws ExecutionException, InterruptedException {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        client = new AlwaysSuccessClient(memoryClientWithDelay);
-        List<Long> quickFetchDelayMillisList = List.of(1L, SLOW_FETCH_TIMEOUT_MILLIS / 2);
+        long slowFetchTimeoutMillis = 1000 * 2;
+        client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
+        List<Long> quickFetchDelayMillisList = List.of(1L, slowFetchTimeoutMillis / 2);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
         // test quick fetch
@@ -108,7 +107,7 @@ class AlwaysSuccessClientTest {
                             .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
             ).get();
             FetchResult fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(delay + 100, TimeUnit.MILLISECONDS)
+                    .orTimeout(delay + slowFetchTimeoutMillis / 2, TimeUnit.MILLISECONDS)
                     .get();
             checkAppendAndFetch(payloads, fetched);
             stream.destroy();
@@ -118,10 +117,11 @@ class AlwaysSuccessClientTest {
     @Test
     public void testSlowFetch() throws ExecutionException, InterruptedException {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        client = new AlwaysSuccessClient(memoryClientWithDelay);
+        long slowFetchTimeoutMillis = 1000 * 2;
+        client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
-        long slowFetchDelay = 500 + SLOW_FETCH_TIMEOUT_MILLIS + SLOW_FETCH_TIMEOUT_MILLIS / 2;
+        long slowFetchDelay = slowFetchTimeoutMillis * 3 / 2;
         memoryClientWithDelay.setDelayMillis(slowFetchDelay);
         Stream stream = client
                 .streamClient()
@@ -137,7 +137,7 @@ class AlwaysSuccessClientTest {
         AtomicBoolean gotSlowFetchHintException = new AtomicBoolean(false);
         try {
             fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(SLOW_FETCH_TIMEOUT_MILLIS * 2, TimeUnit.MILLISECONDS)
+                    .orTimeout(slowFetchDelay, TimeUnit.MILLISECONDS)
                     .get();
             checkAppendAndFetch(payloads, fetched);
         } catch (ExecutionException e) {
@@ -147,7 +147,7 @@ class AlwaysSuccessClientTest {
             SeparateSlowAndQuickFetchHint.reset();
             // It should reuse the fetching future above, therefore only (SLOW_FETCH_TIMEOUT_MILLIS / 2) ms is tolerable.
             fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(slowFetchDelay + 100, TimeUnit.MILLISECONDS)
+                    .orTimeout(slowFetchTimeoutMillis - 200, TimeUnit.MILLISECONDS)
                     .get();
         }
         checkAppendAndFetch(payloads, fetched);

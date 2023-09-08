@@ -54,7 +54,10 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
     @Override
     public int compareTo(StreamOffsetRange o) {
         int res = Long.compare(this.streamId, o.streamId);
-        return res == 0 ? Long.compare(this.startOffset, o.startOffset) : res;
+        if (res != 0)
+            return res;
+        res = Long.compare(this.startOffset, o.startOffset);
+        return res == 0 ? Long.compare(this.endOffset, o.endOffset) : res;
     }
 
     public StreamIndex toRecordStreamIndex() {

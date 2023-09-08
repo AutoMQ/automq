@@ -55,7 +55,7 @@ import java.util.stream.Stream;
 /**
  * Wraps a {@link IntegrationTestHarness} inside lifecycle methods for a test invocation. Each instance of this
  * class is provided with a configuration for the cluster.
- *
+ * <p>
  * This context also provides parameter resolvers for:
  *
  * <ul>
@@ -77,8 +77,8 @@ public class ZkClusterInvocationContext implements TestTemplateInvocationContext
     @Override
     public String getDisplayName(int invocationIndex) {
         String clusterDesc = clusterConfig.nameTags().entrySet().stream()
-            .map(Object::toString)
-            .collect(Collectors.joining(", "));
+                .map(Object::toString)
+                .collect(Collectors.joining(", "));
         return String.format("[%d] Type=ZK, %s", invocationIndex, clusterDesc);
     }
 
@@ -89,95 +89,95 @@ public class ZkClusterInvocationContext implements TestTemplateInvocationContext
         }
         ClusterInstance clusterShim = new ZkClusterInstance(clusterConfig, clusterReference);
         return Arrays.asList(
-            (BeforeTestExecutionCallback) context -> {
-                // We have to wait to actually create the underlying cluster until after our @BeforeEach methods
-                // have run. This allows tests to set up external dependencies like ZK, MiniKDC, etc.
-                // However, since we cannot create this instance until we are inside the test invocation, we have
-                // to use a container class (AtomicReference) to provide this cluster object to the test itself
+                (BeforeTestExecutionCallback) context -> {
+                    // We have to wait to actually create the underlying cluster until after our @BeforeEach methods
+                    // have run. This allows tests to set up external dependencies like ZK, MiniKDC, etc.
+                    // However, since we cannot create this instance until we are inside the test invocation, we have
+                    // to use a container class (AtomicReference) to provide this cluster object to the test itself
 
-                // This is what tests normally extend from to start a cluster, here we create it anonymously and
-                // configure the cluster using values from ClusterConfig
-                IntegrationTestHarness cluster = new IntegrationTestHarness() {
+                    // This is what tests normally extend from to start a cluster, here we create it anonymously and
+                    // configure the cluster using values from ClusterConfig
+                    IntegrationTestHarness cluster = new IntegrationTestHarness() {
 
-                    @Override
-                    public void modifyConfigs(Seq<Properties> props) {
-                        super.modifyConfigs(props);
-                        for (int i = 0; i < props.length(); i++) {
-                            props.apply(i).putAll(clusterConfig.brokerServerProperties(i));
+                        @Override
+                        public void modifyConfigs(Seq<Properties> props) {
+                            super.modifyConfigs(props);
+                            for (int i = 0; i < props.length(); i++) {
+                                props.apply(i).putAll(clusterConfig.brokerServerProperties(i));
+                            }
                         }
-                    }
 
-                    @Override
-                    public Properties serverConfig() {
-                        Properties props = clusterConfig.serverProperties();
-                        props.put(KafkaConfig.InterBrokerProtocolVersionProp(), clusterConfig.metadataVersion().version());
-                        return props;
-                    }
-
-                    @Override
-                    public Properties adminClientConfig() {
-                        return clusterConfig.adminClientProperties();
-                    }
-
-                    @Override
-                    public Properties consumerConfig() {
-                        return clusterConfig.consumerProperties();
-                    }
-
-                    @Override
-                    public Properties producerConfig() {
-                        return clusterConfig.producerProperties();
-                    }
-
-                    @Override
-                    public SecurityProtocol securityProtocol() {
-                        return clusterConfig.securityProtocol();
-                    }
-
-                    @Override
-                    public ListenerName listenerName() {
-                        return clusterConfig.listenerName().map(ListenerName::normalised)
-                            .orElseGet(() -> ListenerName.forSecurityProtocol(securityProtocol()));
-                    }
-
-                    @Override
-                    public Option<Properties> serverSaslProperties() {
-                        if (clusterConfig.saslServerProperties().isEmpty()) {
-                            return Option.empty();
-                        } else {
-                            return Option.apply(clusterConfig.saslServerProperties());
+                        @Override
+                        public Properties serverConfig() {
+                            Properties props = clusterConfig.serverProperties();
+                            props.put(KafkaConfig.InterBrokerProtocolVersionProp(), clusterConfig.metadataVersion().version());
+                            return props;
                         }
-                    }
 
-                    @Override
-                    public Option<Properties> clientSaslProperties() {
-                        if (clusterConfig.saslClientProperties().isEmpty()) {
-                            return Option.empty();
-                        } else {
-                            return Option.apply(clusterConfig.saslClientProperties());
+                        @Override
+                        public Properties adminClientConfig() {
+                            return clusterConfig.adminClientProperties();
                         }
-                    }
 
-                    @Override
-                    public int brokerCount() {
-                        // Controllers are also brokers in zk mode, so just use broker count
-                        return clusterConfig.numBrokers();
-                    }
+                        @Override
+                        public Properties consumerConfig() {
+                            return clusterConfig.consumerProperties();
+                        }
 
-                    @Override
-                    public Option<File> trustStoreFile() {
-                        return OptionConverters.toScala(clusterConfig.trustStoreFile());
-                    }
-                };
+                        @Override
+                        public Properties producerConfig() {
+                            return clusterConfig.producerProperties();
+                        }
 
-                clusterReference.set(cluster);
-                if (clusterConfig.isAutoStart()) {
-                    clusterShim.start();
-                }
-            },
-            (AfterTestExecutionCallback) context -> clusterShim.stop(),
-            new ClusterInstanceParameterResolver(clusterShim),
-            new GenericParameterResolver<>(clusterConfig, ClusterConfig.class)
+                        @Override
+                        public SecurityProtocol securityProtocol() {
+                            return clusterConfig.securityProtocol();
+                        }
+
+                        @Override
+                        public ListenerName listenerName() {
+                            return clusterConfig.listenerName().map(ListenerName::normalised)
+                                    .orElseGet(() -> ListenerName.forSecurityProtocol(securityProtocol()));
+                        }
+
+                        @Override
+                        public Option<Properties> serverSaslProperties() {
+                            if (clusterConfig.saslServerProperties().isEmpty()) {
+                                return Option.empty();
+                            } else {
+                                return Option.apply(clusterConfig.saslServerProperties());
+                            }
+                        }
+
+                        @Override
+                        public Option<Properties> clientSaslProperties() {
+                            if (clusterConfig.saslClientProperties().isEmpty()) {
+                                return Option.empty();
+                            } else {
+                                return Option.apply(clusterConfig.saslClientProperties());
+                            }
+                        }
+
+                        @Override
+                        public int brokerCount() {
+                            // Controllers are also brokers in zk mode, so just use broker count
+                            return clusterConfig.numBrokers();
+                        }
+
+                        @Override
+                        public Option<File> trustStoreFile() {
+                            return OptionConverters.toScala(clusterConfig.trustStoreFile());
+                        }
+                    };
+
+                    clusterReference.set(cluster);
+                    if (clusterConfig.isAutoStart()) {
+                        clusterShim.start();
+                    }
+                },
+                (AfterTestExecutionCallback) context -> clusterShim.stop(),
+                new ClusterInstanceParameterResolver(clusterShim),
+                new GenericParameterResolver<>(clusterConfig, ClusterConfig.class)
         );
     }
 
@@ -219,40 +219,40 @@ public class ZkClusterInvocationContext implements TestTemplateInvocationContext
         @Override
         public Collection<SocketServer> controllerSocketServers() {
             return servers()
-                .filter(broker -> broker.kafkaController().isActive())
-                .map(KafkaServer::socketServer)
-                .collect(Collectors.toList());
+                    .filter(broker -> broker.kafkaController().isActive())
+                    .map(KafkaServer::socketServer)
+                    .collect(Collectors.toList());
         }
 
         @Override
         public SocketServer anyBrokerSocketServer() {
             return servers()
-                .map(KafkaServer::socketServer)
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No broker SocketServers found"));
+                    .map(KafkaServer::socketServer)
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("No broker SocketServers found"));
         }
 
         @Override
         public SocketServer anyControllerSocketServer() {
             return servers()
-                .filter(broker -> broker.kafkaController().isActive())
-                .map(KafkaServer::socketServer)
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No controller SocketServers found"));
+                    .filter(broker -> broker.kafkaController().isActive())
+                    .map(KafkaServer::socketServer)
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("No controller SocketServers found"));
         }
 
         @Override
         public Map<Integer, BrokerFeatures> brokerFeatures() {
             return servers().collect(Collectors.toMap(
-                brokerServer -> brokerServer.config().nodeId(),
-                KafkaServer::brokerFeatures
+                    brokerServer -> brokerServer.config().nodeId(),
+                    KafkaServer::brokerFeatures
             ));
         }
 
         @Override
         public String clusterId() {
             return servers().findFirst().map(KafkaServer::clusterId).orElseThrow(
-                () -> new RuntimeException("No broker instances found"));
+                    () -> new RuntimeException("No broker instances found"));
         }
 
         @Override
@@ -273,8 +273,8 @@ public class ZkClusterInvocationContext implements TestTemplateInvocationContext
         @Override
         public Set<Integer> brokerIds() {
             return servers()
-                .map(brokerServer -> brokerServer.config().nodeId())
-                .collect(Collectors.toSet());
+                    .map(brokerServer -> brokerServer.config().nodeId())
+                    .collect(Collectors.toSet());
         }
 
         @Override
@@ -333,9 +333,9 @@ public class ZkClusterInvocationContext implements TestTemplateInvocationContext
 
         private KafkaServer findBrokerOrThrow(int brokerId) {
             return servers()
-                .filter(server -> server.config().brokerId() == brokerId)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown brokerId " + brokerId));
+                    .filter(server -> server.config().brokerId() == brokerId)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown brokerId " + brokerId));
         }
 
         private Stream<KafkaServer> servers() {

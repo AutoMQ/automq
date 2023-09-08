@@ -129,6 +129,7 @@ versions += [
   zstd: "1.5.2-1",
   elasticstream: "1.0-SNAPSHOT",
   s3Client: "2.20.127",
+  commonLang: "3.12.0",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -220,6 +221,7 @@ libs += [
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
-  esClient: "com.automq.elasticstream:client:$versions.elasticstream",
   s3Client: "software.amazon.awssdk:s3:$versions.s3Client",
+  commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
+  nettyAll: "io.netty:netty-all:$versions.netty",
 ]

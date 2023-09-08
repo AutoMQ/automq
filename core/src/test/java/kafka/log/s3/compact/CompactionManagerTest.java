@@ -19,27 +19,17 @@ package kafka.log.s3.compact;
 
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
-import kafka.log.s3.memory.MemoryMetadataManager;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.objects.CommitWALObjectRequest;
-import kafka.log.s3.objects.StreamObject;
-import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.server.KafkaConfig;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class CompactionManagerTest extends CompactionTestBase {

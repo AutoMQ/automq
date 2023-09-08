@@ -33,14 +33,14 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * cluster configurations. The method specified by the value should accept a single argument of the type
  * {@link ClusterGenerator}. Any return value from the method is ignore. A test invocation
  * will be generated for each {@link ClusterConfig} provided to the ClusterGenerator instance.
- *
+ * <p>
  * The method given here must be static since it is invoked before any tests are actually run. Each test generated
  * by this annotation will run as if it was defined as a separate test method with its own
  * {@link org.junit.jupiter.api.Test}. That is to say, each generated test invocation will have a separate lifecycle.
- *
+ * <p>
  * This annotation may be used in conjunction with {@link ClusterTest} and {@link ClusterTests} which also yield
  * ClusterConfig instances.
- *
+ * <p>
  * For Scala tests, the method should be defined in a companion object with the same name as the test class.
  */
 @Documented

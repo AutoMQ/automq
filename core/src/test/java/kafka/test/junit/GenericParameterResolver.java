@@ -25,7 +25,7 @@ import org.junit.jupiter.api.extension.ParameterResolver;
  * This resolver is used for supplying any type of object to the test invocation. It does not restrict where the given
  * type can be injected, it simply checks if the requested injection type matches the type given in the constructor. If
  * it matches, the given object is returned.
- *
+ * <p>
  * This is useful for injecting helper objects and objects which can be fully initialized before the test lifecycle
  * begins.
  */

@@ -62,6 +62,7 @@ public class DefaultS3Operator implements S3Operator {
     private final String bucket;
     private final S3AsyncClient s3;
     private static final Timer PART_UPLOAD_COST = new Timer();
+    private static final Timer OBJECT_INTO_CLOSE_COST = new Timer();
     private static final Timer OBJECT_UPLOAD_COST = new Timer();
     private static final Counter OBJECT_UPLOAD_SIZE = new Counter();
     private static final AtomicLong LAST_LOG_TIMESTAMP = new AtomicLong(System.currentTimeMillis());
@@ -270,23 +271,24 @@ public class DefaultS3Operator implements S3Operator {
             if (closeCf != null) {
                 return closeCf;
             }
-            System.out.println("start await close: " + (System.nanoTime() - start) / 1000 / 1000);
+            OBJECT_INTO_CLOSE_COST.update(System.nanoTime() - start);
             closeCf = new CompletableFuture<>();
             CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
             uploadDoneCf.thenAccept(nil -> {
-                System.out.println("start complete: " + (System.nanoTime() - start) / 1000 / 1000);
                 CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(genCompleteParts()).build();
                 CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
                 close0(request);
             });
             closeCf.whenComplete((nil, ex) -> {
-                System.out.println("complete: " + (System.nanoTime() - start) / 1000 / 1000);
                 OBJECT_UPLOAD_COST.update(System.nanoTime() - start);
                 long now = System.currentTimeMillis();
                 if (now - LAST_LOG_TIMESTAMP.get() > 10000) {
                     LAST_LOG_TIMESTAMP.set(now);
-                    LOGGER.info("upload s3 metrics, object_timer {}, object_size {}, part_timer {}",
-                            OBJECT_UPLOAD_COST.getAndReset(), OBJECT_UPLOAD_SIZE.getAndReset(), PART_UPLOAD_COST.getAndReset());
+                    LOGGER.info("upload s3 metrics, object_part_upload_timer {}, object_into_close_timer {}, object_upload_timer {}, object_upload_size {}",
+                            PART_UPLOAD_COST.getAndReset(),
+                            OBJECT_INTO_CLOSE_COST.getAndReset(),
+                            OBJECT_UPLOAD_COST.getAndReset(),
+                            OBJECT_UPLOAD_SIZE.getAndReset());
                 }
             });
             return closeCf;

@@ -17,11 +17,13 @@
 
 package kafka.log.es;
 
-import com.automq.elasticstream.client.api.AppendResult;
-import com.automq.elasticstream.client.api.FetchResult;
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
-import com.automq.elasticstream.client.api.Stream;
+import kafka.log.es.api.AppendResult;
+import kafka.log.es.api.FetchResult;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.RecordBatchWithContext;
+import kafka.log.es.api.Stream;
+import org.apache.kafka.common.errors.es.SlowFetchHintException;
+import org.apache.kafka.common.utils.Utils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -30,8 +32,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
-import org.apache.kafka.common.utils.Utils;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     /**

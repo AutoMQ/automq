@@ -19,5 +19,6 @@ package kafka.testkit;
 
 public interface TestKitNode {
     int id();
+
     String metadataDirectory();
 }

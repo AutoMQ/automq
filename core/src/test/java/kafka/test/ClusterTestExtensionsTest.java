@@ -75,26 +75,26 @@ public class ClusterTestExtensionsTest {
     @ClusterTemplate("generate1")
     public void testClusterTemplate() {
         Assertions.assertEquals(clusterInstance.clusterType(), ClusterInstance.ClusterType.ZK,
-            "generate1 provided a Zk cluster, so we should see that here");
+                "generate1 provided a Zk cluster, so we should see that here");
         Assertions.assertEquals(clusterInstance.config().name().orElse(""), "Generated Test",
-            "generate1 named this cluster config, so we should see that here");
+                "generate1 named this cluster config, so we should see that here");
         Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("before"), "each");
     }
 
     // Multiple @ClusterTest can be used with @ClusterTests
     @ClusterTests({
-        @ClusterTest(name = "cluster-tests-1", clusterType = Type.ZK, serverProperties = {
-            @ClusterConfigProperty(key = "foo", value = "bar"),
-            @ClusterConfigProperty(key = "spam", value = "eggs")
-        }),
-        @ClusterTest(name = "cluster-tests-2", clusterType = Type.KRAFT, serverProperties = {
-            @ClusterConfigProperty(key = "foo", value = "baz"),
-            @ClusterConfigProperty(key = "spam", value = "eggz")
-        }),
-        @ClusterTest(name = "cluster-tests-3", clusterType = Type.CO_KRAFT, serverProperties = {
-            @ClusterConfigProperty(key = "foo", value = "baz"),
-            @ClusterConfigProperty(key = "spam", value = "eggz")
-        })
+            @ClusterTest(name = "cluster-tests-1", clusterType = Type.ZK, serverProperties = {
+                    @ClusterConfigProperty(key = "foo", value = "bar"),
+                    @ClusterConfigProperty(key = "spam", value = "eggs")
+            }),
+            @ClusterTest(name = "cluster-tests-2", clusterType = Type.KRAFT, serverProperties = {
+                    @ClusterConfigProperty(key = "foo", value = "baz"),
+                    @ClusterConfigProperty(key = "spam", value = "eggz")
+            }),
+            @ClusterTest(name = "cluster-tests-3", clusterType = Type.CO_KRAFT, serverProperties = {
+                    @ClusterConfigProperty(key = "foo", value = "baz"),
+                    @ClusterConfigProperty(key = "spam", value = "eggz")
+            })
     })
     public void testClusterTests() {
         if (clusterInstance.clusterType().equals(ClusterInstance.ClusterType.ZK)) {

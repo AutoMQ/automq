@@ -17,8 +17,8 @@
 
 package kafka.log.s3;
 
-import com.automq.elasticstream.client.api.RecordBatch;
-import com.automq.elasticstream.client.api.RecordBatchWithContext;
+import kafka.log.es.api.RecordBatch;
+import kafka.log.es.api.RecordBatchWithContext;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -31,6 +31,7 @@ public class DefaultRecordBatchWithContext implements RecordBatchWithContext {
         this.recordBatch = recordBatch;
         this.baseOffset = baseOffset;
     }
+
     @Override
     public long baseOffset() {
         return baseOffset;

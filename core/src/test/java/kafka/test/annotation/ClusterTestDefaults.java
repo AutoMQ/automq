@@ -36,7 +36,10 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 public @interface ClusterTestDefaults {
     Type clusterType() default Type.ZK;
+
     int brokers() default 1;
+
     int controllers() default 1;
+
     boolean autoStart() default true;
 }

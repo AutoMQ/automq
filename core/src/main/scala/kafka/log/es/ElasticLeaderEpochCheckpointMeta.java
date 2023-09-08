@@ -17,10 +17,11 @@
 
 package kafka.log.es;
 
+import kafka.server.epoch.EpochEntry;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import kafka.server.epoch.EpochEntry;
 
 public class ElasticLeaderEpochCheckpointMeta {
     private final int version;
@@ -33,11 +34,11 @@ public class ElasticLeaderEpochCheckpointMeta {
 
     public byte[] encode() {
         int totalLength = 4 // version
-            + 4 // following entries size
-            + 12 * entries.size(); // all entries
+                + 4 // following entries size
+                + 12 * entries.size(); // all entries
         ByteBuffer buffer = ByteBuffer.allocate(totalLength)
-            .putInt(version)
-            .putInt(entries.size());
+                .putInt(version)
+                .putInt(entries.size());
         entries.forEach(entry -> buffer.putInt(entry.epoch()).putLong(entry.startOffset()));
         buffer.flip();
         return buffer.array();
@@ -51,7 +52,7 @@ public class ElasticLeaderEpochCheckpointMeta {
             entryList.add(new EpochEntry(buffer.getInt(), buffer.getLong()));
         }
         if (entryList.size() != entryCount) {
-            throw new RuntimeException("expect entry count:" + entryCount +  ", decoded " + entryList.size() + " entries");
+            throw new RuntimeException("expect entry count:" + entryCount + ", decoded " + entryList.size() + " entries");
         }
         return new ElasticLeaderEpochCheckpointMeta(version, entryList);
     }

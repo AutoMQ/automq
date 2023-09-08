@@ -97,10 +97,10 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     public Map<String, String> overridingControllerProps() {
         Map<String, String> props = new HashMap<>();
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")
-                        .add(NetworkInCapacityGoal.class.getName())
-                        .add(NetworkOutCapacityGoal.class.getName())
-                        .add(NetworkInDistributionGoal.class.getName())
-                        .add(NetworkOutDistributionGoal.class.getName()).toString());
+                .add(NetworkInCapacityGoal.class.getName())
+                .add(NetworkOutCapacityGoal.class.getName())
+                .add(NetworkInDistributionGoal.class.getName())
+                .add(NetworkOutDistributionGoal.class.getName()).toString());
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD, "0.2");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD, "0.2");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, "0.2");
