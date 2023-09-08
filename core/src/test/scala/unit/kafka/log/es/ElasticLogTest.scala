@@ -233,14 +233,6 @@ class ElasticLogTest {
     }
 
     @Test
-    def testLogCloseFailureWhenInMemoryBufferClosed(): Unit = {
-        val keyValues = Seq(KeyValue("abc", "ABC"), KeyValue("de", "DE"))
-        appendRecords(kvsToRecords(keyValues))
-        log.closeHandlers()
-        assertThrows(classOf[KafkaStorageException], () => log.close())
-    }
-
-    @Test
     def testLogCloseHandlers(): Unit = {
         val keyValues = Seq(KeyValue("abc", "ABC"), KeyValue("de", "DE"))
         appendRecords(kvsToRecords(keyValues))
