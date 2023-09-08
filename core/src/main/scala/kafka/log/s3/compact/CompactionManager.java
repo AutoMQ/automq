@@ -53,12 +53,14 @@ public class CompactionManager {
     private final long compactionCacheSize;
     private final double executionScoreThreshold;
     private final long streamSplitSize;
+    private final int compactionInterval;
     private final TokenBucketThrottle networkInThrottle;
 
     public CompactionManager(KafkaConfig config, ObjectManager objectManager, StreamMetadataManager streamMetadataManager, S3Operator s3Operator) {
         this.objectManager = objectManager;
         this.streamMetadataManager = streamMetadataManager;
         this.s3Operator = s3Operator;
+        this.compactionInterval = config.s3ObjectCompactionInterval();
         this.compactionCacheSize = config.s3ObjectCompactionCacheSize();
         this.executionScoreThreshold = config.s3ObjectCompactionExecutionScoreThreshold();
         this.streamSplitSize = config.s3ObjectCompactionStreamSplitSize();
@@ -69,7 +71,7 @@ public class CompactionManager {
     }
 
     public void start() {
-        this.executorService.scheduleWithFixedDelay(this::compact, 0, 600, TimeUnit.SECONDS);
+        this.executorService.scheduleWithFixedDelay(this::compact, 0, this.compactionInterval, TimeUnit.MINUTES);
     }
 
     public void shutdown() {

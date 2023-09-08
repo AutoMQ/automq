@@ -97,9 +97,9 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(S3_WAL_OBJECT_METADATA_LIST);
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
-                .setType(CompactionType.COMPACT)
-                .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
-                .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
+                        .setType(CompactionType.COMPACT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
