@@ -128,6 +128,7 @@ import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
+import org.apache.kafka.common.errors.s3.RedundantOperationException;
 import org.apache.kafka.common.errors.s3.StreamExistException;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.common.errors.s3.StreamInnerErrorException;
@@ -387,7 +388,7 @@ public enum Errors {
     OBJECT_NOT_EXIST(504, "The object does not exist.", ObjectNotExistException::new),
     STREAM_NOT_OPENED(505, "The stream is not opened.", StreamNotOpenedException::new),
     STREAM_NOT_CLOSED(506, "The stream is not closed.", StreamNotClosedException::new),
-
+    REDUNDANT_OPERATION(507, "The operation is redundant.", RedundantOperationException::new),
 
 
 
