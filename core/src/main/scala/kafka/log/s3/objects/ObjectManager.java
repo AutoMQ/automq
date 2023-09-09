@@ -21,6 +21,7 @@ import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 
 /**
  * Object metadata registry.
@@ -63,6 +64,16 @@ public interface ObjectManager {
      * @return {@link S3ObjectMetadata}
      */
     List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit);
+
+    /**
+     * Get stream objects by stream range and limit.
+     * @param streamId stream id.
+     * @param startOffset searching start offset in the stream.
+     * @param endOffset searching end offset in the stream.
+     * @param limit max object count.
+     * @return {@link S3StreamObjectMetadata}
+     */
+    List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
      * Get current server wal objects.

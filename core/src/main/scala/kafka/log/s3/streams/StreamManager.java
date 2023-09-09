@@ -17,14 +17,13 @@
 
 package kafka.log.s3.streams;
 
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 public interface StreamManager {
-
     /**
      * Create a new stream.
      *

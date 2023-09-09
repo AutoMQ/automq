@@ -686,6 +686,9 @@ object KafkaConfig {
   val S3ObjectBlockSizeProp = "s3.object.block.size"
   val S3ObjectPartSizeProp = "s3.object.part.size"
   val S3CacheSizeProp = "s3.cache.size"
+  val S3StreamObjectCompactionTaskIntervalProp = "s3.stream.object.compaction.task.interval"
+  val S3StreamObjectCompactionMaxSizeProp = "s3.stream.object.compaction.max.size"
+  val S3StreamObjectCompactionLivingTimeThresholdProp = "s3.stream.object.compaction.living.time.threshold"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -698,6 +701,9 @@ object KafkaConfig {
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3CacheSizeDoc = "The S3 block cache size in MiB."
+  val S3StreamObjectCompactionTaskIntervalDoc = "The S3 stream object compaction task interval in minutes."
+  val S3StreamObjectCompactionMaxSizeDoc = "The S3 stream object compaction max size in GiB."
+  val S3StreamObjectCompactionLivingTimeThresholdDoc = "The S3 stream object compaction living time threshold in hours."
 
   // Kafka on S3 inject end
 
@@ -1508,6 +1514,9 @@ object KafkaConfig {
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3CacheSizeProp, LONG, 1073741824L, MEDIUM, S3CacheSizeDoc)
+      .define(S3StreamObjectCompactionTaskIntervalProp, INT, 60, MEDIUM, S3StreamObjectCompactionTaskIntervalDoc)
+      .define(S3StreamObjectCompactionMaxSizeProp, INT, 10, MEDIUM, S3StreamObjectCompactionMaxSizeDoc)
+      .define(S3StreamObjectCompactionLivingTimeThresholdProp, INT, 1, MEDIUM, S3StreamObjectCompactionLivingTimeThresholdDoc)
     // Kafka on S3 inject end
   }
 
@@ -2053,6 +2062,9 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
   val s3CacheSize = getLong(KafkaConfig.S3CacheSizeProp)
+  val s3StreamObjectCompactionTaskInterval = getInt(KafkaConfig.S3StreamObjectCompactionTaskIntervalProp)
+  val s3StreamObjectCompactionMaxSize = getInt(KafkaConfig.S3StreamObjectCompactionMaxSizeProp)
+  val s3StreamObjectCompactionLivingTimeThreshold = getInt(KafkaConfig.S3StreamObjectCompactionLivingTimeThresholdProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

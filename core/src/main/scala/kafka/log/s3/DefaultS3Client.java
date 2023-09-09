@@ -50,7 +50,7 @@ public class DefaultS3Client implements Client {
 
     private final StreamManager streamManager;
 
-    private final StreamClient streamClient;
+    private final S3StreamClient streamClient;
 
     private final KVClient kvClient;
 
@@ -63,7 +63,7 @@ public class DefaultS3Client implements Client {
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage);
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
     }
 
@@ -75,5 +75,9 @@ public class DefaultS3Client implements Client {
     @Override
     public KVClient kvClient() {
         return this.kvClient;
+    }
+
+    public void shutdown() {
+        this.streamClient.shutdown();
     }
 }
