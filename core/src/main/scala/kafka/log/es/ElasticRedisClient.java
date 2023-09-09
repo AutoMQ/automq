@@ -188,6 +188,11 @@ public class ElasticRedisClient implements Client {
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
             return CompletableFuture.completedFuture(new StreamImpl(jedis, streamId));
         }
+
+        @Override
+        public void shutdown() {
+
+        }
     }
 
     static class KVClientImpl implements KVClient {

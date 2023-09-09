@@ -28,7 +28,6 @@ import kafka.log.es.api.OpenStreamOptions;
 import kafka.log.es.api.RecordBatch;
 import kafka.log.es.api.Stream;
 import kafka.log.es.api.StreamClient;
-import kafka.log.s3.S3StreamClient;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -69,7 +68,7 @@ public class AlwaysSuccessClient implements Client {
             ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private final ScheduledExecutorService delayFetchScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
-    private final StreamClientImpl streamClient;
+    private final StreamClient streamClient;
     private final KVClient kvClient;
     private final Delayer delayer;
     /**
@@ -185,9 +184,7 @@ public class AlwaysSuccessClient implements Client {
         }
 
         public void shutdown() {
-            if (streamClient instanceof S3StreamClient) {
-                ((S3StreamClient) streamClient).shutdown();
-            }
+            streamClient.shutdown();
         }
 
         private void openStream0(long streamId, OpenStreamOptions options, CompletableFuture<Stream> cf) {
