@@ -18,7 +18,6 @@
 package kafka.log.s3;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -136,7 +135,10 @@ public class StreamObjectsCompactionTask {
     public Queue<List<S3StreamObjectMetadata>> prepareCompactGroups(long startSearchingOffset) {
         long startOffset = Utils.max(startSearchingOffset, stream.startOffset());
         List<S3StreamObjectMetadata> rawFetchedStreamObjects = objectManager
-            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE);
+            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE)
+            .stream()
+            .sorted()
+            .collect(Collectors.toList());
 
         this.nextStartSearchingOffset = calculateNextStartSearchingOffset(rawFetchedStreamObjects, startOffset);
 
@@ -144,7 +146,6 @@ public class StreamObjectsCompactionTask {
             .stream()
             .filter(streamObject -> streamObject.objectSize() < compactedStreamObjectMaxSize)
             .collect(Collectors.toList());
-        Collections.sort(streamObjects);
 
         return groupContinuousObjects(streamObjects)
             .stream()
@@ -274,6 +275,34 @@ public class StreamObjectsCompactionTask {
     public static class HaltException extends RuntimeException {
         public HaltException(String message) {
             super(message);
+        }
+    }
+
+    public static class Builder {
+        private ObjectManager objectManager;
+        private S3Operator s3Operator;
+        private S3Stream stream;
+        private long compactedStreamObjectMaxSize;
+        private long compactableStreamObjectLivingTimeInMs;
+
+        public Builder(ObjectManager objectManager, S3Operator s3Operator) {
+            this.objectManager = objectManager;
+            this.s3Operator = s3Operator;
+        }
+        public Builder withStream(S3Stream stream) {
+            this.stream = stream;
+            return this;
+        }
+        public Builder withCompactedStreamObjectMaxSize(long compactedStreamObjectMaxSize) {
+            this.compactedStreamObjectMaxSize = compactedStreamObjectMaxSize;
+            return this;
+        }
+        public Builder withCompactableStreamObjectLivingTimeInMs(long compactableStreamObjectLivingTimeInMs) {
+            this.compactableStreamObjectLivingTimeInMs = compactableStreamObjectLivingTimeInMs;
+            return this;
+        }
+        public StreamObjectsCompactionTask build() {
+            return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSize, compactableStreamObjectLivingTimeInMs);
         }
     }
 }

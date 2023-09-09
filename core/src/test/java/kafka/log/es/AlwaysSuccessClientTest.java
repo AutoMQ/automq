@@ -321,6 +321,11 @@ class AlwaysSuccessClientTest {
                 }
                 return CompletableFuture.completedFuture(new TestStreamImpl(streamId, delayMillis, exceptionHint));
             }
+
+            @Override
+            public void shutdown() {
+
+            }
         }
 
         static class TestStreamImpl implements Stream {

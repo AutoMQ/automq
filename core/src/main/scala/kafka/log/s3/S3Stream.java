@@ -55,13 +55,10 @@ public class S3Stream implements Stream {
     private final StreamManager streamManager;
     private final Status status;
     private final Function<Long, Void> closeHook;
-    private StreamObjectsCompactionTask streamObjectsCompactionTask;
+    private final StreamObjectsCompactionTask streamObjectsCompactionTask;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, x -> null);
-    }
-
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager, Function<Long, Void> closeHook) {
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -71,18 +68,11 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
+        this.streamObjectsCompactionTask = compactionTaskBuilder.withStream(this).build();
         this.closeHook = closeHook;
     }
 
-    public void initCompactionTask(StreamObjectsCompactionTask streamObjectsCompactionTask) {
-        this.streamObjectsCompactionTask = streamObjectsCompactionTask;
-    }
-
     public void triggerCompactionTask() throws ExecutionException, InterruptedException {
-        if (streamObjectsCompactionTask == null) {
-            throw new RuntimeException("stream objects compaction task is null");
-        }
-
         streamObjectsCompactionTask.prepare();
         streamObjectsCompactionTask.doCompactions().get();
     }

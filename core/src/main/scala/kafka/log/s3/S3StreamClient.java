@@ -22,7 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import kafka.log.es.api.CreateStreamOptions;
 import kafka.log.es.api.OpenStreamOptions;
@@ -43,8 +44,9 @@ import static kafka.log.es.FutureUtil.exec;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
-    private final ScheduledExecutorService streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER);
+    private final ScheduledThreadPoolExecutor streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
+        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER, true);
+    private ScheduledFuture<?> scheduledCompactionTaskFuture;
     private final Map<Long, S3Stream> openedStreams;
 
     private final StreamManager streamManager;
@@ -78,7 +80,7 @@ public class S3StreamClient implements StreamClient {
      * Start stream objects compactions.
      */
     private void startStreamObjectsCompactions() {
-        streamObjectCompactionExecutor.scheduleWithFixedDelay(() -> {
+        scheduledCompactionTaskFuture = streamObjectCompactionExecutor.scheduleWithFixedDelay(() -> {
             List<S3Stream> operationStreams = new LinkedList<>(openedStreams.values());
             operationStreams.forEach(stream -> {
                 if (stream.isClosed()) {
@@ -101,25 +103,26 @@ public class S3StreamClient implements StreamClient {
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
+                    StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
+                        .withCompactedStreamObjectMaxSize(config.s3StreamObjectCompactionMaxSize())
+                        .withCompactableStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeThreshold());
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getNextOffset(),
-                        storage, streamManager, id -> {
-                            openedStreams.remove(id);
-                            return null;
-                        });
-                    stream.initCompactionTask(generateStreamObjectsCompactionTask(stream));
+                        storage, streamManager, builder, id -> {
+                        openedStreams.remove(id);
+                        return null;
+                    });
                     openedStreams.put(streamId, stream);
                     return stream;
                 });
     }
 
-    private StreamObjectsCompactionTask generateStreamObjectsCompactionTask(S3Stream stream) {
-        return new StreamObjectsCompactionTask(objectManager, s3Operator, stream,
-            config.s3StreamObjectCompactionMaxSize(), config.s3StreamObjectCompactionLivingTimeThreshold());
-    }
-
     public void shutdown() {
+        // cancel the submitted task if not started; do not interrupt the task if it is running.
+        if (scheduledCompactionTaskFuture != null) {
+            scheduledCompactionTaskFuture.cancel(false);
+        }
         streamObjectCompactionExecutor.shutdown();
     }
 }

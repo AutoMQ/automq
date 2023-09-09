@@ -62,9 +62,6 @@ public class S3Storage implements Storage {
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
 
-    private final ScheduledExecutorService streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER);
-
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
@@ -83,7 +80,6 @@ public class S3Storage implements Storage {
     public void close() {
         mainExecutor.shutdown();
         backgroundExecutor.shutdown();
-        streamObjectCompactionExecutor.shutdown();
     }
 
     @Override
