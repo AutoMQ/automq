@@ -2314,7 +2314,7 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(ControllerRequestContext context, GetOpeningStreamsRequestData request) {
-        return appendReadEvent("getOpeningStreams", context.deadlineNs(),
+        return appendWriteEvent("getOpeningStreams", context.deadlineNs(),
             () -> streamControlManager.getOpeningStreams(request));
     }
 
