@@ -33,7 +33,7 @@ import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamRequest;
 import org.apache.kafka.common.requests.s3.GetKVRequest;
-import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
+import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVRequest;
@@ -331,8 +331,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return CommitWALObjectRequest.parse(buffer, apiVersion);
             case COMMIT_STREAM_OBJECT:
                 return CommitStreamObjectRequest.parse(buffer, apiVersion);
-            case GET_STREAMS_OFFSET:
-                return GetStreamsOffsetRequest.parse(buffer, apiVersion);
+            case GET_OPENING_STREAMS:
+                return GetOpeningStreamsRequest.parse(buffer, apiVersion);
             case GET_KV:
                 return GetKVRequest.parse(buffer, apiVersion);
             case PUT_KV:

@@ -35,9 +35,9 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData.StreamOffset;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamOffset;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -474,9 +474,11 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public GetStreamsOffsetResponseData getStreamsOffset(GetStreamsOffsetRequestData data) {
-        List<Long> streamIds = data.streamIds();
-        GetStreamsOffsetResponseData resp = new GetStreamsOffsetResponseData();
+    public GetOpeningStreamsResponseData getOpeningStreams(GetOpeningStreamsRequestData data) {
+//        List<Long> streamIds = data.streamIds();
+        // TODO: fence and get streams
+        List<Long> streamIds = Collections.emptyList();
+        GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
         List<StreamOffset> streamOffsets = streamIds.stream()
             .filter(this.streamsMetadata::containsKey)
             .map(id -> {

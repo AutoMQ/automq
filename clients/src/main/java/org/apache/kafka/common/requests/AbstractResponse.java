@@ -36,7 +36,7 @@ import org.apache.kafka.common.requests.s3.CreateStreamResponse;
 import org.apache.kafka.common.requests.s3.DeleteKVResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamResponse;
 import org.apache.kafka.common.requests.s3.GetKVResponse;
-import org.apache.kafka.common.requests.s3.GetStreamsOffsetResponse;
+import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVResponse;
@@ -275,8 +275,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return CommitStreamObjectResponse.parse(responseBuffer, version);
             case COMMIT_WALOBJECT:
                 return CommitWALObjectResponse.parse(responseBuffer, version);
-            case GET_STREAMS_OFFSET:
-                return GetStreamsOffsetResponse.parse(responseBuffer, version);
+            case GET_OPENING_STREAMS:
+                return GetOpeningStreamsResponse.parse(responseBuffer, version);
             case GET_KV:
                 return GetKVResponse.parse(responseBuffer, version);
             case PUT_KV:

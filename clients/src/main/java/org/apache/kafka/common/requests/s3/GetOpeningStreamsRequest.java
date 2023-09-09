@@ -18,26 +18,26 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class GetStreamsOffsetRequest extends AbstractRequest {
+public class GetOpeningStreamsRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<GetStreamsOffsetRequest> {
+    public static class Builder extends AbstractRequest.Builder<GetOpeningStreamsRequest> {
 
-        private final GetStreamsOffsetRequestData data;
-        public Builder(GetStreamsOffsetRequestData data) {
-            super(ApiKeys.GET_STREAMS_OFFSET);
+        private final GetOpeningStreamsRequestData data;
+        public Builder(GetOpeningStreamsRequestData data) {
+            super(ApiKeys.GET_OPENING_STREAMS);
             this.data = data;
         }
 
         @Override
-        public GetStreamsOffsetRequest build(short version) {
-            return new GetStreamsOffsetRequest(data, version);
+        public GetOpeningStreamsRequest build(short version) {
+            return new GetOpeningStreamsRequest(data, version);
         }
 
         @Override
@@ -46,10 +46,10 @@ public class GetStreamsOffsetRequest extends AbstractRequest {
         }
     }
 
-    private final GetStreamsOffsetRequestData data;
+    private final GetOpeningStreamsRequestData data;
 
-    public GetStreamsOffsetRequest(GetStreamsOffsetRequestData data, short version) {
-        super(ApiKeys.GET_STREAMS_OFFSET, version);
+    public GetOpeningStreamsRequest(GetOpeningStreamsRequestData data, short version) {
+        super(ApiKeys.GET_OPENING_STREAMS, version);
         this.data = data;
     }
 
@@ -63,12 +63,12 @@ public class GetStreamsOffsetRequest extends AbstractRequest {
     }
 
     @Override
-    public GetStreamsOffsetRequestData data() {
+    public GetOpeningStreamsRequestData data() {
         return data;
     }
 
-    public static GetStreamsOffsetRequest parse(ByteBuffer buffer, short version) {
-        return new GetStreamsOffsetRequest(new GetStreamsOffsetRequestData(
+    public static GetOpeningStreamsRequest parse(ByteBuffer buffer, short version) {
+        return new GetOpeningStreamsRequest(new GetOpeningStreamsRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
     

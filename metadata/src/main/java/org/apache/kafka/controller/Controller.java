@@ -48,8 +48,8 @@ import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
 import org.apache.kafka.common.message.GetKVResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
@@ -452,9 +452,9 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to get the offset:<code> [startOffset, endOffset) </code> of the stream.
      */
-    CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(
+    CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(
         ControllerRequestContext context,
-        GetStreamsOffsetRequestData request
+        GetOpeningStreamsRequestData request
     );
 
     /**

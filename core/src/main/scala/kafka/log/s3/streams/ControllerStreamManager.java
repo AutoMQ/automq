@@ -24,14 +24,14 @@ import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
-import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
+import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.slf4j.Logger;
@@ -50,6 +50,23 @@ public class ControllerStreamManager implements StreamManager {
     public ControllerStreamManager(ControllerRequestSender requestSender, KafkaConfig config) {
         this.config = config;
         this.requestSender = requestSender;
+    }
+
+    @Override
+    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+        GetOpeningStreamsRequest.Builder request = new GetOpeningStreamsRequest.Builder(
+                new GetOpeningStreamsRequestData().setBrokerId(config.brokerId()).setBrokerEpoch(config.brokerEpoch()));
+        return this.requestSender.send(request, GetOpeningStreamsResponseData.class).thenApply(resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    return resp.streamsOffset().stream()
+                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
+                            .collect(Collectors.toList());
+                default:
+                    LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+            }
+        });
     }
 
     @Override
@@ -132,23 +149,5 @@ public class ControllerStreamManager implements StreamManager {
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         // TODO: implement
         return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
-        GetStreamsOffsetRequest.Builder request = new GetStreamsOffsetRequest.Builder(
-                new GetStreamsOffsetRequestData()
-                        .setStreamIds(streamIds));
-        return this.requestSender.send(request, GetStreamsOffsetResponseData.class).thenApply(resp -> {
-            switch (Errors.forCode(resp.errorCode())) {
-                case NONE:
-                    return resp.streamsOffset().stream()
-                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
-                            .collect(Collectors.toList());
-                default:
-                    LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
-            }
-        });
     }
 }
