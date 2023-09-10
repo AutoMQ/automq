@@ -213,7 +213,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
         // fill the objects' size and committed-timestamp
         for (S3ObjectMetadata object : cachedInRangeObjects.objects()) {
-            S3Object objectMetadata = objectsImage.getObjectMetadata(object.getObjectId());
+            S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
             if (objectMetadata == null) {
                 // should not happen
                 LOGGER.error(

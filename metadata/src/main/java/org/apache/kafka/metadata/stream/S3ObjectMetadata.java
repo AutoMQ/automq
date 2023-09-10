@@ -95,11 +95,11 @@ public class S3ObjectMetadata {
         this.committedTimestamp = committedTimestamp;
     }
 
-    public long getObjectId() {
+    public long objectId() {
         return objectId;
     }
 
-    public long getObjectSize() {
+    public long objectSize() {
         return objectSize;
     }
 
@@ -111,16 +111,30 @@ public class S3ObjectMetadata {
         return orderId;
     }
 
-    public long getCommittedTimestamp() {
+    public long committedTimestamp() {
         return committedTimestamp;
     }
 
-    public long getDataTimeInMs() {
+    public long dataTimeInMs() {
         return dataTimeInMs;
     }
 
     public List<StreamOffsetRange> getOffsetRanges() {
         return offsetRanges;
+    }
+
+    public long startOffset() {
+        if (offsetRanges == null || offsetRanges.isEmpty()) {
+            return S3StreamConstant.INVALID_OFFSET;
+        }
+        return offsetRanges.get(0).getStartOffset();
+    }
+
+    public long endOffset() {
+        if (offsetRanges == null || offsetRanges.isEmpty()) {
+            return S3StreamConstant.INVALID_OFFSET;
+        }
+        return offsetRanges.get(offsetRanges.size() - 1).getEndOffset();
     }
 
     public String toString() {
@@ -142,7 +156,7 @@ public class S3ObjectMetadata {
         }
         S3ObjectMetadata that = (S3ObjectMetadata) o;
         return objectId == that.objectId && orderId == that.orderId && objectSize == that.objectSize && committedTimestamp == that.committedTimestamp
-            && dataTimeInMs == that.dataTimeInMs && type == that.type && Objects.equals(offsetRanges, that.offsetRanges);
+            && dataTimeInMs == that.dataTimeInMs && type == that.type && offsetRanges.equals(that.offsetRanges);
     }
 
     @Override

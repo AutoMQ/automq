@@ -30,7 +30,6 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest.Builder;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,17 +134,6 @@ public class ControllerObjectManager implements ObjectManager {
         } catch (Exception e) {
             LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
                     e);
-            return Collections.emptyList();
-        }
-    }
-
-    @Override
-    public List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        try {
-            return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit).get();
-        } catch (Exception e) {
-            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
-                e);
             return Collections.emptyList();
         }
     }

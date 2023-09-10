@@ -143,41 +143,41 @@ public class S3StreamsMetadataImageTest {
         assertEquals(12, objects.objects().size());
         List<Long> expectedObjectIds = List.of(
             8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L, 7L, 3L, 4L);
-        assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 4. search stream_0 in [20, 550)
         objects = streamsImage.getObjects(STREAM0, 20, 550, Integer.MAX_VALUE);
         assertEquals(20, objects.startOffset());
         assertEquals(600, objects.endOffset());
         assertEquals(12, objects.objects().size());
-        assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 5. search stream_0 in [20, 550) with limit 5
         objects = streamsImage.getObjects(STREAM0, 20, 550, 5);
         assertEquals(20, objects.startOffset());
         assertEquals(180, objects.endOffset());
         assertEquals(5, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(0, 5), objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds.subList(0, 5), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 6. search stream_0 in [400, 520)
         objects = streamsImage.getObjects(STREAM0, 400, 520, Integer.MAX_VALUE);
         assertEquals(400, objects.startOffset());
         assertEquals(520, objects.endOffset());
         assertEquals(3, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 7. search stream_0 in [401, 519)
         objects = streamsImage.getObjects(STREAM0, 401, 519, Integer.MAX_VALUE);
         assertEquals(401, objects.startOffset());
         assertEquals(520, objects.endOffset());
         assertEquals(3, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 8. search stream_0 in [399, 521)
         objects = streamsImage.getObjects(STREAM0, 399, 521, Integer.MAX_VALUE);
         assertEquals(399, objects.startOffset());
         assertEquals(600, objects.endOffset());
         assertEquals(5, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(7, 12), objects.objects().stream().map(S3ObjectMetadata::getObjectId).collect(Collectors.toList()));
+        assertEquals(expectedObjectIds.subList(7, 12), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
 }

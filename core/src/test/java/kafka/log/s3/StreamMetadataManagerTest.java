@@ -134,7 +134,7 @@ public class StreamMetadataManagerTest {
         assertEquals(10L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(0L, inRangeObjects.objects().get(0).getObjectId());
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 2. fetch with invalid streamId
         result = this.manager.fetch(STREAM1, 0L, 100L, 5);
@@ -148,7 +148,7 @@ public class StreamMetadataManagerTest {
         assertEquals(20L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(0L, inRangeObjects.objects().get(0).getObjectId());
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 4. fetch with smaller endOffset
         result = this.manager.fetch(STREAM0, 10L, 50L, 5);
@@ -157,7 +157,7 @@ public class StreamMetadataManagerTest {
         assertEquals(10L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(0L, inRangeObjects.objects().get(0).getObjectId());
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 5. fetch with smaller startOffset
         result = this.manager.fetch(STREAM0, 5L, 100L, 5);
@@ -187,9 +187,9 @@ public class StreamMetadataManagerTest {
             assertEquals(10L, rangeObjects.startOffset());
             assertEquals(200L, rangeObjects.endOffset());
             assertEquals(3, rangeObjects.objects().size());
-            assertEquals(0L, rangeObjects.objects().get(0).getObjectId());
-            assertEquals(1L, rangeObjects.objects().get(1).getObjectId());
-            assertEquals(2L, rangeObjects.objects().get(2).getObjectId());
+            assertEquals(0L, rangeObjects.objects().get(0).objectId());
+            assertEquals(1L, rangeObjects.objects().get(1).objectId());
+            assertEquals(2L, rangeObjects.objects().get(2).objectId());
         });
 
     }

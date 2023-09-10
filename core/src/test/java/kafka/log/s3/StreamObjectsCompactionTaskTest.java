@@ -33,8 +33,10 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.StreamObject;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectType;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,7 @@ import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 class StreamObjectsCompactionTaskTest {
+
     private ObjectManager objectManager;
     private S3Operator s3Operator;
     private S3Stream stream;
@@ -75,7 +78,7 @@ class StreamObjectsCompactionTaskTest {
             List.of(65L, 70L, 1000L),
             List.of(70L, 80L, 1000L)
         );
-        List<S3StreamObjectMetadata> metadataList = prepareRawStreamObjects(10, stream.streamId(), objectsDetails);
+        List<S3ObjectMetadata> metadataList = prepareRawStreamObjects(10, stream.streamId(), objectsDetails);
 
         // two stream object groups should be handled
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
@@ -84,7 +87,8 @@ class StreamObjectsCompactionTaskTest {
 
         AtomicLong objectIdAlloc = new AtomicLong(100);
         List<CommitStreamObjectRequest> committedRequests = new ArrayList<>();
-        when(objectManager.prepareObject(anyInt(), anyLong())).thenAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement()));
+        when(objectManager.prepareObject(anyInt(), anyLong())).thenAnswer(
+            invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement()));
         when(objectManager.commitStreamObject(any(CommitStreamObjectRequest.class))).thenAnswer(invocation -> {
             committedRequests.add(invocation.getArgument(0));
             return CompletableFuture.completedFuture(null);
@@ -114,14 +118,20 @@ class StreamObjectsCompactionTaskTest {
         // 2 compaction groups will be handled.
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(List.of(
-                new S3StreamObjectMetadata(new S3StreamObject(1, 150, 1, 5, 10), 0),
-                new S3StreamObjectMetadata(new S3StreamObject(2, 20, 1, 10, 20), 0),
-                new S3StreamObjectMetadata(new S3StreamObject(3, 20, 1, 40, 50), 0),
-                new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), 0),
-                new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 65, 70), 0),
-                new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), 0)
-            ));
-        when(objectManager.prepareObject(anyInt(), anyLong())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("halt compaction task")));
+                new S3ObjectMetadata(1, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 5, 10)), 0, 0, 150,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(2, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 10, 20)), 0, 0, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(3, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 40, 50)), 0, 0, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(4, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 50, 60)), 0, 0, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(5, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 65, 70)), 0, 0, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 70, 80)), 0, 0, 20,
+                    S3StreamConstant.INVALID_ORDER_ID)));
+        when(objectManager.prepareObject(anyInt(), anyLong())).thenReturn(
+            CompletableFuture.failedFuture(new RuntimeException("halt compaction task")));
 
         // The first group's compaction failed in prepareObject phase, the second group should not be handled.
         StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0);
@@ -157,17 +167,18 @@ class StreamObjectsCompactionTaskTest {
      * @throws ExecutionException
      * @throws InterruptedException
      */
-    List<S3StreamObjectMetadata> prepareRawStreamObjects(long startObjectId, long streamId,
+    List<S3ObjectMetadata> prepareRawStreamObjects(long startObjectId, long streamId,
         List<List<Long>> objectsDetails) throws ExecutionException, InterruptedException {
         AtomicLong objectIdAlloc = new AtomicLong(startObjectId);
         Stack<CommitWALObjectRequest> commitWALObjectRequests = new Stack<>();
-        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager)
+            .prepareObject(anyInt(), anyLong());
         when(objectManager.commitWALObject(any())).thenAnswer(invocation -> {
             commitWALObjectRequests.push(invocation.getArgument(0));
             return CompletableFuture.completedFuture(new CommitWALObjectResponse());
         });
 
-        List<S3StreamObjectMetadata> metadataList = new ArrayList<>();
+        List<S3ObjectMetadata> metadataList = new ArrayList<>();
 
         for (int i = 0; i < objectsDetails.size(); i++) {
             List<Long> objectsDetail = objectsDetails.get(i);
@@ -175,8 +186,10 @@ class StreamObjectsCompactionTaskTest {
             long endOffset = objectsDetail.get(1);
             int recordsSize = Math.toIntExact(objectsDetail.get(2));
 
-            Map<Long, List<StreamRecordBatch>> map = Map.of(streamId, List.of(new StreamRecordBatch(streamId, 0, startOffset, Math.toIntExact(endOffset - startOffset), random(recordsSize))));
-            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024, recordsSize - 1);
+            Map<Long, List<StreamRecordBatch>> map = Map.of(streamId,
+                List.of(new StreamRecordBatch(streamId, 0, startOffset, Math.toIntExact(endOffset - startOffset), random(recordsSize))));
+            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024,
+                recordsSize - 1);
 
             walObjectUploadTask.prepare().get();
             walObjectUploadTask.upload().get();
@@ -192,7 +205,10 @@ class StreamObjectsCompactionTaskTest {
             assertEquals(startOffset, streamObject.getStartOffset());
             assertEquals(endOffset, streamObject.getEndOffset());
 
-            metadataList.add(new S3StreamObjectMetadata(new S3StreamObject(streamObject.getObjectId(), streamObject.getObjectSize(), streamObject.getStreamId(), streamObject.getStartOffset(), streamObject.getEndOffset()), System.currentTimeMillis()));
+            metadataList.add(
+                new S3ObjectMetadata(streamObject.getObjectId(), S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamObject.getStreamId(),
+                    streamObject.getStartOffset(), streamObject.getEndOffset())), 0, System.currentTimeMillis(), streamObject.getObjectSize(),
+                    S3StreamConstant.INVALID_ORDER_ID));
         }
         return metadataList;
     }
@@ -205,20 +221,31 @@ class StreamObjectsCompactionTaskTest {
         long currentTimestamp = System.currentTimeMillis();
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(List.of(
-                new S3StreamObjectMetadata(new S3StreamObject(1, 150, 1, 5, 10), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(2, 20, 1, 10, 20), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(3, 20, 1, 40, 50), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 65, 70), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp)
-            ));
-        Queue<List<S3StreamObjectMetadata>> compactGroups = task1.prepareCompactGroups(0);
+                new S3ObjectMetadata(1, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 5, 10)), 0, currentTimestamp, 150,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(2, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 10, 20)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(3, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 40, 50)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(4, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 50, 60)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(5, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 65, 70)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 70, 80)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID)));
+        Queue<List<S3ObjectMetadata>> compactGroups = task1.prepareCompactGroups(0);
         assertEquals(2, compactGroups.size());
 
-        assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(3, 20, 1, 40, 50), currentTimestamp),
-            new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), currentTimestamp)), compactGroups.poll());
-        assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 65, 70), currentTimestamp),
-            new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp)), compactGroups.poll());
+        assertEquals(List.of(
+            new S3ObjectMetadata(3, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 40, 50)), 0, currentTimestamp, 20,
+                S3StreamConstant.INVALID_ORDER_ID),
+            new S3ObjectMetadata(4, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 50, 60)), 0, currentTimestamp, 20,
+                S3StreamConstant.INVALID_ORDER_ID)), compactGroups.poll());
+        assertEquals(List.of(
+            new S3ObjectMetadata(5, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 65, 70)), 0, currentTimestamp, 20,
+                S3StreamConstant.INVALID_ORDER_ID),
+            new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 70, 80)), 0, currentTimestamp, 20,
+                S3StreamConstant.INVALID_ORDER_ID)), compactGroups.poll());
         assertEquals(10, task1.getNextStartSearchingOffset());
 
         // check if we can filter two groups with limit of timestamp
@@ -227,22 +254,34 @@ class StreamObjectsCompactionTaskTest {
         currentTimestamp = System.currentTimeMillis();
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(List.of(
-                new S3StreamObjectMetadata(new S3StreamObject(1, 60, 1, 5, 10), currentTimestamp - 20000),
-                new S3StreamObjectMetadata(new S3StreamObject(2, 20, 1, 10, 40), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(3, 20, 1, 40, 50), currentTimestamp - 20000),
-                new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), currentTimestamp),
-                new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 60, 70), currentTimestamp - 30000),
-                new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp - 30000),
-                new S3StreamObjectMetadata(new S3StreamObject(7, 20, 1, 80, 90), currentTimestamp - 30000),
-                new S3StreamObjectMetadata(new S3StreamObject(8, 80, 1, 90, 95), currentTimestamp - 30000),
-                new S3StreamObjectMetadata(new S3StreamObject(9, 20, 1, 95, 99), currentTimestamp)
-            ));
+                new S3ObjectMetadata(1, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 5, 10)), 0, currentTimestamp - 20000, 60,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(2, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 10, 40)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(3, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 40, 50)), 0, currentTimestamp - 20000, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(4, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 50, 60)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(5, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 60, 70)), 0, currentTimestamp - 30000, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 70, 80)), 0, currentTimestamp - 30000, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(7, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 80, 90)), 0, currentTimestamp - 30000, 20,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(8, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 90, 95)), 0, currentTimestamp - 30000, 80,
+                    S3StreamConstant.INVALID_ORDER_ID),
+                new S3ObjectMetadata(9, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 95, 99)), 0, currentTimestamp, 20,
+                    S3StreamConstant.INVALID_ORDER_ID)));
         compactGroups = task2.prepareCompactGroups(0);
         assertEquals(1, compactGroups.size());
 
-        assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 60, 70), currentTimestamp - 30000),
-            new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp - 30000),
-            new S3StreamObjectMetadata(new S3StreamObject(7, 20, 1, 80, 90), currentTimestamp - 30000)), compactGroups.poll());
+        assertEquals(List.of(
+            new S3ObjectMetadata(5, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 60, 70)), 0, currentTimestamp - 30000, 20,
+                S3StreamConstant.INVALID_ORDER_ID),
+            new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 70, 80)), 0, currentTimestamp - 30000, 20,
+                S3StreamConstant.INVALID_ORDER_ID),
+            new S3ObjectMetadata(7, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, 80, 90)), 0, currentTimestamp - 30000, 20,
+                S3StreamConstant.INVALID_ORDER_ID)), compactGroups.poll());
         assertEquals(5, task2.getNextStartSearchingOffset());
     }
 }

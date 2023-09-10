@@ -367,7 +367,7 @@ public class StreamControlManager {
         long committedTs = System.currentTimeMillis();
 
         // commit object
-        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
+        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
             log.error("[CommitWALObject]: object {} not exist when commit wal object", objectId);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
