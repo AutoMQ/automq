@@ -211,6 +211,39 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
+    /**
+     * Open stream.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>STREAM_FENCED</code>:
+     *          <ol>
+     *              <li> stream's epoch is larger than request epoch </li>
+     *              <li> stream's current range's broker is not equal to request broker </li>
+     *              <li> stream's epoch matched, but stream's state is <code>CLOSED</code> </li>
+     *          </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream's id not exist in current stream-metadata </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_CLOSED</code>
+     *         <ol>
+     *             <li> request with higher epoch but stream's state is <code>OPENED</code> </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_INNER_ERROR</code>
+     *         <ol>
+     *             <li> stream's current range not exist when stream has been opened </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<OpenStreamResponseData> openStream(OpenStreamRequestData data) {
         OpenStreamResponseData resp = new OpenStreamResponseData();
         long streamId = data.streamId();
@@ -294,6 +327,33 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
+    /**
+     * Close stream.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>STREAM_FENCED</code>:
+     *         <ol>
+     *             <li> stream's epoch is larger than request epoch </li>
+     *             <li> stream's current range's broker is not equal to request broker </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream's id not exist in current stream-metadata </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_INNER_ERROR</code>
+     *         <ol>
+     *             <li> stream's current range not exist when stream has been opened </li>
+     *             <li> close stream with higher epoch </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CloseStreamResponseData> closeStream(CloseStreamRequestData data) {
         CloseStreamResponseData resp = new CloseStreamResponseData();
         long streamId = data.streamId();
@@ -354,6 +414,26 @@ public class StreamControlManager {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Commit wal object.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>OBJECT_NOT_EXIST</code>
+     *         <ol>
+     *             <li> wal object not exist when commit </li>
+     *             <li> stream object not exist when commit </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>COMPACTED_OBJECTS_NOT_FOUND</code>
+     *         <ol>
+     *             <li> compacted objects not found when mark destroy </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -381,7 +461,7 @@ public class StreamControlManager {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(compactedObjectIds);
             if (!destroyResult.response()) {
                 log.error("[CommitWALObject]: Mark destroy compacted objects: {} failed", compactedObjectIds);
-                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             records.addAll(destroyResult.records());
@@ -423,6 +503,25 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
+    /**
+     * Commit stream object.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>OBJECT_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream object not exist when commit </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>COMPACTED_OBJECTS_NOT_FOUND</code>
+     *         <ol>
+     *             <li> compacted objects not found when mark destroy </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
         long streamObjectId = data.objectId();
         long streamId = data.streamId();
@@ -451,7 +550,7 @@ public class StreamControlManager {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds);
             if (!destroyResult.response()) {
                 log.error("[CommitStreamObject]: Mark destroy compacted objects: {} failed", sourceObjectIds);
-                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
         }

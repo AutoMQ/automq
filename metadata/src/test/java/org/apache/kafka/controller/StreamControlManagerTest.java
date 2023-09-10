@@ -473,7 +473,7 @@ public class StreamControlManagerTest {
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
         ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
-        assertEquals(Errors.STREAM_INNER_ERROR.code(), result6.response().errorCode());
+        assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
@@ -647,7 +647,7 @@ public class StreamControlManagerTest {
             .setObjectSize(999)
             .setSourceObjectIds(List.of(10L));
         result2 = manager.commitStreamObject(streamObjectRequest);
-        assertEquals(Errors.STREAM_INNER_ERROR.code(), result2.response().errorCode());
+        assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result2.response().errorCode());
         replay(manager, result2.records());
 
         // 6. verify stream objects
