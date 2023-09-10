@@ -31,7 +31,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static kafka.log.s3.operator.Writer.MIN_PART_SIZE;
+
 // TODO: memory optimization
+
+/**
+ * Write stream records to a single object.
+ */
 public class ObjectWriter {
 
     private static final byte DATA_BLOCK_MAGIC = 0x01;
@@ -47,12 +53,19 @@ public class ObjectWriter {
 
     private long size;
 
+    /**
+     * Create a new object writer.
+     * @param objectId object id
+     * @param s3Operator S3 operator
+     * @param blockSizeThreshold the max size of a block
+     * @param partSizeThreshold the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
+     */
     public ObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
         this.objectId = objectId;
         // TODO: use a better clusterName
         String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
         this.blockSizeThreshold = blockSizeThreshold;
-        this.partSizeThreshold = partSizeThreshold;
+        this.partSizeThreshold = Math.max(MIN_PART_SIZE, partSizeThreshold);
         waitingUploadBlocks = new LinkedList<>();
         completedBlocks = new LinkedList<>();
         writer = s3Operator.writer(objectKey);

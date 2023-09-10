@@ -112,7 +112,7 @@ public class ObjectReader {
         public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
+            if (indexBlockPosition + indexBlockSize + 48 < objectSize) {
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);

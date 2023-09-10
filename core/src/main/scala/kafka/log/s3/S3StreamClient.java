@@ -105,7 +105,7 @@ public class S3StreamClient implements StreamClient {
                 thenApply(metadata -> {
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                         .withCompactedStreamObjectMaxSize(config.s3StreamObjectCompactionMaxSize())
-                        .withCompactableStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeThreshold());
+                        .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeThreshold());
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getNextOffset(),

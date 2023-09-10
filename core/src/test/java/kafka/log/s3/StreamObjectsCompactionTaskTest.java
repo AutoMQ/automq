@@ -20,11 +20,13 @@ package kafka.log.s3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Stack;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectRequest;
@@ -41,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import static kafka.log.s3.TestUtils.random;
+import static kafka.log.s3.operator.Writer.MAX_PART_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -154,8 +157,8 @@ class StreamObjectsCompactionTaskTest {
      * @param streamId       stream id
      * @param objectsDetails list of [startOffset, endOffset, recordsSize]. Each item in the list will be used to generate a stream object.
      * @return list of stream object metadata
-     * @throws ExecutionException
-     * @throws InterruptedException
+     * @throws ExecutionException  when prepareObject or commitWALObject failed
+     * @throws InterruptedException when prepareObject or commitWALObject failed
      */
     List<S3StreamObjectMetadata> prepareRawStreamObjects(long startObjectId, long streamId,
         List<List<Long>> objectsDetails) throws ExecutionException, InterruptedException {
@@ -212,13 +215,15 @@ class StreamObjectsCompactionTaskTest {
                 new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 65, 70), currentTimestamp),
                 new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp)
             ));
-        Queue<List<S3StreamObjectMetadata>> compactGroups = task1.prepareCompactGroups(0);
+        Queue<List<StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper>> compactGroups = task1.prepareCompactGroups(0);
         assertEquals(2, compactGroups.size());
 
         assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(3, 20, 1, 40, 50), currentTimestamp),
-            new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), currentTimestamp)), compactGroups.poll());
+            new S3StreamObjectMetadata(new S3StreamObject(4, 20, 1, 50, 60), currentTimestamp)),
+            Objects.requireNonNull(compactGroups.poll()).stream().map(StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper::s3StreamObjectMetadata).collect(Collectors.toList()));
         assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 65, 70), currentTimestamp),
-            new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp)), compactGroups.poll());
+            new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp)),
+            Objects.requireNonNull(compactGroups.poll()).stream().map(StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper::s3StreamObjectMetadata).collect(Collectors.toList()));
         assertEquals(10, task1.getNextStartSearchingOffset());
 
         // check if we can filter two groups with limit of timestamp
@@ -242,7 +247,33 @@ class StreamObjectsCompactionTaskTest {
 
         assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(5, 20, 1, 60, 70), currentTimestamp - 30000),
             new S3StreamObjectMetadata(new S3StreamObject(6, 20, 1, 70, 80), currentTimestamp - 30000),
-            new S3StreamObjectMetadata(new S3StreamObject(7, 20, 1, 80, 90), currentTimestamp - 30000)), compactGroups.poll());
+            new S3StreamObjectMetadata(new S3StreamObject(7, 20, 1, 80, 90), currentTimestamp - 30000)),
+            Objects.requireNonNull(compactGroups.poll()).stream().map(StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper::s3StreamObjectMetadata).collect(Collectors.toList()));
         assertEquals(5, task2.getNextStartSearchingOffset());
+
+        // check if we can split big objects.
+        StreamObjectsCompactionTask task3 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 10 * MAX_PART_SIZE, 0);
+
+        currentTimestamp = System.currentTimeMillis();
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(List.of(
+                new S3StreamObjectMetadata(new S3StreamObject(1, MAX_PART_SIZE + 10, 1, 5, 10), currentTimestamp),
+                new S3StreamObjectMetadata(new S3StreamObject(2, 2 * MAX_PART_SIZE, 1, 10, 20), currentTimestamp),
+                new S3StreamObjectMetadata(new S3StreamObject(3, MAX_PART_SIZE - 1, 1, 20, 30), currentTimestamp)
+            ));
+        compactGroups = task3.prepareCompactGroups(0);
+        assertEquals(1, compactGroups.size());
+
+        List<StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper> wrappers = compactGroups.poll();
+        assert wrappers != null;
+        assertEquals(3, wrappers.size());
+
+        assertEquals(List.of(new S3StreamObjectMetadata(new S3StreamObject(1, MAX_PART_SIZE + 10, 1, 5, 10), currentTimestamp),
+                new S3StreamObjectMetadata(new S3StreamObject(2, 2 * MAX_PART_SIZE, 1, 10, 20), currentTimestamp),
+                new S3StreamObjectMetadata(new S3StreamObject(3, MAX_PART_SIZE - 1, 1, 20, 30), currentTimestamp)),
+            Objects.requireNonNull(wrappers).stream().map(StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper::s3StreamObjectMetadata).collect(Collectors.toList()));
+        assertEquals(List.of(2, 2, 1),
+            Objects.requireNonNull(wrappers).stream().map(StreamObjectsCompactionTask.S3StreamObjectMetadataSplitWrapper::splitCopyCount).collect(Collectors.toList()));
+        assertEquals(5, task3.getNextStartSearchingOffset());
     }
 }

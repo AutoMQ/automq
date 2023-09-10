@@ -18,6 +18,7 @@
 package kafka.log.s3.objects;
 
 
+import java.util.Objects;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.server.KafkaConfig;
@@ -63,13 +64,11 @@ public class ControllerObjectManager implements ObjectManager {
         );
         return requestSender.send(request, PrepareS3ObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
-            switch (code) {
-                case NONE:
-                    return resp.firstS3ObjectId();
-                default:
-                    LOGGER.error("Error while preparing {} object, code: {}", count, code);
-                    throw code.exception();
+            if (Objects.requireNonNull(code) == Errors.NONE) {
+                return resp.firstS3ObjectId();
             }
+            LOGGER.error("Error while preparing {} object, code: {}", count, code);
+            throw code.exception();
         });
     }
 
@@ -90,13 +89,11 @@ public class ControllerObjectManager implements ObjectManager {
                         .setCompactedObjectIds(request.getCompactedObjectIds()));
         return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
-            switch (code) {
-                case NONE:
-                    return new CommitWALObjectResponse();
-                default:
-                    LOGGER.error("Error while committing WAL object: {}, code: {}", request, code);
-                    throw code.exception();
+            if (Objects.requireNonNull(code) == Errors.NONE) {
+                return new CommitWALObjectResponse();
             }
+            LOGGER.error("Error while committing WAL object: {}, code: {}", request, code);
+            throw code.exception();
         });
     }
 
@@ -112,13 +109,11 @@ public class ControllerObjectManager implements ObjectManager {
                         .setSourceObjectIds(request.getSourceObjectIds()));
         return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
             Errors code = Errors.forCode(resp.errorCode());
-            switch (code) {
-                case NONE:
-                    return null;
-                default:
-                    LOGGER.error("Error while committing stream object: {}, code: {}", request, code);
-                    throw code.exception();
+            if (Objects.requireNonNull(code) == Errors.NONE) {
+                return null;
             }
+            LOGGER.error("Error while committing stream object: {}, code: {}", request, code);
+            throw code.exception();
         });
     }
 
@@ -127,8 +122,7 @@ public class ControllerObjectManager implements ObjectManager {
         try {
             return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
                 if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                    List<S3ObjectMetadata> objects = Collections.emptyList();
-                    return objects;
+                    return Collections.<S3ObjectMetadata>emptyList();
                 }
                 return inRangeObjects.objects();
             }).get();
