@@ -154,4 +154,16 @@ public class ControllerObjectManager implements ObjectManager {
     public List<S3ObjectMetadata> getServerObjects() {
         return null;
     }
+
+    @Override
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        try {
+            return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit).get();
+        } catch (Exception e) {
+            LOGGER.error("Error while get stream objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset,
+                limit,
+                e);
+            return Collections.emptyList();
+        }
+    }
 }

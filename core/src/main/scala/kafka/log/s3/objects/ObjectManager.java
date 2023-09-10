@@ -17,10 +17,9 @@
 
 package kafka.log.s3.objects;
 
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 
 /**
@@ -56,29 +55,38 @@ public interface ObjectManager {
      * Get objects by stream range.
      * When obj1 contains stream0 <code>[0, 100) [200, 300)</code> and obj2 contains stream1 <code>[100, 200)</code>,
      * expect getObjects(streamId, 0, 300) return <code>[obj1, obj2, obj1]</code>
-     *
-     * @param streamId    stream id.
+     * <ul>
+     *     <li> Concern two types of objects: stream object and wal object.
+     *     <li> Returned objects must be continuous of stream range.
+     *     <li> Returned objects aren't physical object concept, they are logical object concept.
+     *     (regard each returned object-metadata as a slice of object)
+     * </ul>
+     * @param streamId stream id.
      * @param startOffset get range start offset.
-     * @param endOffset   get range end offset.
-     * @param limit       max object count. Why use limit instead of maxBytes? Because we cannot get stream size from object metadata.
+     * @param endOffset get range end offset.
+     * @param limit max object range count.
      * @return {@link S3ObjectMetadata}
      */
     List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit);
-
-    /**
-     * Get stream objects by stream range and limit.
-     * @param streamId stream id.
-     * @param startOffset searching start offset in the stream.
-     * @param endOffset searching end offset in the stream.
-     * @param limit max object count.
-     * @return {@link S3StreamObjectMetadata}
-     */
-    List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
      * Get current server wal objects.
      * When server is starting, wal need server wal objects to recover.
      */
     List<S3ObjectMetadata> getServerObjects();
+
+    /**
+     * Get stream objects by stream range.
+     * <ul>
+     *      <li> Only concern about stream objects, ignore wal objects.
+     *      <li> Returned stream objects can be discontinuous of stream range.
+     * </ul>
+     * @param streamId stream id.
+     * @param startOffset get range start offset.
+     * @param endOffset get range end offset.
+     * @param limit max object count.
+     * @return {@link S3StreamObjectMetadata}
+     */
+    List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
 }
 

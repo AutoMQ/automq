@@ -30,6 +30,7 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -119,9 +120,9 @@ public class S3StreamsMetadataImageTest {
             3, new RangeMetadata(STREAM0, 3L, 3, 420L, 500L, BROKER1),
             4, new RangeMetadata(STREAM0, 4L, 4, 500L, 600L, BROKER0));
         Map<Long, S3StreamObject> streamObjects = Map.of(
-            8L, new S3StreamObject(8, GB, STREAM0, 10L, 100L),
-            9L, new S3StreamObject(9, GB, STREAM0, 200L, 300L),
-            10L, new S3StreamObject(10, GB, STREAM0, 300L, 400L));
+            8L, new S3StreamObject(8, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS),
+            9L, new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
+            10L, new S3StreamObject(10, STREAM0, 300L, 400L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 4, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
             Map.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage));

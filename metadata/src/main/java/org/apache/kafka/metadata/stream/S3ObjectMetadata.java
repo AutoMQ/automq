@@ -18,21 +18,81 @@
 package org.apache.kafka.metadata.stream;
 
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 public class S3ObjectMetadata {
+
     private final long objectId;
+
+    /**
+     * order id of the object.
+     * <ul>
+     *     <li> WAL object: order id of the wal object.
+     *     <li> STREAM object: meaningless.
+     * </ul>
+     */
+    private final long orderId;
     private long objectSize;
     private final S3ObjectType type;
+    /**
+     * stream offset ranges of the object.
+     * <ul>
+     *     <li> WAL object: one or more stream offset ranges.
+     *     <li> STREAM object: only one stream offset range.
+     * </ul>
+     */
+    private final List<StreamOffsetRange> offsetRanges;
+    /**
+     * real committed timestamp of the data in the object.
+     */
+    private long committedTimestamp;
 
+    /**
+     * logical timestamp in ms of the data in the object.
+     */
+    private final long dataTimeInMs;
+
+    // Only used for testing
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
+        this(objectId, type, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, objectSize,
+            S3StreamConstant.INVALID_ORDER_ID);
+    }
+
+    public S3ObjectMetadata(long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs) {
+        this(objectId, type, offsetRanges, dataTimeInMs, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
+            S3StreamConstant.INVALID_ORDER_ID);
+    }
+
+    public S3ObjectMetadata(long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
+        long orderId) {
+        this(objectId, type, offsetRanges, dataTimeInMs, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
+            orderId);
+    }
+
+    public S3ObjectMetadata(
+        // these four params come from S3WALObject or S3StreamObject
+        long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
+        // these two params come from S3Object
+        long committedTimestamp, long objectSize,
+        // this param only comes from S3WALObject
+        long orderId) {
         this.objectId = objectId;
+        this.orderId = orderId;
         this.objectSize = objectSize;
         this.type = type;
+        this.offsetRanges = offsetRanges;
+        this.dataTimeInMs = dataTimeInMs;
+        this.committedTimestamp = committedTimestamp;
     }
 
     public void setObjectSize(long objectSize) {
         this.objectSize = objectSize;
+    }
+
+    public void setCommittedTimestamp(long committedTimestamp) {
+        this.committedTimestamp = committedTimestamp;
     }
 
     public long getObjectId() {
@@ -45,6 +105,27 @@ public class S3ObjectMetadata {
 
     public S3ObjectType getType() {
         return type;
+    }
+
+    public long getOrderId() {
+        return orderId;
+    }
+
+    public long getCommittedTimestamp() {
+        return committedTimestamp;
+    }
+
+    public long getDataTimeInMs() {
+        return dataTimeInMs;
+    }
+
+    public List<StreamOffsetRange> getOffsetRanges() {
+        return offsetRanges;
+    }
+
+    public String toString() {
+        return "S3ObjectMetadata(objectId=" + objectId + ", objectSize=" + objectSize + ", type=" + type + ", offsetRanges=" + offsetRanges
+            + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ")";
     }
 
     public String key() {
@@ -60,11 +141,12 @@ public class S3ObjectMetadata {
             return false;
         }
         S3ObjectMetadata that = (S3ObjectMetadata) o;
-        return objectId == that.objectId && objectSize == that.objectSize && type == that.type;
+        return objectId == that.objectId && orderId == that.orderId && objectSize == that.objectSize && committedTimestamp == that.committedTimestamp
+            && dataTimeInMs == that.dataTimeInMs && type == that.type && Objects.equals(offsetRanges, that.offsetRanges);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(objectId, objectSize, type);
+        return Objects.hash(objectId, orderId, objectSize, type, offsetRanges, committedTimestamp, dataTimeInMs);
     }
 }

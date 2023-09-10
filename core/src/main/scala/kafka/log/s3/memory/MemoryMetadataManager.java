@@ -159,10 +159,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 throw new RuntimeException("Object " + objectId + " is not in prepared state");
             }
             // commit object
-            this.objectsMetadata.put(objectId, new S3Object(
-                    objectId, objectSize, object.getObjectKey(),
-                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                    S3ObjectState.COMMITTED)
+            S3Object s3Object = new S3Object(
+                objectId, objectSize, object.getObjectKey(),
+                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                S3ObjectState.COMMITTED);
+            this.objectsMetadata.put(objectId, s3Object
             );
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
@@ -184,8 +185,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 streamMetadata.addStreamObject(s3StreamObject);
                 streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
             });
-
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId());
+            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
             walMetadata.walObjects.add(walObject);
             return resp;
         });
@@ -229,6 +229,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             LOGGER.error("Error in getServerObjects", e);
             return Collections.emptyList();
         }
+    }
+
+    @Override
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        throw new UnsupportedOperationException("Not implemented");
     }
 
     @Override
