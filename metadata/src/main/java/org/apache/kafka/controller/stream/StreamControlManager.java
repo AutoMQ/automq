@@ -442,7 +442,8 @@ public class StreamControlManager {
                 .setBrokerId(brokerId)
                 .setObjectId(id), (short) 0)));
         }
-        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}", brokerId, objectId, data.compactedObjectIds());
+        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}, stream objects: {}", brokerId, objectId,
+            compactedObjectIds, streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
 
