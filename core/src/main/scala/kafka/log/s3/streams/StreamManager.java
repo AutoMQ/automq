@@ -24,6 +24,15 @@ import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
 
 public interface StreamManager {
+
+    /**
+     * Get current server opening streams.
+     * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
+     * @return list of {@link StreamOffsetRange}
+     */
+    CompletableFuture<List<StreamOffsetRange>> getOpeningStreams();
+    
+    
     /**
      * Create a new stream.
      *
@@ -67,15 +76,5 @@ public interface StreamManager {
      * @param epoch    stream epoch.
      */
     CompletableFuture<Void> deleteStream(long streamId, long epoch);
-
-    /**
-     * Get streams offset.
-     * <p>
-     * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
-     *
-     * @param streamIds stream ids.
-     * @return {@link StreamOffsetRange}
-     */
-    CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds);
 }
 

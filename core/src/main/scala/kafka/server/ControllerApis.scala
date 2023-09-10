@@ -42,7 +42,7 @@ import org.apache.kafka.common.message.{CreateTopicsRequestData, _}
 import org.apache.kafka.common.protocol.Errors._
 import org.apache.kafka.common.protocol.{ApiKeys, ApiMessage, Errors}
 import org.apache.kafka.common.requests._
-import org.apache.kafka.common.requests.s3.{CloseStreamRequest, CloseStreamResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamRequest, CreateStreamResponse, DeleteKVRequest, DeleteKVResponse, DeleteStreamRequest, DeleteStreamResponse, GetKVRequest, GetKVResponse, GetStreamsOffsetRequest, GetStreamsOffsetResponse, OpenStreamRequest, OpenStreamResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVRequest, PutKVResponse}
+import org.apache.kafka.common.requests.s3.{CloseStreamRequest, CloseStreamResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamRequest, CreateStreamResponse, DeleteKVRequest, DeleteKVResponse, DeleteStreamRequest, DeleteStreamResponse, GetKVRequest, GetKVResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamRequest, OpenStreamResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVRequest, PutKVResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC}
 import org.apache.kafka.common.utils.Time
@@ -118,7 +118,7 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
         case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
-        case ApiKeys.GET_STREAMS_OFFSET => handleGetStreamsOffset(request)
+        case ApiKeys.GET_OPENING_STREAMS => handleGetStreamsOffset(request)
         case ApiKeys.GET_KV => handleGetKV(request)
         case ApiKeys.PUT_KV => handlePutKV(request)
         case ApiKeys.DELETE_KV => handleDeleteKV(request)
@@ -993,16 +993,16 @@ class ControllerApis(val requestChannel: RequestChannel,
   }
 
   def handleGetStreamsOffset(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val getStreamsOffsetRequest = request.body[GetStreamsOffsetRequest]
+    val getStreamsOffsetRequest = request.body[GetOpeningStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.getStreamsOffset(context, getStreamsOffsetRequest.data)
+    controller.getOpeningStreams(context, getStreamsOffsetRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new GetStreamsOffsetResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new GetOpeningStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

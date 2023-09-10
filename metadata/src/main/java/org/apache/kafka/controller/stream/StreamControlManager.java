@@ -35,9 +35,9 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData.StreamOffset;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamOffset;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -474,23 +474,30 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public GetStreamsOffsetResponseData getStreamsOffset(GetStreamsOffsetRequestData data) {
-        List<Long> streamIds = data.streamIds();
-        GetStreamsOffsetResponseData resp = new GetStreamsOffsetResponseData();
-        List<StreamOffset> streamOffsets = streamIds.stream()
-            .filter(this.streamsMetadata::containsKey)
-            .map(id -> {
-                S3StreamMetadata streamMetadata = this.streamsMetadata.get(id);
-                RangeMetadata range = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-                long startOffset = streamMetadata.startOffset();
-                long endOffset = range == null ? startOffset : range.endOffset();
-                return new StreamOffset()
-                    .setStreamId(id)
-                    .setStartOffset(startOffset)
-                    .setEndOffset(endOffset);
-            }).collect(Collectors.toList());
+    public ControllerResult<GetOpeningStreamsResponseData> getOpeningStreams(GetOpeningStreamsRequestData data) {
+        // TODO: check broker epoch, reject old epoch request.
+        int brokerId = (int) data.brokerId();
+        // The getOpeningStreams operation rate is low, so we just iterate all streams to get the broker opening streams.
+        List<StreamOffset> streamOffsets = this.streamsMetadata.entrySet().stream().filter(entry -> {
+            S3StreamMetadata streamMetadata = entry.getValue();
+            int rangeIndex = streamMetadata.currentRangeIndex.get();
+            if (rangeIndex < 0) {
+                return false;
+            }
+            RangeMetadata rangeMetadata = streamMetadata.ranges.get(rangeIndex);
+            return rangeMetadata.brokerId() == brokerId;
+        }).map(e -> {
+            S3StreamMetadata streamMetadata = e.getValue();
+            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+            return new StreamOffset()
+                .setStreamId(e.getKey())
+                .setStartOffset(streamMetadata.startOffset.get())
+                .setEndOffset(rangeMetadata.endOffset());
+        }).collect(Collectors.toList());
+        GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
         resp.setStreamsOffset(streamOffsets);
-        return resp;
+        // TODO: generate a broker epoch update record to ensure consistent linear read.
+        return ControllerResult.of(Collections.emptyList(), resp);
     }
 
     public void replay(AssignedStreamIdRecord record) {

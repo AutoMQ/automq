@@ -37,8 +37,8 @@ import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -355,13 +355,17 @@ public class StreamControlManagerTest {
         assertEquals(1, manager.brokersMetadata().get(BROKER1).walObjects().size());
 
         // 6. get stream's offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
+            .setBrokerId(BROKER1).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(1, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(0).endOffset());
+
+        request = new GetOpeningStreamsRequestData()
+                .setBrokerId(BROKER0).setBrokerEpoch(0L);
+        assertEquals(0, manager.getOpeningStreams(request).response().streamsOffset().size());
     }
 
     private void createAndOpenStream(int brokerId, long epoch) {
@@ -406,9 +410,8 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -440,7 +443,7 @@ public class StreamControlManagerTest {
         replay(manager, result5.records());
 
         // 5. fetch range end offset
-        streamsOffset = manager.getStreamsOffset(request);
+        streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -487,7 +490,7 @@ public class StreamControlManagerTest {
         replay(manager, result6.records());
 
         // 8. fetch range end offset
-        streamsOffset = manager.getStreamsOffset(request);
+        streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -538,9 +541,8 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -625,9 +627,8 @@ public class StreamControlManagerTest {
         replay(manager, result2.records());
 
         // 5. fetch stream offset range
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());

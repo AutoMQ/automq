@@ -19,22 +19,22 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
-public class GetStreamsOffsetResponse extends AbstractResponse {
-    private final GetStreamsOffsetResponseData data;
+public class GetOpeningStreamsResponse extends AbstractResponse {
+    private final GetOpeningStreamsResponseData data;
 
-    public GetStreamsOffsetResponse(GetStreamsOffsetResponseData data) {
-        super(ApiKeys.GET_STREAMS_OFFSET);
+    public GetOpeningStreamsResponse(GetOpeningStreamsResponseData data) {
+        super(ApiKeys.GET_OPENING_STREAMS);
         this.data = data;
     }
 
     @Override
-    public GetStreamsOffsetResponseData data() {
+    public GetOpeningStreamsResponseData data() {
         return data;
     }
 
@@ -53,8 +53,8 @@ public class GetStreamsOffsetResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static GetStreamsOffsetResponse parse(ByteBuffer buffer, short version) {
-        return new GetStreamsOffsetResponse(new GetStreamsOffsetResponseData(
+    public static GetOpeningStreamsResponse parse(ByteBuffer buffer, short version) {
+        return new GetOpeningStreamsResponse(new GetOpeningStreamsResponseData(
             new ByteBufferAccessor(buffer), version));
     }
 }

@@ -274,6 +274,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
+    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+        return CompletableFuture.completedFuture(Collections.emptyList());
+    }
+
+    @Override
     public CompletableFuture<Long> createStream() {
         return this.submitEvent(() -> {
             long streamId = this.nextAssignedStreamId++;
@@ -354,15 +359,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         return null;
-    }
-
-    @Override
-    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
-        return this.submitEvent(() -> {
-            return streamIds.stream().filter(this.streamsMetadata::containsKey).map(id -> {
-                return new StreamOffsetRange(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
-            }).collect(Collectors.toList());
-        });
     }
 
     private S3Object prepareObject(long objectId, long ttl) {
