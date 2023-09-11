@@ -24,15 +24,13 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 public class S3StreamObject {
 
     private final long objectId;
-
-    private final long objectSize;
-
+    private final long dataTimeInMs;
     private final StreamOffsetRange streamOffsetRange;
 
-    public S3StreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {
+    public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset, long dataTimeInMs) {
         this.objectId = objectId;
-        this.objectSize = objectSize;
         this.streamOffsetRange = new StreamOffsetRange(streamId, startOffset, endOffset);
+        this.dataTimeInMs = dataTimeInMs;
     }
 
     public StreamOffsetRange streamOffsetRange() {
@@ -43,12 +41,12 @@ public class S3StreamObject {
         return objectId;
     }
 
-    public long objectSize() {
-        return objectSize;
-    }
-
     public S3ObjectType objectType() {
         return S3ObjectType.STREAM;
+    }
+
+    public long dataTimeInMs() {
+        return dataTimeInMs;
     }
 
     public ApiMessageAndVersion toRecord() {
@@ -56,13 +54,14 @@ public class S3StreamObject {
             .setObjectId(objectId)
             .setStreamId(streamOffsetRange.getStreamId())
             .setStartOffset(streamOffsetRange.getStartOffset())
-            .setEndOffset(streamOffsetRange.getEndOffset()), (short) 0);
+            .setEndOffset(streamOffsetRange.getEndOffset())
+            .setDataTimeInMs(dataTimeInMs), (short) 0);
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {
         S3StreamObject s3StreamObject = new S3StreamObject(
-            record.objectId(), record.objectSize(), record.streamId(),
-            record.startOffset(), record.endOffset());
+            record.objectId(), record.streamId(),
+            record.startOffset(), record.endOffset(), record.dataTimeInMs());
         return s3StreamObject;
     }
 

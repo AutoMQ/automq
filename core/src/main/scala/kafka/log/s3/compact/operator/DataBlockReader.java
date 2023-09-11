@@ -48,20 +48,20 @@ public class DataBlockReader {
     }
 
     public void parseDataBlockIndex() {
-        parseDataBlockIndex(Math.max(0, metadata.getObjectSize() - 1024 * 1024));
+        parseDataBlockIndex(Math.max(0, metadata.objectSize() - 1024 * 1024));
     }
 
     public void parseDataBlockIndex(long startPosition) {
-        s3Operator.rangeRead(objectKey, startPosition, metadata.getObjectSize())
+        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize())
                 .thenAccept(buf -> {
                     try {
-                        indexBlockCf.complete(IndexBlock.parse(buf, metadata.getObjectSize(), metadata.getObjectId()));
+                        indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
                     } catch (IndexBlockParseException ex) {
                         parseDataBlockIndex(ex.indexBlockPosition);
                     }
                 }).exceptionally(ex -> {
                     // unrecoverable error, possibly read on a deleted object
-                    LOGGER.warn("s3 range read from {} [{}, {}) failed, ex", objectKey, startPosition, metadata.getObjectSize(), ex);
+                    LOGGER.warn("s3 range read from {} [{}, {}) failed, ex", objectKey, startPosition, metadata.objectSize(), ex);
                     indexBlockCf.completeExceptionally(ex);
                     return null;
                 });

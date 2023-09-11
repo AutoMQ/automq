@@ -126,6 +126,11 @@ public class MemoryClient implements Client {
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
             return CompletableFuture.completedFuture(new StreamImpl(streamId));
         }
+
+        @Override
+        public void shutdown() {
+
+        }
     }
 
     public static class KVClientImpl implements KVClient {

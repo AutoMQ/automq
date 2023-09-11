@@ -19,14 +19,17 @@ package kafka.log.es.utils;
 
 import org.slf4j.Logger;
 
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 
 public class Threads {
 
-    public static ScheduledExecutorService newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
-        return new ScheduledThreadPoolExecutor(1, threadFactory) {
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
+        return newSingleThreadScheduledExecutor(threadFactory, logger, false);
+    }
+
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger, boolean removeOnCancelPolicy) {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, threadFactory) {
             @Override
             protected void afterExecute(Runnable r, Throwable t) {
                 super.afterExecute(r, t);
@@ -35,6 +38,8 @@ public class Threads {
                 }
             }
         };
+        executor.setRemoveOnCancelPolicy(removeOnCancelPolicy);
+        return executor;
     }
 
 }

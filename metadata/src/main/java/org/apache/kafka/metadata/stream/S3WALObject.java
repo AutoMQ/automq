@@ -26,37 +26,34 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class S3WALObject implements Comparable<S3WALObject> {
 
+    private final long objectId;
+    private final int brokerId;
+    private final Map<Long/*streamId*/, List<StreamOffsetRange>> streamOffsetRanges;
+
     /**
-     * The order id of the object.
-     * Sort by this field to get the order of the objects which contains logically increasing streams.
+     * The order id of the object. Sort by this field to get the order of the objects which contains logically increasing streams.
      * <p>
-     * When compact a batch of objects to a compacted object,
-     * this compacted object's order id will be assigned the value <code>first object's order id in this batch</code>
+     * When compact a batch of objects to a compacted object, this compacted object's order id will be assigned the value <code>first object's order
+     * id in this batch</code>
      */
     private final long orderId;
-    private final long objectId;
+    private final long dataTimeInMs;
 
-    private final int brokerId;
-    private final Map<Long/*streamId*/, List<StreamOffsetRange>> streamsIndex;
-
-    private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
-
-    private final long timestamp;
-
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamsIndex, long orderId) {
-        this(objectId, brokerId, streamsIndex, orderId, System.currentTimeMillis());
+    // Only used for testing
+    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamOffsetRanges, long orderId) {
+        this(objectId, brokerId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamsIndex, long orderId, long timestamp) {
+    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.brokerId = brokerId;
-        this.streamsIndex = streamsIndex;
-        this.timestamp = timestamp;
+        this.streamOffsetRanges = streamOffsetRanges;
+        this.dataTimeInMs = dataTimeInMs;
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
-        List<StreamOffsetRange> indexes = streamsIndex.get(streamId);
+        List<StreamOffsetRange> indexes = streamOffsetRanges.get(streamId);
         if (indexes == null || indexes.isEmpty()) {
             return false;
         }
@@ -65,8 +62,8 @@ public class S3WALObject implements Comparable<S3WALObject> {
         return startOffset >= firstIndex.getStartOffset() && startOffset <= lastIndex.getEndOffset();
     }
 
-    public Map<Long, List<StreamOffsetRange>> streamsIndex() {
-        return streamsIndex;
+    public Map<Long, List<StreamOffsetRange>> offsetRanges() {
+        return streamOffsetRanges;
     }
 
     public ApiMessageAndVersion toRecord() {
@@ -74,8 +71,9 @@ public class S3WALObject implements Comparable<S3WALObject> {
             .setObjectId(objectId)
             .setBrokerId(brokerId)
             .setOrderId(orderId)
+            .setDataTimeInMs(dataTimeInMs)
             .setStreamsIndex(
-                streamsIndex.values().stream().flatMap(List::stream)
+                streamOffsetRanges.values().stream().flatMap(List::stream)
                     .map(StreamOffsetRange::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0);
     }
@@ -84,8 +82,9 @@ public class S3WALObject implements Comparable<S3WALObject> {
         Map<Long, List<StreamOffsetRange>> collect = record.streamsIndex().stream()
             .map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset()))
             .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
-        return new S3WALObject(record.objectId(), record.brokerId(),
-            collect, record.orderId());
+        S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
+            collect, record.orderId(), record.dataTimeInMs());
+        return s3WalObject;
     }
 
     public Integer brokerId() {
@@ -97,15 +96,15 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     public S3ObjectType objectType() {
-        return objectType;
+        return S3ObjectType.WAL;
     }
 
     public long orderId() {
         return orderId;
     }
 
-    public long getTimestamp() {
-        return timestamp;
+    public long dataTimeInMs() {
+        return dataTimeInMs;
     }
 
     @Override
@@ -131,8 +130,8 @@ public class S3WALObject implements Comparable<S3WALObject> {
             "objectId=" + objectId +
             ", orderId=" + orderId +
             ", brokerId=" + brokerId +
-            ", streamsIndex=" + streamsIndex +
-            ", objectType=" + objectType +
+            ", streamOffsetRanges=" + streamOffsetRanges +
+            ", dataTimeInMs=" + dataTimeInMs +
             '}';
     }
 

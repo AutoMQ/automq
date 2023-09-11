@@ -18,6 +18,8 @@
 package kafka.log.s3;
 
 import io.netty.buffer.Unpooled;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 import kafka.log.es.DefaultAppendResult;
 import kafka.log.es.FutureUtil;
 import kafka.log.es.RecordBatchWithContextWrapper;
@@ -52,8 +54,11 @@ public class S3Stream implements Stream {
     private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
+    private final Function<Long, Void> closeHook;
+    private final StreamObjectsCompactionTask streamObjectsCompactionTask;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager) {
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -63,8 +68,18 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
+        this.streamObjectsCompactionTask = compactionTaskBuilder.withStream(this).build();
+        this.closeHook = closeHook;
     }
 
+    public void triggerCompactionTask() throws ExecutionException, InterruptedException {
+        streamObjectsCompactionTask.prepare();
+        streamObjectsCompactionTask.doCompactions().get();
+    }
+
+    public boolean isClosed() {
+        return status.isClosed();
+    }
 
     @Override
     public long streamId() {
@@ -158,6 +173,8 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> close0() {
         status.markClosed();
+        streamObjectsCompactionTask.close();
+        closeHook.apply(streamId);
         return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
@@ -168,6 +185,8 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> destroy0() {
         status.markDestroy();
+        streamObjectsCompactionTask.close();
+        closeHook.apply(streamId);
         startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);
     }

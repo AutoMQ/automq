@@ -58,8 +58,8 @@ import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
 import org.apache.kafka.common.message.GetKVResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
@@ -2313,9 +2313,9 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<GetStreamsOffsetResponseData> getStreamsOffset(ControllerRequestContext context, GetStreamsOffsetRequestData request) {
-        return appendReadEvent("getStreamsOffset", context.deadlineNs(),
-            () -> streamControlManager.getStreamsOffset(request));
+    public CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(ControllerRequestContext context, GetOpeningStreamsRequestData request) {
+        return appendWriteEvent("getOpeningStreams", context.deadlineNs(),
+            () -> streamControlManager.getOpeningStreams(request));
     }
 
     @Override

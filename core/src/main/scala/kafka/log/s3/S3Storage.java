@@ -58,9 +58,10 @@ public class S3Storage implements Storage {
     private final Queue<WALObjectUploadTaskContext> walObjectPrepareQueue = new LinkedList<>();
     private final Queue<WALObjectUploadTaskContext> walObjectCommitQueue = new LinkedList<>();
     private final ScheduledExecutorService mainExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
+        ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
+        ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
+
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;

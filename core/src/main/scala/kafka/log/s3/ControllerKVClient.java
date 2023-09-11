@@ -20,7 +20,10 @@ package kafka.log.s3;
 import kafka.log.es.api.KVClient;
 import kafka.log.es.api.KeyValue;
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.network.ControllerRequestSender.RequestTask;
+import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
 import org.apache.kafka.common.message.DeleteKVRequestData;
+import org.apache.kafka.common.message.DeleteKVResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
 import org.apache.kafka.common.message.GetKVResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
@@ -57,18 +60,20 @@ public class ControllerKVClient implements KVClient {
                                 .setValue(kv.value().array())
                         ).collect(Collectors.toList()))
         );
-        return this.requestSender.send(requestBuilder, PutKVResponseData.class)
-                .thenApply(resp -> {
-                    Errors code = Errors.forCode(resp.errorCode());
-                    switch (code) {
-                        case NONE:
-                            LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", list, resp);
-                            return null;
-                        default:
-                            LOGGER.error("[ControllerKVClient]: Failed to Put KV: {}, code: {}", list, code);
-                            throw code.exception();
-                    }
-                });
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<PutKVResponseData, Void> task = new RequestTask<>(future, requestBuilder, PutKVResponseData.class, resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", list, resp);
+                    return ResponseHandleResult.withSuccess(null);
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Put KV: {}, code: {}, retry later", list, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -78,22 +83,24 @@ public class ControllerKVClient implements KVClient {
                 new GetKVRequestData()
                         .setKeys(list)
         );
-        return this.requestSender.send(requestBuilder, GetKVResponseData.class)
-                .thenApply(resp -> {
-                    Errors code = Errors.forCode(resp.errorCode());
-                    switch (code) {
-                        case NONE:
-                            List<KeyValue> keyValues = resp.keyValues()
-                                    .stream()
-                                    .map(kv -> KeyValue.of(kv.key(), kv.value() != null ? ByteBuffer.wrap(kv.value()) : null))
-                                    .collect(Collectors.toList());
-                            LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", list, keyValues);
-                            return keyValues;
-                        default:
-                            LOGGER.error("[ControllerKVClient]: Failed to Get KV: {}, code: {}", String.join(",", list), code);
-                            throw code.exception();
-                    }
-                });
+        CompletableFuture<List<KeyValue>> future = new CompletableFuture<>();
+        RequestTask<GetKVResponseData, List<KeyValue>> task = new RequestTask<>(future, requestBuilder, GetKVResponseData.class, resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    List<KeyValue> keyValues = resp.keyValues()
+                            .stream()
+                            .map(kv -> KeyValue.of(kv.key(), kv.value() != null ? ByteBuffer.wrap(kv.value()) : null))
+                            .collect(Collectors.toList());
+                    LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", list, keyValues);
+                    return ResponseHandleResult.withSuccess(keyValues);
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Get KV: {}, code: {}, retry later", list, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -103,17 +110,19 @@ public class ControllerKVClient implements KVClient {
                 new DeleteKVRequestData()
                         .setKeys(list)
         );
-        return this.requestSender.send(requestBuilder, PutKVResponseData.class)
-                .thenApply(resp -> {
-                    Errors code = Errors.forCode(resp.errorCode());
-                    switch (code) {
-                        case NONE:
-                            LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", list, resp);
-                            return null;
-                        default:
-                            LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}", String.join(",", list), code);
-                            throw code.exception();
-                    }
-                });
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<DeleteKVResponseData, Void> task = new RequestTask<>(future, requestBuilder, DeleteKVResponseData.class, resp -> {
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", list, resp);
+                    return ResponseHandleResult.withSuccess(null);
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}, retry later", String.join(",", list), code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
     }
 }

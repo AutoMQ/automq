@@ -160,10 +160,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 throw new RuntimeException("Object " + objectId + " is not in prepared state");
             }
             // commit object
-            this.objectsMetadata.put(objectId, new S3Object(
-                    objectId, objectSize, object.getObjectKey(),
-                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                    S3ObjectState.COMMITTED)
+            S3Object s3Object = new S3Object(
+                objectId, objectSize, object.getObjectKey(),
+                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                S3ObjectState.COMMITTED);
+            this.objectsMetadata.put(objectId, s3Object
             );
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
@@ -185,8 +186,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 streamMetadata.addStreamObject(s3StreamObject);
                 streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
             });
-
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId());
+            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
             walMetadata.walObjects.add(walObject);
             return resp;
         });
@@ -212,7 +212,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
-        return null;
+        //TODO: SUPPORT
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -230,6 +231,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             return Collections.emptyList();
         }
     }
+
 
     @Override
     public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
@@ -266,6 +268,16 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             LOGGER.error("Error in getObjects", e);
             return Collections.emptyList();
         }
+    }
+
+    @Override
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        throw new UnsupportedOperationException("Not support");
+    }
+
+    @Override
+    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+        return CompletableFuture.completedFuture(Collections.emptyList());
     }
 
     @Override
@@ -349,15 +361,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         return null;
-    }
-
-    @Override
-    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
-        return this.submitEvent(() -> {
-            return streamIds.stream().filter(this.streamsMetadata::containsKey).map(id -> {
-                return new StreamOffsetRange(id, this.streamsMetadata.get(id).startOffset, this.streamsMetadata.get(id).endOffset);
-            }).collect(Collectors.toList());
-        });
     }
 
     private S3Object prepareObject(long objectId, long ttl) {

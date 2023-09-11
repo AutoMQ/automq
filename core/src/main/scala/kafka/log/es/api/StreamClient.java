@@ -39,4 +39,6 @@ public interface StreamClient {
      * @return {@link Stream}.
      */
     CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
+
+    void shutdown();
 }

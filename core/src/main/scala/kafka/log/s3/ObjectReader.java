@@ -64,20 +64,20 @@ public class ObjectReader {
     }
 
     private void asyncGetBasicObjectInfo() {
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.getObjectSize() - 1024 * 1024));
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - 1024 * 1024));
     }
 
     private void asyncGetBasicObjectInfo0(long startPosition) {
-        CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.getObjectSize());
+        CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
         cf.thenAccept(buf -> {
             try {
-                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
+                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.objectSize());
                 basicObjectInfoCf.complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
                 asyncGetBasicObjectInfo0(ex.indexBlockPosition);
             }
         }).exceptionally(ex -> {
-            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
+            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
             // TODO: delay retry.
             asyncGetBasicObjectInfo0(startPosition);
             return null;

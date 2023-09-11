@@ -94,10 +94,11 @@ public class CompactionManager {
     public CompletableFuture<CompactResult> compact() {
         List<S3WALObjectMetadata> s3ObjectMetadata = this.streamMetadataManager.getWALObjects();
         Map<Boolean, List<S3WALObjectMetadata>> objectMetadataFilterMap = s3ObjectMetadata.stream()
-                .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().getTimestamp())
+                .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().dataTimeInMs())
                         >= this.forceSplitObjectPeriod));
         // force split objects that exists for too long
-        splitWALObjects(objectMetadataFilterMap.get(true));
+        splitWALObjects(objectMetadataFilterMap.get(true)).thenAccept(v -> LOGGER.info("Force split {} objects",
+                objectMetadataFilterMap.get(true).size()));
 
         try {
             List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
@@ -119,6 +120,7 @@ public class CompactionManager {
 
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        //TODO: deal with metadata delay
         this.executorService.execute(() -> splitWALObjects(this.streamMetadataManager.getWALObjects())
                 .thenAccept(v -> cf.complete(null))
                 .exceptionally(ex -> {
@@ -192,8 +194,8 @@ public class CompactionManager {
         }
         request.setObjectId(uploader.getWALObjectId());
         // set wal object id to be the first object id of compacted objects
-        request.setOrderId(s3ObjectMetadata.get(0).getObjectMetadata().getObjectId());
-        request.setCompactedObjectIds(s3ObjectMetadata.stream().map(s -> s.getObjectMetadata().getObjectId()).collect(Collectors.toList()));
+        request.setOrderId(s3ObjectMetadata.get(0).getObjectMetadata().objectId());
+        request.setCompactedObjectIds(s3ObjectMetadata.stream().map(s -> s.getObjectMetadata().objectId()).collect(Collectors.toList()));
         request.setObjectSize(uploader.completeWAL());
         uploader.reset();
         return request;

@@ -37,8 +37,8 @@ import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -270,7 +270,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalBasic() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).then(ink -> {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
                 return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
@@ -355,13 +355,17 @@ public class StreamControlManagerTest {
         assertEquals(1, manager.brokersMetadata().get(BROKER1).walObjects().size());
 
         // 6. get stream's offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
+            .setBrokerId(BROKER1).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(1, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(0).endOffset());
+
+        request = new GetOpeningStreamsRequestData()
+                .setBrokerId(BROKER0).setBrokerEpoch(0L);
+        assertEquals(0, manager.getOpeningStreams(request).response().streamsOffset().size());
     }
 
     private void createAndOpenStream(int brokerId, long epoch) {
@@ -376,7 +380,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalCompacted() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -406,9 +410,8 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -416,6 +419,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(200L, streamsOffset.streamsOffset().get(1).endOffset());
+        long object0DataTs = manager.brokersMetadata().get(BROKER0).walObjects().get(0L).dataTimeInMs();
 
         // 4. keep committing first level object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -440,7 +444,7 @@ public class StreamControlManagerTest {
         replay(manager, result5.records());
 
         // 5. fetch range end offset
-        streamsOffset = manager.getStreamsOffset(request);
+        streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -448,6 +452,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
+        long object1DataTs = manager.brokersMetadata().get(BROKER0).walObjects().get(1L).dataTimeInMs();
 
         // 6. commit an invalid wal object which contains the destroyed or not exist wal object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
@@ -470,7 +475,7 @@ public class StreamControlManagerTest {
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
         ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
-        assertEquals(Errors.STREAM_INNER_ERROR.code(), result6.response().errorCode());
+        assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
@@ -487,7 +492,7 @@ public class StreamControlManagerTest {
         replay(manager, result6.records());
 
         // 8. fetch range end offset
-        streamsOffset = manager.getStreamsOffset(request);
+        streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -495,6 +500,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamsOffset().get(1).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamsOffset().get(1).endOffset());
+        assertEquals(object0DataTs, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).dataTimeInMs());
 
         // 9. verify compacted wal objects is removed
         assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
@@ -505,7 +511,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalWithStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(),  Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -538,9 +544,8 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -555,7 +560,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(),  Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 1. create and open stream_0 and stream_1
@@ -586,6 +591,7 @@ public class StreamControlManagerTest {
         ControllerResult<CommitWALObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
+        long object0DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(1L).dataTimeInMs();
 
         // 3. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -611,6 +617,7 @@ public class StreamControlManagerTest {
         ControllerResult<CommitWALObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
+        long object1DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(3L).dataTimeInMs();
 
         // 4. compact these two stream objects
         CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
@@ -625,9 +632,8 @@ public class StreamControlManagerTest {
         replay(manager, result2.records());
 
         // 5. fetch stream offset range
-        GetStreamsOffsetRequestData request = new GetStreamsOffsetRequestData()
-            .setStreamIds(List.of(STREAM0, STREAM1));
-        GetStreamsOffsetResponseData streamsOffset = manager.getStreamsOffset(request);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamsOffset().size());
         assertEquals(STREAM0, streamsOffset.streamsOffset().get(0).streamId());
         assertEquals(0L, streamsOffset.streamsOffset().get(0).startOffset());
@@ -646,11 +652,12 @@ public class StreamControlManagerTest {
             .setObjectSize(999)
             .setSourceObjectIds(List.of(10L));
         result2 = manager.commitStreamObject(streamObjectRequest);
-        assertEquals(Errors.STREAM_INNER_ERROR.code(), result2.response().errorCode());
+        assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result2.response().errorCode());
         replay(manager, result2.records());
 
-        // 6. verify stream objects
+        // 7. verify stream objects
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+        assertEquals(object0DataTs, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).dataTimeInMs());
         assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
         assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getStartOffset());
         assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());

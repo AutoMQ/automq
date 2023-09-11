@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 @Tag("S3Unit")
 public class StreamObjectCopyerTest {
     @Test
-    public void testCompact() throws ExecutionException, InterruptedException {
+    public void testCopy() throws ExecutionException, InterruptedException {
         long targetObjectId = 10;
         long streamId = 233;
 

@@ -107,6 +107,7 @@ public class AlwaysSuccessClient implements Client {
     }
 
     public void shutdownNow() {
+        streamClient.shutdown();
         streamManagerRetryScheduler.shutdownNow();
         streamManagerCallbackExecutors.shutdownNow();
         appendRetryScheduler.shutdownNow();
@@ -180,6 +181,10 @@ public class AlwaysSuccessClient implements Client {
             CompletableFuture<Stream> cf = new CompletableFuture<>();
             openStream0(streamId, options, cf);
             return cf;
+        }
+
+        public void shutdown() {
+            streamClient.shutdown();
         }
 
         private void openStream0(long streamId, OpenStreamOptions options, CompletableFuture<Stream> cf) {

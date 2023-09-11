@@ -35,9 +35,9 @@ import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.DeleteStreamRequestData;
 import org.apache.kafka.common.message.DeleteStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData.StreamOffset;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamOffset;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -211,6 +211,39 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
+    /**
+     * Open stream.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>STREAM_FENCED</code>:
+     *          <ol>
+     *              <li> stream's epoch is larger than request epoch </li>
+     *              <li> stream's current range's broker is not equal to request broker </li>
+     *              <li> stream's epoch matched, but stream's state is <code>CLOSED</code> </li>
+     *          </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream's id not exist in current stream-metadata </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_CLOSED</code>
+     *         <ol>
+     *             <li> request with higher epoch but stream's state is <code>OPENED</code> </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_INNER_ERROR</code>
+     *         <ol>
+     *             <li> stream's current range not exist when stream has been opened </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<OpenStreamResponseData> openStream(OpenStreamRequestData data) {
         OpenStreamResponseData resp = new OpenStreamResponseData();
         long streamId = data.streamId();
@@ -294,6 +327,33 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
+    /**
+     * Close stream.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>STREAM_FENCED</code>:
+     *         <ol>
+     *             <li> stream's epoch is larger than request epoch </li>
+     *             <li> stream's current range's broker is not equal to request broker </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream's id not exist in current stream-metadata </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>STREAM_INNER_ERROR</code>
+     *         <ol>
+     *             <li> stream's current range not exist when stream has been opened </li>
+     *             <li> close stream with higher epoch </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CloseStreamResponseData> closeStream(CloseStreamRequestData data) {
         CloseStreamResponseData resp = new CloseStreamResponseData();
         long streamId = data.streamId();
@@ -354,6 +414,26 @@ public class StreamControlManager {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Commit wal object.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>OBJECT_NOT_EXIST</code>
+     *         <ol>
+     *             <li> wal object not exist when commit </li>
+     *             <li> stream object not exist when commit </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>COMPACTED_OBJECTS_NOT_FOUND</code>
+     *         <ol>
+     *             <li> compacted objects not found when mark destroy </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -363,8 +443,11 @@ public class StreamControlManager {
         long orderId = data.orderId();
         List<ObjectStreamRange> streamRanges = data.objectStreamRanges();
         List<Long> compactedObjectIds = data.compactedObjectIds();
+        List<StreamObject> streamObjects = data.streamObjects();
+        long committedTs = System.currentTimeMillis();
+
         // commit object
-        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize);
+        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
             log.error("[CommitWALObject]: object {} not exist when commit wal object", objectId);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
@@ -376,17 +459,22 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         records.addAll(commitResult.records());
+        long dataTs = committedTs;
         // mark destroy compacted object
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(compactedObjectIds);
             if (!destroyResult.response()) {
                 log.error("[CommitWALObject]: Mark destroy compacted objects: {} failed", compactedObjectIds);
-                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             records.addAll(destroyResult.records());
+            // update dataTs to the min compacted object's dataTs
+            dataTs = compactedObjectIds.stream()
+                .map(id -> this.brokersMetadata.get(brokerId).walObjects.get(id))
+                .map(S3WALObject::dataTimeInMs)
+                .min(Long::compareTo).get();
         }
-
         List<StreamOffsetRange> indexes = streamRanges.stream()
             .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
             .collect(Collectors.toList());
@@ -400,29 +488,64 @@ public class StreamControlManager {
         // generate broker's wal object record
         records.add(new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(objectId)
+            .setDataTimeInMs(dataTs)
             .setOrderId(orderId)
             .setBrokerId(brokerId)
             .setStreamsIndex(
                 indexes.stream()
                     .map(StreamOffsetRange::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0));
-        // create stream object records
-        List<StreamObject> streamObjects = data.streamObjects();
-        streamObjects.stream().forEach(obj -> {
-            long streamId = obj.streamId();
-            long startOffset = obj.startOffset();
-            long endOffset = obj.endOffset();
-            records.add(new S3StreamObject(obj.objectId(), obj.objectSize(), streamId, startOffset, endOffset).toRecord());
-        });
+        // commit stream objects
+        if (streamObjects != null && !streamObjects.isEmpty()) {
+            // commit objects
+            for (StreamObject streamObject : streamObjects) {
+                ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
+                    streamObject.objectSize(), committedTs);
+                if (streamObjectCommitResult.response() != Errors.NONE) {
+                    log.error("[CommitWALObject]: stream object: {} not exist when commit wal object: {}", streamObject.objectId(), objectId);
+                    resp.setErrorCode(streamObjectCommitResult.response().code());
+                    return ControllerResult.of(Collections.emptyList(), resp);
+                }
+                records.addAll(streamObjectCommitResult.records());
+            }
+            // create stream object records
+            streamObjects.stream().forEach(obj -> {
+                long streamId = obj.streamId();
+                long startOffset = obj.startOffset();
+                long endOffset = obj.endOffset();
+                records.add(new S3StreamObject(obj.objectId(), streamId, startOffset, endOffset, committedTs).toRecord());
+            });
+        }
+        // generate compacted objects' remove record
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
-            // generate compacted objects' remove record
             compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
+                .setBrokerId(brokerId)
                 .setObjectId(id), (short) 0)));
         }
-        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}", brokerId, objectId, compactedObjectIds);
+        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}, stream objects: {}", brokerId, objectId,
+            compactedObjectIds, streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
 
+    /**
+     * Commit stream object.
+     * <p>
+     * <b>Response Errors Enum:</b>
+     * <ul>
+     *     <li>
+     *         <code>OBJECT_NOT_EXIST</code>
+     *         <ol>
+     *             <li> stream object not exist when commit </li>
+     *         </ol>
+     *     </li>
+     *     <li>
+     *         <code>COMPACTED_OBJECTS_NOT_FOUND</code>
+     *         <ol>
+     *             <li> compacted objects not found when mark destroy </li>
+     *         </ol>
+     *     </li>
+     * </ul>
+     */
     public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
         long streamObjectId = data.objectId();
         long streamId = data.streamId();
@@ -432,9 +555,10 @@ public class StreamControlManager {
         List<Long> sourceObjectIds = data.sourceObjectIds();
         List<ApiMessageAndVersion> records = new ArrayList<>();
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
+        long committedTs = System.currentTimeMillis();
 
         // commit object
-        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize);
+        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
             log.error("[CommitStreamObject]: object {} not exist when commit stream object", streamObjectId);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
@@ -445,24 +569,32 @@ public class StreamControlManager {
             log.warn("[CommitStreamObject]: object {} already committed", streamObjectId);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        records.addAll(commitResult.records());
 
+        long dataTs = committedTs;
         // mark destroy compacted object
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds);
             if (!destroyResult.response()) {
                 log.error("[CommitStreamObject]: Mark destroy compacted objects: {} failed", sourceObjectIds);
-                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
+            records.addAll(destroyResult.records());
+            // update dataTs to the min compacted object's dataTs
+            dataTs = sourceObjectIds.stream()
+                .map(id -> this.streamsMetadata.get(streamId).streamObjects.get(id))
+                .map(S3StreamObject::dataTimeInMs)
+                .min(Long::compareTo).get();
         }
 
         // generate stream object record
         records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(streamObjectId)
             .setStreamId(streamId)
-            .setObjectSize(objectSize)
             .setStartOffset(startOffset)
-            .setEndOffset(endOffset), (short) 0));
+            .setEndOffset(endOffset)
+            .setDataTimeInMs(dataTs), (short) 0));
 
         // generate compacted objects' remove record
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
@@ -474,23 +606,30 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public GetStreamsOffsetResponseData getStreamsOffset(GetStreamsOffsetRequestData data) {
-        List<Long> streamIds = data.streamIds();
-        GetStreamsOffsetResponseData resp = new GetStreamsOffsetResponseData();
-        List<StreamOffset> streamOffsets = streamIds.stream()
-            .filter(this.streamsMetadata::containsKey)
-            .map(id -> {
-                S3StreamMetadata streamMetadata = this.streamsMetadata.get(id);
-                RangeMetadata range = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-                long startOffset = streamMetadata.startOffset();
-                long endOffset = range == null ? startOffset : range.endOffset();
-                return new StreamOffset()
-                    .setStreamId(id)
-                    .setStartOffset(startOffset)
-                    .setEndOffset(endOffset);
-            }).collect(Collectors.toList());
+    public ControllerResult<GetOpeningStreamsResponseData> getOpeningStreams(GetOpeningStreamsRequestData data) {
+        // TODO: check broker epoch, reject old epoch request.
+        int brokerId = data.brokerId();
+        // The getOpeningStreams is invoked when broker startup, so we just iterate all streams to get the broker opening streams.
+        List<StreamOffset> streamOffsets = this.streamsMetadata.entrySet().stream().filter(entry -> {
+            S3StreamMetadata streamMetadata = entry.getValue();
+            int rangeIndex = streamMetadata.currentRangeIndex.get();
+            if (rangeIndex < 0) {
+                return false;
+            }
+            RangeMetadata rangeMetadata = streamMetadata.ranges.get(rangeIndex);
+            return rangeMetadata.brokerId() == brokerId;
+        }).map(e -> {
+            S3StreamMetadata streamMetadata = e.getValue();
+            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+            return new StreamOffset()
+                .setStreamId(e.getKey())
+                .setStartOffset(streamMetadata.startOffset.get())
+                .setEndOffset(rangeMetadata.endOffset());
+        }).collect(Collectors.toList());
+        GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
         resp.setStreamsOffset(streamOffsets);
-        return resp;
+        // TODO: generate a broker epoch update record to ensure consistent linear read.
+        return ControllerResult.of(Collections.emptyList(), resp);
     }
 
     public void replay(AssignedStreamIdRecord record) {
@@ -550,6 +689,7 @@ public class StreamControlManager {
         long objectId = record.objectId();
         int brokerId = record.brokerId();
         long orderId = record.orderId();
+        long dataTs = record.dataTimeInMs();
         List<StreamIndex> streamIndexes = record.streamsIndex();
         BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
         if (brokerMetadata == null) {
@@ -563,7 +703,7 @@ public class StreamControlManager {
             .stream()
             .map(StreamOffsetRange::of)
             .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
-        brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId));
+        brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -602,7 +742,7 @@ public class StreamControlManager {
         long streamId = record.streamId();
         long startOffset = record.startOffset();
         long endOffset = record.endOffset();
-        long objectSize = record.objectSize();
+        long dataTs = record.dataTimeInMs();
 
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata == null) {
@@ -610,7 +750,7 @@ public class StreamControlManager {
             log.error("stream {} not exist when replay stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects.put(objectId, new S3StreamObject(objectId, objectSize, streamId, startOffset, endOffset));
+        streamMetadata.streamObjects.put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
         // update range
         RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
         if (rangeMetadata == null) {

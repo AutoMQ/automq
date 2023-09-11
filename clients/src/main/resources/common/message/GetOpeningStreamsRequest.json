@@ -20,16 +20,21 @@
     "controller",
     "broker"
   ],
-  "name": "GetStreamsOffsetRequest",
+  "name": "GetOpeningStreamsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "StreamIds",
-      "type": "[]int64",
+      "name": "BrokerId",
+      "type": "int32",
       "versions": "0+",
-      "entityType": "streamId",
-      "about": "The ids of the requesting stream"
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
     }
   ]
 }

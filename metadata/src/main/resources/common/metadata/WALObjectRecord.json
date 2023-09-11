@@ -39,6 +39,12 @@
       "about": "The order id of the S3 object"
     },
     {
+      "name": "DataTimeInMs",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The data time of the S3 object"
+    },
+    {
       "name": "StreamsIndex",
       "type": "[]StreamIndex",
       "versions": "0+",

@@ -18,20 +18,22 @@
 package kafka.log.s3.streams;
 
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.network.ControllerRequestSender.RequestTask;
+import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
-import org.apache.kafka.common.message.GetStreamsOffsetRequestData;
-import org.apache.kafka.common.message.GetStreamsOffsetResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
-import org.apache.kafka.common.requests.s3.GetStreamsOffsetRequest;
+import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.slf4j.Logger;
@@ -53,19 +55,42 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
+    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+        GetOpeningStreamsRequest.Builder request = new GetOpeningStreamsRequest.Builder(
+                new GetOpeningStreamsRequestData().setBrokerId(config.brokerId()).setBrokerEpoch(config.brokerEpoch()));
+        CompletableFuture<List<StreamOffsetRange>> future = new CompletableFuture<>();
+        RequestTask<GetOpeningStreamsResponseData, List<StreamOffsetRange>> task = new RequestTask<>(future, request, GetOpeningStreamsResponseData.class, resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(resp.streamsOffset().stream()
+                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
+                            .collect(Collectors.toList()));
+                default:
+                    LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
+    }
+
+    @Override
     public CompletableFuture<Long> createStream() {
         CreateStreamRequest.Builder request = new CreateStreamRequest.Builder(
                 new CreateStreamRequestData()
         );
-        return this.requestSender.send(request, CreateStreamResponseData.class).thenApply(resp -> {
+        CompletableFuture<Long> future = new CompletableFuture<>();
+        RequestTask<CreateStreamResponseData, Long> task = new RequestTask<>(future, request, CreateStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return resp.streamId();
+                    return ResponseHandleResult.withSuccess(resp.streamId());
                 default:
-                    LOGGER.error("Error while creating stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
+                    LOGGER.error("Error while creating stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
             }
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -76,24 +101,24 @@ public class ControllerStreamManager implements StreamManager {
                         .setStreamEpoch(epoch)
                         .setBrokerId(config.brokerId())
         );
-        return this.requestSender.send(request, OpenStreamResponseData.class).thenApply(resp -> {
+        CompletableFuture<OpenStreamMetadata> future = new CompletableFuture<>();
+        RequestTask<OpenStreamResponseData, OpenStreamMetadata> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return new OpenStreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset());
+                    return ResponseHandleResult.withSuccess(new OpenStreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset()));
                 case STREAM_NOT_EXIST:
-                    LOGGER.error("Stream not exist while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_FENCED:
-                    LOGGER.error("Stream fenced while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_CLOSED:
-                    LOGGER.error("Stream not closed while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                case STREAM_INNER_ERROR:
+                    LOGGER.error("Unexpected error while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 default:
-                    LOGGER.error("Error while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
+                    LOGGER.error("Error while opening stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
             }
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -110,45 +135,28 @@ public class ControllerStreamManager implements StreamManager {
                         .setStreamEpoch(epoch)
                         .setBrokerId(config.brokerId())
         );
-        return this.requestSender.send(request, CloseStreamResponseData.class).thenApply(resp -> {
-            LOGGER.info("close stream {} response: {}", streamId, resp);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<CloseStreamResponseData, Void> task = new RequestTask<>(future, request, CloseStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return null;
+                    return ResponseHandleResult.withSuccess(null);
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
                     LOGGER.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 default:
-                    // TODO: retry recoverable error
                     LOGGER.warn("Error while closing stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
+                    return ResponseHandleResult.withRetry();
             }
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         // TODO: implement
         return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public CompletableFuture<List<StreamOffsetRange>> getStreamsOffset(List<Long> streamIds) {
-        GetStreamsOffsetRequest.Builder request = new GetStreamsOffsetRequest.Builder(
-                new GetStreamsOffsetRequestData()
-                        .setStreamIds(streamIds));
-        return this.requestSender.send(request, GetStreamsOffsetResponseData.class).thenApply(resp -> {
-            switch (Errors.forCode(resp.errorCode())) {
-                case NONE:
-                    return resp.streamsOffset().stream()
-                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
-                            .collect(Collectors.toList());
-                default:
-                    LOGGER.error("Error while getting streams offset: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                    throw Errors.forCode(resp.errorCode()).exception();
-            }
-        });
     }
 }
