@@ -15,32 +15,30 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.metadata.stream;
+package kafka.log.s3.compact.objects;
 
-public class S3StreamConstant {
+import java.util.List;
 
-    public static final long INIT_EPOCH = -1L;
+public class CompactedObject {
+    private final CompactionType type;
+    private final List<StreamDataBlock> streamDataBlocks;
+    private final long size;
 
-    public static final int INIT_RANGE_INDEX = -1;
+    public CompactedObject(CompactionType type, List<StreamDataBlock> streamDataBlocks, long size) {
+        this.type = type;
+        this.streamDataBlocks = streamDataBlocks;
+        this.size = size;
+    }
 
-    public static final long INIT_START_OFFSET = 0L;
+    public CompactionType type() {
+        return type;
+    }
 
-    public static final long INIT_END_OFFSET = 0L;
+    public List<StreamDataBlock> streamDataBlocks() {
+        return this.streamDataBlocks;
+    }
 
-    public static final long INVALID_STREAM_ID = -1L;
-
-    public static final long INVALID_OBJECT_ID = -1L;
-
-    public static final long INVALID_OFFSET = -1L;
-
-    public static final int INVALID_BROKER_ID = -1;
-
-    public static final long MAX_OBJECT_ID = Long.MAX_VALUE;
-
-    public static final long INVALID_ORDER_ID = -1L;
-
-    public static final long INVALID_TS = -1L;
-
-    public static final long INVALID_OBJECT_SIZE = -1L;
-
+    public long size() {
+        return size;
+    }
 }

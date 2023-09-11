@@ -32,7 +32,6 @@ import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -155,15 +154,12 @@ public class StreamObjectsCompactionTask {
      */
     public Queue<List<S3StreamObjectMetadataSplitWrapper>> prepareCompactGroups(long startSearchingOffset) {
         long startOffset = Utils.max(startSearchingOffset, stream.startOffset());
-        List<S3StreamObjectMetadata> rawFetchedStreamObjects = objectManager
-            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE)
-            .stream()
-            .sorted()
-            .collect(Collectors.toList());
+        List<S3ObjectMetadata> rawFetchedStreamObjects = objectManager
+            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE);
 
         this.nextStartSearchingOffset = calculateNextStartSearchingOffset(rawFetchedStreamObjects, startOffset);
 
-        List<S3StreamObjectMetadata> streamObjects = rawFetchedStreamObjects
+        List<S3ObjectMetadata> streamObjects = rawFetchedStreamObjects
             .stream()
             .filter(streamObject -> streamObject.objectSize() < compactedStreamObjectMaxSize)
             .collect(Collectors.toList());
@@ -191,7 +187,7 @@ public class StreamObjectsCompactionTask {
      * @param rawStartSearchingOffset raw start searching offset.
      * @return next start searching offset.
      */
-    private long calculateNextStartSearchingOffset(List<S3StreamObjectMetadata> streamObjects,
+    private long calculateNextStartSearchingOffset(List<S3ObjectMetadata> streamObjects,
         long rawStartSearchingOffset) {
         long lastEndOffset = rawStartSearchingOffset;
         if (streamObjects == null || streamObjects.isEmpty()) {
@@ -214,16 +210,16 @@ public class StreamObjectsCompactionTask {
      * @param streamObjects stream objects.
      * @return object groups.
      */
-    private List<List<S3StreamObjectMetadata>> groupContinuousObjects(List<S3StreamObjectMetadata> streamObjects) {
+    private List<List<S3ObjectMetadata>> groupContinuousObjects(List<S3ObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }
 
-        List<Stack<S3StreamObjectMetadata>> stackList = new LinkedList<>();
-        Stack<S3StreamObjectMetadata> stack = new Stack<>();
+        List<Stack<S3ObjectMetadata>> stackList = new LinkedList<>();
+        Stack<S3ObjectMetadata> stack = new Stack<>();
         stackList.add(stack);
 
-        for (S3StreamObjectMetadata object : streamObjects) {
+        for (S3ObjectMetadata object : streamObjects) {
             if (stack.isEmpty()) {
                 stack.push(object);
             } else {
@@ -255,7 +251,7 @@ public class StreamObjectsCompactionTask {
      * @param streamObjects stream objects.
      * @return stream object subgroups.
      */
-    private Queue<List<S3StreamObjectMetadataSplitWrapper>> groupEligibleObjects(List<S3StreamObjectMetadata> streamObjects) {
+    private Queue<List<S3StreamObjectMetadataSplitWrapper>> groupEligibleObjects(List<S3ObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }
@@ -267,7 +263,7 @@ public class StreamObjectsCompactionTask {
         while (startIndex < streamObjects.size() - 1) {
             endIndex = startIndex + 1;
             while (endIndex <= streamObjects.size()) {
-                List<S3StreamObjectMetadata> subGroup = streamObjects.subList(startIndex, endIndex);
+                List<S3ObjectMetadata> subGroup = streamObjects.subList(startIndex, endIndex);
                 // The subgroup is too new or too big, then break;
                 if (calculateTimePassedInMs(subGroup) < eligibleStreamObjectLivingTimeInMs ||
                     S3StreamObjectMetadataSplitWrapper.calculateSplitCopyCount(subGroup) > MAX_COMPACT_GROUPS ||
@@ -291,16 +287,16 @@ public class StreamObjectsCompactionTask {
     }
 
     /**
-     * Wrapper for {@link S3StreamObjectMetadata} with split copy count.
+     * Wrapper for {@link S3ObjectMetadata} with split copy count.
      */
     public static class S3StreamObjectMetadataSplitWrapper {
-        private final S3StreamObjectMetadata s3StreamObjectMetadata;
+        private final S3ObjectMetadata s3StreamObjectMetadata;
         private final int splitCopyCount;
-        public S3StreamObjectMetadataSplitWrapper(S3StreamObjectMetadata s3StreamObjectMetadata, int splitCopyCount) {
+        public S3StreamObjectMetadataSplitWrapper(S3ObjectMetadata s3StreamObjectMetadata, int splitCopyCount) {
             this.s3StreamObjectMetadata = s3StreamObjectMetadata;
             this.splitCopyCount = splitCopyCount;
         }
-        public S3StreamObjectMetadata s3StreamObjectMetadata() {
+        public S3ObjectMetadata s3StreamObjectMetadata() {
             return s3StreamObjectMetadata;
         }
         public int splitCopyCount() {
@@ -324,7 +320,13 @@ public class StreamObjectsCompactionTask {
             return Objects.hash(s3StreamObjectMetadata, splitCopyCount);
         }
 
-        public static S3StreamObjectMetadataSplitWrapper parse(S3StreamObjectMetadata s3StreamObjectMetadata) {
+        public static S3StreamObjectMetadataSplitWrapper parse(S3ObjectMetadata s3StreamObjectMetadata) {
+            if (s3StreamObjectMetadata.getOffsetRanges() == null || s3StreamObjectMetadata.getOffsetRanges().size() != 1) {
+                throw new IllegalArgumentException("s3StreamObjectMetadata should have one and only one range");
+            }
+            if (s3StreamObjectMetadata.getType() != S3ObjectType.STREAM) {
+                throw new IllegalArgumentException("s3StreamObjectMetadata should be stream metadata, but got " + s3StreamObjectMetadata.getType());
+            }
             long count = s3StreamObjectMetadata.objectSize() / MAX_PART_SIZE;
             if (s3StreamObjectMetadata.objectSize() % MAX_PART_SIZE != 0) {
                 count += 1;
@@ -338,7 +340,7 @@ public class StreamObjectsCompactionTask {
          * @param streamObjects stream objects.
          * @return split copy count.
          */
-        public static long calculateSplitCopyCount(List<S3StreamObjectMetadata> streamObjects) {
+        public static long calculateSplitCopyCount(List<S3ObjectMetadata> streamObjects) {
             if (streamObjects == null || streamObjects.isEmpty()) {
                 return 0;
             }
@@ -356,12 +358,12 @@ public class StreamObjectsCompactionTask {
 
     }
 
-    private long calculateTimePassedInMs(List<S3StreamObjectMetadata> streamObjects) {
-        return System.currentTimeMillis() - streamObjects.stream().mapToLong(S3StreamObjectMetadata::timestamp).max().orElse(0L);
+    private long calculateTimePassedInMs(List<S3ObjectMetadata> streamObjects) {
+        return System.currentTimeMillis() - streamObjects.stream().mapToLong(S3ObjectMetadata::committedTimestamp).max().orElse(0L);
     }
 
-    private long calculateTotalSize(List<S3StreamObjectMetadata> streamObjects) {
-        return streamObjects.stream().mapToLong(S3StreamObjectMetadata::objectSize).sum();
+    private long calculateTotalSize(List<S3ObjectMetadata> streamObjects) {
+        return streamObjects.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
     }
 
     public static class HaltException extends RuntimeException {
@@ -391,7 +393,7 @@ public class StreamObjectsCompactionTask {
          * @param compactedStreamObjectMaxSize compacted stream object max size.
          * If it is bigger than {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE},
          * it will be set to {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE}.
-         * @return
+         * @return builder.
          */
         public Builder withCompactedStreamObjectMaxSize(long compactedStreamObjectMaxSize) {
             this.compactedStreamObjectMaxSize = compactedStreamObjectMaxSize;

@@ -266,7 +266,7 @@ public class ObjectWriter {
     }
 
     static class Footer {
-        private static final int FOOTER_SIZE = 48;
+        public static final int FOOTER_SIZE = 48;
         private static final long MAGIC = 0x88e241b785f4cff7L;
         private final ByteBuf buf;
 

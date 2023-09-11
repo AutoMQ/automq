@@ -21,12 +21,12 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MemoryS3Operator implements S3Operator {
-    private final Map<String, ByteBuf> storage = new HashMap<>();
+    private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
 
     @Override
     public void close() {
@@ -54,8 +54,9 @@ public class MemoryS3Operator implements S3Operator {
         storage.put(path, buf);
         return new Writer() {
             @Override
-            public void write(ByteBuf part) {
+            public CompletableFuture<Void> write(ByteBuf part) {
                 buf.writeBytes(part);
+                return CompletableFuture.completedFuture(null);
             }
 
             @Override

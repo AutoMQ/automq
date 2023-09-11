@@ -157,19 +157,20 @@ public class S3ObjectControlManagerTest {
         prepareOneObject(60 * 1000);
 
         // 2. commit an object which not exist in controller
-        ControllerResult<Errors> result1 = manager.commitObject(1, 1024);
+        long expectedCommittedTs = 1313L;
+        ControllerResult<Errors> result1 = manager.commitObject(1, 1024, expectedCommittedTs);
         assertEquals(Errors.OBJECT_NOT_EXIST, result1.response());
         assertEquals(0, result1.records().size());
 
         // 3. commit an valid object
-        ControllerResult<Errors> result2 = manager.commitObject(0, 1024);
+        ControllerResult<Errors> result2 = manager.commitObject(0, 1024, expectedCommittedTs);
         assertEquals(Errors.NONE, result2.response());
         assertEquals(1, result2.records().size());
         S3ObjectRecord record = (S3ObjectRecord) result2.records().get(0).message();
         manager.replay(record);
 
         // 4. commit again
-        ControllerResult<Errors> result3 = manager.commitObject(0, 1024);
+        ControllerResult<Errors> result3 = manager.commitObject(0, 1024, expectedCommittedTs);
         assertEquals(Errors.REDUNDANT_OPERATION, result3.response());
         assertEquals(0, result3.records().size());
 
@@ -177,6 +178,9 @@ public class S3ObjectControlManagerTest {
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.COMMITTED, object.getS3ObjectState());
+        assertEquals(0L, object.getObjectId());
+        assertEquals(1024, object.getObjectSize());
+        assertEquals(expectedCommittedTs, object.getCommittedTimeInMs());
     }
 
     @Test

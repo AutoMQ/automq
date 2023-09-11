@@ -146,7 +146,7 @@ public class S3ObjectControlManager {
             long expiredTs = preparedTs + request.timeToLiveInMs();
             S3ObjectRecord record = new S3ObjectRecord()
                 .setObjectId(objectId)
-                .setObjectState((byte) S3ObjectState.PREPARED.ordinal())
+                .setObjectState(S3ObjectState.PREPARED.toByte())
                 .setPreparedTimeInMs(preparedTs)
                 .setExpiredTimeInMs(expiredTs);
             records.add(new ApiMessageAndVersion(record, (short) 0));
@@ -155,7 +155,7 @@ public class S3ObjectControlManager {
         return ControllerResult.atomicOf(records, response);
     }
 
-    public ControllerResult<Errors> commitObject(long objectId, long objectSize) {
+    public ControllerResult<Errors> commitObject(long objectId, long objectSize, long committedTs) {
         S3Object object = this.objectsMetadata.get(objectId);
         if (object == null) {
             log.error("object {} not exist when commit wal object", objectId);
@@ -176,7 +176,7 @@ public class S3ObjectControlManager {
             .setObjectState(S3ObjectState.COMMITTED.toByte())
             .setPreparedTimeInMs(object.getPreparedTimeInMs())
             .setExpiredTimeInMs(object.getExpiredTimeInMs())
-            .setCommittedTimeInMs(System.currentTimeMillis());
+            .setCommittedTimeInMs(committedTs);
         return ControllerResult.of(List.of(
             new ApiMessageAndVersion(record, (short) 0)), Errors.NONE);
     }
@@ -187,7 +187,6 @@ public class S3ObjectControlManager {
             S3Object object = this.objectsMetadata.get(objectId);
             if (object == null || object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 log.error("object {} not exist when mark destroy object", objectId);
-                // TODO: Maybe we can ignore this situation, because this object is already destroyed ?
                 return ControllerResult.of(Collections.emptyList(), false);
             }
             S3ObjectRecord record = new S3ObjectRecord()

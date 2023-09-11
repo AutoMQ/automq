@@ -31,7 +31,6 @@ import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -52,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -60,16 +60,16 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private static final int MOCK_BROKER_ID = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(MemoryMetadataManager.class);
     private final EventDriver eventDriver;
-    private volatile long nextAssignedObjectId = 0;
+    private final AtomicLong nextAssignedObjectId = new AtomicLong(0L);
     private final Map<Long/*objectId*/, S3Object> objectsMetadata;
-    private volatile long nextAssignedStreamId = 0;
+    private final AtomicLong nextAssignedStreamId = new AtomicLong(0L);
     private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
     private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
 
     private static class MemoryStreamMetadata {
 
         private final long streamId;
-        private StreamState state = StreamState.CLOSED;
+        private StreamState state;
         private long epoch = S3StreamConstant.INIT_EPOCH;
         private long startOffset = S3StreamConstant.INIT_START_OFFSET;
         private long endOffset = S3StreamConstant.INIT_END_OFFSET;
@@ -116,7 +116,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     public <T> CompletableFuture<T> submitEvent(Supplier<T> eventHandler) {
         CompletableFuture<T> cb = new CompletableFuture<>();
-        MemoryMetadataEvent event = new MemoryMetadataEvent(cb, eventHandler);
+        MemoryMetadataEvent<T> event = new MemoryMetadataEvent<>(cb, eventHandler);
         if (!eventDriver.submit(event)) {
             throw new RuntimeException("Offer event failed");
         }
@@ -134,13 +134,14 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         return this.submitEvent(() -> {
-            long objectRangeStart = this.nextAssignedObjectId;
+            List<Long> objectIds = new ArrayList<>();
             for (int i = 0; i < count; i++) {
-                long objectId = this.nextAssignedObjectId++;
+                long objectId = this.nextAssignedObjectId.getAndIncrement();
+                objectIds.add(objectId);
                 S3Object object = prepareObject(objectId, ttl);
                 this.objectsMetadata.put(objectId, object);
             }
-            return objectRangeStart;
+            return objectIds.get(0);
         });
     }
 
@@ -159,16 +160,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 throw new RuntimeException("Object " + objectId + " is not in prepared state");
             }
             // commit object
-            this.objectsMetadata.put(objectId, new S3Object(
-                    objectId, objectSize, object.getObjectKey(),
-                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                    S3ObjectState.COMMITTED)
+            S3Object s3Object = new S3Object(
+                objectId, objectSize, object.getObjectKey(),
+                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                S3ObjectState.COMMITTED);
+            this.objectsMetadata.put(objectId, s3Object
             );
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
                     k -> new MemoryBrokerWALMetadata(k));
             Map<Long, List<StreamOffsetRange>> index = new HashMap<>();
-            streamRanges.stream().forEach(range -> {
+            streamRanges.forEach(range -> {
                 long streamId = range.getStreamId();
                 long startOffset = range.getStartOffset();
                 long endOffset = range.getEndOffset();
@@ -184,8 +186,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 streamMetadata.addStreamObject(s3StreamObject);
                 streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
             });
-
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId());
+            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
             walMetadata.walObjects.add(walObject);
             return resp;
         });
@@ -231,6 +232,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
     }
 
+
     @Override
     public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: support search not only in wal objects
@@ -269,8 +271,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        return Collections.emptyList();
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        throw new UnsupportedOperationException("Not support");
     }
 
     @Override
@@ -281,7 +283,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<Long> createStream() {
         return this.submitEvent(() -> {
-            long streamId = this.nextAssignedStreamId++;
+            long streamId = this.nextAssignedStreamId.getAndIncrement();
             this.streamsMetadata.put(streamId,
                     new MemoryStreamMetadata(streamId));
             return streamId;
@@ -383,7 +385,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
 
         public void start() {
-            this.service.submit(this::run);
+            this.service.submit(this);
         }
 
         public void stop() {

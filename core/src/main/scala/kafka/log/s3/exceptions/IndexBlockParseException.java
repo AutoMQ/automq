@@ -15,32 +15,16 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.metadata.stream;
+package kafka.log.s3.exceptions;
 
-public class S3StreamConstant {
+public class IndexBlockParseException extends Exception {
+    private final long indexBlockPosition;
 
-    public static final long INIT_EPOCH = -1L;
+    public IndexBlockParseException(long indexBlockPosition) {
+        this.indexBlockPosition = indexBlockPosition;
+    }
 
-    public static final int INIT_RANGE_INDEX = -1;
-
-    public static final long INIT_START_OFFSET = 0L;
-
-    public static final long INIT_END_OFFSET = 0L;
-
-    public static final long INVALID_STREAM_ID = -1L;
-
-    public static final long INVALID_OBJECT_ID = -1L;
-
-    public static final long INVALID_OFFSET = -1L;
-
-    public static final int INVALID_BROKER_ID = -1;
-
-    public static final long MAX_OBJECT_ID = Long.MAX_VALUE;
-
-    public static final long INVALID_ORDER_ID = -1L;
-
-    public static final long INVALID_TS = -1L;
-
-    public static final long INVALID_OBJECT_SIZE = -1L;
-
+    public long getIndexBlockPosition() {
+        return indexBlockPosition;
+    }
 }

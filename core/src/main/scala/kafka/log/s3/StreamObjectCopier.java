@@ -58,7 +58,7 @@ public class StreamObjectCopier {
         if (metadata.getType() != S3ObjectType.STREAM) {
             throw new IllegalArgumentException("Only stream object can be handled.");
         }
-        if (metadata.getObjectSize() <= 0) {
+        if (metadata.objectSize() <= 0) {
             throw new IllegalArgumentException("Object size must be positive.");
         }
         if (splitCount <= 0) {

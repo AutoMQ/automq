@@ -35,6 +35,8 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static kafka.log.s3.ObjectWriter.Footer.FOOTER_SIZE;
+
 public class ObjectReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
     private final S3ObjectMetadata metadata;
@@ -64,20 +66,20 @@ public class ObjectReader {
     }
 
     private void asyncGetBasicObjectInfo() {
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.getObjectSize() - 1024 * 1024));
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - 1024 * 1024));
     }
 
     private void asyncGetBasicObjectInfo0(long startPosition) {
-        CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.getObjectSize());
+        CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
         cf.thenAccept(buf -> {
             try {
-                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.getObjectSize());
+                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.objectSize());
                 basicObjectInfoCf.complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
                 asyncGetBasicObjectInfo0(ex.indexBlockPosition);
             }
         }).exceptionally(ex -> {
-            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.getObjectSize(), ex);
+            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
             // TODO: delay retry.
             asyncGetBasicObjectInfo0(startPosition);
             return null;
@@ -110,9 +112,9 @@ public class ObjectReader {
         }
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
-            long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
+            long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + indexBlockSize + 48 < objectSize) {
+            if (indexBlockPosition + indexBlockSize + FOOTER_SIZE < objectSize) {
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);

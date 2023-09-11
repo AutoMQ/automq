@@ -18,9 +18,10 @@
 package kafka.log.s3.objects;
 
 
-import java.util.Objects;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.network.ControllerRequestSender.RequestTask;
+import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
@@ -31,7 +32,6 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest.Builder;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,14 +62,18 @@ public class ControllerObjectManager implements ObjectManager {
                         .setPreparedCount(count)
                         .setTimeToLiveInMs(ttl)
         );
-        return requestSender.send(request, PrepareS3ObjectResponseData.class).thenApply(resp -> {
-            Errors code = Errors.forCode(resp.errorCode());
-            if (Objects.requireNonNull(code) == Errors.NONE) {
-                return resp.firstS3ObjectId();
+        CompletableFuture<Long> future = new CompletableFuture<>();
+        RequestTask<PrepareS3ObjectResponseData, Long> task = new RequestTask<>(future, request, PrepareS3ObjectResponseData.class, resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(resp.firstS3ObjectId());
+                default:
+                    LOGGER.error("Error while preparing {} object, code: {}, retry later", count, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
             }
-            LOGGER.error("Error while preparing {} object, code: {}", count, code);
-            throw code.exception();
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -87,14 +91,22 @@ public class ControllerObjectManager implements ObjectManager {
                                 .stream()
                                 .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList()))
                         .setCompactedObjectIds(request.getCompactedObjectIds()));
-        return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
+        CompletableFuture<CommitWALObjectResponse> future = new CompletableFuture<>();
+        RequestTask<CommitWALObjectResponseData, CommitWALObjectResponse> task = new RequestTask<>(future, wrapRequestBuilder, CommitWALObjectResponseData.class, resp -> {
             Errors code = Errors.forCode(resp.errorCode());
-            if (Objects.requireNonNull(code) == Errors.NONE) {
-                return new CommitWALObjectResponse();
+            switch (code) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(new CommitWALObjectResponse());
+                case OBJECT_NOT_EXIST:
+                case COMPACTED_OBJECTS_NOT_FOUND:
+                    throw code.exception();
+                default:
+                    LOGGER.error("Error while committing WAL object: {}, code: {}, retry later", request, code);
+                    return ResponseHandleResult.withRetry();
             }
-            LOGGER.error("Error while committing WAL object: {}, code: {}", request, code);
-            throw code.exception();
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -107,14 +119,22 @@ public class ControllerObjectManager implements ObjectManager {
                         .setStartOffset(request.getStartOffset())
                         .setEndOffset(request.getEndOffset())
                         .setSourceObjectIds(request.getSourceObjectIds()));
-        return requestSender.send(wrapRequestBuilder, CommitWALObjectResponseData.class).thenApply(resp -> {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<CommitWALObjectResponseData, Void> task = new RequestTask<>(future, wrapRequestBuilder, CommitWALObjectResponseData.class, resp -> {
             Errors code = Errors.forCode(resp.errorCode());
-            if (Objects.requireNonNull(code) == Errors.NONE) {
-                return null;
+            switch (code) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(null);
+                case OBJECT_NOT_EXIST:
+                case COMPACTED_OBJECTS_NOT_FOUND:
+                    throw code.exception();
+                default:
+                    LOGGER.error("Error while committing stream object: {}, code: {}, retry later", request, code);
+                    return ResponseHandleResult.withRetry();
             }
-            LOGGER.error("Error while committing stream object: {}, code: {}", request, code);
-            throw code.exception();
         });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override
@@ -122,7 +142,8 @@ public class ControllerObjectManager implements ObjectManager {
         try {
             return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
                 if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                    return Collections.<S3ObjectMetadata>emptyList();
+                    List<S3ObjectMetadata> objects = Collections.emptyList();
+                    return objects;
                 }
                 return inRangeObjects.objects();
             }).get();
@@ -134,18 +155,19 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        try {
-            return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit).get();
-        } catch (Exception e) {
-            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
-                e);
-            return Collections.emptyList();
-        }
+    public List<S3ObjectMetadata> getServerObjects() {
+        return null;
     }
 
     @Override
-    public List<S3ObjectMetadata> getServerObjects() {
-        return null;
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        try {
+            return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit).get();
+        } catch (Exception e) {
+            LOGGER.error("Error while get stream objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset,
+                limit,
+                e);
+            return Collections.emptyList();
+        }
     }
 }

@@ -26,7 +26,7 @@
   "fields": [
     {
       "name": "BrokerId",
-      "type": "int64",
+      "type": "int32",
       "versions": "0+",
       "about": "The broker id."
     },

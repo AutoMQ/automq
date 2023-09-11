@@ -51,7 +51,7 @@ public interface Writer {
      *
      * @param part object part.
      */
-    void write(ByteBuf part);
+    CompletableFuture<Void> write(ByteBuf part);
 
     /**
      * Copy a part of the object.

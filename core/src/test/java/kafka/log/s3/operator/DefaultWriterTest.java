@@ -105,13 +105,13 @@ class DefaultWriterTest {
 
         payloads.forEach(writer::write);
         writer.close().get();
-        assertEquals(5, requests.size());
+        assertEquals(4, requests.size());
         assertEquals("unit-test-bucket", requests.get(0).bucket());
         assertEquals("test-path", requests.get(0).key());
-        assertEquals(List.of(1, 2, 3, 4, 5), requests.stream()
+        assertEquals(List.of(1, 2, 3, 4), requests.stream()
             .map(UploadPartRequest::partNumber)
             .collect(Collectors.toList()));
-        assertEquals(List.of(120L, 120L, 100L, 180L, 10L), contentLengths);
+        assertEquals(List.of(120L, 120L, 280L, 10L), contentLengths);
     }
 
     @Test
