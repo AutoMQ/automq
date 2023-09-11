@@ -29,13 +29,13 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: "${{ matrix.os }}, jdk-${{ matrix.jdk }}"
+  checkstyle:
+    name: "Checkstyle"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04]
-        jdk: [11, 17]
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -46,7 +46,43 @@ jobs:
           distribution: "zulu"
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
-      - name: Checkstyle and Spotbugs
-        run: ./gradlew rat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
-      - name: Execute Gradle build
+      - name: Checkstyle
+        run: ./gradlew rat checkstyleMain checkstyleTest
+  spotbugs:
+    name: "Spotbugs"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Spotbugs
+        run: ./gradlew spotbugsMain spotbugsTest
+  test:
+    name: "Unit Test"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Unit Test
         run: ./gradlew metadata:esUnitTest core:esUnitTest metadata:S3UnitTest core:S3UnitTest
