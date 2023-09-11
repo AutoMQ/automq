@@ -476,8 +476,8 @@ public class StreamControlManager {
 
     public ControllerResult<GetOpeningStreamsResponseData> getOpeningStreams(GetOpeningStreamsRequestData data) {
         // TODO: check broker epoch, reject old epoch request.
-        int brokerId = (int) data.brokerId();
-        // The getOpeningStreams operation rate is low, so we just iterate all streams to get the broker opening streams.
+        int brokerId = data.brokerId();
+        // The getOpeningStreams is invoked when broker startup, so we just iterate all streams to get the broker opening streams.
         List<StreamOffset> streamOffsets = this.streamsMetadata.entrySet().stream().filter(entry -> {
             S3StreamMetadata streamMetadata = entry.getValue();
             int rangeIndex = streamMetadata.currentRangeIndex.get();
