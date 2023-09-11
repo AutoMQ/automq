@@ -394,7 +394,13 @@ public class DefaultS3Operator implements S3Operator {
             }
 
             public void upload() {
-                this.lastRangeReadCf.thenAccept(nil -> upload0());
+                this.lastRangeReadCf.whenComplete((nil, ex) -> {
+                    if (ex != null) {
+                        partCf.completeExceptionally(ex);
+                    } else {
+                        upload0();
+                    }
+                });
             }
 
             private void upload0() {
