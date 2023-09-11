@@ -30,6 +30,7 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
@@ -95,6 +96,18 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             this.pendingExecutorService.submit(() -> {
                 retryPendingTasks(retryTasks);
             });
+        }
+    }
+
+    public List<S3WALObjectMetadata> getWALObjects() {
+        synchronized (this) {
+            return this.streamsImage.getWALObjects(config.brokerId()).stream()
+                    .map(walObject -> {
+                        S3Object s3Object = this.objectsImage.getObjectMetadata(walObject.objectId());
+                        S3ObjectMetadata metadata = new S3ObjectMetadata(walObject.objectId(), s3Object.getObjectSize(), walObject.objectType());
+                        return new S3WALObjectMetadata(walObject, metadata);
+                    })
+                    .collect(Collectors.toList());
         }
     }
 

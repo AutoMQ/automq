@@ -20,13 +20,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MemoryS3Operator implements S3Operator {
-    private final Map<String, ByteBuf> storage = new HashMap<>();
+    private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
 
     @Override
     public void close() {
@@ -54,8 +55,9 @@ public class MemoryS3Operator implements S3Operator {
         storage.put(path, buf);
         return new Writer() {
             @Override
-            public void write(ByteBuf part) {
+            public CompletableFuture<CompletedPart> write(ByteBuf part) {
                 buf.writeBytes(part);
+                return CompletableFuture.completedFuture(null);
             }
 
             @Override

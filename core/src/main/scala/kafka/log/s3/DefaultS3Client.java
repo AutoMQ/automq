@@ -22,6 +22,7 @@ import kafka.log.es.api.KVClient;
 import kafka.log.es.api.StreamClient;
 import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
+import kafka.log.s3.compact.CompactionManager;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.network.ControllerRequestSender.RetryPolicyContext;
@@ -51,6 +52,8 @@ public class DefaultS3Client implements Client {
 
     private final StreamManager streamManager;
 
+    private final CompactionManager compactionManager;
+
     private final S3StreamClient streamClient;
 
     private final KVClient kvClient;
@@ -65,6 +68,8 @@ public class DefaultS3Client implements Client {
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.metadataManager, this.operator);
+        this.compactionManager.start();
         this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
@@ -81,6 +86,7 @@ public class DefaultS3Client implements Client {
     }
 
     public void shutdown() {
+        this.compactionManager.shutdown();
         this.streamClient.shutdown();
     }
 }
