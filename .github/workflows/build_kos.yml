@@ -47,7 +47,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
       - name: Checkstyle
-        run: ./gradlew rat checkstyleMain checkstyleTest
+        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest
   spotbugs:
     name: "Spotbugs"
     runs-on: ${{ matrix.os }}
@@ -66,7 +66,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
       - name: Spotbugs
-        run: ./gradlew spotbugsMain spotbugsTest
+        run: ./gradlew --build-cache spotbugsMain spotbugsTest
   test:
     name: "Unit Test"
     runs-on: ${{ matrix.os }}
@@ -85,4 +85,4 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
       - name: Unit Test
-        run: ./gradlew metadata:esUnitTest core:esUnitTest metadata:S3UnitTest core:S3UnitTest
+        run: ./gradlew --build-cache metadata:esUnitTest core:esUnitTest metadata:S3UnitTest core:S3UnitTest
