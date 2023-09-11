@@ -25,7 +25,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
+import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.regions.Region;
@@ -74,14 +77,14 @@ public class DefaultS3Operator implements S3Operator {
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
-        String accessKey = System.getenv(ACCESS_KEY_NAME);
-        String secretKey = System.getenv(SECRET_KEY_NAME);
-        if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
-            builder.credentialsProvider(() -> AwsBasicCredentials.create(accessKey, secretKey));
-        } else {
-            builder.credentialsProvider(() -> AwsBasicCredentials.create("noop", "noop"));
-            LOGGER.info("Cannot find s3 credential {} {} from environment", ACCESS_KEY_NAME, SECRET_KEY_NAME);
-        }
+        builder.credentialsProvider(AwsCredentialsProviderChain.builder()
+                .reuseLastProviderEnabled(true)
+                .credentialsProviders(
+                        () -> AwsBasicCredentials.create(System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME)),
+                        InstanceProfileCredentialsProvider.create(),
+                        AnonymousCredentialsProvider.create()
+                ).build()
+        );
         this.s3 = builder.build();
         this.bucket = bucket;
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
