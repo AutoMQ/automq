@@ -2094,6 +2094,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectCompactionUploadConcurrency = getInt(KafkaConfig.S3ObjectCompactionUploadConcurrencyProp)
   val s3ObjectCompactionExecutionScoreThreshold = getDouble(KafkaConfig.S3ObjectCompactionExecutionScoreThresholdProp)
   val s3ObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3ObjectCompactionStreamSplitSizeProp)
+  val s3ObjectCompactionForceSplitPeriod = getInt(KafkaConfig.S3ObjectCompactionForceSplitPeriodProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

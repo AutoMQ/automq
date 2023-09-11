@@ -116,7 +116,7 @@ public class DataBlockWriter {
 
         public IndexBlock() {
             position = nextDataBlockPosition;
-            buf = Unpooled.buffer(1024 * 1024);
+            buf = Unpooled.buffer(calculateIndexBlockSize());
             buf.writeInt(completedBlocks.size()); // block count
             // block index
             for (StreamDataBlock block : completedBlocks) {
@@ -132,6 +132,10 @@ public class DataBlockWriter {
                 buf.writeInt((int) (block.getEndOffset() - block.getStartOffset()));
                 buf.writeInt(blockIndex);
             }
+        }
+
+        private int calculateIndexBlockSize() {
+            return 4 + completedBlocks.size() * 40;
         }
 
         public ByteBuf buffer() {

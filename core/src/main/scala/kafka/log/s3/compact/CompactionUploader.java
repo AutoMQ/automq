@@ -32,15 +32,15 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class CompactionUploader {
     private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
     private final ObjectManager objectManager;
     private final TokenBucketThrottle throttle;
-    private final ScheduledExecutorService executorService;
+    private final ExecutorService executorService;
     private final S3Operator s3Operator;
     private final KafkaConfig kafkaConfig;
     private CompletableFuture<Long> walObjectIdCf = null;
@@ -52,8 +52,8 @@ public class CompactionUploader {
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
         this.throttle = new TokenBucketThrottle(kafkaConfig.s3ObjectCompactionNWOutBandwidth());
-        this.executorService = Executors.newScheduledThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
-                ThreadUtils.createThreadFactory("compaction-uploader", true));
+        this.executorService = Executors.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
+                ThreadUtils.createThreadFactory("compaction-uploader-%d", true));
     }
 
     public void stop() {

@@ -41,11 +41,18 @@ public class S3WALObject implements Comparable<S3WALObject> {
 
     private final S3ObjectType objectType = S3ObjectType.UNKNOWN;
 
+    private final long timestamp;
+
     public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamsIndex, long orderId) {
+        this(objectId, brokerId, streamsIndex, orderId, System.currentTimeMillis());
+    }
+
+    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamsIndex, long orderId, long timestamp) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.brokerId = brokerId;
         this.streamsIndex = streamsIndex;
+        this.timestamp = timestamp;
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
@@ -77,9 +84,8 @@ public class S3WALObject implements Comparable<S3WALObject> {
         Map<Long, List<StreamOffsetRange>> collect = record.streamsIndex().stream()
             .map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset()))
             .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
-        S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
+        return new S3WALObject(record.objectId(), record.brokerId(),
             collect, record.orderId());
-        return s3WalObject;
     }
 
     public Integer brokerId() {
@@ -96,6 +102,10 @@ public class S3WALObject implements Comparable<S3WALObject> {
 
     public long orderId() {
         return orderId;
+    }
+
+    public long getTimestamp() {
+        return timestamp;
     }
 
     @Override

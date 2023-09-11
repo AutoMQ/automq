@@ -54,6 +54,7 @@ public class CompactionManager {
     private final double executionScoreThreshold;
     private final long streamSplitSize;
     private final int compactionInterval;
+    private final int forceSplitObjectPeriod;
     private final TokenBucketThrottle networkInThrottle;
 
     public CompactionManager(KafkaConfig config, ObjectManager objectManager, StreamMetadataManager streamMetadataManager, S3Operator s3Operator) {
@@ -64,6 +65,7 @@ public class CompactionManager {
         this.compactionCacheSize = config.s3ObjectCompactionCacheSize();
         this.executionScoreThreshold = config.s3ObjectCompactionExecutionScoreThreshold();
         this.streamSplitSize = config.s3ObjectCompactionStreamSplitSize();
+        this.forceSplitObjectPeriod = config.s3ObjectCompactionForceSplitPeriod();
         this.networkInThrottle = new TokenBucketThrottle(config.s3ObjectCompactionNWInBandwidth());
         this.uploader = new CompactionUploader(objectManager, s3Operator, config);
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, executionScoreThreshold, streamSplitSize, s3Operator);
@@ -71,7 +73,16 @@ public class CompactionManager {
     }
 
     public void start() {
-        this.executorService.scheduleWithFixedDelay(this::compact, 0, this.compactionInterval, TimeUnit.MINUTES);
+        this.executorService.scheduleWithFixedDelay(() -> {
+            long start = System.currentTimeMillis();
+            this.compact()
+                    .thenAccept(result -> LOGGER.info("Compaction complete, cost {} ms, result {}",
+                            System.currentTimeMillis() - start, result))
+                    .exceptionally(ex -> {
+                        LOGGER.error("Compaction failed, cost {} ms, ", System.currentTimeMillis() - start, ex);
+                        return null;
+                    });
+        }, 0, this.compactionInterval, TimeUnit.MINUTES);
     }
 
     public void shutdown() {
@@ -82,14 +93,20 @@ public class CompactionManager {
 
     public CompletableFuture<CompactResult> compact() {
         List<S3WALObjectMetadata> s3ObjectMetadata = this.streamMetadataManager.getWALObjects();
+        Map<Boolean, List<S3WALObjectMetadata>> objectMetadataFilterMap = s3ObjectMetadata.stream()
+                .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().getTimestamp())
+                        >= this.forceSplitObjectPeriod));
+        // force split objects that exists for too long
+        splitWALObjects(objectMetadataFilterMap.get(true));
+
         try {
-            List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(s3ObjectMetadata);
+            List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
             if (compactionPlans.isEmpty()) {
                 return CompletableFuture.completedFuture(CompactResult.SKIPPED);
             }
             CommitWALObjectRequest request = buildCompactRequest(compactionPlans, s3ObjectMetadata);
             return objectManager.commitWALObject(request).thenApply(nil -> {
-                LOGGER.info("Compaction success, WAL object id: {}, size: {}, stream object num: {}",
+                LOGGER.info("Commit compact request succeed, WAL object id: {}, size: {}, stream object num: {}",
                         request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size());
                 return CompactResult.SUCCESS;
             });
@@ -98,6 +115,22 @@ public class CompactionManager {
             return CompletableFuture.failedFuture(e);
         }
 
+    }
+
+    public CompletableFuture<Void> forceSplitAll() {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        this.executorService.execute(() -> splitWALObjects(this.streamMetadataManager.getWALObjects())
+                .thenAccept(v -> cf.complete(null))
+                .exceptionally(ex -> {
+                    cf.completeExceptionally(ex);
+                    return null;
+                })
+        );
+        return cf;
+    }
+
+    CompletableFuture<Void> splitWALObjects(List<S3WALObjectMetadata> objectMetadataList) {
+        return CompletableFuture.completedFuture(null);
     }
 
     CommitWALObjectRequest buildCompactRequest(List<CompactionPlan> compactionPlans, List<S3WALObjectMetadata> s3ObjectMetadata)
