@@ -17,6 +17,7 @@
 
 package kafka.log.s3.wal;
 
+import io.netty.buffer.ByteBuf;
 import kafka.log.s3.wal.util.ThreadFactoryImpl;
 import kafka.log.s3.wal.util.WALChannel;
 import kafka.log.s3.wal.util.WALUtil;
@@ -64,7 +65,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * --------------------------------------------------------------------------------------------------
  */
 
-public class BlockWALService implements WAL {
+public class BlockWALService implements WriteAheadLog {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
     public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
     public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
@@ -271,7 +272,7 @@ public class BlockWALService implements WAL {
     }
 
     @Override
-    public WAL start() throws IOException {
+    public WriteAheadLog start() throws IOException {
         init();
         walChannel.open();
         recoverWALHeader();
@@ -292,7 +293,9 @@ public class BlockWALService implements WAL {
     }
 
     @Override
-    public AppendResult append(ByteBuffer record, int crc) throws OverCapacityException {
+    public AppendResult append(ByteBuf buf, int crc) throws OverCapacityException {
+        ByteBuffer record = buf.nioBuffer();
+
         // 生成 crc
         final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record.array(), record.position(), record.limit()) : crc;
 
@@ -356,8 +359,7 @@ public class BlockWALService implements WAL {
         return recover(walHeaderCoreData.getTrimOffset());
     }
 
-    @Override
-    public Iterator<RecoverResult> recover(long startOffset) {
+    private Iterator<RecoverResult> recover(long startOffset) {
         long recoverStartOffset = WALUtil.alignSmallByBlockSize(startOffset);
 
         LOGGER.info("recover begin, recoverStartOffset: {}, WALHeader: {}", recoverStartOffset, walHeaderCoreData);
@@ -595,11 +597,11 @@ public class BlockWALService implements WAL {
 
     static class RecoverResultImpl implements RecoverResult {
         private final ByteBuffer record;
-        private final AppendResult appendResult;
+        private long recordBodyOffset;
+        private int length;
 
-        public RecoverResultImpl(ByteBuffer record, AppendResult appendResult) {
+        public RecoverResultImpl(ByteBuffer record, long recordBodyOffset, int length) {
             this.record = record;
-            this.appendResult = appendResult;
         }
 
         @Override
@@ -608,17 +610,26 @@ public class BlockWALService implements WAL {
         }
 
         @Override
-        public AppendResult appendResult() {
-            return appendResult;
+        public long recordBodyOffset() {
+            return recordBodyOffset;
+        }
+
+        @Override
+        public int length() {
+            return length;
         }
 
         @Override
         public String toString() {
-            return "RecoverResultImpl{" + "record=" + record + ", appendResult=" + appendResult + '}';
+            return "RecoverResultImpl{" +
+                    "record=" + record +
+                    ", recordBodyOffset=" + recordBodyOffset +
+                    ", length=" + length +
+                    '}';
         }
     }
 
-    class RecoverIterator implements Iterator<WAL.RecoverResult> {
+    class RecoverIterator implements Iterator<RecoverResult> {
         long nextRecoverOffset;
         SlidingWindowService.RecordHeaderCoreData lastRecordHeader;
         ByteBuffer lastRecordBody;
@@ -635,7 +646,7 @@ public class BlockWALService implements WAL {
         }
 
         @Override
-        public WAL.RecoverResult next() {
+        public RecoverResult next() {
             if (!hasNext()) return null;
 
             SlidingWindowService.RecordHeaderCoreData nextRecordHeader = null;
@@ -655,8 +666,7 @@ public class BlockWALService implements WAL {
             } while (nextRecoverOffset < walHeaderCoreData.getSlidingWindowNextWriteOffset());
 
             // 返回之前读取的记录
-            AppendResult appendResult = new AppendResultImpl(lastRecordHeader.getRecordBodyOffset(), lastRecordHeader.getRecordBodyCRC(), lastRecordBody.limit(), null);
-            WAL.RecoverResult recoverResult = new RecoverResultImpl(lastRecordBody, appendResult);
+            RecoverResult recoverResult = new RecoverResultImpl(lastRecordBody, lastRecordHeader.getRecordBodyOffset(), lastRecordBody.limit());
 
             // 保存下一条记录
             if (nextRecordBody != null) {

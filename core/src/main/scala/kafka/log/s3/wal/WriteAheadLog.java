@@ -20,31 +20,16 @@ package kafka.log.s3.wal;
 
 import io.netty.buffer.ByteBuf;
 
-import java.util.List;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public interface WriteAheadLog {
 
-    /**
-     * Get log start offset.
-     *
-     * @return start offset.
-     */
-    long startOffset();
+    WriteAheadLog start() throws IOException;
 
-    /**
-     * Get log end offset.
-     *
-     * @return exclusive end offset.
-     */
-    long endOffset();
-
-    /**
-     * Read data from log.
-     *
-     * @return list of {@link WalRecord}.
-     */
-    List<WalRecord> read();
+    void shutdownGracefully();
 
     /**
      * Append data to log, note append may be out of order.
@@ -52,7 +37,13 @@ public interface WriteAheadLog {
      *
      * @return The data position will be written.
      */
-    AppendResult append(ByteBuf data);
+    AppendResult append(ByteBuf data, int crc) throws OverCapacityException;
+
+    default AppendResult append(ByteBuf data) throws OverCapacityException {
+        return append(data, 0);
+    }
+
+    Iterator<RecoverResult> recover();
 
     /**
      * Trim data <= offset in log.
@@ -60,7 +51,6 @@ public interface WriteAheadLog {
      * @param offset inclusive trim offset.
      */
     void trim(long offset);
-
 
     class WalRecord {
         private final long offset;
@@ -80,9 +70,43 @@ public interface WriteAheadLog {
         }
     }
 
-    class AppendResult {
-        public long offset;
-        public CompletableFuture<Void> future;
+    interface AppendResult {
+        // Record body 预分配的存储起始位置
+        long recordBodyOffset();
+        // Record body 的长度（不包含任何元数据长度）
+
+        int recordBodyCRC();
+
+        int length();
+
+        CompletableFuture<CallbackResult> future();
+
+        interface CallbackResult {
+            // 这个 Offset 之前的数据已经落盘
+            long flushedOffset();
+
+            AppendResult appendResult();
+        }
     }
 
+    interface RecoverResult {
+        ByteBuffer record();
+
+        long recordBodyOffset();
+
+        int length();
+    }
+
+    class OverCapacityException extends Exception {
+        private final long flushedOffset;
+
+        public OverCapacityException(String message, long flushedOffset) {
+            super(message);
+            this.flushedOffset = flushedOffset;
+        }
+
+        public long flushedOffset() {
+            return flushedOffset;
+        }
+    }
 }

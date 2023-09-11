@@ -21,13 +21,15 @@ package kafka.log.s3.wal;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
+import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
+
 public interface WriteRecordTask {
     // writeOffset 包含了 Record header 的大小
     long writeOffset();
 
-    WAL.AppendResult appendResult();
+    AppendResult appendResult();
 
-    CompletableFuture<WAL.AppendResult.CallbackResult> future();
+    CompletableFuture<AppendResult.CallbackResult> future();
 
     ByteBuffer recordHeader();
 
