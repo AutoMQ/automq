@@ -45,10 +45,10 @@
       "about": "The object id of the S3 object"
     },
     {
-      "name": "ObjectSize",
+      "name": "DataTimeInMs",
       "type": "int64",
       "versions": "0+",
-      "about": "The size of the Stream object to commit"
+      "about": "The data time of the S3 object"
     }
   ]
 }

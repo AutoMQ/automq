@@ -31,7 +31,6 @@ import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -159,10 +158,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 throw new RuntimeException("Object " + objectId + " is not in prepared state");
             }
             // commit object
-            this.objectsMetadata.put(objectId, new S3Object(
-                    objectId, objectSize, object.getObjectKey(),
-                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                    S3ObjectState.COMMITTED)
+            S3Object s3Object = new S3Object(
+                objectId, objectSize, object.getObjectKey(),
+                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                S3ObjectState.COMMITTED);
+            this.objectsMetadata.put(objectId, s3Object
             );
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
@@ -184,8 +184,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 streamMetadata.addStreamObject(s3StreamObject);
                 streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
             });
-
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId());
+            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
             walMetadata.walObjects.add(walObject);
             return resp;
         });
@@ -231,6 +230,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
     }
 
+
     @Override
     public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: support search not only in wal objects
@@ -269,8 +269,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public List<S3StreamObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        return Collections.emptyList();
+    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        throw new UnsupportedOperationException("Not support");
     }
 
     @Override

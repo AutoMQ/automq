@@ -37,4 +37,10 @@ public class S3StreamConstant {
 
     public static final long MAX_OBJECT_ID = Long.MAX_VALUE;
 
+    public static final long INVALID_ORDER_ID = -1L;
+
+    public static final long INVALID_TS = -1L;
+
+    public static final long INVALID_OBJECT_SIZE = -1L;
+
 }

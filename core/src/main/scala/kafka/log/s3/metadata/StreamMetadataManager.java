@@ -29,8 +29,8 @@ import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
@@ -89,6 +89,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             // remove all catch up pending tasks
             List<GetObjectsTask> retryTasks = removePendingTasks();
             // retry all pending tasks
+            if (retryTasks == null || retryTasks.isEmpty()) {
+                return;
+            }
             this.pendingExecutorService.submit(() -> {
                 retryPendingTasks(retryTasks);
             });
@@ -166,13 +169,16 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
     }
 
-    public CompletableFuture<List<S3StreamObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
         synchronized (StreamMetadataManager.this) {
             try {
                 List<S3StreamObject> streamObjects = streamsImage.getStreamObjects(streamId, startOffset, endOffset, limit);
-                List<S3StreamObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
-                    long committedTimeInMs = objectsImage.getObjectMetadata(object.objectId()).getCommittedTimeInMs();
-                    return new S3StreamObjectMetadata(object, committedTimeInMs);
+                List<S3ObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
+                    S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
+                    long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
+                    long objectSize = objectMetadata.getObjectSize();
+                    return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
+                        committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID);
                 }).collect(Collectors.toList());
                 return CompletableFuture.completedFuture(s3StreamObjectMetadataList);
             } catch (Exception e) {
@@ -205,9 +211,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                     streamId, startOffset, endOffset, limit);
             return CompletableFuture.completedFuture(InRangeObjects.INVALID);
         }
-        // fill the objects' size
+        // fill the objects' size and committed-timestamp
         for (S3ObjectMetadata object : cachedInRangeObjects.objects()) {
-            S3Object objectMetadata = objectsImage.getObjectMetadata(object.getObjectId());
+            S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
             if (objectMetadata == null) {
                 // should not happen
                 LOGGER.error(
@@ -216,6 +222,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
             object.setObjectSize(objectMetadata.getObjectSize());
+            object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
         }
         LOGGER.trace(
                 "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache success with result: {}",
@@ -224,17 +231,18 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     }
 
     public void retryPendingTasks(List<GetObjectsTask> tasks) {
-        if (!tasks.isEmpty()) {
-            LOGGER.info("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
-            tasks.forEach(task -> {
-                long streamId = task.streamId;
-                long startOffset = task.startOffset;
-                long endOffset = task.endOffset;
-                int limit = task.limit;
-                CompletableFuture<InRangeObjects> newCf = this.fetch(streamId, startOffset, endOffset, limit);
-                FutureUtil.propagate(newCf, task.cf);
-            });
+        if (tasks == null || tasks.isEmpty()) {
+            return;
         }
+        LOGGER.info("[RetryPendingTasks]: retry tasks count: {}", tasks.size());
+        tasks.forEach(task -> {
+            long streamId = task.streamId;
+            long startOffset = task.startOffset;
+            long endOffset = task.endOffset;
+            int limit = task.limit;
+            CompletableFuture<InRangeObjects> newCf = this.fetch(streamId, startOffset, endOffset, limit);
+            FutureUtil.propagate(newCf, task.cf);
+        });
     }
 
     static class GetObjectsTask {

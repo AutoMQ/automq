@@ -17,6 +17,7 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.Objects;
 import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 
 /**
@@ -58,6 +59,23 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
             return res;
         res = Long.compare(this.startOffset, o.startOffset);
         return res == 0 ? Long.compare(this.endOffset, o.endOffset) : res;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        StreamOffsetRange that = (StreamOffsetRange) o;
+        return streamId == that.streamId && startOffset == that.startOffset && endOffset == that.endOffset;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(streamId, startOffset, endOffset);
     }
 
     public StreamIndex toRecordStreamIndex() {

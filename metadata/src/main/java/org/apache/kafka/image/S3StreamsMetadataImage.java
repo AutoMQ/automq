@@ -33,7 +33,6 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -99,12 +98,12 @@ public final class S3StreamsMetadataImage {
     }
 
     /**
-     * Get stream objects in range [startOffset, endOffset) with limit.
-     * It will throw IllegalArgumentException if limit or streamId is invalid.
-     * @param streamId stream id
+     * Get stream objects in range [startOffset, endOffset) with limit. It will throw IllegalArgumentException if limit or streamId is invalid.
+     *
+     * @param streamId    stream id
      * @param startOffset inclusive start offset of the stream
-     * @param endOffset exclusive end offset of the stream
-     * @param limit max number of stream objects to return
+     * @param endOffset   exclusive end offset of the stream
+     * @param limit       max number of stream objects to return
      * @return stream objects
      */
     public List<S3StreamObject> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
@@ -164,12 +163,12 @@ public final class S3StreamsMetadataImage {
             this.brokerId = brokerId;
         }
 
-        private Queue<ObjectStreamRange> rangeOfWalObjects() {
+        private Queue<S3ObjectMetadataWrapper> rangeOfWalObjects() {
             BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
             return wal.getWalObjects().list().stream()
-                .filter(obj -> obj.streamsIndex().containsKey(streamId) && obj.streamsIndex().get(streamId).size() != 0)
+                .filter(obj -> obj.offsetRanges().containsKey(streamId) && obj.offsetRanges().get(streamId).size() != 0)
                 .flatMap(obj -> {
-                    List<StreamOffsetRange> indexes = obj.streamsIndex().get(streamId);
+                    List<StreamOffsetRange> indexes = obj.offsetRanges().get(streamId);
                     // TODO: pre filter useless objects
                     return indexes.stream().filter(index -> {
                         long objectStartOffset = index.getStartOffset();
@@ -178,12 +177,17 @@ public final class S3StreamsMetadataImage {
                     }).map(index -> {
                         long startOffset = index.getStartOffset();
                         long endOffset = index.getEndOffset();
-                        return new ObjectStreamRange(obj.objectId(), obj.objectType(), startOffset, endOffset);
+                        List<StreamOffsetRange> offsetRanges = obj.offsetRanges().values().stream().flatMap(List::stream).sorted()
+                            .collect(Collectors.toList());
+                        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
+                            obj.objectId(), obj.objectType(), offsetRanges, obj.dataTimeInMs(),
+                            obj.orderId());
+                        return new S3ObjectMetadataWrapper(s3ObjectMetadata, startOffset, endOffset);
                     });
                 }).collect(Collectors.toCollection(LinkedList::new));
         }
 
-        private Queue<ObjectStreamRange> rangeOfStreamObjects() {
+        private Queue<S3ObjectMetadataWrapper> rangeOfStreamObjects() {
             S3StreamMetadataImage stream = streamsMetadata.get(streamId);
             Map<Long, S3StreamObject> streamObjectsMetadata = stream.getStreamObjects();
             // TODO: refactor to make stream objects in order
@@ -192,10 +196,12 @@ public final class S3StreamsMetadataImage {
                     long objectStartOffset = obj.streamOffsetRange().getStartOffset();
                     long objectEndOffset = obj.streamOffsetRange().getEndOffset();
                     return objectStartOffset < endOffset && objectEndOffset > startOffset;
-                }).sorted(Comparator.comparingLong(S3StreamObject::objectId)).map(obj -> {
+                }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).map(obj -> {
                     long startOffset = obj.streamOffsetRange().getStartOffset();
                     long endOffset = obj.streamOffsetRange().getEndOffset();
-                    return new ObjectStreamRange(obj.objectId(), obj.objectType(), startOffset, endOffset);
+                    S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
+                        obj.objectId(), obj.objectType(), List.of(obj.streamOffsetRange()), obj.dataTimeInMs());
+                    return new S3ObjectMetadataWrapper(s3ObjectMetadata, startOffset, endOffset);
                 }).collect(Collectors.toCollection(LinkedList::new));
             }
             return new LinkedList<>();
@@ -209,15 +215,15 @@ public final class S3StreamsMetadataImage {
                 return InRangeObjects.INVALID;
             }
 
-            Queue<ObjectStreamRange> streamObjects = rangeOfStreamObjects();
-            Queue<ObjectStreamRange> walObjects = rangeOfWalObjects();
+            Queue<S3ObjectMetadataWrapper> streamObjects = rangeOfStreamObjects();
+            Queue<S3ObjectMetadataWrapper> walObjects = rangeOfWalObjects();
             List<S3ObjectMetadata> inRangeObjects = new ArrayList<>();
             long nextStartOffset = startOffset;
 
             while (limit > 0
                 && nextStartOffset < endOffset
                 && (!streamObjects.isEmpty() || !walObjects.isEmpty())) {
-                ObjectStreamRange streamRange = null;
+                S3ObjectMetadataWrapper streamRange = null;
                 if (walObjects.isEmpty() || (!streamObjects.isEmpty() && streamObjects.peek().startOffset() < walObjects.peek().startOffset())) {
                     streamRange = streamObjects.poll();
                 } else {
@@ -231,7 +237,7 @@ public final class S3StreamsMetadataImage {
                 if (objectEndOffset <= nextStartOffset) {
                     continue;
                 }
-                inRangeObjects.add(streamRange.toS3ObjectMetadata());
+                inRangeObjects.add(streamRange.metadata);
                 limit--;
                 nextStartOffset = objectEndOffset;
             }
@@ -240,22 +246,20 @@ public final class S3StreamsMetadataImage {
 
     }
 
-    static class ObjectStreamRange {
+    static class S3ObjectMetadataWrapper {
 
-        private final long objectId;
-        private final S3ObjectType objectType;
+        private final S3ObjectMetadata metadata;
         private final long startOffset;
         private final long endOffset;
 
-        public ObjectStreamRange(long objectId, S3ObjectType objectType, long startOffset, long endOffset) {
-            this.objectId = objectId;
-            this.objectType = objectType;
+        public S3ObjectMetadataWrapper(S3ObjectMetadata metadata, long startOffset, long endOffset) {
+            this.metadata = metadata;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
         }
 
-        public long objectId() {
-            return objectId;
+        public S3ObjectMetadata metadata() {
+            return metadata;
         }
 
         public long startOffset() {
@@ -264,10 +268,6 @@ public final class S3StreamsMetadataImage {
 
         public long endOffset() {
             return endOffset;
-        }
-
-        public S3ObjectMetadata toS3ObjectMetadata() {
-            return new S3ObjectMetadata(objectId, -1, objectType);
         }
     }
 

@@ -31,9 +31,8 @@ import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3ObjectType;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.StreamState;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,7 +97,7 @@ public class StreamMetadataManagerTest {
                 0, new RangeMetadata(STREAM0, 0L, 0, 10L, 100L, BROKER0)
         );
         Map<Long, S3StreamObject> streamObjects = Map.of(
-                0L, new S3StreamObject(0L, 128, STREAM0, 10L, 100L));
+                0L, new S3StreamObject(0L, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
@@ -107,7 +106,7 @@ public class StreamMetadataManagerTest {
         ranges = new HashMap<>(ranges);
         ranges.put(1, new RangeMetadata(STREAM0, 1L, 1, 100L, 150L, BROKER0));
         streamObjects = new HashMap<>(streamObjects);
-        streamObjects.put(1L, new S3StreamObject(1L, 128, STREAM0, 100L, 150L));
+        streamObjects.put(1L, new S3StreamObject(1L, STREAM0, 100L, 150L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 1, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
@@ -116,7 +115,7 @@ public class StreamMetadataManagerTest {
         ranges = new HashMap<>(ranges);
         ranges.put(2, new RangeMetadata(STREAM0, 2L, 2, 150L, 200L, BROKER0));
         streamObjects = new HashMap<>(streamObjects);
-        streamObjects.put(2L, new S3StreamObject(2L, 128, STREAM0, 150L, 200L));
+        streamObjects.put(2L, new S3StreamObject(2L, STREAM0, 150L, 200L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 2, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, BrokerS3WALMetadataImage.EMPTY));
@@ -125,9 +124,6 @@ public class StreamMetadataManagerTest {
 
     @Test
     public void testFetch() throws Exception {
-        S3ObjectMetadata object0 = new S3ObjectMetadata(0L, 128, S3ObjectType.STREAM);
-        S3ObjectMetadata object1 = new S3ObjectMetadata(1L, 128, S3ObjectType.STREAM);
-        S3ObjectMetadata object2 = new S3ObjectMetadata(2L, 128, S3ObjectType.STREAM);
 
         this.streamMetadataListener.onChange(null, image0);
 
@@ -138,7 +134,7 @@ public class StreamMetadataManagerTest {
         assertEquals(10L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(object0, inRangeObjects.objects().get(0));
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 2. fetch with invalid streamId
         result = this.manager.fetch(STREAM1, 0L, 100L, 5);
@@ -152,7 +148,7 @@ public class StreamMetadataManagerTest {
         assertEquals(20L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(object0, inRangeObjects.objects().get(0));
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 4. fetch with smaller endOffset
         result = this.manager.fetch(STREAM0, 10L, 50L, 5);
@@ -161,7 +157,7 @@ public class StreamMetadataManagerTest {
         assertEquals(10L, inRangeObjects.startOffset());
         assertEquals(100L, inRangeObjects.endOffset());
         assertEquals(1, inRangeObjects.objects().size());
-        assertEquals(object0, inRangeObjects.objects().get(0));
+        assertEquals(0L, inRangeObjects.objects().get(0).objectId());
 
         // 5. fetch with smaller startOffset
         result = this.manager.fetch(STREAM0, 5L, 100L, 5);
@@ -191,9 +187,9 @@ public class StreamMetadataManagerTest {
             assertEquals(10L, rangeObjects.startOffset());
             assertEquals(200L, rangeObjects.endOffset());
             assertEquals(3, rangeObjects.objects().size());
-            assertEquals(object0, rangeObjects.objects().get(0));
-            assertEquals(object1, rangeObjects.objects().get(1));
-            assertEquals(object2, rangeObjects.objects().get(2));
+            assertEquals(0L, rangeObjects.objects().get(0).objectId());
+            assertEquals(1L, rangeObjects.objects().get(1).objectId());
+            assertEquals(2L, rangeObjects.objects().get(2).objectId());
         });
 
     }

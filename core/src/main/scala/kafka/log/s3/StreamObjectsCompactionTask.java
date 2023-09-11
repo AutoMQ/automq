@@ -30,8 +30,6 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.S3StreamObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +39,7 @@ import org.slf4j.LoggerFactory;
  */
 public class StreamObjectsCompactionTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectsCompactionTask.class);
-    private Queue<List<S3StreamObjectMetadata>> compactGroups;
+    private Queue<List<S3ObjectMetadata>> compactGroups;
     private final long compactedStreamObjectMaxSize;
     private final long compactableStreamObjectLivingTimeInMs;
     private long nextStartSearchingOffset;
@@ -58,16 +56,14 @@ public class StreamObjectsCompactionTask {
         this.nextStartSearchingOffset = stream.startOffset();
     }
 
-    private CompletableFuture<Void> doCompaction(List<S3StreamObjectMetadata> streamObjectMetadataList) {
-        List<S3ObjectMetadata> objectMetadatas = streamObjectMetadataList.stream().map(metadata ->
-            new S3ObjectMetadata(metadata.objectId(), metadata.objectSize(), S3ObjectType.STREAM)
-        ).collect(Collectors.toList());
+    private CompletableFuture<Void> doCompaction(List<S3ObjectMetadata> streamObjectMetadataList) {
+        List<S3ObjectMetadata> objectMetadatas = streamObjectMetadataList;
 
         long startOffset = streamObjectMetadataList.get(0).startOffset();
         long endOffset = streamObjectMetadataList.get(streamObjectMetadataList.size() - 1).endOffset();
         List<Long> sourceObjectIds = streamObjectMetadataList
             .stream()
-            .map(S3StreamObjectMetadata::objectId)
+            .map(S3ObjectMetadata::objectId)
             .collect(Collectors.toList());
 
         if (stream.isClosed()) {
@@ -99,7 +95,7 @@ public class StreamObjectsCompactionTask {
     public CompletableFuture<Void> doCompactions() {
         CompletableFuture<Void> lastCompactionFuture = CompletableFuture.completedFuture(null);
         while (!compactGroups.isEmpty()) {
-            List<S3StreamObjectMetadata> streamObjectMetadataList = compactGroups.poll();
+            List<S3ObjectMetadata> streamObjectMetadataList = compactGroups.poll();
             CompletableFuture<Void> future = new CompletableFuture<>();
             lastCompactionFuture.whenComplete((v, ex) -> {
                 if (ex != null) {
@@ -132,17 +128,16 @@ public class StreamObjectsCompactionTask {
      * @param startSearchingOffset start searching offset.
      * @return compact groups.
      */
-    public Queue<List<S3StreamObjectMetadata>> prepareCompactGroups(long startSearchingOffset) {
+    public Queue<List<S3ObjectMetadata>> prepareCompactGroups(long startSearchingOffset) {
         long startOffset = Utils.max(startSearchingOffset, stream.startOffset());
-        List<S3StreamObjectMetadata> rawFetchedStreamObjects = objectManager
+        List<S3ObjectMetadata> rawFetchedStreamObjects = objectManager
             .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE)
             .stream()
-            .sorted()
             .collect(Collectors.toList());
 
         this.nextStartSearchingOffset = calculateNextStartSearchingOffset(rawFetchedStreamObjects, startOffset);
 
-        List<S3StreamObjectMetadata> streamObjects = rawFetchedStreamObjects
+        List<S3ObjectMetadata> streamObjects = rawFetchedStreamObjects
             .stream()
             .filter(streamObject -> streamObject.objectSize() < compactedStreamObjectMaxSize)
             .collect(Collectors.toList());
@@ -170,7 +165,7 @@ public class StreamObjectsCompactionTask {
      * @param rawStartSearchingOffset raw start searching offset.
      * @return next start searching offset.
      */
-    private long calculateNextStartSearchingOffset(List<S3StreamObjectMetadata> streamObjects,
+    private long calculateNextStartSearchingOffset(List<S3ObjectMetadata> streamObjects,
         long rawStartSearchingOffset) {
         long lastEndOffset = rawStartSearchingOffset;
         if (streamObjects == null || streamObjects.isEmpty()) {
@@ -193,16 +188,16 @@ public class StreamObjectsCompactionTask {
      * @param streamObjects stream objects.
      * @return object groups.
      */
-    private List<List<S3StreamObjectMetadata>> groupContinuousObjects(List<S3StreamObjectMetadata> streamObjects) {
+    private List<List<S3ObjectMetadata>> groupContinuousObjects(List<S3ObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }
 
-        List<Stack<S3StreamObjectMetadata>> stackList = new LinkedList<>();
-        Stack<S3StreamObjectMetadata> stack = new Stack<>();
+        List<Stack<S3ObjectMetadata>> stackList = new LinkedList<>();
+        Stack<S3ObjectMetadata> stack = new Stack<>();
         stackList.add(stack);
 
-        for (S3StreamObjectMetadata object : streamObjects) {
+        for (S3ObjectMetadata object : streamObjects) {
             if (stack.isEmpty()) {
                 stack.push(object);
             } else {
@@ -234,19 +229,19 @@ public class StreamObjectsCompactionTask {
      * @param streamObjects stream objects.
      * @return stream object subgroups.
      */
-    private Queue<List<S3StreamObjectMetadata>> groupEligibleObjects(List<S3StreamObjectMetadata> streamObjects) {
+    private Queue<List<S3ObjectMetadata>> groupEligibleObjects(List<S3ObjectMetadata> streamObjects) {
         if (streamObjects == null || streamObjects.size() <= 1) {
             return new LinkedList<>();
         }
 
-        Queue<List<S3StreamObjectMetadata>> groups = new LinkedList<>();
+        Queue<List<S3ObjectMetadata>> groups = new LinkedList<>();
 
         int startIndex = 0;
         int endIndex = 0;
         while (startIndex < streamObjects.size() - 1) {
             endIndex = startIndex + 1;
             while (endIndex <= streamObjects.size()) {
-                List<S3StreamObjectMetadata> subGroup = streamObjects.subList(startIndex, endIndex);
+                List<S3ObjectMetadata> subGroup = streamObjects.subList(startIndex, endIndex);
                 // The subgroup is too new or too big, then break;
                 if (calculateTimePassedInMs(subGroup) < compactableStreamObjectLivingTimeInMs ||
                     calculateTotalSize(subGroup) > compactedStreamObjectMaxSize) {
@@ -264,12 +259,12 @@ public class StreamObjectsCompactionTask {
         return groups;
     }
 
-    private long calculateTimePassedInMs(List<S3StreamObjectMetadata> streamObjects) {
-        return System.currentTimeMillis() - streamObjects.stream().mapToLong(S3StreamObjectMetadata::timestamp).max().orElse(0L);
+    private long calculateTimePassedInMs(List<S3ObjectMetadata> streamObjects) {
+        return System.currentTimeMillis() - streamObjects.stream().mapToLong(S3ObjectMetadata::committedTimestamp).max().orElse(0L);
     }
 
-    private long calculateTotalSize(List<S3StreamObjectMetadata> streamObjects) {
-        return streamObjects.stream().mapToLong(S3StreamObjectMetadata::objectSize).sum();
+    private long calculateTotalSize(List<S3ObjectMetadata> streamObjects) {
+        return streamObjects.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
     }
 
     public static class HaltException extends RuntimeException {
