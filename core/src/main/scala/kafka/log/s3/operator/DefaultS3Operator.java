@@ -192,6 +192,7 @@ public class DefaultS3Operator implements S3Operator {
 
 
     class DefaultWriter implements Writer {
+        private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
         private final String path;
         private final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
         private volatile String uploadId;
@@ -281,7 +282,7 @@ public class DefaultS3Operator implements S3Operator {
                     new CopyObjectPart(sourcePath, start, end);
                 }
             } else {
-                if (objectPart.size() + targetSize > 16 * 1024 * 1024) {
+                if (objectPart.size() + targetSize > MAX_MERGE_WRITE_SIZE) {
                     long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
                     objectPart.readAndWrite(sourcePath, start, readAndWriteCopyEnd);
                     objectPart.upload();
@@ -393,6 +394,10 @@ public class DefaultS3Operator implements S3Operator {
             }
 
             public void upload() {
+                this.lastRangeReadCf.thenAccept(nil -> upload0());
+            }
+
+            private void upload0() {
                 long start = System.nanoTime();
                 uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf)).whenComplete((nil, ex) -> {
                     PART_UPLOAD_COST.update(System.nanoTime() - start);
