@@ -689,6 +689,8 @@ object KafkaConfig {
   val S3StreamObjectCompactionTaskIntervalProp = "s3.stream.object.compaction.task.interval"
   val S3StreamObjectCompactionMaxSizeProp = "s3.stream.object.compaction.max.size"
   val S3StreamObjectCompactionLivingTimeThresholdProp = "s3.stream.object.compaction.living.time.threshold"
+  val S3ControllerRequestRetryMaxCountProp = "s3.controller.request.retry.max.count"
+  val S3ControllerRequestRetryBaseDelayMsProp = "s3.controller.request.retry.base.delay.ms"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -704,6 +706,8 @@ object KafkaConfig {
   val S3StreamObjectCompactionTaskIntervalDoc = "The S3 stream object compaction task interval in minutes."
   val S3StreamObjectCompactionMaxSizeDoc = "The S3 stream object compaction max size in GiB."
   val S3StreamObjectCompactionLivingTimeThresholdDoc = "The S3 stream object compaction living time threshold in hours."
+  val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
+  val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
 
   // Kafka on S3 inject end
 
@@ -1517,6 +1521,8 @@ object KafkaConfig {
       .define(S3StreamObjectCompactionTaskIntervalProp, INT, 60, MEDIUM, S3StreamObjectCompactionTaskIntervalDoc)
       .define(S3StreamObjectCompactionMaxSizeProp, INT, 10, MEDIUM, S3StreamObjectCompactionMaxSizeDoc)
       .define(S3StreamObjectCompactionLivingTimeThresholdProp, INT, 1, MEDIUM, S3StreamObjectCompactionLivingTimeThresholdDoc)
+      .define(S3ControllerRequestRetryMaxCountProp, INT, 5, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
+      .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
     // Kafka on S3 inject end
   }
 
@@ -2065,6 +2071,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3StreamObjectCompactionTaskInterval = getInt(KafkaConfig.S3StreamObjectCompactionTaskIntervalProp)
   val s3StreamObjectCompactionMaxSize = getInt(KafkaConfig.S3StreamObjectCompactionMaxSizeProp)
   val s3StreamObjectCompactionLivingTimeThreshold = getInt(KafkaConfig.S3StreamObjectCompactionLivingTimeThresholdProp)
+  val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
+  val s3ControllerRequestRetryBaseDelayMs = getLong(KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp)
   // TODO: ensure incremental epoch => Store epoch in disk, if timestamp flip back, we could use disk epoch to keep the incremental epoch.
   val brokerEpoch = System.currentTimeMillis()
   // Kafka on S3 inject end

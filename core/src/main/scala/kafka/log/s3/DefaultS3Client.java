@@ -24,6 +24,7 @@ import kafka.log.s3.cache.DefaultS3BlockCache;
 import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.network.ControllerRequestSender;
+import kafka.log.s3.network.ControllerRequestSender.RetryPolicyContext;
 import kafka.log.s3.objects.ControllerObjectManager;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
@@ -58,7 +59,9 @@ public class DefaultS3Client implements Client {
         this.config = config;
         this.metadataManager = new StreamMetadataManager(brokerServer, config);
         this.operator = operator;
-        this.requestSender = new ControllerRequestSender(brokerServer);
+        RetryPolicyContext retryPolicyContext = new RetryPolicyContext(config.s3ControllerRequestRetryMaxCount(),
+            config.s3ControllerRequestRetryBaseDelayMs());
+        this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);

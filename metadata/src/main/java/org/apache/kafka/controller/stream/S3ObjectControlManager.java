@@ -187,7 +187,6 @@ public class S3ObjectControlManager {
             S3Object object = this.objectsMetadata.get(objectId);
             if (object == null || object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 log.error("object {} not exist when mark destroy object", objectId);
-                // TODO: Maybe we can ignore this situation, because this object is already destroyed ?
                 return ControllerResult.of(Collections.emptyList(), false);
             }
             S3ObjectRecord record = new S3ObjectRecord()
