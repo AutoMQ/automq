@@ -79,6 +79,7 @@ public interface ObjectManager {
      * <ul>
      *      <li> Only concern about stream objects, ignore wal objects.
      *      <li> Returned stream objects can be discontinuous of stream range.
+     *      <li> Ranges of the returned stream objects are <strong>in ascending order</strong>.
      * </ul>
      * @param streamId stream id.
      * @param startOffset get range start offset.

@@ -35,6 +35,8 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static kafka.log.s3.ObjectWriter.Footer.FOOTER_SIZE;
+
 public class ObjectReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
     private final S3ObjectMetadata metadata;
@@ -110,9 +112,9 @@ public class ObjectReader {
         }
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
-            long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
+            long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
+            if (indexBlockPosition + indexBlockSize + FOOTER_SIZE < objectSize) {
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);

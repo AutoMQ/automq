@@ -20,7 +20,6 @@ package kafka.log.s3;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.junit.jupiter.api.Tag;
@@ -34,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @Tag("S3Unit")
-public class StreamObjectCopyerTest {
+public class StreamObjectCopierTest {
     @Test
     public void testCopy() throws ExecutionException, InterruptedException {
         long targetObjectId = 10;
@@ -57,13 +56,9 @@ public class StreamObjectCopyerTest {
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(1, objectWriter1.size(), S3ObjectType.STREAM);
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(2, objectWriter2.size(), S3ObjectType.STREAM);
 
-        StreamObjectCopyer streamObjectCopyer = new StreamObjectCopyer(targetObjectId,
-                s3Operator,
-                // TODO: use a better clusterName
-                s3Operator.writer(ObjectUtils.genKey(0, "todocluster", targetObjectId))
-        );
-        streamObjectCopyer.write(metadata1);
-        streamObjectCopyer.write(metadata2);
+        StreamObjectCopier streamObjectCopyer = new StreamObjectCopier(targetObjectId, s3Operator);
+        streamObjectCopyer.copy(metadata1);
+        streamObjectCopyer.copy(metadata2);
         streamObjectCopyer.close().get();
         long targetObjectSize = streamObjectCopyer.size();
         S3ObjectMetadata metadata = new S3ObjectMetadata(targetObjectId, targetObjectSize, S3ObjectType.STREAM);
