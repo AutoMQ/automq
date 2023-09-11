@@ -216,8 +216,8 @@ public class StreamMetadataManagerTest {
     public void testGetWALObjects() {
         this.streamMetadataListener.onChange(null, image0);
         List<S3WALObjectMetadata> objectMetadata = this.manager.getWALObjects();
-        List<S3ObjectMetadata> expected = List.of(new S3ObjectMetadata(1L, 128, S3ObjectType.UNKNOWN),
-                new S3ObjectMetadata(2L, 128, S3ObjectType.UNKNOWN));
+        List<S3ObjectMetadata> expected = List.of(new S3ObjectMetadata(1L, 128, S3ObjectType.WAL),
+                new S3ObjectMetadata(2L, 128, S3ObjectType.WAL));
         // compare objectMetadata with expected
         assertEquals(expected.size(), objectMetadata.size());
         for (int i = 0; i < expected.size(); i++) {
