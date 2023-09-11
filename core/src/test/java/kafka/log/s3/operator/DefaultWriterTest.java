@@ -120,7 +120,7 @@ class DefaultWriterTest {
         writer = operator.writer("test-path-2", 100);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
-        List<Long> contentLengths = new ArrayList<>();
+        List<Long> writeContentLengths = new ArrayList<>();
 
         UploadPartResponse.Builder builder = UploadPartResponse.builder();
         Method method = builder.getClass().getDeclaredMethod("setETag", String.class);
@@ -142,7 +142,7 @@ class DefaultWriterTest {
             UploadPartRequest request = invocation.getArgument(0);
             uploadPartRequests.add(request);
             AsyncRequestBody body = invocation.getArgument(1);
-            contentLengths.add(body.contentLength().orElse(0L));
+            writeContentLengths.add(body.contentLength().orElse(0L));
             return CompletableFuture.completedFuture(builder.build());
         });
 
@@ -183,22 +183,22 @@ class DefaultWriterTest {
         assertEquals(3, uploadPartRequests.size());
         assertEquals("unit-test-bucket", uploadPartRequests.get(0).bucket());
         assertEquals("test-path-2", uploadPartRequests.get(0).key());
-        assertEquals(List.of(2, 3, 5), uploadPartRequests.stream()
+        assertEquals(List.of(2, 3, 4), uploadPartRequests.stream()
             .map(UploadPartRequest::partNumber)
             .collect(Collectors.toList()));
-        assertEquals(List.of(120L, 100L, 10L), contentLengths);
+        assertEquals(List.of(120L, 280L, 10L), writeContentLengths);
 
-        assertEquals(2, uploadPartCopyRequests.size());
+        assertEquals(1, uploadPartCopyRequests.size());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).sourceBucket());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).destinationBucket());
-        assertEquals(List.of("path-1", "path-6"), uploadPartCopyRequests.stream()
+        assertEquals(List.of("path-1"), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::sourceKey)
             .collect(Collectors.toList()));
         assertEquals("test-path-2", uploadPartCopyRequests.get(0).destinationKey());
-        assertEquals(List.of(1, 4), uploadPartCopyRequests.stream()
+        assertEquals(List.of(1), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::partNumber)
             .collect(Collectors.toList()));
-        assertEquals(List.of("bytes=0-119", "bytes=420-599"), uploadPartCopyRequests.stream()
+        assertEquals(List.of("bytes=0-119"), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::copySourceRange)
             .collect(Collectors.toList()));
     }

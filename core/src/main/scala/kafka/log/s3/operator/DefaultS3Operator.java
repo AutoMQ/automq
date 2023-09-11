@@ -202,18 +202,7 @@ public class DefaultS3Operator implements S3Operator {
          * The minPartSize represents the minimum size of a part for a multipart object.
          */
         private final long minPartSize;
-        /**
-         * The cachedBuf is used to combine small parts into a bigger one.
-         */
-        private CompositeByteBuf cachedBuf;
-        /**
-         * The size of the cachedBuf.
-         */
-        private long cachedBufSize;
-        /**
-         * The last adding component operation to the cachedBuf.
-         */
-        private CompletableFuture<Void> cachedBufLastAddCf;
+        private ObjectPart objectPart = null;
         private final long start = System.nanoTime();
 
         public DefaultWriter(String path) {
@@ -243,50 +232,22 @@ public class DefaultS3Operator implements S3Operator {
             });
         }
 
-        // To unite the write and copyWrite, we still use cachedBufLastAddCf to add the last part of the source.
         @Override
-        public CompletableFuture<Void> write(ByteBuf part) {
-            OBJECT_UPLOAD_SIZE.inc(part.readableBytes());
+        public CompletableFuture<Void> write(ByteBuf data) {
+            OBJECT_UPLOAD_SIZE.inc(data.readableBytes());
 
-            long targetSize = part.readableBytes();
-            if (cachedBuf == null) {
-                // Case 1: create cache and add as the first item.
-                if (targetSize < minPartSize) {
-                    return initCacheWithFirstItem(targetSize, CompletableFuture.completedFuture(part));
-                }
-                // Case 2: just upload.
-                return handleWriteFuturePart(CompletableFuture.completedFuture(null), part, System.nanoTime())
-                    .thenApply(nil -> null);
+            if (objectPart == null) {
+                objectPart = new ObjectPart();
             }
+            ObjectPart objectPart = this.objectPart;
 
-            // cachedBuf not null, add to the cache.
-            cachedBufSize += targetSize;
-            cachedBufLastAddCf = cachedBufLastAddCf
-                .thenRun(() -> cachedBuf.addComponent(true, part));
-
-            // Case 3: cache size is smaller than minPartSize, just add to the cache.
-            if (cachedBufSize < minPartSize) {
-                return cachedBufLastAddCf;
+            objectPart.write(data);
+            if (objectPart.size() > minPartSize) {
+                objectPart.upload();
+                // finish current part.
+                this.objectPart = null;
             }
-
-            // Case 4: upload the combined result.
-            CompletableFuture<CompletedPart> future = handleWriteFuturePart(cachedBufLastAddCf, cachedBuf, System.nanoTime());
-            clearCache();
-            return future.thenApply(nil -> null);
-        }
-
-        private CompletableFuture<Void> initCacheWithFirstItem(long targetSize, CompletableFuture<ByteBuf> firstItemFuture) {
-            cachedBuf = ByteBufAlloc.ALLOC.compositeBuffer();
-            cachedBufSize = targetSize;
-            cachedBufLastAddCf = firstItemFuture
-                .thenAccept(buf -> cachedBuf.addComponent(true, buf));
-            return cachedBufLastAddCf;
-        }
-
-        private void clearCache() {
-            cachedBuf = null;
-            cachedBufLastAddCf = null;
-            cachedBufSize = 0;
+            return objectPart.getFuture();
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
@@ -312,70 +273,27 @@ public class DefaultS3Operator implements S3Operator {
         @Override
         public void copyWrite(String sourcePath, long start, long end) {
             long targetSize = end - start;
-            if (cachedBuf == null) {
-                // Case 1: create cache and add as the first item.
+            if (objectPart == null) {
                 if (targetSize < minPartSize) {
-                    initCacheWithFirstItem(targetSize, rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC));
-                } else { // Case 2: just copy.
-                    handleCopyPart(sourcePath, start, end);
+                    this.objectPart = new ObjectPart();
+                    objectPart.readAndWrite(sourcePath, start, end);
+                } else {
+                    new CopyObjectPart(sourcePath, start, end);
                 }
-                return;
-            }
-
-            // cachedBuf not null
-            long combinedSize = cachedBufSize + targetSize;
-
-            // The size of the new part is at most minPartSize, it is ok to read the full range [start, end).
-            if (combinedSize <= 2 * minPartSize) {
-                cachedBufSize = combinedSize;
-                cachedBufLastAddCf = cachedBufLastAddCf
-                    .thenCompose(v -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
-                    .thenAccept(buf -> cachedBuf.addComponent(true, buf));
-                // Case 3: just add to cache.
-                if (combinedSize < minPartSize) {
-                    return;
+            } else {
+                if (objectPart.size() + targetSize > 16 * 1024 * 1024) {
+                    long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
+                    objectPart.readAndWrite(sourcePath, start, readAndWriteCopyEnd);
+                    objectPart.upload();
+                    new CopyObjectPart(sourcePath, readAndWriteCopyEnd, end);
+                } else {
+                    objectPart.readAndWrite(sourcePath, start, end);
+                    if (objectPart.size() > minPartSize) {
+                        objectPart.upload();
+                        this.objectPart = null;
+                    }
                 }
-                // Case 4: add to the cache and upload the combined result.
-                // combine successfully, then upload.
-                handleWriteFuturePart(cachedBufLastAddCf, cachedBuf, System.nanoTime());
-                clearCache();
-                return;
             }
-
-            // Case 5: It is better to only read a piece of range [start, end).
-            // Just fill cachedBuf with source until it reaches minPartSize. Upload the cache and the rest of the source.
-            cachedBufLastAddCf = cachedBufLastAddCf
-                .thenCompose(v -> rangeRead(sourcePath, start, start + minPartSize - cachedBufSize, ByteBufAlloc.ALLOC))
-                .thenAccept(buf -> cachedBuf.addComponent(true, buf));
-            handleWriteFuturePart(cachedBufLastAddCf, cachedBuf, System.nanoTime());
-            handleCopyPart(sourcePath, start + minPartSize - cachedBufSize, end);
-            clearCache();
-        }
-
-        private CompletableFuture<CompletedPart> handleWriteFuturePart(CompletableFuture<Void> waitingFuture, ByteBuf part, long startNanoTime) {
-            int partNumber = nextPartNumber.getAndIncrement();
-            CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
-            parts.add(partCf);
-            waitingFuture.thenCompose(nil -> uploadIdCf)
-                .thenAccept(uploadId -> write0(uploadId, partNumber, part, partCf));
-            partCf.whenComplete((nil, ex) -> {
-                PART_UPLOAD_COST.update(System.nanoTime() - startNanoTime);
-                part.release();
-            });
-            return partCf;
-        }
-
-        private CompletableFuture<CompletedPart> handleCopyPart(String sourcePath, long start, long end) {
-            long inclusiveEnd = end - 1;
-            int partNumber = nextPartNumber.getAndIncrement();
-            CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
-            parts.add(partCf);
-            uploadIdCf.thenAccept(uploadId -> {
-                UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-                    .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
-                copyWrite0(partNumber, request, partCf);
-            });
-            return partCf;
         }
 
         private void copyWrite0(int partNumber, UploadPartCopyRequest request, CompletableFuture<CompletedPart> partCf) {
@@ -396,10 +314,10 @@ public class DefaultS3Operator implements S3Operator {
                 return closeCf;
             }
 
-            // upload the cached buf anyway. Note that the last part can be smaller than minPartSize.
-            if (cachedBuf != null) {
-                handleWriteFuturePart(cachedBufLastAddCf, cachedBuf, System.nanoTime());
-                clearCache();
+            if (objectPart != null) {
+                // force upload the last part which can be smaller than minPartSize.
+                objectPart.upload();
+                objectPart = null;
             }
 
             OBJECT_INTO_CLOSE_COST.update(System.nanoTime() - start);
@@ -447,6 +365,67 @@ public class DefaultS3Operator implements S3Operator {
                     throw new RuntimeException(e);
                 }
             }).collect(Collectors.toList());
+        }
+
+        class ObjectPart {
+            private final int partNumber = nextPartNumber.getAndIncrement();
+            private final CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+            private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
+            private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
+            private long size;
+
+            public ObjectPart() {
+                parts.add(partCf);
+            }
+
+            public void write(ByteBuf data) {
+                size += data.readableBytes();
+                // ensure addComponent happen before following write or copyWrite.
+                this.lastRangeReadCf = lastRangeReadCf.thenAccept(nil -> partBuf.addComponent(true, data));
+            }
+
+            public void readAndWrite(String sourcePath, long start, long end) {
+                size += end - start;
+                // TODO: parallel read and sequence add.
+                this.lastRangeReadCf = lastRangeReadCf
+                        .thenCompose(nil -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
+                        .thenAccept(buf -> partBuf.addComponent(true, buf));
+            }
+
+            public void upload() {
+                long start = System.nanoTime();
+                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf)).whenComplete((nil, ex) -> {
+                    PART_UPLOAD_COST.update(System.nanoTime() - start);
+                    partBuf.release();
+                });
+            }
+
+            public long size() {
+                return size;
+            }
+
+            public CompletableFuture<Void> getFuture() {
+                return partCf.thenApply(nil -> null);
+            }
+        }
+
+        class CopyObjectPart {
+            private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
+
+            public CopyObjectPart(String sourcePath, long start, long end) {
+                long inclusiveEnd = end - 1;
+                int partNumber = nextPartNumber.getAndIncrement();
+                parts.add(partCf);
+                uploadIdCf.thenAccept(uploadId -> {
+                    UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
+                            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
+                    copyWrite0(partNumber, request, partCf);
+                });
+            }
+
+            public CompletableFuture<Void> getFuture() {
+                return partCf.thenApply(nil -> null);
+            }
         }
     }
 }
