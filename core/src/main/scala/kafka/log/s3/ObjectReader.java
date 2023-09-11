@@ -49,6 +49,7 @@ public class ObjectReader {
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
         this.basicObjectInfoCf = new CompletableFuture<>();
+        // TODO: close object reader to release resources such as index block.
         asyncGetBasicObjectInfo();
     }
 

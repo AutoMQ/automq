@@ -52,9 +52,9 @@ class BlockWALServiceTest {
     @Test
     void singleThreadAppend() throws IOException {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build() //
-                .setBlockDeviceCapacityWant(BLOCK_DEVICE_CAPACITY) //
-                .setBlockDevicePath(BLOCK_DEVICE_PATH + "singleThreadAppend") //
-                .setIoThreadNums(4) //
+                .capacity(BLOCK_DEVICE_CAPACITY) //
+                .blockDevicePath(BLOCK_DEVICE_PATH + "singleThreadAppend") //
+                .ioThreadNums(4) //
                 .createBlockWALService().start();
         try {
             for (int i = 0; i < 10; i++) {
@@ -86,9 +86,9 @@ class BlockWALServiceTest {
 
     void appendManyRecord(int recordTotal, String blockDeviceName) throws IOException {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build() //
-                .setBlockDeviceCapacityWant(BLOCK_DEVICE_CAPACITY) //
-                .setBlockDevicePath(blockDeviceName) //
-                .setIoThreadNums(4) //
+                .capacity(BLOCK_DEVICE_CAPACITY) //
+                .blockDevicePath(blockDeviceName) //
+                .ioThreadNums(4) //
                 .createBlockWALService().start();
         try {
             // append 1024
@@ -125,9 +125,9 @@ class BlockWALServiceTest {
         appendManyRecord(1024, BLOCK_DEVICE_PATH + "singleThreadRecover");
 
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build() //
-                .setBlockDeviceCapacityWant(BLOCK_DEVICE_CAPACITY) //
-                .setBlockDevicePath(BLOCK_DEVICE_PATH + "singleThreadRecover")//
-                .setIoThreadNums(4) //
+                .capacity(BLOCK_DEVICE_CAPACITY) //
+                .blockDevicePath(BLOCK_DEVICE_PATH + "singleThreadRecover")//
+                .ioThreadNums(4) //
                 .createBlockWALService().start();
 
         try {
@@ -152,9 +152,9 @@ class BlockWALServiceTest {
     void multiThreadAppend() throws OverCapacityException, InterruptedException, IOException {
 
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build() //
-                .setBlockDeviceCapacityWant(BLOCK_DEVICE_CAPACITY) //
-                .setBlockDevicePath(BLOCK_DEVICE_PATH + "multiThreadAppend") //
-                .setIoThreadNums(4) //
+                .capacity(BLOCK_DEVICE_CAPACITY) //
+                .blockDevicePath(BLOCK_DEVICE_PATH + "multiThreadAppend") //
+                .ioThreadNums(4) //
                 .createBlockWALService().start();
         try {
             int nThreadNums = 8;

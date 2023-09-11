@@ -297,7 +297,7 @@ public class BlockWALService implements WriteAheadLog {
         ByteBuffer record = buf.nioBuffer();
 
         // 生成 crc
-        final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record.array(), record.position(), record.limit()) : crc;
+        final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record) : crc;
 
         // 计算写入 wal offset
         final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_CAPACITY_DOUBLE);
@@ -520,7 +520,12 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    static class BlockWALServiceBuilder {
+    public static BlockWALServiceBuilder builder() {
+        return new BlockWALServiceBuilder();
+    }
+
+
+    public static class BlockWALServiceBuilder {
         private int ioThreadNums = Integer.parseInt(System.getProperty(//
                 "automq.ebswal.ioThreadNums", //
                 "8"));
@@ -531,17 +536,17 @@ public class BlockWALService implements WriteAheadLog {
             return new BlockWALServiceBuilder();
         }
 
-        public BlockWALServiceBuilder setIoThreadNums(int ioThreadNums) {
+        public BlockWALServiceBuilder ioThreadNums(int ioThreadNums) {
             this.ioThreadNums = ioThreadNums;
             return this;
         }
 
-        public BlockWALServiceBuilder setBlockDevicePath(String blockDevicePath) {
+        public BlockWALServiceBuilder blockDevicePath(String blockDevicePath) {
             this.blockDevicePath = blockDevicePath;
             return this;
         }
 
-        public BlockWALServiceBuilder setBlockDeviceCapacityWant(long blockDeviceCapacityWant) {
+        public BlockWALServiceBuilder capacity(long blockDeviceCapacityWant) {
             this.blockDeviceCapacityWant = blockDeviceCapacityWant;
             return this;
         }
