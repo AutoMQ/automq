@@ -278,6 +278,7 @@ public class ObjectReader {
                 public void close() {
                     try {
                         in.close();
+                        buf.release();
                     } catch (IOException e) {
                         throw new KafkaException("Failed to close object block stream", e);
                     }

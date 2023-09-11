@@ -109,7 +109,7 @@ public class DefaultS3Operator implements S3Operator {
     public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc) {
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        ByteBuf buf = alloc.heapBuffer((int) (end - start));
+        ByteBuf buf = alloc.directBuffer((int) (end - start));
         rangeRead0(path, start, end, buf, cf);
         return cf;
     }
