@@ -60,7 +60,7 @@
     <allow pkg="org.apache.kafka.image" />
     <allow pkg="org.apache.kafka.clients" />
     <allow pkg="org.apache.kafka.controller" />
-    <allow pkg="org.apache.kafka.raft" />
+    <allow pkg="moe.cnkirito.kdio" />
   </subpackage>
 
   <subpackage name="testkit">
