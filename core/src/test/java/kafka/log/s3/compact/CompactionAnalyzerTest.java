@@ -69,10 +69,31 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     }
 
     @Test
-    public void testShouldCompact() {
+    public void testFilterBlocksToCompact() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
         List<StreamDataBlock> streamDataBlocks = compactionAnalyzer.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST);
-        Assertions.assertTrue(compactionAnalyzer.shouldCompact(streamDataBlocks));
+        List<StreamDataBlock> filteredBlocks = compactionAnalyzer.filterBlocksToCompact(streamDataBlocks);
+        for (int i = 0; i < streamDataBlocks.size(); i++) {
+            Assertions.assertTrue(compare(streamDataBlocks.get(i), filteredBlocks.get(i)));
+        }
+    }
+
+    @Test
+    public void testFilterBlocksToCompact2() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
+        List<StreamDataBlock> streamDataBlocks = List.of(
+                new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1),
+                new StreamDataBlock(STREAM_1, 400, 500, 2, OBJECT_1, -1, -1, 1),
+                new StreamDataBlock(STREAM_2, 30, 60, 0, OBJECT_2, -1, -1, 1),
+                new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1));
+        List<StreamDataBlock> filteredBlocks = compactionAnalyzer.filterBlocksToCompact(streamDataBlocks);
+        Assertions.assertEquals(5, filteredBlocks.size());
+        for (int i = 0; i < filteredBlocks.size(); i++) {
+            Assertions.assertTrue(compare(streamDataBlocks.get(i), filteredBlocks.get(i)));
+        }
     }
 
     @Test

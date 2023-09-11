@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -134,7 +135,8 @@ public class CompactionAnalyzer {
 
     public List<CompactedObjectBuilder> buildCompactedObjects(List<S3WALObjectMetadata> objects) {
         List<StreamDataBlock> streamDataBlocks = blockWaitObjectIndices(objects);
-        if (!shouldCompact(streamDataBlocks)) {
+        List<StreamDataBlock> filteredStreamDataBlocks = filterBlocksToCompact(streamDataBlocks);
+        if (filteredStreamDataBlocks.isEmpty()) {
             return new ArrayList<>();
         }
         return compactObjects(sortStreamRangePositions(streamDataBlocks));
@@ -198,12 +200,20 @@ public class CompactionAnalyzer {
         return compactedObjectBuilders;
     }
 
-    boolean shouldCompact(List<StreamDataBlock> streamDataBlocks) {
-        // do compact if there is any stream with data placed in more than one WAL objects
-        Map<Long, Integer> streamIdToDistinctObjectMap = streamDataBlocks.stream()
+    List<StreamDataBlock> filterBlocksToCompact(List<StreamDataBlock> streamDataBlocks) {
+        Set<Long> objectIdsToCompact = streamDataBlocks.stream()
                 .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())))
-                .entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
-        return streamIdToDistinctObjectMap.values().stream().filter(v -> v > 1).count() > 1;
+                .entrySet().stream()
+                .filter(e -> e.getValue().size() > 1)
+                .flatMap(e -> e.getValue().stream())
+                .collect(Collectors.toSet());
+        List<StreamDataBlock> filteredList = new ArrayList<>();
+        for (StreamDataBlock block : streamDataBlocks) {
+            if (objectIdsToCompact.contains(block.getObjectId())) {
+                filteredList.add(block);
+            }
+        }
+        return filteredList;
     }
 
     private CompactedObjectBuilder splitAndAddBlock(CompactedObjectBuilder builder,
