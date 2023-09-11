@@ -399,7 +399,7 @@ public class DefaultS3Operator implements S3Operator {
             // upload the cached buf anyway. Note that the last part can be smaller than minPartSize.
             if (cachedBuf != null) {
                 handleWriteFuturePart(cachedBufLastAddCf, cachedBuf, System.nanoTime());
-                cachedBuf = null;
+                clearCache();
             }
 
             OBJECT_INTO_CLOSE_COST.update(System.nanoTime() - start);
