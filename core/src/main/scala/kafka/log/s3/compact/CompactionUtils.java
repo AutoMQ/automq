@@ -21,9 +21,18 @@ import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.compact.operator.DataBlockReader;
 import kafka.log.s3.objects.ObjectStreamRange;
+import kafka.log.s3.operator.S3Operator;
+import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 public class CompactionUtils {
     public static List<ObjectStreamRange> buildObjectStreamRange(CompactedObject compactedObject) {
@@ -54,5 +63,36 @@ public class CompactionUtils {
                     streamDataBlock.getBlockSize(), streamDataBlock.getRecordCount()));
         }
         return blockIndices;
+    }
+
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3WALObjectMetadata> objectMetadataList, S3Operator s3Operator) {
+        Map<Long, S3WALObject> s3WALObjectMap = objectMetadataList.stream()
+                .collect(Collectors.toMap(e -> e.getWalObject().objectId(), S3WALObjectMetadata::getWalObject));
+        Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
+        for (S3WALObjectMetadata walObjectMetadata : objectMetadataList) {
+            DataBlockReader dataBlockReader = new DataBlockReader(walObjectMetadata.getObjectMetadata(), s3Operator);
+            dataBlockReader.parseDataBlockIndex();
+            objectStreamRangePositionFutures.put(walObjectMetadata.getObjectMetadata().objectId(), dataBlockReader.getDataBlockIndex());
+        }
+        return objectStreamRangePositionFutures.entrySet().stream()
+                .map(f -> {
+                    try {
+                        List<StreamDataBlock> streamDataBlocks = f.getValue().join();
+                        List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
+                        S3WALObject s3WALObject = s3WALObjectMap.get(streamDataBlocks.get(0).getObjectId());
+                        // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
+                        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
+                            if (s3WALObject.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
+                                validStreamDataBlocks.add(streamDataBlock);
+                            }
+                        }
+                        return new AbstractMap.SimpleEntry<>(f.getKey(), validStreamDataBlocks);
+                    } catch (Exception ex) {
+                        // continue compaction without invalid object
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
     }
 }
