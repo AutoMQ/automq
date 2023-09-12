@@ -47,6 +47,8 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import static kafka.log.es.FutureUtil.exec;
 import static kafka.log.es.FutureUtil.propagate;
+import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
+import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
@@ -58,9 +60,9 @@ public class S3Storage implements Storage {
     private final Queue<WALObjectUploadTaskContext> walObjectPrepareQueue = new LinkedList<>();
     private final Queue<WALObjectUploadTaskContext> walObjectCommitQueue = new LinkedList<>();
     private final ScheduledExecutorService mainExecutor = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
+            ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
+            ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
 
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
@@ -86,11 +88,26 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         acquirePermit();
-        // TODO: catch log over capacity exception and retry.
-        WriteAheadLog.AppendResult appendResult = log.append(streamRecord.encoded());
-        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.offset, cf);
+        AppendResult appendResult;
+        try {
+            // fast path
+            appendResult = log.append(streamRecord.encoded());
+        } catch (OverCapacityException e) {
+            // slow path
+            for (; ; ) {
+                // TODO: check close.
+                try {
+                    appendResult = log.append(streamRecord.encoded());
+                    break;
+                } catch (OverCapacityException e2) {
+                    LOGGER.warn("log over capacity", e);
+                    Threads.sleep(100);
+                }
+            }
+        }
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordBodyOffset() + appendResult.length(), cf);
         handleAppendRequest(writeRequest);
-        appendResult.future.thenAccept(nil -> handleAppendCallback(writeRequest));
+        appendResult.future().thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;
     }
 

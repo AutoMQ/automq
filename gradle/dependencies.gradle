@@ -130,6 +130,7 @@ versions += [
   elasticstream: "1.0-SNAPSHOT",
   s3Client: "2.20.127",
   commonLang: "3.12.0",
+  kdio: "1.0.0",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -224,4 +225,5 @@ libs += [
   s3Client: "software.amazon.awssdk:s3:$versions.s3Client",
   commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
   nettyAll: "io.netty:netty-all:$versions.netty",
+  kdioCore: "moe.cnkirito.kdio:kdio-core:$versions.kdio",
 ]

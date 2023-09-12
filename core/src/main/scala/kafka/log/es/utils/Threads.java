@@ -42,4 +42,14 @@ public class Threads {
         return executor;
     }
 
+    public static boolean sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            // ignore
+            return true;
+        }
+        return false;
+    }
+
 }

@@ -19,13 +19,18 @@ package kafka.log.s3.operator;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.CompositeByteBuf;
 import kafka.log.es.metrics.Counter;
 import kafka.log.es.metrics.Timer;
+import kafka.log.s3.ByteBufAlloc;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
+import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.regions.Region;
@@ -74,22 +79,28 @@ public class DefaultS3Operator implements S3Operator {
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
-        String accessKey = System.getenv(ACCESS_KEY_NAME);
-        String secretKey = System.getenv(SECRET_KEY_NAME);
-        if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
-            builder.credentialsProvider(() -> AwsBasicCredentials.create(accessKey, secretKey));
-        } else {
-            builder.credentialsProvider(() -> AwsBasicCredentials.create("noop", "noop"));
-            LOGGER.info("Cannot find s3 credential {} {} from environment", ACCESS_KEY_NAME, SECRET_KEY_NAME);
-        }
+        builder.credentialsProvider(AwsCredentialsProviderChain.builder()
+                .reuseLastProviderEnabled(true)
+                .credentialsProviders(
+                        () -> AwsBasicCredentials.create(System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME)),
+                        InstanceProfileCredentialsProvider.create(),
+                        AnonymousCredentialsProvider.create()
+                ).build()
+        );
         this.s3 = builder.build();
         this.bucket = bucket;
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
     }
 
+    // used for test only.
+    DefaultS3Operator(S3AsyncClient s3, String bucket) {
+        this.s3 = s3;
+        this.bucket = bucket;
+    }
+
     @Override
     public void close() {
-        // TODO: complete inflight CompletableFuture with ClosedException.
+        // TODO: complete in-flight CompletableFuture with ClosedException.
         s3.close();
         scheduler.shutdown();
     }
@@ -98,7 +109,7 @@ public class DefaultS3Operator implements S3Operator {
     public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc) {
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        ByteBuf buf = alloc.heapBuffer((int) (end - start));
+        ByteBuf buf = alloc.directBuffer((int) (end - start));
         rangeRead0(path, start, end, buf, cf);
         return cf;
     }
@@ -153,6 +164,11 @@ public class DefaultS3Operator implements S3Operator {
         return new DefaultWriter(path);
     }
 
+    // used for test only.
+    Writer writer(String path, long minPartSize) {
+        return new DefaultWriter(path, minPartSize);
+    }
+
     @Override
     public CompletableFuture<Void> delete(String path) {
         long now = System.currentTimeMillis();
@@ -176,16 +192,27 @@ public class DefaultS3Operator implements S3Operator {
 
 
     class DefaultWriter implements Writer {
+        private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
         private final String path;
         private final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
         private volatile String uploadId;
         private final List<CompletableFuture<CompletedPart>> parts = new LinkedList<>();
         private final AtomicInteger nextPartNumber = new AtomicInteger(1);
         private CompletableFuture<Void> closeCf;
+        /**
+         * The minPartSize represents the minimum size of a part for a multipart object.
+         */
+        private final long minPartSize;
+        private ObjectPart objectPart = null;
         private final long start = System.nanoTime();
 
         public DefaultWriter(String path) {
+            this(path, MIN_PART_SIZE);
+        }
+
+        public DefaultWriter(String path, long minPartSize) {
             this.path = path;
+            this.minPartSize = minPartSize;
             init();
         }
 
@@ -207,18 +234,21 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         @Override
-        public CompletableFuture<CompletedPart> write(ByteBuf part) {
-            long start = System.nanoTime();
-            OBJECT_UPLOAD_SIZE.inc(part.readableBytes());
-            int partNumber = nextPartNumber.getAndIncrement();
-            CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
-            parts.add(partCf);
-            uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, part, partCf));
-            partCf.whenComplete((nil, ex) -> {
-                PART_UPLOAD_COST.update(System.nanoTime() - start);
-                part.release();
-            });
-            return partCf;
+        public CompletableFuture<Void> write(ByteBuf data) {
+            OBJECT_UPLOAD_SIZE.inc(data.readableBytes());
+
+            if (objectPart == null) {
+                objectPart = new ObjectPart();
+            }
+            ObjectPart objectPart = this.objectPart;
+
+            objectPart.write(data);
+            if (objectPart.size() > minPartSize) {
+                objectPart.upload();
+                // finish current part.
+                this.objectPart = null;
+            }
+            return objectPart.getFuture();
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
@@ -243,15 +273,28 @@ public class DefaultS3Operator implements S3Operator {
 
         @Override
         public void copyWrite(String sourcePath, long start, long end) {
-            long inclusiveEnd = end - 1;
-            int partNumber = nextPartNumber.getAndIncrement();
-            CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
-            parts.add(partCf);
-            uploadIdCf.thenAccept(uploadId -> {
-                UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-                        .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
-                copyWrite0(partNumber, request, partCf);
-            });
+            long targetSize = end - start;
+            if (objectPart == null) {
+                if (targetSize < minPartSize) {
+                    this.objectPart = new ObjectPart();
+                    objectPart.readAndWrite(sourcePath, start, end);
+                } else {
+                    new CopyObjectPart(sourcePath, start, end);
+                }
+            } else {
+                if (objectPart.size() + targetSize > MAX_MERGE_WRITE_SIZE) {
+                    long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
+                    objectPart.readAndWrite(sourcePath, start, readAndWriteCopyEnd);
+                    objectPart.upload();
+                    new CopyObjectPart(sourcePath, readAndWriteCopyEnd, end);
+                } else {
+                    objectPart.readAndWrite(sourcePath, start, end);
+                    if (objectPart.size() > minPartSize) {
+                        objectPart.upload();
+                        this.objectPart = null;
+                    }
+                }
+            }
         }
 
         private void copyWrite0(int partNumber, UploadPartCopyRequest request, CompletableFuture<CompletedPart> partCf) {
@@ -271,6 +314,13 @@ public class DefaultS3Operator implements S3Operator {
             if (closeCf != null) {
                 return closeCf;
             }
+
+            if (objectPart != null) {
+                // force upload the last part which can be smaller than minPartSize.
+                objectPart.upload();
+                objectPart = null;
+            }
+
             OBJECT_INTO_CLOSE_COST.update(System.nanoTime() - start);
             closeCf = new CompletableFuture<>();
             CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
@@ -316,6 +366,77 @@ public class DefaultS3Operator implements S3Operator {
                     throw new RuntimeException(e);
                 }
             }).collect(Collectors.toList());
+        }
+
+        class ObjectPart {
+            private final int partNumber = nextPartNumber.getAndIncrement();
+            private final CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+            private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
+            private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
+            private long size;
+
+            public ObjectPart() {
+                parts.add(partCf);
+            }
+
+            public void write(ByteBuf data) {
+                size += data.readableBytes();
+                // ensure addComponent happen before following write or copyWrite.
+                this.lastRangeReadCf = lastRangeReadCf.thenAccept(nil -> partBuf.addComponent(true, data));
+            }
+
+            public void readAndWrite(String sourcePath, long start, long end) {
+                size += end - start;
+                // TODO: parallel read and sequence add.
+                this.lastRangeReadCf = lastRangeReadCf
+                        .thenCompose(nil -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
+                        .thenAccept(buf -> partBuf.addComponent(true, buf));
+            }
+
+            public void upload() {
+                this.lastRangeReadCf.whenComplete((nil, ex) -> {
+                    if (ex != null) {
+                        partCf.completeExceptionally(ex);
+                    } else {
+                        upload0();
+                    }
+                });
+            }
+
+            private void upload0() {
+                long start = System.nanoTime();
+                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf)).whenComplete((nil, ex) -> {
+                    PART_UPLOAD_COST.update(System.nanoTime() - start);
+                    partBuf.release();
+                });
+            }
+
+            public long size() {
+                return size;
+            }
+
+            public CompletableFuture<Void> getFuture() {
+                return partCf.thenApply(nil -> null);
+            }
+        }
+
+        class CopyObjectPart {
+            private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
+
+            public CopyObjectPart(String sourcePath, long start, long end) {
+                long inclusiveEnd = end - 1;
+                int partNumber = nextPartNumber.getAndIncrement();
+                parts.add(partCf);
+                uploadIdCf.thenAccept(uploadId -> {
+                    UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
+                            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
+                    copyWrite0(partNumber, request, partCf);
+                });
+            }
+
+            public CompletableFuture<Void> getFuture() {
+                return partCf.thenApply(nil -> null);
+            }
         }
     }
 }

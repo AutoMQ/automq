@@ -20,7 +20,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import kafka.log.es.FutureUtil;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -40,7 +39,7 @@ public class MemoryS3Operator implements S3Operator {
             return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
         }
         int length = (int) (end - start);
-        return CompletableFuture.completedFuture(value.slice(value.readerIndex() + (int) start, length));
+        return CompletableFuture.completedFuture(value.retainedSlice(value.readerIndex() + (int) start, length));
     }
 
     @Override
@@ -55,7 +54,7 @@ public class MemoryS3Operator implements S3Operator {
         storage.put(path, buf);
         return new Writer() {
             @Override
-            public CompletableFuture<CompletedPart> write(ByteBuf part) {
+            public CompletableFuture<Void> write(ByteBuf part) {
                 buf.writeBytes(part);
                 return CompletableFuture.completedFuture(null);
             }

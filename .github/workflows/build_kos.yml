@@ -20,7 +20,7 @@
 # This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
 
-name: ES Unit Tests
+name: Kafka on S3 - CI
 
 on:
   workflow_call:
@@ -29,13 +29,13 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: "${{ matrix.os }}, jdk-${{ matrix.jdk }}"
+  checkstyle:
+    name: "Checkstyle"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04]
-        jdk: [11, 17]
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -46,7 +46,43 @@ jobs:
           distribution: "zulu"
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
-      - name: Checkstyle and Spotbugs
-        run: ./gradlew rat checkstyleMain checkstyleTest spotbugsMain spotbugsTest
-      - name: Execute Gradle build
-        run: ./gradlew metadata:esUnitTest core:esUnitTest metadata:S3UnitTest core:S3UnitTest
+      - name: Checkstyle
+        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest
+  spotbugs:
+    name: "Spotbugs"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Spotbugs
+        run: ./gradlew --build-cache spotbugsMain spotbugsTest
+  test:
+    name: "Unit Test"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        jdk: [ 11, 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Unit Test
+        run: ./gradlew --build-cache metadata:esUnitTest core:esUnitTest metadata:S3UnitTest core:S3UnitTest

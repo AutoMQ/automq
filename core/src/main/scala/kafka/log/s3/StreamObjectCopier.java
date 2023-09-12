@@ -19,7 +19,6 @@ package kafka.log.s3;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.Unpooled;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
 import org.apache.kafka.metadata.stream.ObjectUtils;
@@ -30,47 +29,65 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-public class StreamObjectCopyer {
+import static kafka.log.s3.operator.Writer.MAX_PART_SIZE;
+
+public class StreamObjectCopier {
     private final List<StreamObjectIndexData> completedObjects;
     private final S3Operator s3Operator;
     private final Writer writer;
-    private final long objectId;
     private long nextObjectDataStartPosition;
     private int blockCount;
 
     private long size;
 
-    public StreamObjectCopyer(long objectId, S3Operator s3Operator) {
-        // TODO: use a better clusterName
-        this(objectId, s3Operator, s3Operator.writer(ObjectUtils.genKey(0, "todocluster", objectId)));
-    }
-
-    public StreamObjectCopyer(long objectId, S3Operator s3Operator, Writer writer) {
-        this.objectId = objectId;
+    public StreamObjectCopier(long objectId, S3Operator s3Operator) {
         this.s3Operator = s3Operator;
-        this.writer = writer;
+        // TODO: use a better clusterName
+        this.writer = s3Operator.writer(ObjectUtils.genKey(0, "todocluster", objectId));
         this.completedObjects = new LinkedList<>();
         this.nextObjectDataStartPosition = 0;
         this.blockCount = 0;
         this.size = 0;
     }
 
-    public void write(S3ObjectMetadata metadata) {
+    public void copy(S3ObjectMetadata metadata) {
+        splitAndCopy(metadata, 1);
+    }
+
+    public void splitAndCopy(S3ObjectMetadata metadata, int splitCount) {
         if (metadata.getType() != S3ObjectType.STREAM) {
             throw new IllegalArgumentException("Only stream object can be handled.");
         }
+        if (metadata.objectSize() <= 0) {
+            throw new IllegalArgumentException("Object size must be positive.");
+        }
+        if (splitCount <= 0) {
+            throw new IllegalArgumentException("Split count must be positive.");
+        }
         ObjectReader reader = new ObjectReader(metadata, s3Operator);
         ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().join();
+
+        long restBytes = basicObjectInfo.dataBlockSize();
         // Only copy data blocks for now.
-        writer.copyWrite(metadata.key(), 0, basicObjectInfo.dataBlockSize());
-        completedObjects.add(new StreamObjectIndexData(basicObjectInfo.indexBlock(), basicObjectInfo.blockCount(), nextObjectDataStartPosition, blockCount, basicObjectInfo.indexBlockSize()));
+        for (long i = 0; i < splitCount - 1 && restBytes >= MAX_PART_SIZE; i++) {
+            writer.copyWrite(metadata.key(), i * MAX_PART_SIZE, (i + 1) * MAX_PART_SIZE);
+            restBytes -= MAX_PART_SIZE;
+        }
+        if (restBytes > MAX_PART_SIZE) {
+            throw new IllegalArgumentException("splitCount is too small, resting bytes: " + restBytes + " is larger than MAX_PART_SIZE: " + MAX_PART_SIZE + ".");
+        }
+        if (restBytes > 0) {
+            writer.copyWrite(metadata.key(), (splitCount - 1) * MAX_PART_SIZE, basicObjectInfo.dataBlockSize());
+        }
+
+        completedObjects.add(new StreamObjectIndexData(basicObjectInfo.indexBlock(), nextObjectDataStartPosition, blockCount));
         blockCount += basicObjectInfo.blockCount();
         nextObjectDataStartPosition += basicObjectInfo.dataBlockSize();
         size += basicObjectInfo.dataBlockSize();
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = Unpooled.compositeBuffer();
+        CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
         IndexBlock indexBlock = new IndexBlock();
         buf.addComponent(true, indexBlock.buffer());
         ObjectWriter.Footer footer = new ObjectWriter.Footer(indexBlock.position(), indexBlock.size());
@@ -90,9 +107,9 @@ public class StreamObjectCopyer {
 
         public IndexBlock() {
             position = nextObjectDataStartPosition;
-            buf = Unpooled.compositeBuffer();
+            buf = ByteBufAlloc.ALLOC.compositeBuffer();
             // block count
-            buf.addComponent(true, Unpooled.buffer(4).writeInt(blockCount));
+            buf.addComponent(true, ByteBufAlloc.ALLOC.buffer(4).writeInt(blockCount));
             // block index
             for (StreamObjectIndexData indexData : completedObjects) {
                 buf.addComponent(true, indexData.blockBuf());
@@ -119,18 +136,8 @@ public class StreamObjectCopyer {
     static class StreamObjectIndexData {
         private final ByteBuf blockBuf;
         private final ByteBuf rangesBuf;
-        /**
-         * how many data blocks in this object.
-         */
-        private final int dataBlockCount;
-        /**
-         * The total length of the block index.
-         */
-        private final int blockIndexTotalLength;
 
-        public StreamObjectIndexData(ObjectReader.IndexBlock indexBlock, int dataBlockCount, long blockStartPosition, int blockStartId, int blockIndexTotalLength) {
-            this.dataBlockCount = dataBlockCount;
-            this.blockIndexTotalLength = blockIndexTotalLength;
+        public StreamObjectIndexData(ObjectReader.IndexBlock indexBlock, long blockStartPosition, int blockStartId) {
             this.blockBuf = indexBlock.blocks().copy();
             this.rangesBuf = indexBlock.streamRanges().copy();
 
