@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -378,11 +379,12 @@ public class BlockWALService implements WriteAheadLog {
         } while (recoverStartOffset < walHeaderCoreData.getSlidingWindowNextWriteOffset());
 
         LOGGER.info("recover end, recoverStartOffset: {}, WALHeader: {}", recoverStartOffset, walHeaderCoreData);
-        return null;
+        return Collections.emptyIterator();
     }
 
     @Override
     public void trim(long offset) {
+        // TODO: silent reject offset less than current trimOffset
         if (offset % WALUtil.BLOCK_SIZE == 0) {
             walHeaderCoreData.setTrimOffset(offset);
         } else {

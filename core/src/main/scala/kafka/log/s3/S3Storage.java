@@ -17,6 +17,8 @@
 
 package kafka.log.s3;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import kafka.log.es.utils.Threads;
 import kafka.log.s3.cache.LogCache;
 import kafka.log.s3.cache.ReadDataBlock;
@@ -24,15 +26,18 @@ import kafka.log.s3.cache.S3BlockCache;
 import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
+import kafka.log.s3.streams.StreamManager;
 import kafka.log.s3.wal.WriteAheadLog;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.utils.ThreadUtils;
+import org.apache.kafka.metadata.stream.StreamMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +49,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.stream.Collectors;
 
 import static kafka.log.es.FutureUtil.exec;
 import static kafka.log.es.FutureUtil.propagate;
@@ -64,22 +70,95 @@ public class S3Storage implements Storage {
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
 
+    private final StreamManager streamManager;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
 
-    public S3Storage(KafkaConfig config, WriteAheadLog log, ObjectManager objectManager, S3BlockCache blockCache, S3Operator s3Operator) {
+    public S3Storage(KafkaConfig config, WriteAheadLog log, StreamManager streamManager, ObjectManager objectManager,
+                     S3BlockCache blockCache, S3Operator s3Operator) {
         this.config = config;
         this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
         this.logCache = new LogCache(config.s3WALObjectSize());
+        this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.blockCache = blockCache;
         this.s3Operator = s3Operator;
     }
 
     @Override
-    public void close() {
+    public void startup() {
+        try {
+            LOGGER.info("S3Storage starting");
+            recover();
+            LOGGER.info("S3Storage start completed");
+        } catch (Throwable e) {
+            LOGGER.error("S3Storage start fail", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Upload WAL to S3 and close opening streams.
+     */
+    private void recover() throws Throwable {
+        log.start();
+        List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
+        LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(log.recover(), streams);
+        Map<Long, Long> streamEndOffsets = new HashMap<>();
+        cacheBlock.records().forEach((streamId, records) -> {
+            if (!records.isEmpty()) {
+                streamEndOffsets.put(streamId, records.get(records.size() - 1).getLastOffset());
+            }
+        });
+
+        if (cacheBlock.size() != 0) {
+            LOGGER.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
+            uploadWALObject(cacheBlock).get();
+        }
+        for (StreamMetadata stream : streams) {
+            long newEndOffset = streamEndOffsets.getOrDefault(stream.getStreamId(), stream.getEndOffset());
+            LOGGER.info("recover try close stream {} with new end offset {}", stream, newEndOffset);
+        }
+        CompletableFuture.allOf(
+                streams
+                        .stream()
+                        .map(s -> streamManager.closeStream(s.getStreamId(), s.getEpoch()))
+                        .toArray(CompletableFuture[]::new)
+        ).get();
+    }
+
+    private LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> streams) {
+        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::getStreamId, StreamMetadata::getEndOffset));
+        LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
+        long logEndOffset = -1L;
+        Map<Long, Long> streamNextOffsets = new HashMap<>();
+        while (it.hasNext()) {
+            WriteAheadLog.RecoverResult recoverResult = it.next();
+            logEndOffset = recoverResult.recordBodyOffset() + recoverResult.length();
+            ByteBuf recordBuf = Unpooled.wrappedBuffer(recoverResult.record());
+            StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
+            long streamId = streamRecordBatch.getStreamId();
+            if (streamRecordBatch.getBaseOffset() < streamEndOffsets.getOrDefault(streamId, 0L)) {
+                // filter committed records.
+                continue;
+            }
+            Long expectNextOffset = streamNextOffsets.get(streamId);
+            if (expectNextOffset == null || expectNextOffset == streamRecordBatch.getBaseOffset()) {
+                cacheBlock.put(streamRecordBatch);
+                streamNextOffsets.put(streamRecordBatch.getStreamId(), streamRecordBatch.getLastOffset());
+            }
+        }
+        if (logEndOffset >= 0L) {
+            cacheBlock.confirmOffset(logEndOffset);
+        }
+        return cacheBlock;
+    }
+
+    @Override
+    public void shutdown() {
+        log.shutdownGracefully();
         mainExecutor.shutdown();
         backgroundExecutor.shutdown();
     }
@@ -156,6 +235,7 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> forceUpload(long streamId) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         mainExecutor.execute(() -> {
+            logCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
             Optional<LogCache.LogCacheBlock> blockOpt = logCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
                 blockOpt.ifPresent(logCacheBlock -> propagate(uploadWALObject(logCacheBlock), cf));

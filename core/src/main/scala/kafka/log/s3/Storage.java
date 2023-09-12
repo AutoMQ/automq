@@ -27,6 +27,10 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface Storage {
 
+    void startup();
+
+    void shutdown();
+
     /**
      * Append stream record.
      *
@@ -40,6 +44,4 @@ public interface Storage {
      * Force stream record in WAL upload to s3
      */
     CompletableFuture<Void> forceUpload(long streamId);
-
-    void close();
 }

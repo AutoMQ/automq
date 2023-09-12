@@ -170,12 +170,12 @@ public class ControllerRequestSender {
             this.response = response;
         }
 
-        public static ResponseHandleResult withRetry() {
-            return new ResponseHandleResult(true, null);
+        public static <R> ResponseHandleResult<R> withRetry() {
+            return new ResponseHandleResult<>(true, null);
         }
 
-        public static <R> ResponseHandleResult withSuccess(R response) {
-            return new ResponseHandleResult(false, response);
+        public static <R> ResponseHandleResult<R> withSuccess(R response) {
+            return new ResponseHandleResult<>(false, response);
         }
 
         public boolean retry() {

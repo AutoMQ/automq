@@ -27,6 +27,7 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
+import kafka.log.s3.streams.StreamManager;
 import kafka.log.s3.wal.MemoryWriteAheadLog;
 import kafka.server.KafkaConfig;
 import kafka.utils.TestUtils;
@@ -58,14 +59,17 @@ import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class S3StorageTest {
+    StreamManager streamManager;
     ObjectManager objectManager;
     S3Storage storage;
 
     @BeforeEach
     public void setup() {
         objectManager = mock(ObjectManager.class);
+        streamManager = mock(StreamManager.class);
         S3Operator s3Operator = new MemoryS3Operator();
-        storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(), objectManager, new DefaultS3BlockCache(0L, objectManager, s3Operator), s3Operator);
+        storage = new S3Storage(KafkaConfig.fromProps(TestUtils.defaultBrokerConfig()), new MemoryWriteAheadLog(),
+                streamManager, objectManager, new DefaultS3BlockCache(0L, objectManager, s3Operator), s3Operator);
     }
 
     @Test

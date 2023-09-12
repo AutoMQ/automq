@@ -17,10 +17,11 @@
 
 package kafka.log.s3.streams;
 
+import kafka.log.s3.objects.OpenStreamMetadata;
+import org.apache.kafka.metadata.stream.StreamMetadata;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import kafka.log.s3.objects.OpenStreamMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 
 
 public interface StreamManager {
@@ -28,9 +29,9 @@ public interface StreamManager {
     /**
      * Get current server opening streams.
      * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
-     * @return list of {@link StreamOffsetRange}
+     * @return list of {@link StreamMetadata}
      */
-    CompletableFuture<List<StreamOffsetRange>> getOpeningStreams();
+    CompletableFuture<List<StreamMetadata>> getOpeningStreams();
     
     
     /**

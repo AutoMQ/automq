@@ -34,6 +34,7 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.StreamState;
 import org.slf4j.Logger;
@@ -276,7 +277,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+    public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
         return CompletableFuture.completedFuture(Collections.emptyList());
     }
 

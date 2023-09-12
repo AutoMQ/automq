@@ -108,6 +108,7 @@ public class SlidingWindowService {
 
             expectedWriteOffset = WALUtil.alignLargeByBlockSize(lastWriteOffset);
 
+            // FIXME: error RingBuffer logic.
             // 如果物理设备末尾不足这次写入，则跳转到物理设备起始位置
             if ((recordSectionCapacity - expectedWriteOffset % recordSectionCapacity) < totalWriteSize) {
                 expectedWriteOffset = expectedWriteOffset + recordSectionCapacity - expectedWriteOffset % recordSectionCapacity;
