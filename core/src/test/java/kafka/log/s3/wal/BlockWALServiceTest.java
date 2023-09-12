@@ -20,6 +20,7 @@ package kafka.log.s3.wal;
 import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -34,6 +35,7 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 class BlockWALServiceTest {
 
     private static final String BLOCK_DEVICE_PATH = String.format("%s/Kafka.BlockWAL.UnitTest.SimuFile-", System.getenv("HOME"));

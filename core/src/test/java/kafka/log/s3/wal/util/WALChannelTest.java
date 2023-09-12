@@ -19,11 +19,13 @@ package kafka.log.s3.wal.util;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+@Tag("S3Unit")
 class WALChannelTest {
     WALChannel walChannel;
 
