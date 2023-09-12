@@ -33,8 +33,8 @@
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
     },
     {
-      "name": "StreamsOffset",
-      "type": "[]StreamOffset",
+      "name": "StreamMetadataList",
+      "type": "[]StreamMetadata",
       "versions": "0+",
       "about": "The responses for each topic.",
       "fields": [
@@ -43,6 +43,12 @@
           "type": "int64",
           "versions": "0+",
           "about": "The stream id"
+        },
+        {
+          "name": "Epoch",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The stream epoch"
         },
         {
           "name": "StartOffset",

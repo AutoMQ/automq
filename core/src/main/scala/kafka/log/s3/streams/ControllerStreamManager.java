@@ -35,7 +35,8 @@ import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import org.apache.kafka.metadata.stream.StreamMetadata;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,15 +56,15 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<List<StreamOffsetRange>> getOpeningStreams() {
+    public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
         GetOpeningStreamsRequest.Builder request = new GetOpeningStreamsRequest.Builder(
                 new GetOpeningStreamsRequestData().setBrokerId(config.brokerId()).setBrokerEpoch(config.brokerEpoch()));
-        CompletableFuture<List<StreamOffsetRange>> future = new CompletableFuture<>();
-        RequestTask<GetOpeningStreamsResponseData, List<StreamOffsetRange>> task = new RequestTask<>(future, request, GetOpeningStreamsResponseData.class, resp -> {
+        CompletableFuture<List<StreamMetadata>> future = new CompletableFuture<>();
+        RequestTask<GetOpeningStreamsResponseData, List<StreamMetadata>> task = new RequestTask<>(future, request, GetOpeningStreamsResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return ResponseHandleResult.withSuccess(resp.streamsOffset().stream()
-                            .map(streamOffset -> new StreamOffsetRange(streamOffset.streamId(), streamOffset.startOffset(), streamOffset.endOffset()))
+                    return ResponseHandleResult.withSuccess(resp.streamMetadataList().stream()
+                            .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
                             .collect(Collectors.toList()));
                 default:
                     LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
