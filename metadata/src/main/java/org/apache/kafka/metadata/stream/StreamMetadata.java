@@ -24,6 +24,7 @@ public class StreamMetadata {
     private long endOffset;
     private StreamState state;
 
+    @SuppressWarnings("unused")
     public StreamMetadata() {
     }
 
@@ -73,5 +74,16 @@ public class StreamMetadata {
 
     public void setState(StreamState state) {
         this.state = state;
+    }
+
+    @Override
+    public String toString() {
+        return "StreamMetadata{" +
+                "streamId=" + streamId +
+                ", epoch=" + epoch +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                ", state=" + state +
+                '}';
     }
 }

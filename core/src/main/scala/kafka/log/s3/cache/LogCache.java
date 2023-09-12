@@ -178,5 +178,9 @@ public class LogCache {
             this.confirmOffset = confirmOffset;
         }
 
+        public long size() {
+            return size;
+        }
+
     }
 }

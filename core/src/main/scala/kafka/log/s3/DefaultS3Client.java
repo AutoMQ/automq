@@ -36,8 +36,6 @@ import kafka.log.s3.wal.WriteAheadLog;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 
-import java.io.IOException;
-
 public class DefaultS3Client implements Client {
 
     private final KafkaConfig config;
@@ -76,14 +74,12 @@ public class DefaultS3Client implements Client {
         this.compactionManager.start();
         this.writeAheadLog = BlockWALService.builder().blockDevicePath(config.s3WALPath()).capacity(config.s3WALCapacity())
                 .createBlockWALService();
-        try {
-            this.writeAheadLog.start();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        this.storage = new S3Storage(config, writeAheadLog, objectManager, blockCache, operator);
+        this.storage = new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, operator);
+        this.storage.startup();
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
+
+        // TODO: startup method
     }
 
     @Override
@@ -97,8 +93,8 @@ public class DefaultS3Client implements Client {
     }
 
     public void shutdown() {
+        this.storage.shutdown();
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
-        this.writeAheadLog.shutdownGracefully();
     }
 }

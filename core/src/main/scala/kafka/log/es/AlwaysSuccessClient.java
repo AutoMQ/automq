@@ -192,7 +192,7 @@ public class AlwaysSuccessClient implements Client {
                 FutureUtil.suppress(() -> {
                     if (ex != null) {
                         if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                            LOGGER.error("Open stream[{}](epoch) fail, retry later", streamId, options.epoch(), ex);
+                            LOGGER.error("Open stream[{}]({}) fail, retry later", streamId, options.epoch(), ex);
                             streamManagerRetryScheduler.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
                         }
                     } else {

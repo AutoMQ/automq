@@ -265,10 +265,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.currentEpoch.get() == epoch) {
-            if (streamMetadata.currentState() == StreamState.CLOSED) {
-                resp.setErrorCode(Errors.STREAM_FENCED.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
-            }
+            // broker may use the same epoch to open -> close -> open stream.
             // verify broker
             RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
             if (rangeMetadata == null) {
