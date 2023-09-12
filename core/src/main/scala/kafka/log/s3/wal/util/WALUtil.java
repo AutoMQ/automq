@@ -17,6 +17,7 @@
 
 package kafka.log.s3.wal.util;
 
+import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
 public class WALUtil {
@@ -27,6 +28,12 @@ public class WALUtil {
     public static int crc32(byte[] array, int offset, int length) {
         CRC32 crc32 = new CRC32();
         crc32.update(array, offset, length);
+        return (int) (crc32.getValue() & 0x7FFFFFFF);
+    }
+
+    public static int crc32(ByteBuffer buf) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(buf);
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 

@@ -31,9 +31,12 @@ import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.ControllerStreamManager;
 import kafka.log.s3.streams.StreamManager;
-import kafka.log.s3.wal.MemoryWriteAheadLog;
+import kafka.log.s3.wal.BlockWALService;
+import kafka.log.s3.wal.WriteAheadLog;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
+
+import java.io.IOException;
 
 public class DefaultS3Client implements Client {
 
@@ -44,6 +47,7 @@ public class DefaultS3Client implements Client {
 
     private final S3Operator operator;
 
+    private final WriteAheadLog writeAheadLog;
     private final Storage storage;
 
     private final S3BlockCache blockCache;
@@ -63,14 +67,21 @@ public class DefaultS3Client implements Client {
         this.metadataManager = new StreamMetadataManager(brokerServer, config);
         this.operator = operator;
         RetryPolicyContext retryPolicyContext = new RetryPolicyContext(config.s3ControllerRequestRetryMaxCount(),
-            config.s3ControllerRequestRetryBaseDelayMs());
+                config.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = new ControllerStreamManager(this.requestSender, config);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
         this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.metadataManager, this.operator);
         this.compactionManager.start();
-        this.storage = new S3Storage(config, new MemoryWriteAheadLog(), objectManager, blockCache, operator);
+        this.writeAheadLog = BlockWALService.builder().blockDevicePath(config.s3WALPath()).capacity(config.s3WALCapacity())
+                .createBlockWALService();
+        try {
+            this.writeAheadLog.start();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        this.storage = new S3Storage(config, writeAheadLog, objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
     }
@@ -88,5 +99,6 @@ public class DefaultS3Client implements Client {
     public void shutdown() {
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
+        this.writeAheadLog.shutdownGracefully();
     }
 }

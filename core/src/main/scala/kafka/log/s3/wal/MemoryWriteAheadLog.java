@@ -19,7 +19,9 @@ package kafka.log.s3.wal;
 
 import io.netty.buffer.ByteBuf;
 
+import java.io.IOException;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
@@ -28,26 +30,45 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     private final AtomicLong offsetAlloc = new AtomicLong();
 
     @Override
-    public long startOffset() {
-        return 0;
+    public WriteAheadLog start() throws IOException {
+        return this;
     }
 
     @Override
-    public long endOffset() {
-        return 0;
+    public void shutdownGracefully() {
+
     }
 
     @Override
-    public List<WalRecord> read() {
-        return Collections.emptyList();
+    public AppendResult append(ByteBuf data, int crc) {
+        long offset = offsetAlloc.getAndIncrement();
+        return new AppendResult() {
+            @Override
+            public long recordBodyOffset() {
+                return offset;
+            }
+
+            @Override
+            public int recordBodyCRC() {
+                return 0;
+            }
+
+            @Override
+            public int length() {
+                return 0;
+            }
+
+            @Override
+            public CompletableFuture<CallbackResult> future() {
+                return CompletableFuture.completedFuture(null);
+            }
+        };
     }
 
     @Override
-    public AppendResult append(ByteBuf data) {
-        AppendResult appendResult = new AppendResult();
-        appendResult.offset = offsetAlloc.getAndIncrement();
-        appendResult.future = CompletableFuture.completedFuture(null);
-        return appendResult;
+    public Iterator<RecoverResult> recover() {
+        List<RecoverResult> l = Collections.emptyList();
+        return l.iterator();
     }
 
     @Override

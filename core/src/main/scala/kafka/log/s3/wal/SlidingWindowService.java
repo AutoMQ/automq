@@ -37,6 +37,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
+import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
+import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
 
 /**
@@ -94,7 +96,7 @@ public class SlidingWindowService {
     }
 
 
-    public long allocateWriteOffset(final int recordBodyLength, final long trimOffset, final long recordSectionCapacity) throws WAL.OverCapacityException {
+    public long allocateWriteOffset(final int recordBodyLength, final long trimOffset, final long recordSectionCapacity) throws OverCapacityException {
         // 计算要写入的总大小
         int totalWriteSize = RECORD_HEADER_SIZE + recordBodyLength;
 
@@ -113,7 +115,7 @@ public class SlidingWindowService {
 
             // 如果 trim 不及时，会导致写 RingBuffer 覆盖有效数据，抛异常
             if (expectedWriteOffset + totalWriteSize - trimOffset > recordSectionCapacity) {
-                throw new WAL.OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",
+                throw new OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",
                         expectedWriteOffset, trimOffset, totalWriteSize), windowCoreData.getWindowStartOffset().get());
             }
 
@@ -151,7 +153,7 @@ public class SlidingWindowService {
                 try {
                     // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
                     String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, SLIDING_WINDOW_UPPER_LIMIT);
-                    writeRecordTask.future().completeExceptionally(new WAL.OverCapacityException(exceptionMessage, windowCoreData.getWindowStartOffset().get()));
+                    writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage, windowCoreData.getWindowStartOffset().get()));
                 } catch (Throwable ignored) {
                 }
                 return false;
@@ -354,14 +356,14 @@ public class SlidingWindowService {
 
                     writeRecord(writeRecordTask);
 
-                    writeRecordTask.future().complete(new WAL.AppendResult.CallbackResult() {
+                    writeRecordTask.future().complete(new AppendResult.CallbackResult() {
                         @Override
                         public long flushedOffset() {
                             return windowCoreData.getWindowStartOffset().get();
                         }
 
                         @Override
-                        public WAL.AppendResult appendResult() {
+                        public AppendResult appendResult() {
                             return writeRecordTask.appendResult();
                         }
 
