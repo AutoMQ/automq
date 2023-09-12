@@ -1,0 +1,30 @@
+name: Nightly Build
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * *'
+
+jobs:
+  publish:
+    name: "Publish"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04 ]
+        jdk: [ 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Checkstyle
+        run: ./gradlew releaseTarGz
+      - name: Upload tgz
+        uses: actions/upload-artifact@v2
+        with:
+          path: ./core/build/distributions/kafka_*.tgz
