@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -73,8 +72,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     public void testFilterBlocksToCompact() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        Map<Long, List<StreamDataBlock>> filteredMap = new HashMap<>(streamDataBlocksMap);
-        compactionAnalyzer.filterBlocksToCompact(filteredMap);
+        Map<Long, List<StreamDataBlock>> filteredMap = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
         Assertions.assertTrue(compare(filteredMap, streamDataBlocksMap));
     }
 
@@ -92,7 +90,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                         new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)),
                 OBJECT_3, List.of(
                         new StreamDataBlock(STREAM_3, 0, 50, 1, OBJECT_3, -1, -1, 1)));
-        compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
+        Map<Long, List<StreamDataBlock>> result = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
@@ -100,7 +98,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                 OBJECT_1, List.of(
                         new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
                         new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)));
-        Assertions.assertTrue(compare(streamDataBlocksMap, expectedBlocksMap));
+        Assertions.assertTrue(compare(result, expectedBlocksMap));
     }
 
     @Test

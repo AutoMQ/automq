@@ -142,12 +142,12 @@ public class CompactionAnalyzer {
 
     public List<CompactedObjectBuilder> buildCompactedObjects(List<S3WALObjectMetadata> objects) {
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objects, s3Operator);
-        filterBlocksToCompact(streamDataBlocksMap);
-        this.logger.info("{} WAL objects to compact after filter", streamDataBlocksMap.size());
-        if (streamDataBlocksMap.isEmpty()) {
+        Map<Long, List<StreamDataBlock>> filteredMap = filterBlocksToCompact(streamDataBlocksMap);
+        this.logger.info("{} WAL objects to compact after filter", filteredMap.size());
+        if (filteredMap.isEmpty()) {
             return new ArrayList<>();
         }
-        return compactObjects(sortStreamRangePositions(streamDataBlocksMap));
+        return compactObjects(sortStreamRangePositions(filteredMap));
     }
 
     private List<CompactedObjectBuilder> compactObjects(List<StreamDataBlock> streamDataBlocks) {
@@ -179,15 +179,18 @@ public class CompactionAnalyzer {
         return compactedObjectBuilders;
     }
 
-    void filterBlocksToCompact(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
-        Set<Long> objectIdsToCompact = streamDataBlocksMap.values().stream()
+    Map<Long, List<StreamDataBlock>> filterBlocksToCompact(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
+        Map<Long, Set<Long>> streamToObjectIds = streamDataBlocksMap.values().stream()
                 .flatMap(Collection::stream)
-                .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())))
+                .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())));
+        Set<Long> objectIdsToCompact = streamToObjectIds
                 .entrySet().stream()
                 .filter(e -> e.getValue().size() > 1)
                 .flatMap(e -> e.getValue().stream())
                 .collect(Collectors.toSet());
-        objectIdsToCompact.forEach(streamDataBlocksMap::remove);
+        return streamDataBlocksMap.entrySet().stream()
+                .filter(e -> objectIdsToCompact.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private CompactedObjectBuilder splitAndAddBlock(CompactedObjectBuilder builder,
