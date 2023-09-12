@@ -23,15 +23,12 @@ import kafka.log.s3.model.StreamRecordBatch;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -314,43 +311,6 @@ public class BlockCache {
 
         public int getSize() {
             return size;
-        }
-    }
-
-    static class LRUCache<K, V> {
-        private final LinkedHashMap<K, V> cache;
-        private final Set<Map.Entry<K, V>> cacheEntrySet;
-
-        public LRUCache() {
-            cache = new LinkedHashMap<>(16, .75f, true);
-            cacheEntrySet = cache.entrySet();
-        }
-
-        public boolean touch(K key) {
-            return cache.get(key) != null;
-        }
-
-        public void put(K key, V value) {
-            if (cache.put(key, value) != null) {
-                touch(key);
-            }
-        }
-
-        public Map.Entry<K, V> pop() {
-            Iterator<Map.Entry<K, V>> it = cacheEntrySet.iterator();
-            if (!it.hasNext()) {
-                return null;
-            }
-            Map.Entry<K, V> entry = it.next();
-            if (entry == null) {
-                return null;
-            }
-            it.remove();
-            return entry;
-        }
-
-        public boolean remove(K key) {
-            return cache.remove(key) != null;
         }
     }
 

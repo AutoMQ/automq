@@ -30,12 +30,12 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class DefaultS3BlockCache implements S3BlockCache {
-    private final Map<Long, ObjectReader> objectReaders = new ConcurrentHashMap<>();
+    private final LRUCache<Long, ObjectReader> objectReaderLRU = new LRUCache<>();
     private final BlockCache cache;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
@@ -129,15 +129,28 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     }
                 } catch (Throwable e) {
                     return FutureUtil.failedFuture(e);
+                } finally {
+                    reader.release();
                 }
             });
         });
     }
 
     private ObjectReader getObjectReader(S3ObjectMetadata metadata) {
-        // remove expired readers and close it.
-        // retain & release? or ref count to release?
-        return objectReaders.computeIfAbsent(metadata.objectId(), id -> new ObjectReader(metadata, s3Operator));
+        synchronized (objectReaderLRU) {
+            // TODO: evict by object readers index cache size
+            while (objectReaderLRU.size() > 128) {
+                Optional.ofNullable(objectReaderLRU.pop()).ifPresent(entry -> {
+                    entry.getValue().close();
+                });
+            }
+            ObjectReader objectReader = objectReaderLRU.get(metadata.objectId());
+            if (objectReader == null) {
+                objectReader = new ObjectReader(metadata, s3Operator);
+                objectReaderLRU.put(metadata.objectId(), objectReader);
+            }
+            return objectReader.retain();
+        }
     }
 
     static class ReadContext {

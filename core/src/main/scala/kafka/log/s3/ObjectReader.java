@@ -43,6 +43,7 @@ public class ObjectReader implements AutoCloseable {
     private final String objectKey;
     private final S3Operator s3Operator;
     private final CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+    private final AtomicInteger refCount = new AtomicInteger(1);
 
     public ObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
         this.metadata = metadata;
@@ -91,8 +92,24 @@ public class ObjectReader implements AutoCloseable {
         });
     }
 
+    public ObjectReader retain() {
+        refCount.incrementAndGet();
+        return this;
+    }
+
+    public ObjectReader release() {
+        if (refCount.decrementAndGet() == 0) {
+            close0();
+        }
+        return this;
+    }
+
     @Override
     public void close() {
+        release();
+    }
+
+    public void close0() {
         basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
     }
 
