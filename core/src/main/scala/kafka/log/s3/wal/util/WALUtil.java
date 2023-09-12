@@ -33,7 +33,7 @@ public class WALUtil {
 
     public static int crc32(ByteBuffer buf) {
         CRC32 crc32 = new CRC32();
-        crc32.update(buf);
+        crc32.update(buf.duplicate());
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 
