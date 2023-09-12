@@ -28,8 +28,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -255,21 +255,22 @@ public class BlockWALService implements WriteAheadLog {
             LOGGER.info("recoverWALHeader success, walHeader: {}", walHeaderCoreDataAvailable);
             walHeaderCoreData = recoverEntireWALAndCorrectWALHeader(walHeaderCoreDataAvailable);
             LOGGER.info("recoverEntireWALAndCorrectWALHeader success, walHeader: {}", walHeaderCoreData);
-            slidingWindowService.resetWindowWhenRecoverOver(//
-                    walHeaderCoreData.getSlidingWindowStartOffset(), //
-                    walHeaderCoreData.getSlidingWindowNextWriteOffset(), //
-                    walHeaderCoreData.getSlidingWindowMaxLength() //
-            );
         } else {
             walHeaderCoreData = new WALHeaderCoreData().setCapacity(walChannel.capacity()) //
                     .setTrimOffset(0) //
-                    .setLastWriteTimestamp(System.currentTimeMillis()) //
-                    .setSlidingWindowNextWriteOffset(0) //
-                    .setSlidingWindowStartOffset(0) //
-                    .setSlidingWindowMaxLength(0) //
+                    .setLastWriteTimestamp(System.currentTimeMillis())
+                    .setSlidingWindowNextWriteOffset(0)
+                    .setSlidingWindowStartOffset(0)
+                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, 1024 * 1024))
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
+            flushWALHeader(0, 1024 * 1024, 0, ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
+        slidingWindowService.resetWindowWhenRecoverOver(//
+                walHeaderCoreData.getSlidingWindowStartOffset(), //
+                walHeaderCoreData.getSlidingWindowNextWriteOffset(), //
+                walHeaderCoreData.getSlidingWindowMaxLength() //
+        );
     }
 
     @Override
@@ -362,24 +363,7 @@ public class BlockWALService implements WriteAheadLog {
 
     private Iterator<RecoverResult> recover(long startOffset) {
         long recoverStartOffset = WALUtil.alignSmallByBlockSize(startOffset);
-
-        LOGGER.info("recover begin, recoverStartOffset: {}, WALHeader: {}", recoverStartOffset, walHeaderCoreData);
-
-        do {
-            try {
-                final Pair<SlidingWindowService.RecordHeaderCoreData, ByteBuffer> resultPair = readRecord(walHeaderCoreData, recoverStartOffset);
-                ByteBuffer body = resultPair.getRight();
-                return new RecoverIterator(WALUtil.alignLargeByBlockSize(recoverStartOffset + RECORD_HEADER_SIZE + body.limit()), //
-                        resultPair.getLeft(), //
-                        resultPair.getRight()//
-                );
-            } catch (ReadRecordException e) {
-                recoverStartOffset = e.getJumpNextRecoverOffset();
-            }
-        } while (recoverStartOffset < walHeaderCoreData.getSlidingWindowNextWriteOffset());
-
-        LOGGER.info("recover end, recoverStartOffset: {}, WALHeader: {}", recoverStartOffset, walHeaderCoreData);
-        return Collections.emptyIterator();
+        return new RecoverIterator(recoverStartOffset);
     }
 
     @Override
@@ -637,54 +621,52 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     class RecoverIterator implements Iterator<RecoverResult> {
-        long nextRecoverOffset;
-        SlidingWindowService.RecordHeaderCoreData lastRecordHeader;
-        ByteBuffer lastRecordBody;
+        private long nextRecoverOffset;
+        private RecoverResult next;
 
-        public RecoverIterator(long nextRecoverOffset, SlidingWindowService.RecordHeaderCoreData lastRecordHeader, ByteBuffer lastRecordBody) {
+        public RecoverIterator(long nextRecoverOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
-            this.lastRecordHeader = lastRecordHeader;
-            this.lastRecordBody = lastRecordBody;
         }
+
 
         @Override
         public boolean hasNext() {
-            return lastRecordBody != null;
+            if (next == null) {
+                tryReadNextRecord();
+            }
+            return next != null;
         }
 
         @Override
         public RecoverResult next() {
-            if (!hasNext()) return null;
+            if (next == null) {
+                tryReadNextRecord();
+            }
+            if (next == null) {
+                throw new NoSuchElementException();
+            }
 
-            SlidingWindowService.RecordHeaderCoreData nextRecordHeader = null;
-            ByteBuffer nextRecordBody = null;
+            RecoverResult rst = next;
+            this.next = null;
+            return rst;
+        }
 
-            // 尝试读取下一条记录
+        private void tryReadNextRecord() {
+            if (next != null) {
+                return;
+            }
             do {
                 try {
                     final Pair<SlidingWindowService.RecordHeaderCoreData, ByteBuffer> resultPair = readRecord(walHeaderCoreData, nextRecoverOffset);
-                    nextRecordHeader = resultPair.getLeft();
-                    nextRecordBody = resultPair.getRight();
+                    SlidingWindowService.RecordHeaderCoreData nextRecordHeader = resultPair.getLeft();
+                    ByteBuffer nextRecordBody = resultPair.getRight();
                     nextRecoverOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset + RECORD_HEADER_SIZE + nextRecordBody.limit());
+                    next = new RecoverResultImpl(nextRecordBody, nextRecordHeader.getRecordBodyOffset(), nextRecordBody.limit());
                     break;
                 } catch (ReadRecordException e) {
                     nextRecoverOffset = e.getJumpNextRecoverOffset();
                 }
             } while (nextRecoverOffset < walHeaderCoreData.getSlidingWindowNextWriteOffset());
-
-            // 返回之前读取的记录
-            RecoverResult recoverResult = new RecoverResultImpl(lastRecordBody, lastRecordHeader.getRecordBodyOffset(), lastRecordBody.limit());
-
-            // 保存下一条记录
-            if (nextRecordBody != null) {
-                lastRecordHeader = nextRecordHeader;
-                lastRecordBody = nextRecordBody;
-            } else {
-                lastRecordHeader = null;
-                lastRecordBody = null;
-            }
-
-            return recoverResult;
         }
     }
 

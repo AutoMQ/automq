@@ -38,7 +38,8 @@ public class WALUtil {
     }
 
     public static long recordOffsetToPosition(long offset, long recordSectionCapacity) {
-        return offset % recordSectionCapacity;
+        // TODO: dynamic header size
+        return offset % recordSectionCapacity + 8192;
     }
 
     public static long alignLargeByBlockSize(long offset) {
