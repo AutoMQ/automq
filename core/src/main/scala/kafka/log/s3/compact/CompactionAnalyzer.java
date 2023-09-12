@@ -21,28 +21,33 @@ import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.CompactedObjectBuilder;
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
-import kafka.log.s3.compact.operator.DataBlockReader;
 import kafka.log.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class CompactionAnalyzer {
-    private final static Logger LOGGER = org.slf4j.LoggerFactory.getLogger(CompactionAnalyzer.class);
+    private final Logger logger;
     private final long compactionCacheSize;
     private final double executionScoreThreshold;
     private final long streamSplitSize;
     private final S3Operator s3Operator;
 
     public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize, S3Operator s3Operator) {
+        this(compactionCacheSize, executionScoreThreshold, streamSplitSize, s3Operator, new LogContext("[CompactionAnalyzer]"));
+    }
+
+    public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize, S3Operator s3Operator, LogContext logContext) {
+        this.logger = logContext.logger(CompactionAnalyzer.class);
         this.compactionCacheSize = compactionCacheSize;
         this.executionScoreThreshold = executionScoreThreshold;
         this.streamSplitSize = streamSplitSize;
@@ -50,6 +55,9 @@ public class CompactionAnalyzer {
     }
 
     public List<CompactionPlan> analyze(List<S3WALObjectMetadata> objectMetadataList) {
+        if (objectMetadataList.isEmpty()) {
+            return new ArrayList<>();
+        }
         List<CompactionPlan> compactionPlans = new ArrayList<>();
         try {
             List<CompactedObjectBuilder> compactedObjectBuilders = buildCompactedObjects(objectMetadataList);
@@ -90,7 +98,7 @@ public class CompactionAnalyzer {
             }
             return compactionPlans;
         } catch (Exception e) {
-            LOGGER.error("Error while analyzing compaction plan", e);
+            logger.error("Error while analyzing compaction plan", e);
         }
         return compactionPlans;
     }
@@ -133,40 +141,13 @@ public class CompactionAnalyzer {
     }
 
     public List<CompactedObjectBuilder> buildCompactedObjects(List<S3WALObjectMetadata> objects) {
-        List<StreamDataBlock> streamDataBlocks = blockWaitObjectIndices(objects);
-        if (!shouldCompact(streamDataBlocks)) {
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objects, s3Operator);
+        Map<Long, List<StreamDataBlock>> filteredMap = filterBlocksToCompact(streamDataBlocksMap);
+        this.logger.info("{} WAL objects to compact after filter", filteredMap.size());
+        if (filteredMap.isEmpty()) {
             return new ArrayList<>();
         }
-        return compactObjects(sortStreamRangePositions(streamDataBlocks));
-    }
-
-    List<StreamDataBlock> blockWaitObjectIndices(List<S3WALObjectMetadata> objectMetadataList) {
-        Map<Long, S3WALObject> s3WALObjectMap = objectMetadataList.stream()
-                .collect(Collectors.toMap(e -> e.getWalObject().objectId(), S3WALObjectMetadata::getWalObject));
-        List<CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new ArrayList<>();
-        for (S3WALObjectMetadata walObjectMetadata : objectMetadataList) {
-            DataBlockReader dataBlockReader = new DataBlockReader(walObjectMetadata.getObjectMetadata(), s3Operator);
-            dataBlockReader.parseDataBlockIndex();
-            objectStreamRangePositionFutures.add(dataBlockReader.getDataBlockIndex());
-        }
-        return objectStreamRangePositionFutures.stream().flatMap(f -> {
-            try {
-                List<StreamDataBlock> streamDataBlocks = f.join();
-                List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
-                S3WALObject s3WALObject = s3WALObjectMap.get(streamDataBlocks.get(0).getObjectId());
-                // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
-                for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                    if (s3WALObject.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
-                        validStreamDataBlocks.add(streamDataBlock);
-                    }
-                }
-                return validStreamDataBlocks.stream();
-            } catch (Exception ex) {
-                // continue compaction without invalid object
-                LOGGER.error("Read on invalid object ", ex);
-                return null;
-            }
-        }).collect(Collectors.toList());
+        return compactObjects(sortStreamRangePositions(filteredMap));
     }
 
     private List<CompactedObjectBuilder> compactObjects(List<StreamDataBlock> streamDataBlocks) {
@@ -186,7 +167,7 @@ public class CompactionAnalyzer {
                     builder.addStreamDataBlock(streamDataBlock);
                 } else {
                     // should not go there
-                    LOGGER.error("FATAL ERROR: illegal stream range position, last offset: {}, curr: {}",
+                    logger.error("FATAL ERROR: illegal stream range position, last offset: {}, curr: {}",
                             builder.lastOffset(), streamDataBlock);
                     return new ArrayList<>();
                 }
@@ -198,12 +179,18 @@ public class CompactionAnalyzer {
         return compactedObjectBuilders;
     }
 
-    boolean shouldCompact(List<StreamDataBlock> streamDataBlocks) {
-        // do compact if there is any stream with data placed in more than one WAL objects
-        Map<Long, Integer> streamIdToDistinctObjectMap = streamDataBlocks.stream()
-                .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())))
-                .entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
-        return streamIdToDistinctObjectMap.values().stream().filter(v -> v > 1).count() > 1;
+    Map<Long, List<StreamDataBlock>> filterBlocksToCompact(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
+        Map<Long, Set<Long>> streamToObjectIds = streamDataBlocksMap.values().stream()
+                .flatMap(Collection::stream)
+                .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())));
+        Set<Long> objectIdsToCompact = streamToObjectIds
+                .entrySet().stream()
+                .filter(e -> e.getValue().size() > 1)
+                .flatMap(e -> e.getValue().stream())
+                .collect(Collectors.toSet());
+        return streamDataBlocksMap.entrySet().stream()
+                .filter(e -> objectIdsToCompact.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private CompactedObjectBuilder splitAndAddBlock(CompactedObjectBuilder builder,
@@ -228,11 +215,11 @@ public class CompactionAnalyzer {
         return builder;
     }
 
-    List<StreamDataBlock> sortStreamRangePositions(List<StreamDataBlock> streamDataBlocks) {
+    List<StreamDataBlock> sortStreamRangePositions(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
         //TODO: use merge sort
         Map<Long, List<StreamDataBlock>> sortedStreamObjectMap = new TreeMap<>();
-        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            sortedStreamObjectMap.computeIfAbsent(streamDataBlock.getStreamId(), k -> new ArrayList<>()).add(streamDataBlock);
+        for (List<StreamDataBlock> streamDataBlocks : streamDataBlocksMap.values()) {
+            streamDataBlocks.forEach(e -> sortedStreamObjectMap.computeIfAbsent(e.getStreamId(), k -> new ArrayList<>()).add(e));
         }
         return sortedStreamObjectMap.values().stream().flatMap(list -> {
             list.sort(StreamDataBlock.STREAM_OFFSET_COMPARATOR);

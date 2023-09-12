@@ -53,33 +53,59 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testReadObjectIndices() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
-        List<StreamDataBlock> streamDataBlocks = compactionAnalyzer.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST);
-        List<StreamDataBlock> expectedBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
-                new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
-                new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1),
-                new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
-                new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1),
-                new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
-                new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1));
-        for (int i = 0; i < streamDataBlocks.size(); i++) {
-            Assertions.assertTrue(compare(streamDataBlocks.get(i), expectedBlocks.get(i)));
-        }
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
+                OBJECT_0, List.of(
+                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                OBJECT_1, List.of(
+                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                OBJECT_2, List.of(
+                        new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));
+        Assertions.assertTrue(compare(streamDataBlocksMap, expectedBlocksMap));
     }
 
     @Test
-    public void testShouldCompact() {
+    public void testFilterBlocksToCompact() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
-        List<StreamDataBlock> streamDataBlocks = compactionAnalyzer.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST);
-        Assertions.assertTrue(compactionAnalyzer.shouldCompact(streamDataBlocks));
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        Map<Long, List<StreamDataBlock>> filteredMap = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
+        Assertions.assertTrue(compare(filteredMap, streamDataBlocksMap));
+    }
+
+    @Test
+    public void testFilterBlocksToCompact2() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = Map.of(
+                OBJECT_0, List.of(
+                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1)),
+                OBJECT_1, List.of(
+                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                OBJECT_2, List.of(
+                        new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)),
+                OBJECT_3, List.of(
+                        new StreamDataBlock(STREAM_3, 0, 50, 1, OBJECT_3, -1, -1, 1)));
+        Map<Long, List<StreamDataBlock>> result = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
+        Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
+                OBJECT_0, List.of(
+                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1)),
+                OBJECT_1, List.of(
+                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)));
+        Assertions.assertTrue(compare(result, expectedBlocksMap));
     }
 
     @Test
     public void testSortStreamRangePositions() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
-        List<StreamDataBlock> streamDataBlocks = compactionAnalyzer.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST);
-        List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocks);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
                 new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
                 new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),

@@ -43,9 +43,11 @@ public class CompactionTestBase {
     protected static final long STREAM_0 = 0;
     protected static final long STREAM_1 = 1;
     protected static final long STREAM_2 = 2;
+    protected static final long STREAM_3 = 3;
     protected static final long OBJECT_0 = 0;
     protected static final long OBJECT_1 = 1;
     protected static final long OBJECT_2 = 2;
+    protected static final long OBJECT_3 = 3;
     protected static final long CACHE_SIZE = 1024;
     protected static final double EXECUTION_SCORE_THRESHOLD = 0.5;
     protected static final long STREAM_SPLIT_SIZE = 30;
@@ -137,6 +139,21 @@ public class CompactionTestBase {
         }
         for (int i = 0; i < streamDataBlocks1.size(); i++) {
             if (!compare(streamDataBlocks1.get(i), streamDataBlocks2.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    protected boolean compare(Map<Long, List<StreamDataBlock>> streamDataBlockMap1, Map<Long, List<StreamDataBlock>> streamDataBlockMap2) {
+        if (streamDataBlockMap1.size() != streamDataBlockMap2.size()) {
+            return false;
+        }
+        for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlockMap1.entrySet()) {
+            long objectId = entry.getKey();
+            List<StreamDataBlock> streamDataBlocks = entry.getValue();
+            Assertions.assertTrue(streamDataBlockMap2.containsKey(objectId));
+            if (!compare(streamDataBlocks, streamDataBlockMap2.get(objectId))) {
                 return false;
             }
         }
