@@ -64,26 +64,27 @@ public class StreamObjectCopier {
         if (splitCount <= 0) {
             throw new IllegalArgumentException("Split count must be positive.");
         }
-        ObjectReader reader = new ObjectReader(metadata, s3Operator);
-        ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().join();
+        try (ObjectReader reader = new ObjectReader(metadata, s3Operator)) {
+            ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().join();
 
-        long restBytes = basicObjectInfo.dataBlockSize();
-        // Only copy data blocks for now.
-        for (long i = 0; i < splitCount - 1 && restBytes >= MAX_PART_SIZE; i++) {
-            writer.copyWrite(metadata.key(), i * MAX_PART_SIZE, (i + 1) * MAX_PART_SIZE);
-            restBytes -= MAX_PART_SIZE;
-        }
-        if (restBytes > MAX_PART_SIZE) {
-            throw new IllegalArgumentException("splitCount is too small, resting bytes: " + restBytes + " is larger than MAX_PART_SIZE: " + MAX_PART_SIZE + ".");
-        }
-        if (restBytes > 0) {
-            writer.copyWrite(metadata.key(), (splitCount - 1) * MAX_PART_SIZE, basicObjectInfo.dataBlockSize());
-        }
+            long restBytes = basicObjectInfo.dataBlockSize();
+            // Only copy data blocks for now.
+            for (long i = 0; i < splitCount - 1 && restBytes >= MAX_PART_SIZE; i++) {
+                writer.copyWrite(metadata.key(), i * MAX_PART_SIZE, (i + 1) * MAX_PART_SIZE);
+                restBytes -= MAX_PART_SIZE;
+            }
+            if (restBytes > MAX_PART_SIZE) {
+                throw new IllegalArgumentException("splitCount is too small, resting bytes: " + restBytes + " is larger than MAX_PART_SIZE: " + MAX_PART_SIZE + ".");
+            }
+            if (restBytes > 0) {
+                writer.copyWrite(metadata.key(), (splitCount - 1) * MAX_PART_SIZE, basicObjectInfo.dataBlockSize());
+            }
 
-        completedObjects.add(new StreamObjectIndexData(basicObjectInfo.indexBlock(), nextObjectDataStartPosition, blockCount));
-        blockCount += basicObjectInfo.blockCount();
-        nextObjectDataStartPosition += basicObjectInfo.dataBlockSize();
-        size += basicObjectInfo.dataBlockSize();
+            completedObjects.add(new StreamObjectIndexData(basicObjectInfo.indexBlock(), nextObjectDataStartPosition, blockCount));
+            blockCount += basicObjectInfo.blockCount();
+            nextObjectDataStartPosition += basicObjectInfo.dataBlockSize();
+            size += basicObjectInfo.dataBlockSize();
+        }
     }
 
     public CompletableFuture<Void> close() {

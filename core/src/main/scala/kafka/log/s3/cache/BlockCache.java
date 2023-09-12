@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache {
     private final long maxSize;
@@ -42,12 +43,24 @@ public class BlockCache {
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
     private final LRUCache<CacheKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+    private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
     }
 
     public void put(long streamId, List<StreamRecordBatch> records) {
+        try {
+            writeLock.lock();
+            put0(streamId, records);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    public void put0(long streamId, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
             records.forEach(StreamRecordBatch::release);
             return;
@@ -106,11 +119,21 @@ public class BlockCache {
 
     }
 
+
     /**
      * Get records from cache.
      * Note: the records is retained, the caller should release it.
      */
     public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        try {
+            readLock.lock();
+            return get0(streamId, startOffset, endOffset, maxBytes);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    public GetCacheResult get0(long streamId, long startOffset, long endOffset, int maxBytes) {
         NavigableMap<Long, CacheBlock> streamCache = stream2cache.get(streamId);
         if (streamCache == null) {
             return GetCacheResult.empty();
