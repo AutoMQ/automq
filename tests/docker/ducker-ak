@@ -374,8 +374,12 @@ attempting to start new ones."
     # elastic stream insert start
     # must_do -v docker run --network=ducknet --name redis -d redis:7
     # start es cluster
-    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
     # elastic stream insert end
+
+    # Kafka on S3 inject start
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
+    # Kafka on S3 inject end
 
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
@@ -591,8 +595,14 @@ ducker_down() {
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
     # elastic stream insert start
     # remove es
-    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
     # elastic stream insert end
+
+    # Kafka on S3 inject start
+    # remove s3
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
+    must_do -v rm -rf ${ducker_dir}/s3/volume
+    # Kafka on S3 inject end
 }
 
 ducker_purge() {
