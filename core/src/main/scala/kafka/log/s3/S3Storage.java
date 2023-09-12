@@ -105,11 +105,13 @@ public class S3Storage implements Storage {
     private void recover() throws Throwable {
         log.start();
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
+
         LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(log.recover(), streams);
         Map<Long, Long> streamEndOffsets = new HashMap<>();
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
                 streamEndOffsets.put(streamId, records.get(records.size() - 1).getLastOffset());
+                long startOffset = records.get(records.size() - 1).getBaseOffset();
             }
         });
 
@@ -153,6 +155,18 @@ public class S3Storage implements Storage {
         if (logEndOffset >= 0L) {
             cacheBlock.confirmOffset(logEndOffset);
         }
+        cacheBlock.records().forEach((streamId, records) -> {
+            if (!records.isEmpty()) {
+                long startOffset = records.get(0).getBaseOffset();
+                long expectedStartOffset = streamEndOffsets.getOrDefault(streamId, startOffset);
+                if (startOffset > expectedStartOffset) {
+                    throw new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %s endOffset=%s" +
+                            "but WAL recovered records startOffset=%s", streamId, startOffset, expectedStartOffset));
+                }
+            }
+
+        });
+
         return cacheBlock;
     }
 
@@ -317,7 +331,9 @@ public class S3Storage implements Storage {
         context.task.commit().thenAcceptAsync(nil -> {
             // 1. poll out current task
             walObjectCommitQueue.poll();
-            log.trim(context.cache.confirmOffset());
+            if (context.cache.confirmOffset() != 0) {
+                log.trim(context.cache.confirmOffset());
+            }
             // transfer records ownership to block cache.
             freeCache(context.cache);
             context.cf.complete(null);

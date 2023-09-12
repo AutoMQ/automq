@@ -62,6 +62,7 @@ import org.apache.kafka.timeline.TimelineInteger;
 import org.apache.kafka.timeline.TimelineLong;
 import org.apache.kafka.timeline.TimelineObject;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -74,6 +75,7 @@ import java.util.stream.Collectors;
  * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
  */
 public class StreamControlManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
 
     public static class S3StreamMetadata {
 
@@ -713,15 +715,19 @@ public class StreamControlManager {
             S3StreamMetadata metadata = this.streamsMetadata.get(streamId);
             if (metadata == null) {
                 // ignore it
+                LOGGER.error("[REPLAY_WAL_FAIL] cannot find {} metadata", streamId);
                 return;
             }
             RangeMetadata rangeMetadata = metadata.currentRangeMetadata();
             if (rangeMetadata == null) {
                 // ignore it
+                LOGGER.error("[REPLAY_WAL_FAIL] cannot find {} stream range metadata", streamId);
                 return;
             }
             if (rangeMetadata.endOffset() != index.startOffset()) {
                 // ignore it
+                LOGGER.error("[REPLAY_WAL_FAIL] stream {} offset is not continuous, expect {} real {}", streamId,
+                        rangeMetadata.endOffset(), index.startOffset());
                 return;
             }
             rangeMetadata.setEndOffset(index.endOffset());
