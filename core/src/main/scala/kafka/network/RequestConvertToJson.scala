@@ -23,6 +23,7 @@ import kafka.network.RequestChannel.Session
 import org.apache.kafka.common.message._
 import org.apache.kafka.common.network.ClientInformation
 import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.s3._
 
 object RequestConvertToJson {
   def request(request: AbstractRequest): JsonNode = {
@@ -95,6 +96,17 @@ object RequestConvertToJson {
       case req: DescribeProducersRequest => DescribeProducersRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeTransactionsRequest => DescribeTransactionsRequestDataJsonConverter.write(req.data, request.version)
       case req: ListTransactionsRequest => ListTransactionsRequestDataJsonConverter.write(req.data, request.version)
+      case req: CloseStreamRequest => CloseStreamRequestDataJsonConverter.write(req.data, request.version)
+      case req: CommitStreamObjectRequest => CommitStreamObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: CommitWALObjectRequest => CommitWALObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: CreateStreamRequest => CreateStreamRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteKVRequest => DeleteKVRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteStreamRequest => DeleteStreamRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetKVRequest => GetKVRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetOpeningStreamsRequest => GetOpeningStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: OpenStreamRequest => OpenStreamRequestDataJsonConverter.write(req.data, request.version)
+      case req: PrepareS3ObjectRequest => PrepareS3ObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: PutKVRequest => PutKVRequestDataJsonConverter.write(req.data, request.version)
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.");
     }
@@ -170,6 +182,17 @@ object RequestConvertToJson {
       case res: DescribeProducersResponse => DescribeProducersResponseDataJsonConverter.write(res.data, version)
       case res: DescribeTransactionsResponse => DescribeTransactionsResponseDataJsonConverter.write(res.data, version)
       case res: ListTransactionsResponse => ListTransactionsResponseDataJsonConverter.write(res.data, version)
+      case res: CloseStreamResponse => CloseStreamResponseDataJsonConverter.write(res.data, version)
+      case res: CommitStreamObjectResponse => CommitStreamObjectResponseDataJsonConverter.write(res.data, version)
+      case res: CommitWALObjectResponse => CommitWALObjectResponseDataJsonConverter.write(res.data, version)
+      case res: CreateStreamResponse => CreateStreamResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteKVResponse => DeleteKVResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteStreamResponse => DeleteStreamResponseDataJsonConverter.write(res.data, version)
+      case res: GetKVResponse => GetKVResponseDataJsonConverter.write(res.data, version)
+      case res: GetOpeningStreamsResponse => GetOpeningStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: OpenStreamResponse => OpenStreamResponseDataJsonConverter.write(res.data, version)
+      case res: PrepareS3ObjectResponse => PrepareS3ObjectResponseDataJsonConverter.write(res.data, version)
+      case res: PutKVResponse => PutKVResponseDataJsonConverter.write(res.data, version)
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.");
     }
