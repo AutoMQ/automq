@@ -56,6 +56,7 @@ public class DataBlockReader {
                 .thenAccept(buf -> {
                     try {
                         indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
+                        buf.release();
                     } catch (IndexBlockParseException ex) {
                         parseDataBlockIndex(ex.indexBlockPosition);
                     }
@@ -80,10 +81,11 @@ public class DataBlockReader {
     private void parseDataBlocks(ByteBuf buf, List<DataBlockIndex> blockIndices, List<DataBlock> dataBlocks) {
         for (DataBlockIndex blockIndexEntry : blockIndices) {
             int blockSize = blockIndexEntry.size;
-            ByteBuf blockBuf = buf.slice(buf.readerIndex(), blockSize);
+            ByteBuf blockBuf = buf.retainedSlice(buf.readerIndex(), blockSize);
             buf.skipBytes(blockSize);
             dataBlocks.add(new DataBlock(blockBuf, blockIndexEntry.recordCount));
         }
+        buf.release();
     }
 
     static class IndexBlock {

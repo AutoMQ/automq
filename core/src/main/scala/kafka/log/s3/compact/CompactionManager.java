@@ -107,7 +107,7 @@ public class CompactionManager {
                 .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().dataTimeInMs())
                         >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod)));
         // force split objects that exists for too long
-        logger.info("{} WAL objects need force split", objectMetadataFilterMap.get(true).size());
+        logger.info("{} WAL objects to be force split", objectMetadataFilterMap.get(true).size());
         long splitStart = System.currentTimeMillis();
         splitWALObjects(objectMetadataFilterMap.get(true)).thenAccept(v ->
                 logger.info("Force split {} objects, time cost: {} ms", objectMetadataFilterMap.get(true).size(), System.currentTimeMillis() - splitStart));
@@ -116,15 +116,15 @@ public class CompactionManager {
             logger.info("{} WAL objects as compact candidates", objectMetadataFilterMap.get(false).size());
             long compactionStart = System.currentTimeMillis();
             List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
-            logger.info("Analyze compaction plans complete, {} plans generated", compactionPlans.size());
+            logCompactionPlans(compactionPlans);
             if (compactionPlans.isEmpty()) {
                 return CompletableFuture.completedFuture(CompactResult.SKIPPED);
             }
             CommitWALObjectRequest request = buildCompactRequest(compactionPlans, s3ObjectMetadata);
             logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - compactionStart);
-            return objectManager.commitWALObject(request).thenApply(nil -> {
-                logger.info("Commit compact request succeed, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
-                        request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - compactionStart);
+            return objectManager.commitWALObject(request).thenApply(resp -> {
+                logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
+                        request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - compactionStart);
                 return CompactResult.SUCCESS;
             });
         } catch (Exception e) {
@@ -132,6 +132,22 @@ public class CompactionManager {
             return CompletableFuture.failedFuture(e);
         }
 
+    }
+
+    private void logCompactionPlans(List<CompactionPlan> compactionPlans) {
+        long streamObjectNum = compactionPlans.stream()
+                .mapToLong(p -> p.compactedObjects().stream()
+                        .filter(o -> o.type() == CompactionType.SPLIT)
+                        .count())
+                .sum();
+        long walObjectSize = compactionPlans.stream()
+                .mapToLong(p -> p.compactedObjects().stream()
+                        .filter(o -> o.type() == CompactionType.COMPACT)
+                        .mapToLong(CompactedObject::size)
+                        .sum())
+                .sum();
+        logger.info("Compaction plans: expect to generate {} StreamObject, 1 WAL object with size {} in {} iterations",
+                streamObjectNum, walObjectSize, compactionPlans.size());
     }
 
     public CompletableFuture<Void> forceSplitAll() {
