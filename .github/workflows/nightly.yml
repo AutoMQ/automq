@@ -24,7 +24,17 @@ jobs:
         uses: gradle/gradle-build-action@v2
       - name: Checkstyle
         run: ./gradlew releaseTarGz
-      - name: Upload tgz
-        uses: actions/upload-artifact@v2
+      - name: Update Nightly Release
+        uses: andelf/nightly-release@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          path: ./core/build/distributions/kafka_*.tgz
+          tag_name: nightly
+          name: 'Kafka on S3 Nightly Release $$'
+          draft: false
+          prerelease: true
+          body: |
+            This is a nightly release of Kafka on S3.
+            It's unstable compared to the official releases, **use it with caution**!
+          files: |
+            ./core/build/distributions/kafka_*[^a-z].tgz
