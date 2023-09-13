@@ -41,13 +41,13 @@ public class StreamObjectCopierTest {
 
         S3Operator s3Operator = new MemoryS3Operator();
 
-        ObjectWriter objectWriter1 = new ObjectWriter(1, s3Operator, 1024, 1024);
+        ObjectWriter objectWriter1 = ObjectWriter.writer(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(streamId, 10, 5, 512);
         StreamRecordBatch r2 = newRecord(streamId, 15, 10, 512);
         objectWriter1.write(streamId, List.of(r1, r2));
         objectWriter1.close().get();
 
-        ObjectWriter objectWriter2 = new ObjectWriter(2, s3Operator, 1024, 1024);
+        ObjectWriter objectWriter2 = ObjectWriter.writer(2, s3Operator, 1024, 1024);
         StreamRecordBatch r3 = newRecord(streamId, 25, 8, 512);
         StreamRecordBatch r4 = newRecord(streamId, 33, 6, 512);
         objectWriter2.write(streamId, List.of(r3, r4));

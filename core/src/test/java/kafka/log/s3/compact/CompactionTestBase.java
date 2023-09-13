@@ -62,7 +62,7 @@ public class CompactionTestBase {
         // stream data for object 0
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             Assertions.assertEquals(OBJECT_0, objectId);
-            ObjectWriter objectWriter = new ObjectWriter(objectId, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 20, TestUtils.random(20));
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(30));
             StreamRecordBatch r3 = new StreamRecordBatch(STREAM_2, 0, 30, 30, TestUtils.random(30));
@@ -83,7 +83,7 @@ public class CompactionTestBase {
         // stream data for object 1
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             Assertions.assertEquals(OBJECT_1, objectId);
-            ObjectWriter objectWriter = new ObjectWriter(OBJECT_1, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
             StreamRecordBatch r4 = new StreamRecordBatch(STREAM_0, 0, 20, 5, TestUtils.random(5));
             StreamRecordBatch r5 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(60));
             objectWriter.write(STREAM_0, List.of(r4));
@@ -101,7 +101,7 @@ public class CompactionTestBase {
         // stream data for object 2
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             Assertions.assertEquals(OBJECT_2, objectId);
-            ObjectWriter objectWriter = new ObjectWriter(OBJECT_2, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, s3Operator, 1024, 1024);
             // redundant record
             StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 260, 20, TestUtils.random(20));
             StreamRecordBatch r7 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(100));

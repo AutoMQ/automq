@@ -27,6 +27,7 @@ import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -60,7 +61,7 @@ public class WALObjectUploadTaskTest {
     }
 
     @Test
-    public void testTryCompact() throws Exception {
+    public void testUpload() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
         when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
@@ -128,4 +129,30 @@ public class WALObjectUploadTaskTest {
         }
     }
 
+    @Test
+    public void testUpload_oneStream() throws Exception {
+        AtomicLong objectIdAlloc = new AtomicLong(10);
+        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
+
+        Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
+        map.put(233L, List.of(
+                new StreamRecordBatch(233, 0, 10, 2, random(512)),
+                new StreamRecordBatch(233, 0, 12, 2, random(128)),
+                new StreamRecordBatch(233, 0, 14, 2, random(512))
+        ));
+        walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024);
+
+        walObjectUploadTask.prepare().get();
+        walObjectUploadTask.upload().get();
+        walObjectUploadTask.commit().get();
+
+
+        ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
+        verify(objectManager, times(1)).commitWALObject(reqArg.capture());
+        CommitWALObjectRequest request = reqArg.getValue();
+        Assertions.assertEquals(0, request.getObjectSize());
+        Assertions.assertEquals(0, request.getStreamRanges().size());
+        Assertions.assertEquals(1, request.getStreamObjects().size());
+    }
 }
