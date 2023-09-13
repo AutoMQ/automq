@@ -50,7 +50,7 @@ public class StreamObjectsCompactionTask {
      */
     private static final int MAX_COMPACT_GROUPS = MAX_PART_COUNT - 1;
     private Queue<List<S3StreamObjectMetadataSplitWrapper>> compactGroups;
-    private final long compactedStreamObjectMaxSize;
+    private final long compactedStreamObjectMaxSizeInBytes;
     private final long eligibleStreamObjectLivingTimeInMs;
     private long nextStartSearchingOffset;
     private final S3Stream stream;
@@ -62,17 +62,17 @@ public class StreamObjectsCompactionTask {
      * @param objectManager object manager.
      * @param s3Operator s3 operator.
      * @param stream stream.
-     * @param compactedStreamObjectMaxSize compacted stream object max size.
+     * @param compactedStreamObjectMaxSizeInBytes compacted stream object max size in bytes.
      * If it is bigger than {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE},
      * it will be set to {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE}.
      * @param eligibleStreamObjectLivingTimeInMs eligible stream object living time in ms.
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-        long compactedStreamObjectMaxSize, long eligibleStreamObjectLivingTimeInMs) {
+        long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
-        this.compactedStreamObjectMaxSize = Utils.min(compactedStreamObjectMaxSize, MAX_OBJECT_SIZE);
+        this.compactedStreamObjectMaxSizeInBytes = Utils.min(compactedStreamObjectMaxSizeInBytes, MAX_OBJECT_SIZE);
         this.eligibleStreamObjectLivingTimeInMs = eligibleStreamObjectLivingTimeInMs;
         this.nextStartSearchingOffset = stream.startOffset();
     }
@@ -161,7 +161,7 @@ public class StreamObjectsCompactionTask {
 
         List<S3ObjectMetadata> streamObjects = rawFetchedStreamObjects
             .stream()
-            .filter(streamObject -> streamObject.objectSize() < compactedStreamObjectMaxSize)
+            .filter(streamObject -> streamObject.objectSize() < compactedStreamObjectMaxSizeInBytes)
             .collect(Collectors.toList());
 
         return groupContinuousObjects(streamObjects)
@@ -197,7 +197,7 @@ public class StreamObjectsCompactionTask {
         int index = 0;
         while (index < streamObjects.size()
             && streamObjects.get(index).startOffset() == lastEndOffset
-            && streamObjects.get(index).objectSize() >= compactedStreamObjectMaxSize) {
+            && streamObjects.get(index).objectSize() >= compactedStreamObjectMaxSizeInBytes) {
             lastEndOffset = streamObjects.get(index).endOffset();
             index += 1;
         }
@@ -245,7 +245,7 @@ public class StreamObjectsCompactionTask {
 
     /**
      * Further split the stream object group.
-     * It tries to filter some subgroups which just have a size less than {@link #compactedStreamObjectMaxSize} and have
+     * It tries to filter some subgroups which just have a size less than {@link #compactedStreamObjectMaxSizeInBytes} and have
      * a living time more than {@link #eligibleStreamObjectLivingTimeInMs}.
      *
      * @param streamObjects stream objects.
@@ -267,7 +267,7 @@ public class StreamObjectsCompactionTask {
                 // The subgroup is too new or too big, then break;
                 if (calculateTimePassedInMs(subGroup) < eligibleStreamObjectLivingTimeInMs ||
                     S3StreamObjectMetadataSplitWrapper.calculateSplitCopyCount(subGroup) > MAX_COMPACT_GROUPS ||
-                    calculateTotalSize(subGroup) > compactedStreamObjectMaxSize) {
+                    calculateTotalSize(subGroup) > compactedStreamObjectMaxSizeInBytes) {
                     break;
                 }
                 endIndex += 1;
@@ -376,7 +376,7 @@ public class StreamObjectsCompactionTask {
         private final ObjectManager objectManager;
         private final S3Operator s3Operator;
         private S3Stream stream;
-        private long compactedStreamObjectMaxSize;
+        private long compactedStreamObjectMaxSizeInBytes;
         private long eligibleStreamObjectLivingTimeInMs;
 
         public Builder(ObjectManager objectManager, S3Operator s3Operator) {
@@ -390,13 +390,13 @@ public class StreamObjectsCompactionTask {
 
         /**
          * Set compacted stream object max size.
-         * @param compactedStreamObjectMaxSize compacted stream object max size.
+         * @param compactedStreamObjectMaxSizeInBytes compacted stream object max size in bytes.
          * If it is bigger than {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE},
          * it will be set to {@link kafka.log.s3.operator.Writer#MAX_OBJECT_SIZE}.
          * @return builder.
          */
-        public Builder withCompactedStreamObjectMaxSize(long compactedStreamObjectMaxSize) {
-            this.compactedStreamObjectMaxSize = compactedStreamObjectMaxSize;
+        public Builder withCompactedStreamObjectMaxSizeInBytes(long compactedStreamObjectMaxSizeInBytes) {
+            this.compactedStreamObjectMaxSizeInBytes = compactedStreamObjectMaxSizeInBytes;
             return this;
         }
         public Builder withEligibleStreamObjectLivingTimeInMs(long eligibleStreamObjectLivingTimeInMs) {
@@ -404,7 +404,7 @@ public class StreamObjectsCompactionTask {
             return this;
         }
         public StreamObjectsCompactionTask build() {
-            return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSize, eligibleStreamObjectLivingTimeInMs);
+            return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs);
         }
     }
 }

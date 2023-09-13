@@ -97,15 +97,15 @@ public class S3StreamClient implements StreamClient {
                     LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
                 }
             });
-        }, 60, config.s3StreamObjectCompactionTaskInterval(), TimeUnit.MINUTES);
+        }, 60, config.s3StreamObjectCompactionTaskIntervalMinutes(), TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
-                        .withCompactedStreamObjectMaxSize(config.s3StreamObjectCompactionMaxSize())
-                        .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeThreshold());
+                        .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
+                        .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000);
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getNextOffset(),
