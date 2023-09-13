@@ -50,6 +50,8 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineLong;
 import org.slf4j.Logger;
 
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
+
 /**
  * The S3ObjectControlManager manages all S3Object's lifecycle, such as apply, create, destroy, etc.
  */
@@ -156,6 +158,9 @@ public class S3ObjectControlManager {
     }
 
     public ControllerResult<Errors> commitObject(long objectId, long objectSize, long committedTs) {
+        if (objectId == NOOP_OBJECT_ID) {
+            return ControllerResult.of(Collections.emptyList(), Errors.NONE);
+        }
         S3Object object = this.objectsMetadata.get(objectId);
         if (object == null) {
             log.error("object {} not exist when commit wal object", objectId);

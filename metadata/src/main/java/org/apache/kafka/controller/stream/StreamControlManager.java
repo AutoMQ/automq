@@ -71,6 +71,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
+
 /**
  * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
  */
@@ -80,13 +82,13 @@ public class StreamControlManager {
     public static class S3StreamMetadata {
 
         // current epoch, when created but not open, use -1 represent
-        private TimelineLong currentEpoch;
+        private final TimelineLong currentEpoch;
         // rangeIndex, when created but not open, there is no range, use -1 represent
-        private TimelineInteger currentRangeIndex;
-        private TimelineLong startOffset;
-        private TimelineObject<StreamState> currentState;
-        private TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
-        private TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
+        private final TimelineInteger currentRangeIndex;
+        private final TimelineLong startOffset;
+        private final TimelineObject<StreamState> currentState;
+        private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
+        private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
         public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
                                 StreamState currentState, SnapshotRegistry registry) {
@@ -144,8 +146,8 @@ public class StreamControlManager {
 
     public static class BrokerS3WALMetadata {
 
-        private int brokerId;
-        private TimelineHashMap<Long/*objectId*/, S3WALObject> walObjects;
+        private final int brokerId;
+        private final TimelineHashMap<Long/*objectId*/, S3WALObject> walObjects;
 
         public BrokerS3WALMetadata(int brokerId, SnapshotRegistry registry) {
             this.brokerId = brokerId;
@@ -296,12 +298,11 @@ public class StreamControlManager {
         }
         // now the request in valid, update the stream's epoch and create a new range for this broker
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        long newEpoch = epoch;
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
                 .setStreamId(streamId)
-                .setEpoch(newEpoch)
+                .setEpoch(epoch)
                 .setRangeIndex(newRangeIndex)
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.OPENED.toByte()), (short) 0));
@@ -319,7 +320,7 @@ public class StreamControlManager {
                 .setBrokerId(brokerId)
                 .setStartOffset(startOffset)
                 .setEndOffset(startOffset)
-                .setEpoch(newEpoch)
+                .setEpoch(epoch)
                 .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
@@ -436,7 +437,6 @@ public class StreamControlManager {
      */
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
         long objectId = data.objectId();
         int brokerId = data.brokerId();
         long objectSize = data.objectSize();
@@ -458,7 +458,7 @@ public class StreamControlManager {
             log.warn("[CommitWALObject]: object {} already committed", objectId);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        records.addAll(commitResult.records());
+        List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
         long dataTs = committedTs;
         // mark destroy compacted object
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
@@ -470,6 +470,7 @@ public class StreamControlManager {
             }
             records.addAll(destroyResult.records());
             // update dataTs to the min compacted object's dataTs
+            //noinspection OptionalGetWithoutIsPresent
             dataTs = compactedObjectIds.stream()
                     .map(id -> this.brokersMetadata.get(brokerId).walObjects.get(id))
                     .map(S3WALObject::dataTimeInMs)
@@ -485,16 +486,19 @@ public class StreamControlManager {
             records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
                     .setBrokerId(brokerId), (short) 0));
         }
-        // generate broker's wal object record
-        records.add(new ApiMessageAndVersion(new WALObjectRecord()
-                .setObjectId(objectId)
-                .setDataTimeInMs(dataTs)
-                .setOrderId(orderId)
-                .setBrokerId(brokerId)
-                .setStreamsIndex(
-                        indexes.stream()
-                                .map(StreamOffsetRange::toRecordStreamIndex)
-                                .collect(Collectors.toList())), (short) 0));
+        if (objectId != NOOP_OBJECT_ID) {
+            // generate broker's wal object record
+            List<StreamIndex> streamIndexes = indexes.stream()
+                    .map(StreamOffsetRange::toRecordStreamIndex)
+                    .collect(Collectors.toList());
+            WALObjectRecord walObjectRecord = new WALObjectRecord()
+                    .setObjectId(objectId)
+                    .setDataTimeInMs(dataTs)
+                    .setOrderId(orderId)
+                    .setBrokerId(brokerId)
+                    .setStreamsIndex(streamIndexes);
+            records.add(new ApiMessageAndVersion(walObjectRecord, (short) 0));
+        }
         // commit stream objects
         if (streamObjects != null && !streamObjects.isEmpty()) {
             // commit objects
@@ -509,7 +513,7 @@ public class StreamControlManager {
                 records.addAll(streamObjectCommitResult.records());
             }
             // create stream object records
-            streamObjects.stream().forEach(obj -> {
+            streamObjects.forEach(obj -> {
                 long streamId = obj.streamId();
                 long startOffset = obj.startOffset();
                 long endOffset = obj.endOffset();
@@ -553,7 +557,6 @@ public class StreamControlManager {
         long endOffset = data.endOffset();
         long objectSize = data.objectSize();
         List<Long> sourceObjectIds = data.sourceObjectIds();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
 
@@ -569,7 +572,7 @@ public class StreamControlManager {
             log.warn("[CommitStreamObject]: object {} already committed", streamObjectId);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        records.addAll(commitResult.records());
+        List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
 
         long dataTs = committedTs;
         // mark destroy compacted object
@@ -582,6 +585,7 @@ public class StreamControlManager {
             }
             records.addAll(destroyResult.records());
             // update dataTs to the min compacted object's dataTs
+            //noinspection OptionalGetWithoutIsPresent
             dataTs = sourceObjectIds.stream()
                     .map(id -> this.streamsMetadata.get(streamId).streamObjects.get(id))
                     .map(S3StreamObject::dataTimeInMs)
@@ -724,10 +728,12 @@ public class StreamControlManager {
                 LOGGER.error("[REPLAY_WAL_FAIL] cannot find {} stream range metadata", streamId);
                 return;
             }
-            if (rangeMetadata.endOffset() != index.startOffset()) {
-                // ignore it
+            if (rangeMetadata.endOffset() < index.startOffset()) {
                 LOGGER.error("[REPLAY_WAL_FAIL] stream {} offset is not continuous, expect {} real {}", streamId,
                         rangeMetadata.endOffset(), index.startOffset());
+                return;
+            } else if (rangeMetadata.endOffset() > index.startOffset()) {
+                // ignore it, the WAL object is the compacted WAL object.
                 return;
             }
             rangeMetadata.setEndOffset(index.endOffset());
@@ -762,11 +768,15 @@ public class StreamControlManager {
         // update range
         RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
         if (rangeMetadata == null) {
-            // ignore it
+            LOGGER.error("[REPLAY_WAL_FAIL] cannot find {} stream range metadata", streamId);
             return;
         }
-        if (rangeMetadata.endOffset() != startOffset) {
-            // ignore it
+        if (rangeMetadata.endOffset() < startOffset) {
+            LOGGER.error("[REPLAY_WAL_FAIL] stream {} offset is not continuous, expect {} real {}", streamId,
+                    rangeMetadata.endOffset(), startOffset);
+            return;
+        } else if (rangeMetadata.endOffset() > startOffset) {
+            // ignore it, the WAL object compact and stream compact may generate this StreamObjectRecord.
             return;
         }
         rangeMetadata.setEndOffset(endOffset);

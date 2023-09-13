@@ -35,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static kafka.log.es.FutureUtil.exec;
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
 
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
@@ -44,26 +45,36 @@ public class WALObjectUploadTask {
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
+    private final boolean forceSplit;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
 
     public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold) {
+                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, boolean forceSplit) {
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = objectBlockSize;
         this.objectPartSize = objectPartSize;
         this.streamSplitSizeThreshold = streamSplitSizeThreshold;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
+        this.forceSplit = forceSplit;
+    }
+
+    public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold) {
+        this(streamRecordsMap, objectManager, s3Operator, objectBlockSize, objectPartSize, streamSplitSizeThreshold, streamRecordsMap.size() == 1);
     }
 
     public CompletableFuture<Long> prepare() {
-        objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(prepareCf::complete).exceptionally(ex -> {
-            prepareCf.completeExceptionally(ex);
-            return null;
-        });
-        // TODO: retry when fail or prepareObject inner retry
+        if (forceSplit) {
+            prepareCf.complete(NOOP_OBJECT_ID);
+        } else {
+            objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(prepareCf::complete).exceptionally(ex -> {
+                prepareCf.completeExceptionally(ex);
+                return null;
+            });
+        }
         return prepareCf;
     }
 
@@ -77,14 +88,20 @@ public class WALObjectUploadTask {
         Collections.sort(streamIds);
         CommitWALObjectRequest request = new CommitWALObjectRequest();
 
-        ObjectWriter walObject = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
+        ObjectWriter walObject;
+        if (forceSplit) {
+            // when only has one stream, we only need to write the stream data.
+            walObject = ObjectWriter.noop(objectId);
+        } else {
+            walObject = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
+        }
 
         List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
 
         for (Long streamId : streamIds) {
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
             long streamSize = streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
-            if (streamSize >= streamSplitSizeThreshold) {
+            if (forceSplit || streamSize >= streamSplitSizeThreshold) {
                 streamObjectCfList.add(writeStreamObject(streamRecords));
             } else {
                 walObject.write(streamId, streamRecords);
@@ -119,9 +136,8 @@ public class WALObjectUploadTask {
 
     private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords) {
         CompletableFuture<Long> objectIdCf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
-        // TODO: retry until success
         return objectIdCf.thenCompose(objectId -> {
-            ObjectWriter streamObjectWriter = new ObjectWriter(objectId, s3Operator, objectBlockSize, objectPartSize);
+            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();

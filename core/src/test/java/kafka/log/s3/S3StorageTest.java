@@ -145,11 +145,13 @@ public class S3StorageTest {
 
         LogCache.LogCacheBlock logCacheBlock1 = new LogCache.LogCacheBlock(1024);
         logCacheBlock1.put(newRecord(233L, 10L));
+        logCacheBlock1.put(newRecord(234L, 10L));
         logCacheBlock1.confirmOffset(10L);
         CompletableFuture<Void> cf1 = storage.uploadWALObject(logCacheBlock1);
 
         LogCache.LogCacheBlock logCacheBlock2 = new LogCache.LogCacheBlock(1024);
         logCacheBlock2.put(newRecord(233L, 20L));
+        logCacheBlock2.put(newRecord(234L, 20L));
         logCacheBlock2.confirmOffset(20L);
         CompletableFuture<Void> cf2 = storage.uploadWALObject(logCacheBlock2);
 
@@ -166,7 +168,7 @@ public class S3StorageTest {
         objectIdCfList.get(0).complete(1L);
         // trigger next upload prepare objectId
         verify(objectManager, timeout(1000).times(2)).prepareObject(anyInt(), anyLong());
-        verify(objectManager, times(1)).commitWALObject(any());
+        verify(objectManager, timeout(1000).times(1)).commitWALObject(any());
 
         objectIdCfList.get(1).complete(2L);
         Thread.sleep(10);
