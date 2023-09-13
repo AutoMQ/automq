@@ -197,7 +197,7 @@ public class S3Storage implements Storage {
                 }
             }
         }
-        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordBodyOffset() + appendResult.length(), cf);
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordOffset(), cf);
         handleAppendRequest(writeRequest);
         appendResult.future().thenAccept(nil -> handleAppendCallback(writeRequest));
         return cf;

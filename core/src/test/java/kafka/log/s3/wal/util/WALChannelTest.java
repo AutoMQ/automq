@@ -19,11 +19,13 @@ package kafka.log.s3.wal.util;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+@Tag("S3Unit")
 class WALChannelTest {
     WALChannel walChannel;
 
@@ -53,7 +55,7 @@ class WALChannelTest {
     }
 
     @Test
-    void writeAndRead() throws IOException {
+    void testWriteAndRead() throws IOException {
         ByteBuffer byteBuffer = createRandomTextByteBuffer(1024 * 3);
         for (int i = 0; i < 100; i++) {
             try {

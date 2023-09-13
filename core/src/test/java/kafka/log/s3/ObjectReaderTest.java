@@ -19,12 +19,14 @@ package kafka.log.s3;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 public class ObjectReaderTest {
 
     @Test
