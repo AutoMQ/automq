@@ -41,7 +41,6 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -96,7 +95,6 @@ class BlockWALServiceTest {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_CAPACITY_DOUBLE;
-        final int retryTimes = 10;
 
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(blockDeviceCapacity)
@@ -107,18 +105,18 @@ class BlockWALServiceTest {
             AtomicLong appendedOffset = new AtomicLong(0);
             for (int i = 0; i < recordNums; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
-                AppendResult appendResult = null;
+                AppendResult appendResult;
 
-                for (int j = 0; j < retryTimes; j++) {
+                while (true) {
                     try {
                         appendResult = wal.append(data);
                     } catch (OverCapacityException e) {
+                        Thread.yield();
                         wal.trim(appendedOffset.get());
                         continue;
                     }
                     break;
                 }
-                assertNotNull(appendResult, "failed to append due to over capacity");
 
                 final long recordOffset = appendResult.recordOffset();
                 appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
@@ -130,6 +128,9 @@ class BlockWALServiceTest {
                     long old;
                     do {
                         old = appendedOffset.get();
+                        if (old >= recordOffset) {
+                            break;
+                        }
                     } while (!appendedOffset.compareAndSet(old, recordOffset));
                 });
             }
