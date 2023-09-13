@@ -371,16 +371,8 @@ public class SlidingWindowService {
                         }
 
                         @Override
-                        public AppendResult appendResult() {
-                            return writeRecordTask.appendResult();
-                        }
-
-                        @Override
                         public String toString() {
-                            return "CallbackResult{" +
-                                    "slidingWindowMinOffset=" + flushedOffset() +
-                                    ", appendResult=" + appendResult() +
-                                    '}';
+                            return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                         }
                     });
 

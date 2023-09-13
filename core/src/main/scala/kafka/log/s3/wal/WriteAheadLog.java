@@ -71,21 +71,14 @@ public interface WriteAheadLog {
     }
 
     interface AppendResult {
-        // Record body 预分配的存储起始位置
-        long recordBodyOffset();
-
-        int recordBodyCRC();
-
-        // Record body 的长度（不包含任何元数据长度）
-        int length();
+        // Record 预分配的存储起始位置
+        long recordOffset();
 
         CompletableFuture<CallbackResult> future();
 
         interface CallbackResult {
             // 这个 Offset 之前的数据已经落盘
             long flushedOffset();
-
-            AppendResult appendResult();
         }
     }
 

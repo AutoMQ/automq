@@ -319,7 +319,7 @@ public class BlockWALService implements WriteAheadLog {
         // AppendResult
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
 
-        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, recordBodyCRC, record.limit(), appendResultFuture);
+        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
 
         // 生成写 IO 请求，入队执行异步 IO
         slidingWindowService.submitWriteRecordTask(new WriteRecordTask() {
@@ -558,31 +558,17 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     static class AppendResultImpl implements AppendResult {
-        private final long recordBodyOffset;
-        private final int recordBodyCRC;
-        private final int length;
+        private final long recordOffset;
         private final CompletableFuture<CallbackResult> future;
 
-        public AppendResultImpl(long recordBodyOffset, int recordBodyCRC, int length, CompletableFuture<CallbackResult> future) {
-            this.recordBodyOffset = recordBodyOffset;
-            this.recordBodyCRC = recordBodyCRC;
-            this.length = length;
+        public AppendResultImpl(long recordOffset, CompletableFuture<CallbackResult> future) {
+            this.recordOffset = recordOffset;
             this.future = future;
         }
 
         @Override
-        public long recordBodyOffset() {
-            return recordBodyOffset;
-        }
-
-        @Override
-        public int recordBodyCRC() {
-            return recordBodyCRC;
-        }
-
-        @Override
-        public int length() {
-            return length;
+        public long recordOffset() {
+            return recordOffset;
         }
 
         @Override
@@ -592,7 +578,7 @@ public class BlockWALService implements WriteAheadLog {
 
         @Override
         public String toString() {
-            return "AppendResultImpl{" + "recordBodyOffset=" + recordBodyOffset + ", recordBodyCRC=" + recordBodyCRC + ", length=" + length + '}';
+            return "AppendResultImpl{" + "recordOffset=" + recordOffset + '}';
         }
     }
 

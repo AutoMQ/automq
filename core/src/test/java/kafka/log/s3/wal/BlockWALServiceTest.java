@@ -39,6 +39,7 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 class BlockWALServiceTest {
@@ -63,33 +64,29 @@ class BlockWALServiceTest {
 
     @Test
     void singleThreadAppend() throws IOException, OverCapacityException {
-        final int RECORD_SIZE = 4096 + 1;
-        final int RECORD_NUMS = 10;
-        final long BLOCK_DEVICE_CAPACITY = WALUtil.alignLargeByBlockSize(RECORD_SIZE) * RECORD_NUMS + WAL_HEADER_CAPACITY_DOUBLE;
+        final int recordSize = 4096 + 1;
+        final int recordNums = 10;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
 
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
-                .capacity(BLOCK_DEVICE_CAPACITY)
+                .capacity(blockDeviceCapacity)
                 .blockDevicePath(BLOCK_DEVICE_PATH + "singleThreadAppend")
                 .ioThreadNums(IO_THREAD_NUMS)
                 .createBlockWALService().start();
         try {
-            for (int i = 0; i < RECORD_NUMS; i++) {
-                byte[] bytes = new byte[RECORD_SIZE];
+            for (int i = 0; i < recordNums; i++) {
+                byte[] bytes = new byte[recordSize];
                 RANDOM.nextBytes(bytes);
                 ByteBuf data = Unpooled.wrappedBuffer(bytes);
 
                 final AppendResult appendResult = wal.append(data);
 
-                final long expectedOffset = i * WALUtil.alignLargeByBlockSize(RECORD_SIZE);
-                final long expectedCRC = WALUtil.crc32(data.nioBuffer());
-                assertEquals(expectedOffset, appendResult.recordBodyOffset());
-                assertEquals(expectedCRC, appendResult.recordBodyCRC());
-                assertEquals(RECORD_SIZE, appendResult.length());
+                final long expectedOffset = i * WALUtil.alignLargeByBlockSize(recordSize);
+                assertEquals(expectedOffset, appendResult.recordOffset());
                 appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
                     assertNull(throwable);
-                    System.out.printf("%d\n", callbackResult.flushedOffset());
-                    assertEquals(expectedCRC, callbackResult.appendResult().recordBodyCRC());
-                    assertEquals(expectedOffset, callbackResult.appendResult().recordBodyOffset());
+                    assertTrue(callbackResult.flushedOffset() >= expectedOffset);
+                    assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
                 });
             }
         } finally {
@@ -113,8 +110,6 @@ class BlockWALServiceTest {
                     final int index = i;
                     System.out.printf("[APPEND AFTER %d] %s\n", index, appendResult);
                     appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
-                        assertEquals(callbackResult.appendResult().recordBodyCRC(), appendResult.recordBodyCRC());
-                        assertEquals(callbackResult.appendResult().recordBodyOffset(), appendResult.recordBodyOffset());
 
                         System.out.printf("[APPEND CALLBACK %d] %s | %s \n", index, appendResult, callbackResult);
 
@@ -180,8 +175,6 @@ class BlockWALServiceTest {
                                 String format = String.format("Hello World [%d]", i);
                                 final AppendResult appendResult = wal.append(Unpooled.wrappedBuffer(ByteBuffer.wrap(format.getBytes())));
                                 appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
-                                    assertEquals(callbackResult.appendResult().recordBodyCRC(), appendResult.recordBodyCRC());
-                                    assertEquals(callbackResult.appendResult().recordBodyOffset(), appendResult.recordBodyOffset());
                                     if (throwable != null) {
                                         throwable.printStackTrace();
                                     }

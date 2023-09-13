@@ -44,18 +44,8 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
         long offset = offsetAlloc.getAndIncrement();
         return new AppendResult() {
             @Override
-            public long recordBodyOffset() {
+            public long recordOffset() {
                 return offset;
-            }
-
-            @Override
-            public int recordBodyCRC() {
-                return 0;
-            }
-
-            @Override
-            public int length() {
-                return 0;
             }
 
             @Override
