@@ -20,11 +20,12 @@ package kafka.log.es
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, LogOffsetMetadata}
-import kafka.utils.Logging
+import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 
+import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -82,6 +83,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   override def close(): Unit = {
+    closeBasic()
+    CoreUtils.swallow(closeStreams().get(), this)
+  }
+
+  def closeBasic(): Unit = {
     info("Closing log")
     lock synchronized {
       maybeFlushMetadataFile()
@@ -103,9 +109,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   /**
-   * Quickly close the log without flushing. This is used when partition is offline
+   * Only close streams.
    */
-  def quicklyClose(): Unit = {
+  def closeStreams(): CompletableFuture[Void] = {
     elasticLog.closeStreams()
   }
 

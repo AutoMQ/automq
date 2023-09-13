@@ -298,21 +298,15 @@ class ElasticLog(val metaStream: MetaStream,
       }
       CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
       CoreUtils.swallow(segments.close(), this)
-      CoreUtils.swallow(closeStreams(), this)
     }
     info("log closed");
   }
 
   /**
-   * Directly close all streams of the log. This method may throw IOException.
+   * Directly close all streams of the log.
    */
-  def closeStreams(): Unit = {
-    try {
-      CompletableFuture.allOf(streamManager.close(), metaStream.close()).get()
-    } catch {
-      case e: ExecutionException =>
-        throw e.getCause
-    }
+  def closeStreams(): CompletableFuture[Void] = {
+    CompletableFuture.allOf(streamManager.close(), metaStream.close())
   }
 }
 

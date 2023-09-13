@@ -278,7 +278,7 @@ class LogManager(logDirs: Seq[File],
     try {
       log match {
         case elasticUnifiedLog: ElasticUnifiedLog =>
-          elasticUnifiedLog.quicklyClose()
+          elasticUnifiedLog.closeStreams().get()
         case _ =>
       }
     } catch {
@@ -641,6 +641,9 @@ class LogManager(logDirs: Seq[File],
     val threadPools = ArrayBuffer.empty[ExecutorService]
     val jobs = mutable.Map.empty[File, Seq[Future[_]]]
 
+    // elastic stream inject start
+    val closeStreamsJobs = mutable.Map.empty[File, Seq[Future[_]]]
+
     // stop the cleaner first
     if (cleaner != null) {
       CoreUtils.swallow(cleaner.shutdown(), this)
@@ -662,7 +665,12 @@ class LogManager(logDirs: Seq[File],
         val runnable: Runnable = () => {
           // flush the log to ensure latest possible recovery point
           log.flush(true)
-          log.close()
+          log match {
+            case elasticUnifiedLog: ElasticUnifiedLog =>
+              elasticUnifiedLog.closeBasic()
+            case unifiedLog: UnifiedLog =>
+              unifiedLog.close()
+          }
         }
         runnable
       }
@@ -674,7 +682,6 @@ class LogManager(logDirs: Seq[File],
       jobs.forKeyValue { (dir, dirJobs) =>
         if (waitForAllToComplete(dirJobs,
           e => warn(s"There was an error in one of the threads during LogManager shutdown: ", e))) {
-          // elastic stream inject start
           // No need for updating recovery points, updating log start offsets or writing clean shutdown marker Since they have all been done in log.close()
           if (!ElasticLogManager.enabled()) {
             val logs = logsInDir(localLogsByDir, dir)
@@ -690,14 +697,40 @@ class LogManager(logDirs: Seq[File],
             debug(s"Writing clean shutdown marker at $dir")
             CoreUtils.swallow(Files.createFile(new File(dir, LogLoader.CleanShutdownFile).toPath), this)
           }
-          // elastic stream inject end
         }
       }
+
+      // close streams should be triggered after all logs have been closed basically.
+      for (dir <- liveLogDirs) {
+        debug(s"close streams at $dir")
+        val pool = Executors.newFixedThreadPool(numRecoveryThreadsPerDataDir,
+          KafkaThread.nonDaemon(s"log-streams-closing-${dir.getAbsolutePath}", _))
+        threadPools.append(pool)
+        val jobsForDir = logsInDir(localLogsByDir, dir).values.filter(_.isInstanceOf[ElasticUnifiedLog]).map(log => {
+          val runnable: Runnable = () => {
+            try {
+              log.asInstanceOf[ElasticUnifiedLog].closeStreams().get()
+            } catch {
+              case e: Throwable =>
+                warn(s"error when trying to close streams for ${log.dir.getName} ", e)
+            }
+          }
+          runnable
+        })
+        closeStreamsJobs(dir) = jobsForDir.map(pool.submit).toSeq
+      }
+
+      closeStreamsJobs.forKeyValue { (_, dirJobs) =>
+        waitForAllToComplete(dirJobs,
+          e => warn(s"There was an error in one of the stream-closing threads during LogManager shutdown: ", e))
+      }
+
     } finally {
       threadPools.foreach(_.shutdown())
       // regardless of whether the close succeeded, we need to unlock the data directories
       dirLocks.foreach(_.destroy())
     }
+    // elastic stream inject end
 
     info("Shutdown complete.")
   }
