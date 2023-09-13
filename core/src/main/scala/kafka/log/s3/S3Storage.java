@@ -130,8 +130,8 @@ public class S3Storage implements Storage {
         ).get();
     }
 
-    private LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> streams) {
-        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::getStreamId, StreamMetadata::getEndOffset));
+    LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams) {
+        Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::getStreamId, StreamMetadata::getEndOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
         long logEndOffset = -1L;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
@@ -141,7 +141,12 @@ public class S3Storage implements Storage {
             ByteBuf recordBuf = Unpooled.wrappedBuffer(recoverResult.record());
             StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
             long streamId = streamRecordBatch.getStreamId();
-            if (streamRecordBatch.getBaseOffset() < streamEndOffsets.getOrDefault(streamId, 0L)) {
+            Long openingStreamEndOffset = openingStreamEndOffsets.get(streamId);
+            if (openingStreamEndOffset == null) {
+                // stream is already safe closed. so skip the stream records.
+                continue;
+            }
+            if (streamRecordBatch.getBaseOffset() < openingStreamEndOffset) {
                 // filter committed records.
                 continue;
             }
@@ -157,7 +162,7 @@ public class S3Storage implements Storage {
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
                 long startOffset = records.get(0).getBaseOffset();
-                long expectedStartOffset = streamEndOffsets.getOrDefault(streamId, startOffset);
+                long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
                 if (startOffset > expectedStartOffset) {
                     throw new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %s endOffset=%s from controller" +
                             "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
