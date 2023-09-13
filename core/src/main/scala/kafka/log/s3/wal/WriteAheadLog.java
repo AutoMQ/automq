@@ -85,9 +85,10 @@ public interface WriteAheadLog {
     interface RecoverResult {
         ByteBuffer record();
 
-        long recordBodyOffset();
-
-        int length();
+        /**
+         * @see AppendResult#recordOffset()
+         */
+        long recordOffset();
     }
 
     class OverCapacityException extends Exception {

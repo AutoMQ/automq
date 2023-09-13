@@ -27,8 +27,6 @@ public interface WriteRecordTask {
     // startOffset 包含了 Record header 的大小
     long startOffset();
 
-    AppendResult appendResult();
-
     CompletableFuture<AppendResult.CallbackResult> future();
 
     ByteBuffer recordHeader();
