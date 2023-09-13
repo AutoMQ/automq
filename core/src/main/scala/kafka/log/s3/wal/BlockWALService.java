@@ -109,10 +109,11 @@ public class BlockWALService implements WriteAheadLog {
         if (recoverWALFinished.get()) {
             long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
             try {
-                walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis()) //
-                        .setSlidingWindowStartOffset(windowStartOffset) //
-                        .setSlidingWindowMaxLength(windowMaxLength) //
-                        .setSlidingWindowNextWriteOffset(windowNextWriteOffset) //
+                walHeaderCoreData
+                        .setLastWriteTimestamp(System.currentTimeMillis())
+                        .setSlidingWindowStartOffset(windowStartOffset)
+                        .setSlidingWindowMaxLength(windowMaxLength)
+                        .setSlidingWindowNextWriteOffset(windowNextWriteOffset)
                         .setShutdownType(shutdownType);
                 this.walChannel.write(walHeaderCoreData.marshal(), position);
                 LOGGER.info("flushWALHeader success, position: {}, walHeader: {}", position, walHeaderCoreData);
@@ -129,16 +130,18 @@ public class BlockWALService implements WriteAheadLog {
             int read = walChannel.read(recordHeader, position);
             // 检查点：无法读取 RecordHeader
             if (read != RECORD_HEADER_SIZE) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                        String.format("read[%d] != RecordHeaderSize", read) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("read[%d] != RecordHeaderSize", read)
                 );
             }
 
             SlidingWindowService.RecordHeaderCoreData readRecordHeader = SlidingWindowService.RecordHeaderCoreData.unmarshal(recordHeader.position(0).limit(RECORD_HEADER_SIZE));
             // 检查点：RecordHeaderMagicCode 不匹配，可能遇到了损坏的数据
             if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                        String.format("readRecordHeader.getMagicCode()[%d] != RecordHeaderMagicCode[%d]", readRecordHeader.getMagicCode(), RECORD_HEADER_MAGIC_CODE) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("readRecordHeader.getMagicCode()[%d] != RecordHeaderMagicCode[%d]", readRecordHeader.getMagicCode(), RECORD_HEADER_MAGIC_CODE)
                 );
             }
 
@@ -149,15 +152,17 @@ public class BlockWALService implements WriteAheadLog {
 
             // 检查点：RecordHeaderCRC 不匹配，可能遇到了损坏的数据
             if (recordHeaderCRC != WALUtil.crc32(recordHeader.array(), 0, RECORD_HEADER_SIZE - 4)) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                        String.format("recordHeaderCRC[%d] != WALUtil.crc32(recordHeader.array(), 0, RecordHeaderSize - 4)[%d]", recordHeaderCRC, WALUtil.crc32(recordHeader.array(), 0, RECORD_HEADER_SIZE - 4)) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("recordHeaderCRC[%d] != WALUtil.crc32(recordHeader.array(), 0, RecordHeaderSize - 4)[%d]", recordHeaderCRC, WALUtil.crc32(recordHeader.array(), 0, RECORD_HEADER_SIZE - 4))
                 );
             }
 
             // 检查点：RecordBodyLength <= 0，可能遇到了损坏的数据
             if (recordBodyLength <= 0) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                        String.format("recordBodyLength[%d] <= 0", recordBodyLength) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("recordBodyLength[%d] <= 0", recordBodyLength)
                 );
             }
 
@@ -165,8 +170,9 @@ public class BlockWALService implements WriteAheadLog {
             read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity()));
             // 检查点：无法读取 RecordBody
             if (read != recordBodyLength) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength), //
-                        String.format("read[%d] != recordBodyLength[%d]", read, recordBodyLength) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
+                        String.format("read[%d] != recordBodyLength[%d]", read, recordBodyLength)
                 );
             }
 
@@ -174,22 +180,25 @@ public class BlockWALService implements WriteAheadLog {
 
             // 检查点：RecordBodyCRC 不匹配，可能遇到了损坏的数据
             if (recordBodyCRC != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength), //
-                        String.format("recordBodyCRC[%d] != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())[%d]", recordBodyCRC, WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
+                        String.format("recordBodyCRC[%d] != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())[%d]", recordBodyCRC, WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit()))
                 );
             }
 
             // 检查点：recordBodyOffset 不匹配，可能遇到了RingBuffer轮转的旧数据
             if (recordBodyOffset != recoverStartOffset + RECORD_HEADER_SIZE) {
-                throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                        String.format("recordBodyOffset[%d] != recoverStartOffset[%d] + RecordHeaderSize[%d]", recordBodyOffset, recoverStartOffset, RECORD_HEADER_SIZE) //
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("recordBodyOffset[%d] != recoverStartOffset[%d] + RecordHeaderSize[%d]", recordBodyOffset, recoverStartOffset, RECORD_HEADER_SIZE)
                 );
             }
 
             return new ImmutablePair<>(readRecordHeader, recordBody.position(0));
         } catch (Throwable e) {
-            throw new ReadRecordException(WALUtil.alignNextBlock(recoverStartOffset), //
-                    String.format("readRecord Exception: %s", e.getMessage()) //
+            throw new ReadRecordException(
+                    WALUtil.alignNextBlock(recoverStartOffset),
+                    String.format("readRecord Exception: %s", e.getMessage())
             );
         }
     }
@@ -247,7 +256,7 @@ public class BlockWALService implements WriteAheadLog {
                     walHeaderCoreDataAvailable = walHeadersRecoveredCoreData[i];
                 }
             } catch (Throwable e) {
-                LOGGER.error("recoverWALHeader IOException {}", e.getMessage());
+                // failed to parse WALHeader, ignore
             }
         }
 
@@ -256,8 +265,9 @@ public class BlockWALService implements WriteAheadLog {
             walHeaderCoreData = recoverEntireWALAndCorrectWALHeader(walHeaderCoreDataAvailable);
             LOGGER.info("recoverEntireWALAndCorrectWALHeader success, walHeader: {}", walHeaderCoreData);
         } else {
-            walHeaderCoreData = new WALHeaderCoreData().setCapacity(walChannel.capacity()) //
-                    .setTrimOffset(0) //
+            walHeaderCoreData = new WALHeaderCoreData()
+                    .setCapacity(walChannel.capacity())
+                    .setTrimOffset(0)
                     .setLastWriteTimestamp(System.currentTimeMillis())
                     .setSlidingWindowNextWriteOffset(0)
                     .setSlidingWindowStartOffset(0)
@@ -266,10 +276,10 @@ public class BlockWALService implements WriteAheadLog {
             flushWALHeader(0, 1024 * 1024, 0, ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
-        slidingWindowService.resetWindowWhenRecoverOver(//
-                walHeaderCoreData.getSlidingWindowStartOffset(), //
-                walHeaderCoreData.getSlidingWindowNextWriteOffset(), //
-                walHeaderCoreData.getSlidingWindowMaxLength() //
+        slidingWindowService.resetWindowWhenRecoverOver(
+                walHeaderCoreData.getSlidingWindowStartOffset(),
+                walHeaderCoreData.getSlidingWindowNextWriteOffset(),
+                walHeaderCoreData.getSlidingWindowMaxLength()
         );
     }
 
@@ -287,10 +297,12 @@ public class BlockWALService implements WriteAheadLog {
     public void shutdownGracefully() {
         scheduledExecutorService.shutdown();
         slidingWindowService.shutdown();
-        flushWALHeader(slidingWindowService.getWindowCoreData().getWindowStartOffset().get(), //
-                slidingWindowService.getWindowCoreData().getWindowMaxLength().get(), //
-                slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(), //
-                ShutdownType.GRACEFULLY);
+        flushWALHeader(
+                slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
+                slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
+                slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
+                ShutdownType.GRACEFULLY
+        );
         walChannel.close();
     }
 
@@ -329,9 +341,10 @@ public class BlockWALService implements WriteAheadLog {
             @Override
             public ByteBuffer recordHeader() {
                 SlidingWindowService.RecordHeaderCoreData recordHeaderCoreData = new SlidingWindowService.RecordHeaderCoreData();
-                recordHeaderCoreData.setMagicCode(RECORD_HEADER_MAGIC_CODE) //
-                        .setRecordBodyLength(record.limit()) //
-                        .setRecordBodyOffset(expectedWriteOffset + RECORD_HEADER_SIZE) //
+                recordHeaderCoreData
+                        .setMagicCode(RECORD_HEADER_MAGIC_CODE)
+                        .setRecordBodyLength(record.limit())
+                        .setRecordBodyOffset(expectedWriteOffset + RECORD_HEADER_SIZE)
                         .setRecordBodyCRC(recordBodyCRC);
                 return recordHeaderCoreData.marshal();
             }
@@ -369,11 +382,7 @@ public class BlockWALService implements WriteAheadLog {
     @Override
     public void trim(long offset) {
         // TODO: silent reject offset less than current trimOffset
-        if (offset % WALUtil.BLOCK_SIZE == 0) {
-            walHeaderCoreData.setTrimOffset(offset);
-        } else {
-            walHeaderCoreData.setTrimOffset(offset - RECORD_HEADER_SIZE);
-        }
+        walHeaderCoreData.setTrimOffset(offset);
     }
 
     static class WALHeaderCoreData {
@@ -512,9 +521,10 @@ public class BlockWALService implements WriteAheadLog {
 
 
     public static class BlockWALServiceBuilder {
-        private int ioThreadNums = Integer.parseInt(System.getProperty(//
-                "automq.ebswal.ioThreadNums", //
-                "8"));
+        private int ioThreadNums = Integer.parseInt(System.getProperty(
+                "automq.ebswal.ioThreadNums",
+                "8"
+        ));
         private String blockDevicePath;
         private long blockDeviceCapacityWant = 0;
 
@@ -683,4 +693,3 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 }
-

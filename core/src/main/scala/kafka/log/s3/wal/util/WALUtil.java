@@ -21,9 +21,10 @@ import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
 public class WALUtil {
-    public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.blocksize", //
-            "4096"));
+    public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
+            "automq.ebswal.blocksize",
+            "4096"
+    ));
 
     public static int crc32(byte[] array, int offset, int length) {
         CRC32 crc32 = new CRC32();

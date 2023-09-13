@@ -25,17 +25,20 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 public class WALBlockDeviceChannel implements WALChannel {
-    private static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.blocksize", //
-            "4096"));
+    private static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
+            "automq.ebswal.blocksize",
+            "4096"
+    ));
     private static final DirectIOLib DIRECT_IO_LIB = DirectIOLib.getLibForPath("/");
-    private static final int PREALLOCATED_BYTE_BUFFER_SIZE = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.preallocatedByteBufferSize", //
-            String.valueOf(1024 * 1024 * 2)));
+    private static final int PREALLOCATED_BYTE_BUFFER_SIZE = Integer.parseInt(System.getProperty(
+            "automq.ebswal.preallocatedByteBufferSize",
+            String.valueOf(1024 * 1024 * 2)
+    ));
 
-    private static final int PREALLOCATED_BYTE_BUFFER_MAX_SIZE = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.preallocatedByteBufferMaxSize", //
-            String.valueOf(1024 * 1024 * 16)));
+    private static final int PREALLOCATED_BYTE_BUFFER_MAX_SIZE = Integer.parseInt(System.getProperty(
+            "automq.ebswal.preallocatedByteBufferMaxSize",
+            String.valueOf(1024 * 1024 * 16)
+    ));
 
     final String blockDevicePath;
     final long capacityWant;

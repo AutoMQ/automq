@@ -42,21 +42,24 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
 
 /**
- * 维护滑动窗口，单线程写入，AIO 线程池异步通知调用方。
+ * 维护滑动窗口，AIO 线程池异步写入并通知调用方。
  * 滑动窗口容量不足时，单线程停止当前操作，执行同步扩容操作。
  * AIO 线程池返回时，同步更新滑动窗口的起始 Offset。
  */
 public class SlidingWindowService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
-    private static final long SLIDING_WINDOW_UPPER_LIMIT = Long.parseLong(System.getProperty(//
-            "automq.ebswal.slidingWindowUpperLimit", //
-            String.valueOf(1024 * 1024 * 512)));
-    private static final long SLIDING_WINDOW_SCALE_UNIT = Long.parseLong(System.getProperty(//
-            "automq.ebswal.slidingWindowScaleUnit", //
-            String.valueOf(1024 * 1024 * 16)));
-    private static final int WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY = Integer.parseInt(System.getProperty(//
-            "automq.ebswal.writeRecordTaskWorkQueueCapacity", //
-            String.valueOf(10000)));
+    private static final long SLIDING_WINDOW_UPPER_LIMIT = Long.parseLong(System.getProperty(
+            "automq.ebswal.slidingWindowUpperLimit",
+            String.valueOf(1024 * 1024 * 512)
+    ));
+    private static final long SLIDING_WINDOW_SCALE_UNIT = Long.parseLong(System.getProperty(
+            "automq.ebswal.slidingWindowScaleUnit",
+            String.valueOf(1024 * 1024 * 16)
+    ));
+    private static final int WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY = Integer.parseInt(System.getProperty(
+            "automq.ebswal.writeRecordTaskWorkQueueCapacity",
+            String.valueOf(10000)
+    ));
     private final int ioThreadNums;
     private final WALChannel walChannel;
     private final WindowCoreData windowCoreData = new WindowCoreData();
@@ -101,8 +104,8 @@ public class SlidingWindowService {
         int totalWriteSize = RECORD_HEADER_SIZE + recordBodyLength;
 
         // 计算写入 wal offset
-        long lastWriteOffset = 0;
-        long expectedWriteOffset = 0;
+        long lastWriteOffset;
+        long expectedWriteOffset;
         do {
             lastWriteOffset = windowCoreData.getWindowNextWriteOffset().get();
 
@@ -116,8 +119,8 @@ public class SlidingWindowService {
 
             // 如果 trim 不及时，会导致写 RingBuffer 覆盖有效数据，抛异常
             if (expectedWriteOffset + totalWriteSize - trimOffset > recordSectionCapacity) {
-                throw new OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d]",
-                        expectedWriteOffset, trimOffset, totalWriteSize), windowCoreData.getWindowStartOffset().get());
+                throw new OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d] recordSectionCapacity [%d]",
+                        expectedWriteOffset, trimOffset, totalWriteSize, recordSectionCapacity));
             }
 
         } while (!windowCoreData.getWindowNextWriteOffset().compareAndSet(lastWriteOffset, expectedWriteOffset + totalWriteSize));
@@ -154,7 +157,7 @@ public class SlidingWindowService {
                 try {
                     // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
                     String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, SLIDING_WINDOW_UPPER_LIMIT);
-                    writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage, windowCoreData.getWindowStartOffset().get()));
+                    writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage));
                 } catch (Throwable ignored) {
                 }
                 return false;
@@ -236,12 +239,12 @@ public class SlidingWindowService {
 
         @Override
         public String toString() {
-            return "RecordHeaderCoreData{" + //
-                    "magicCode=" + magicCodePos0 + //
-                    ", recordBodyLength=" + recordBodyLengthPos1 + //
-                    ", recordBodyOffset=" + recordBodyOffsetPos2 + //
-                    ", recordBodyCRC=" + recordBodyCRCPos3 + //
-                    ", recordHeaderCRC=" + recordHeaderCRCPos4 + //
+            return "RecordHeaderCoreData{" +
+                    "magicCode=" + magicCodePos0 +
+                    ", recordBodyLength=" + recordBodyLengthPos1 +
+                    ", recordBodyOffset=" + recordBodyOffsetPos2 +
+                    ", recordBodyCRC=" + recordBodyCRCPos3 +
+                    ", recordHeaderCRC=" + recordHeaderCRCPos4 +
                     '}';
         }
 
@@ -329,7 +332,7 @@ public class SlidingWindowService {
             } finally {
                 treeMapIOTaskRequestLock.unlock();
                 if (scaleWindowHappend) {
-                    LOGGER.info("[KEY_EVENT_001] Sliding window is too small to start the scale process, windowStartOffset [{}] newWindowEndOffset  [{}] new window size [{}]", //
+                    LOGGER.info("[KEY_EVENT_001] Sliding window is too small to start the scale process, windowStartOffset [{}] newWindowEndOffset  [{}] new window size [{}]",
                             windowStartOffset.get(),
                             newWindowEndOffset,
                             newWindowMaxLength
@@ -370,9 +373,9 @@ public class SlidingWindowService {
 
                         @Override
                         public String toString() {
-                            return "CallbackResult{" + //
-                                    "slidingWindowMinOffset=" + flushedOffset() + //
-                                    ", appendResult=" + appendResult() + //
+                            return "CallbackResult{" +
+                                    "slidingWindowMinOffset=" + flushedOffset() +
+                                    ", appendResult=" + appendResult() +
                                     '}';
                         }
                     });
