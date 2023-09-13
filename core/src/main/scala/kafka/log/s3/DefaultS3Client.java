@@ -78,7 +78,6 @@ public class DefaultS3Client implements Client {
         this.storage.startup();
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
-
         // TODO: startup method
     }
 

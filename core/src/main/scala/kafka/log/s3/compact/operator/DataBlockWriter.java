@@ -45,7 +45,7 @@ public class DataBlockWriter {
 
     public DataBlockWriter(long objectId, S3Operator s3Operator, int partSizeThreshold) {
         this.objectId = objectId;
-        String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
+        String objectKey = ObjectUtils.genKey(0, objectId);
         this.partSizeThreshold = partSizeThreshold;
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
@@ -70,7 +70,7 @@ public class DataBlockWriter {
 
     public void copyWrite(StreamDataBlock dataBlock) {
         // size of data block is always smaller than MAX_PART_SIZE, no need to split into multiple parts
-        String originObjectKey = ObjectUtils.genKey(0, "todocluster", dataBlock.getObjectId());
+        String originObjectKey = ObjectUtils.genKey(0, dataBlock.getObjectId());
         writer.copyWrite(originObjectKey,
                 dataBlock.getBlockPosition(), dataBlock.getBlockPosition() + dataBlock.getBlockSize());
         completedBlocks.add(dataBlock);

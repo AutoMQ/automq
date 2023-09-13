@@ -19,12 +19,24 @@ package org.apache.kafka.metadata.stream;
 
 public class ObjectUtils {
     public static final long NOOP_OBJECT_ID = -1L;
+    private static String namespace = "DEFAULT";
 
-    public static String genKey(int version, String clusterName, long objectId) {
+    public static void setNamespace(String namespace) {
+        ObjectUtils.namespace = namespace;
+    }
+
+    public static String genKey(int version, long objectId) {
+        if (namespace.isEmpty()) {
+            throw new IllegalStateException("NAMESPACE is not set");
+        }
+        return genKey(version, namespace, objectId);
+    }
+
+    public static String genKey(int version, String namespace, long objectId) {
         if (version == 0) {
             String objectIdHex = String.format("%08x", objectId);
             String hashPrefix = new StringBuilder(objectIdHex).reverse().toString();
-            return hashPrefix + "/" + clusterName + "/" + objectId;
+            return hashPrefix + "/" + namespace + "/" + objectId;
         } else {
             throw new UnsupportedOperationException("Unsupported version: " + version);
         }
