@@ -45,7 +45,7 @@ default_num_nodes=14
 default_jdk="openjdk:11"
 
 # The default ducker-ak image name.
-default_image_name="ducker-ak-esk"
+default_image_name="ducker-ak-kos"
 
 # The default apt/pip mirror URL. By default, no mirror is used.
 default_general_mirror_url=""
@@ -369,13 +369,17 @@ attempting to start new ones."
     if docker network inspect ducknet &>/dev/null; then
         must_do -v docker network rm ducknet
     fi
-    must_do -v docker network create ducknet
+    must_do -v docker network create --subnet=10.5.0.0/16 ducknet
 
     # elastic stream insert start
     # must_do -v docker run --network=ducknet --name redis -d redis:7
     # start es cluster
-    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
     # elastic stream insert end
+
+    # Kafka on S3 inject start
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
+    # Kafka on S3 inject end
 
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
@@ -405,6 +409,12 @@ attempting to start new ones."
     echo "ducker_up: added the latest entries to /etc/hosts on each node."
     generate_cluster_json_file "${num_nodes}" "${ducker_dir}/build/cluster.json"
     echo "ducker_up: successfully wrote ${ducker_dir}/build/cluster.json"
+
+    # Kafka on S3 inject start
+    must_do -v awslocal s3api create-bucket --bucket ko3
+    echo "ducker_up: bucket ready for tests"
+    # Kafka on S3 inject end
+
     echo "** ducker_up: successfully brought up ${num_nodes} nodes."
 }
 
@@ -591,8 +601,14 @@ ducker_down() {
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
     # elastic stream insert start
     # remove es
-    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
     # elastic stream insert end
+
+    # Kafka on S3 inject start
+    # remove s3
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
+    must_do -v rm -rf ${ducker_dir}/s3/volume
+    # Kafka on S3 inject end
 }
 
 ducker_purge() {

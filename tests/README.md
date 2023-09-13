@@ -12,6 +12,7 @@ Docker containers can be used for running kafka system tests locally.
 * Requirements
   - Docker 1.12.3 (or higher) is installed and running on the machine.
   - Test requires that Kafka, including system test libs, is built. This can be done by running
+  - [awslocal](https://docs.localstack.cloud/user-guide/integrations/aws-cli/) is installed on the machine. It is used to prepare S3 bucket before tests.
 ```
 ./gradlew clean systemTestLibs
 ```
