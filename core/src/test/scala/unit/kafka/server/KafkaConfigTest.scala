@@ -951,7 +951,6 @@ class KafkaConfigTest {
 
         // elastic stream inject start
         case KafkaConfig.ElasticStreamEndpointProp => // ignore string
-        case KafkaConfig.ElasticStreamKvEndpointProp => // ignore string
         case KafkaConfig.ElasticStreamNamespaceProp => // ignore string
         // elastic stream inject end
 

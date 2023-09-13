@@ -20,12 +20,12 @@ package kafka.log.es
 import kafka.log.es.ElasticLogManager.NAMESPACE
 import kafka.log.es.api.Client
 import kafka.log.es.client.{ClientFactoryProxy, Context}
-import kafka.log.s3.DefaultS3Client
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
+import org.apache.kafka.metadata.stream.ObjectUtils
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -115,21 +115,19 @@ class ElasticLogManager(val client: Client) extends Logging {
 object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
-  var DEFAULT_CLIENT: Option[DefaultS3Client] = None
 
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null, appendWithAsyncCallbacks: Boolean = true): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
     }
 
-    // TODO: modify kafka on es repo to support SPI
-    // FIXME: S3Client will cause ElasticLogSegmentTest fail
-    //    if (true) {
-    //      val streamClient = new AlwaysSuccessClient(new S3Client());
-    //      INSTANCE = Some(new ElasticLogManager(streamClient))
-    //      return true
-    //    }
-
+    val namespace = config.elasticStreamNamespace
+    NAMESPACE = if (namespace == null || namespace.isEmpty) {
+      "_kafka_" + clusterId
+    } else {
+      namespace
+    }
+    ObjectUtils.setNamespace(NAMESPACE)
 
     val endpoint = config.elasticStreamEndpoint
     if (endpoint == null) {
@@ -140,13 +138,6 @@ object ElasticLogManager {
     context.brokerServer = broker
     context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
-
-    val namespace = config.elasticStreamNamespace
-    NAMESPACE = if (namespace == null || namespace.isEmpty) {
-      "_kafka_" + clusterId
-    } else {
-      namespace
-    }
     true
   }
 

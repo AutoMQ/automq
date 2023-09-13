@@ -41,7 +41,7 @@ import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
-import org.apache.kafka.metadata.stream.S3Config
+import org.apache.kafka.metadata.stream.{ObjectUtils, S3Config}
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.ApiMessageAndVersion
@@ -210,7 +210,18 @@ class ControllerServer(
         }
 
         val maxIdleIntervalNs = config.metadataMaxIdleIntervalNs.fold(OptionalLong.empty)(OptionalLong.of)
+
+        // elastic stream inject start
         val s3Config = new S3Config(config.s3Region, config.s3Bucket)
+        var namespace = config.elasticStreamNamespace
+        namespace =  if (namespace == null || namespace.isEmpty) {
+          "_kafka_" + clusterId
+        } else {
+          namespace
+        }
+        ObjectUtils.setNamespace(namespace)
+        // elastic stream inject end
+
         new QuorumController.Builder(config.nodeId, sharedServer.metaProps.clusterId).
           setTime(time).
           setThreadNamePrefix(threadNamePrefix).

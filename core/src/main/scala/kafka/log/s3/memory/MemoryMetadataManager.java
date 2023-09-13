@@ -366,7 +366,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     private S3Object prepareObject(long objectId, long ttl) {
         long preparedTs = System.currentTimeMillis();
-        String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
+        String objectKey = ObjectUtils.genKey(0, objectId);
         return new S3Object(
                 objectId, -1, objectKey,
                 preparedTs, preparedTs + ttl, -1, -1,

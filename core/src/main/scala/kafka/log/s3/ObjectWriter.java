@@ -86,7 +86,7 @@ public interface ObjectWriter {
         public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
             this.objectId = objectId;
             // TODO: use a better clusterName
-            String objectKey = ObjectUtils.genKey(0, "todocluster", objectId);
+            String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
