@@ -74,6 +74,7 @@ public class BlockWALService implements WriteAheadLog {
     public static final int WAL_HEADER_SIZE = 4 + 8 + 8 + 8 + 8 + 8 + 8 + 4 + 4;
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_CAPACITY_DOUBLE = WAL_HEADER_CAPACITY * 2;
+    public static final long WAL_HEADER_INIT_WINDOW_MAX_LENGTH = 1024 * 1024;
     private final AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private ScheduledExecutorService scheduledExecutorService;
@@ -271,9 +272,9 @@ public class BlockWALService implements WriteAheadLog {
                     .setLastWriteTimestamp(System.currentTimeMillis())
                     .setSlidingWindowNextWriteOffset(0)
                     .setSlidingWindowStartOffset(0)
-                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, 1024 * 1024))
+                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, WAL_HEADER_INIT_WINDOW_MAX_LENGTH))
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
-            flushWALHeader(0, 1024 * 1024, 0, ShutdownType.UNGRACEFULLY);
+            flushWALHeader(0, WAL_HEADER_INIT_WINDOW_MAX_LENGTH, 0, ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
         slidingWindowService.resetWindowWhenRecoverOver(

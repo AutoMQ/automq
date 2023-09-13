@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_INIT_WINDOW_MAX_LENGTH;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
@@ -61,7 +62,8 @@ class BlockWALServiceTest {
 
     @Test
     void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
-        final int recordSize = 4096 + 1;
+        // Set to WAL_HEADER_INIT_WINDOW_MAX_LENGTH to trigger window scale
+        final int recordSize = (int) WAL_HEADER_INIT_WINDOW_MAX_LENGTH + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
 
