@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
@@ -39,6 +40,7 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,7 +60,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void singleThreadAppend() throws IOException, OverCapacityException {
+    void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
@@ -87,6 +89,52 @@ class BlockWALServiceTest {
         }
     }
 
+    @Test
+    void testSingleThreadAppendWhenOverCapacity() throws IOException {
+        final int recordSize = 4096 + 1;
+        final int recordNums = 10;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_CAPACITY_DOUBLE;
+        final int retryTimes = 10;
+
+        final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
+                .capacity(blockDeviceCapacity)
+                .blockDevicePath(TestUtils.tempFilePath())
+                .ioThreadNums(IO_THREAD_NUMS)
+                .createBlockWALService().start();
+        try {
+            AtomicLong appendedOffset = new AtomicLong(0);
+            for (int i = 0; i < recordNums; i++) {
+                ByteBuf data = TestUtils.random(recordSize);
+                AppendResult appendResult = null;
+
+                for (int j = 0; j < retryTimes; j++) {
+                    try {
+                        appendResult = wal.append(data);
+                    } catch (OverCapacityException e) {
+                        wal.trim(appendedOffset.get());
+                        continue;
+                    }
+                    break;
+                }
+                assertNotNull(appendResult, "failed to append due to over capacity");
+
+                final long recordOffset = appendResult.recordOffset();
+                appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                    assertNull(throwable);
+                    assertTrue(callbackResult.flushedOffset() > recordOffset);
+                    assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+
+                    // Update the appended offset.
+                    long old;
+                    do {
+                        old = appendedOffset.get();
+                    } while (!appendedOffset.compareAndSet(old, recordOffset));
+                });
+            }
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
 
     void appendManyRecord(int recordTotal, String blockDeviceName) throws IOException {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
@@ -122,7 +170,7 @@ class BlockWALServiceTest {
 
 
     @Test
-    void singleThreadRecover() throws IOException, InterruptedException {
+    void testSingleThreadRecover() throws IOException, InterruptedException {
         final String tempFilePath = TestUtils.tempFilePath();
         appendManyRecord(1024, tempFilePath);
 
@@ -151,7 +199,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void multiThreadAppend() throws InterruptedException, IOException {
+    void testMultiThreadAppend() throws InterruptedException, IOException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final int nThreadNums = 8;
