@@ -55,7 +55,7 @@ class WALChannelTest {
     }
 
     @Test
-    void writeAndRead() throws IOException {
+    void testWriteAndRead() throws IOException {
         ByteBuffer byteBuffer = createRandomTextByteBuffer(1024 * 3);
         for (int i = 0; i < 100; i++) {
             try {
