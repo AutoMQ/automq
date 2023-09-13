@@ -24,10 +24,10 @@ public class CompactedObject {
     private final List<StreamDataBlock> streamDataBlocks;
     private final long size;
 
-    public CompactedObject(CompactionType type, List<StreamDataBlock> streamDataBlocks, long size) {
+    public CompactedObject(CompactionType type, List<StreamDataBlock> streamDataBlocks) {
         this.type = type;
         this.streamDataBlocks = streamDataBlocks;
-        this.size = size;
+        this.size = streamDataBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
     }
 
     public CompactionType type() {

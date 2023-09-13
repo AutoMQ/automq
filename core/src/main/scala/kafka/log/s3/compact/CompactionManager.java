@@ -113,6 +113,11 @@ public class CompactionManager {
         long start = System.currentTimeMillis();
         CommitWALObjectRequest request = buildCompactRequest(s3ObjectMetadata);
 
+        if (request.getCompactedObjectIds().isEmpty()) {
+            logger.info("No need to compact");
+            return CompletableFuture.completedFuture(CompactResult.SKIPPED);
+        }
+
         logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - start);
         return objectManager.commitWALObject(request).thenApply(resp -> {
             logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
@@ -261,25 +266,22 @@ public class CompactionManager {
                 });
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
-            CompletableFuture<CompletableFuture<Void>> walObjectCF = null;
+            CompletableFuture<Void> walObjectCF = null;
             List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
             for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
                 if (compactedObject.type() == CompactionType.COMPACT) {
                     objectStreamRanges = CompactionUtils.buildObjectStreamRange(compactedObject);
-                    walObjectCF = uploader.writeWALObject(compactedObject);
+                    walObjectCF = uploader.chainWriteWALObject(walObjectCF, compactedObject);
                 } else {
                     streamObjectCFList.add(uploader.writeStreamObject(compactedObject));
                 }
             }
+
             // wait for all stream objects and wal object part to be uploaded
             try {
                 if (walObjectCF != null) {
-                    // wait for all blocks to be uploaded or added to waiting list
-                    CompletableFuture<Void> writeObjectCF = walObjectCF.join();
-                    // force upload all blocks still in waiting list
-                    uploader.forceUploadWAL();
-                    // wait for all blocks to be uploaded
-                    writeObjectCF.join();
+                    // wait for all writes done
+                    walObjectCF.thenAccept(v -> uploader.forceUploadWAL()).join();
                     objectStreamRanges.forEach(request::addStreamRange);
                 }
                 streamObjectCFList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);

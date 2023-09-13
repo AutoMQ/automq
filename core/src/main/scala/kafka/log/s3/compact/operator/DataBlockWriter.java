@@ -57,15 +57,13 @@ public class DataBlockWriter {
         return objectId;
     }
 
-    public CompletableFuture<Void> write(StreamDataBlock dataBlock) {
-        CompletableFuture<Void> writeCf = new CompletableFuture<>();
-        waitingUploadBlockCfs.put(dataBlock, writeCf);
+    public void write(StreamDataBlock dataBlock) {
+        waitingUploadBlockCfs.put(dataBlock, new CompletableFuture<>());
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
         if (waitingUploadSize >= partSizeThreshold) {
             uploadWaitingList();
         }
-        return writeCf;
     }
 
     public void copyWrite(StreamDataBlock dataBlock) {
@@ -77,7 +75,12 @@ public class DataBlockWriter {
         nextDataBlockPosition += dataBlock.getBlockSize();
     }
 
-    public void uploadWaitingList() {
+    public CompletableFuture<Void> forceUpload() {
+        uploadWaitingList();
+        return CompletableFuture.allOf(waitingUploadBlockCfs.values().toArray(new CompletableFuture[0]));
+    }
+
+    private void uploadWaitingList() {
         CompositeByteBuf partBuf = Unpooled.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             partBuf.addComponent(true, block.getDataCf().join());
@@ -91,6 +94,12 @@ public class DataBlockWriter {
                 waitingUploadBlockCfs.remove(block);
             }
         });
+        if (writer.hashBatchingPart()) {
+            // prevent blocking on part that's waiting for batch when force upload waiting list
+            for (StreamDataBlock block : blocks) {
+                waitingUploadBlockCfs.remove(block);
+            }
+        }
         waitingUploadBlocks.clear();
     }
 

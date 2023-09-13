@@ -266,9 +266,10 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
         try {
             if (!hasAvailableBrokerInUse()) {
                 if (this.consumer != null) {
-                    this.consumer.close();
+                    logger.info("No available broker in use, try to close current consumer");
+                    this.consumer.close(Duration.ofSeconds(5));
                     this.consumer = null;
-                    logger.warn("No available broker found, close consumer");
+                    logger.info("Consumer closed");
                 }
                 while (!shutdown && !hasAvailableBroker()) {
                     try {

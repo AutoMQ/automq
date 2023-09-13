@@ -62,6 +62,11 @@ public class MemoryS3Operator implements S3Operator {
             }
 
             @Override
+            public boolean hashBatchingPart() {
+                return false;
+            }
+
+            @Override
             public void copyWrite(String sourcePath, long start, long end) {
                 ByteBuf source = storage.get(sourcePath);
                 if (source == null) {
