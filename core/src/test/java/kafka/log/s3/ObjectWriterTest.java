@@ -41,7 +41,7 @@ public class ObjectWriterTest {
         S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.WAL);
 
         S3Operator s3Operator = new MemoryS3Operator();
-        ObjectWriter objectWriter = new ObjectWriter(1, s3Operator, 1024, 1024);
+        ObjectWriter objectWriter = ObjectWriter.writer(1, s3Operator, 1024, 1024);
         StreamRecordBatch r1 = newRecord(233, 10, 5, 512);
         StreamRecordBatch r2 = newRecord(233, 15, 10, 512);
         StreamRecordBatch r3 = newRecord(233, 25, 5, 512);
