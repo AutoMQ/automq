@@ -23,18 +23,16 @@ import kafka.log.s3.model.StreamRecordBatch;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache {
     private final long maxSize;
@@ -42,12 +40,24 @@ public class BlockCache {
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
     private final LRUCache<CacheKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+    private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
     }
 
     public void put(long streamId, List<StreamRecordBatch> records) {
+        try {
+            writeLock.lock();
+            put0(streamId, records);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    public void put0(long streamId, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
             records.forEach(StreamRecordBatch::release);
             return;
@@ -106,11 +116,21 @@ public class BlockCache {
 
     }
 
+
     /**
      * Get records from cache.
      * Note: the records is retained, the caller should release it.
      */
     public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        try {
+            readLock.lock();
+            return get0(streamId, startOffset, endOffset, maxBytes);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    public GetCacheResult get0(long streamId, long startOffset, long endOffset, int maxBytes) {
         NavigableMap<Long, CacheBlock> streamCache = stream2cache.get(streamId);
         if (streamCache == null) {
             return GetCacheResult.empty();
@@ -291,43 +311,6 @@ public class BlockCache {
 
         public int getSize() {
             return size;
-        }
-    }
-
-    static class LRUCache<K, V> {
-        private final LinkedHashMap<K, V> cache;
-        private final Set<Map.Entry<K, V>> cacheEntrySet;
-
-        public LRUCache() {
-            cache = new LinkedHashMap<>(16, .75f, true);
-            cacheEntrySet = cache.entrySet();
-        }
-
-        public boolean touch(K key) {
-            return cache.get(key) != null;
-        }
-
-        public void put(K key, V value) {
-            if (cache.put(key, value) != null) {
-                touch(key);
-            }
-        }
-
-        public Map.Entry<K, V> pop() {
-            Iterator<Map.Entry<K, V>> it = cacheEntrySet.iterator();
-            if (!it.hasNext()) {
-                return null;
-            }
-            Map.Entry<K, V> entry = it.next();
-            if (entry == null) {
-                return null;
-            }
-            it.remove();
-            return entry;
-        }
-
-        public boolean remove(K key) {
-            return cache.remove(key) != null;
         }
     }
 

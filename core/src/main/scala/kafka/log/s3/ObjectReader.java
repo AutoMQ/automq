@@ -37,12 +37,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static kafka.log.s3.ObjectWriter.Footer.FOOTER_SIZE;
 
-public class ObjectReader {
+public class ObjectReader implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final S3Operator s3Operator;
     private final CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+    private final AtomicInteger refCount = new AtomicInteger(1);
 
     public ObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
         this.metadata = metadata;
@@ -58,7 +59,11 @@ public class ObjectReader {
     }
 
     public CompletableFuture<List<DataBlockIndex>> find(long streamId, long startOffset, long endOffset) {
-        return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset));
+        return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
+    }
+
+    public CompletableFuture<List<DataBlockIndex>> find(long streamId, long startOffset, long endOffset, int maxBytes) {
+        return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
     public CompletableFuture<DataBlock> read(DataBlockIndex block) {
@@ -87,7 +92,28 @@ public class ObjectReader {
         });
     }
 
-    static class BasicObjectInfo {
+    public ObjectReader retain() {
+        refCount.incrementAndGet();
+        return this;
+    }
+
+    public ObjectReader release() {
+        if (refCount.decrementAndGet() == 0) {
+            close0();
+        }
+        return this;
+    }
+
+    @Override
+    public void close() {
+        release();
+    }
+
+    public void close0() {
+        basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+    }
+
+    public static class BasicObjectInfo {
         /**
          * The total size of the data blocks, which equals to index start position.
          */
@@ -116,14 +142,16 @@ public class ObjectReader {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + indexBlockSize + FOOTER_SIZE < objectSize) {
+                objectTailBuf.release();
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
                 ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
                 int blockCount = indexBlockBuf.readInt();
-                ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
+                ByteBuf blocks = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), blockCount * 16);
                 indexBlockBuf.skipBytes(blockCount * 16);
-                ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
+                ByteBuf streamRanges = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
+                objectTailBuf.release();
                 return new BasicObjectInfo(indexBlockPosition, new IndexBlock(blocks, streamRanges), blockCount, indexBlockSize);
             }
         }
@@ -143,9 +171,13 @@ public class ObjectReader {
         public int indexBlockSize() {
             return indexBlockSize;
         }
+
+        void close() {
+            indexBlock.close();
+        }
     }
 
-    static class IndexBlock {
+    public static class IndexBlock {
         private final ByteBuf blocks;
         private final ByteBuf streamRanges;
 
@@ -163,8 +195,14 @@ public class ObjectReader {
         }
 
         public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset) {
+            return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
+        }
+
+        public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset, int maxBytes) {
             // TODO: binary search
             long nextStartOffset = startOffset;
+            int nextMaxBytes = maxBytes;
+            boolean matched = false;
             List<DataBlockIndex> rst = new LinkedList<>();
             for (int i = 0; i < streamRanges.readableBytes(); i += 24) {
                 long rangeStreamId = streamRanges.getLong(i);
@@ -183,14 +221,24 @@ public class ObjectReader {
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
                     int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
                     rst.add(new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount));
-                    if (nextStartOffset >= endOffset) {
+                    if (matched) {
+                        nextMaxBytes -= Math.min(nextMaxBytes, blockSize);
+                    }
+                    matched = true;
+                    if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
                         break;
                     }
+                } else if (matched) {
+                    break;
                 }
             }
             return rst;
         }
 
+        void close() {
+            blocks.release();
+            streamRanges.release();
+        }
     }
 
     static class IndexBlockParseException extends Exception {
@@ -243,7 +291,7 @@ public class ObjectReader {
         }
     }
 
-    public static class DataBlock {
+    public static class DataBlock implements AutoCloseable {
         private final ByteBuf buf;
         private final int recordCount;
 
@@ -279,12 +327,16 @@ public class ObjectReader {
                 public void close() {
                     try {
                         in.close();
-                        buf.release();
                     } catch (IOException e) {
                         throw new KafkaException("Failed to close object block stream", e);
                     }
                 }
             };
+        }
+
+        @Override
+        public void close() {
+            buf.release();
         }
     }
 
