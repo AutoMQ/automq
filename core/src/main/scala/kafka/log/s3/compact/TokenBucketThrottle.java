@@ -37,8 +37,8 @@ public class TokenBucketThrottle {
         this.tokenSize = tokenSize;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("token-bucket-throttle"));
         this.executorService.scheduleAtFixedRate(() -> {
+            lock.lock();
             try {
-                lock.lock();
                 availableTokens = tokenSize;
                 condition.signalAll();
             } finally {
@@ -56,8 +56,8 @@ public class TokenBucketThrottle {
     }
 
     public void throttle(long size) {
+        lock.lock();
         try {
-            lock.lock();
             while (availableTokens < size) {
                 condition.await();
             }

@@ -290,8 +290,8 @@ public class SlidingWindowService {
         }
 
         public void putWriteRecordTask(WriteRecordTask writeRecordTask) {
+            this.treeMapIOTaskRequestLock.lock();
             try {
-                this.treeMapIOTaskRequestLock.lock();
                 this.treeMapWriteRecordTask.put(writeRecordTask.startOffset(), writeRecordTask);
             } finally {
                 this.treeMapIOTaskRequestLock.unlock();
@@ -300,9 +300,8 @@ public class SlidingWindowService {
 
 
         public void calculateStartOffset(long wroteOffset) {
+            this.treeMapIOTaskRequestLock.lock();
             try {
-                this.treeMapIOTaskRequestLock.lock();
-
                 treeMapWriteRecordTask.remove(wroteOffset);
 
                 if (treeMapWriteRecordTask.isEmpty()) {
@@ -317,8 +316,8 @@ public class SlidingWindowService {
 
         public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) {
             boolean scaleWindowHappend = false;
+            treeMapIOTaskRequestLock.lock();
             try {
-                treeMapIOTaskRequestLock.lock();
                 // 多线程同时扩容，只需要一个线程操作，其他线程快速返回
                 if ((newWindowEndOffset - windowStartOffset.get()) < windowMaxLength.get()) {
                     return;
@@ -328,7 +327,6 @@ public class SlidingWindowService {
                 if (newWindowMaxLength > SLIDING_WINDOW_UPPER_LIMIT) {
                     return;
                 }
-
 
                 writeRecordTask.flushWALHeader(newWindowMaxLength);
                 windowMaxLength.set(newWindowMaxLength);
