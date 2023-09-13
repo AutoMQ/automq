@@ -30,18 +30,26 @@ public class ObjectReaderTest {
     @Test
     public void testIndexBlock() {
         // block0: s1 [0, 100)
-        // block1: s1 [200, 300)
-        // block2: s2 [110, 200)
+        // block1: s1 [100, 300)
+        // block2: s1 [300, 400)
+        // block3: s2 [110, 200)
         ByteBuf blocks = Unpooled.buffer(3 * ObjectReader.DataBlockIndex.BLOCK_INDEX_SIZE);
         blocks.writeLong(0);
         blocks.writeInt(1024);
         blocks.writeInt(100);
+
         blocks.writeLong(1024);
         blocks.writeInt(512);
         blocks.writeInt(100);
+
+        blocks.writeLong(1536);
+        blocks.writeInt(512);
+        blocks.writeInt(100);
+
         blocks.writeLong(2048);
-        blocks.writeInt(128);
-        blocks.writeInt(80);
+        blocks.writeInt(512);
+        blocks.writeInt(90);
+
 
         ByteBuf streamRanges = Unpooled.buffer(3 * (8 + 8 + 4 + 4));
         streamRanges.writeLong(1);
@@ -50,9 +58,14 @@ public class ObjectReaderTest {
         streamRanges.writeInt(0);
 
         streamRanges.writeLong(1);
-        streamRanges.writeLong(200);
-        streamRanges.writeInt(100);
+        streamRanges.writeLong(100);
+        streamRanges.writeInt(200);
         streamRanges.writeInt(1);
+
+        streamRanges.writeLong(1);
+        streamRanges.writeLong(300);
+        streamRanges.writeInt(400);
+        streamRanges.writeInt(2);
 
         streamRanges.writeLong(2);
         streamRanges.writeLong(110);
@@ -61,20 +74,20 @@ public class ObjectReaderTest {
 
         ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(blocks, streamRanges);
 
-        List<ObjectReader.DataBlockIndex> rst = indexBlock.find(1, 10, 300);
-        assertEquals(1, rst.size());
+        List<ObjectReader.DataBlockIndex> rst = indexBlock.find(1, 10, 300, 100000);
+        assertEquals(2, rst.size());
         assertEquals(0, rst.get(0).blockId());
         assertEquals(0, rst.get(0).startPosition());
         assertEquals(1024, rst.get(0).endPosition());
+        assertEquals(1, rst.get(1).blockId());
+        assertEquals(1024, rst.get(1).startPosition());
+        assertEquals(1536, rst.get(1).endPosition());
 
-        rst = indexBlock.find(1, 110, 300);
-        assertEquals(0, rst.size());
+        rst = indexBlock.find(1, 10, 400);
+        assertEquals(3, rst.size());
 
-        rst = indexBlock.find(1, 200, 1000);
-        assertEquals(1, rst.size());
-        assertEquals(1, rst.get(0).blockId());
-        assertEquals(1024, rst.get(0).startPosition());
-        assertEquals(1536, rst.get(0).endPosition());
+        rst = indexBlock.find(1, 10, 400, 10);
+        assertEquals(2, rst.size());
     }
 
 }

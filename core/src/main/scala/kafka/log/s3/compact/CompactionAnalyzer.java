@@ -93,7 +93,7 @@ public class CompactionAnalyzer {
                 }
 
             }
-            if (!compactedObjects.isEmpty()) {
+            if (!compactedObjects.isEmpty() || compactedWALObjectBuilder != null) {
                 compactionPlans.add(generateCompactionPlan(compactedObjects, compactedWALObjectBuilder));
             }
             return compactionPlans;

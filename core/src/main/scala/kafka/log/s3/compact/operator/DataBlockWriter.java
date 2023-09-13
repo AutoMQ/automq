@@ -68,6 +68,15 @@ public class DataBlockWriter {
         return writeCf;
     }
 
+    public void copyWrite(StreamDataBlock dataBlock) {
+        // size of data block is always smaller than MAX_PART_SIZE, no need to split into multiple parts
+        String originObjectKey = ObjectUtils.genKey(0, "todocluster", dataBlock.getObjectId());
+        writer.copyWrite(originObjectKey,
+                dataBlock.getBlockPosition(), dataBlock.getBlockPosition() + dataBlock.getBlockSize());
+        completedBlocks.add(dataBlock);
+        nextDataBlockPosition += dataBlock.getBlockSize();
+    }
+
     public void uploadWaitingList() {
         CompositeByteBuf partBuf = Unpooled.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
@@ -118,12 +127,15 @@ public class DataBlockWriter {
             position = nextDataBlockPosition;
             buf = Unpooled.buffer(calculateIndexBlockSize());
             buf.writeInt(completedBlocks.size()); // block count
+            long nextPosition = 0;
             // block index
             for (StreamDataBlock block : completedBlocks) {
-                buf.writeLong(block.getBlockPosition());
+                buf.writeLong(nextPosition);
                 buf.writeInt(block.getBlockSize());
                 buf.writeInt(block.getRecordCount());
+                nextPosition += block.getBlockSize();
             }
+
             // object stream range
             for (int blockIndex = 0; blockIndex < completedBlocks.size(); blockIndex++) {
                 StreamDataBlock block = completedBlocks.get(blockIndex);

@@ -21,6 +21,7 @@ import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.compact.operator.DataBlockReader;
+import kafka.log.s3.compact.operator.DataBlockWriter;
 import kafka.log.s3.metadata.StreamMetadataManager;
 import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.ObjectManager;
@@ -34,8 +35,11 @@ import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,6 +56,7 @@ public class CompactionManager {
     private final ScheduledExecutorService scheduledExecutorService;
     private final ExecutorService executorService;
     private final CompactionUploader uploader;
+    private final KafkaConfig kafkaConfig;
     private final long compactionCacheSize;
     private final double executionScoreThreshold;
     private final long streamSplitSize;
@@ -61,6 +66,7 @@ public class CompactionManager {
 
     public CompactionManager(KafkaConfig config, ObjectManager objectManager, StreamMetadataManager streamMetadataManager, S3Operator s3Operator) {
         this.logger = new LogContext(String.format("[CompactionManager id=%d] ", config.brokerId())).logger(CompactionManager.class);
+        this.kafkaConfig = config;
         this.objectManager = objectManager;
         this.streamMetadataManager = streamMetadataManager;
         this.s3Operator = s3Operator;
@@ -103,77 +109,133 @@ public class CompactionManager {
     public CompletableFuture<CompactResult> compact() {
         List<S3WALObjectMetadata> s3ObjectMetadata = this.streamMetadataManager.getWALObjects();
         logger.info("Get {} WAL objects from metadata", s3ObjectMetadata.size());
-        Map<Boolean, List<S3WALObjectMetadata>> objectMetadataFilterMap = s3ObjectMetadata.stream()
-                .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().dataTimeInMs())
-                        >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod)));
-        // force split objects that exists for too long
-        logger.info("{} WAL objects need force split", objectMetadataFilterMap.get(true).size());
-        long splitStart = System.currentTimeMillis();
-        splitWALObjects(objectMetadataFilterMap.get(true)).thenAccept(v ->
-                logger.info("Force split {} objects, time cost: {} ms", objectMetadataFilterMap.get(true).size(), System.currentTimeMillis() - splitStart));
 
-        try {
-            logger.info("{} WAL objects as compact candidates", objectMetadataFilterMap.get(false).size());
-            long compactionStart = System.currentTimeMillis();
-            List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
-            logger.info("Analyze compaction plans complete, {} plans generated", compactionPlans.size());
-            if (compactionPlans.isEmpty()) {
-                return CompletableFuture.completedFuture(CompactResult.SKIPPED);
-            }
-            CommitWALObjectRequest request = buildCompactRequest(compactionPlans, s3ObjectMetadata);
-            logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - compactionStart);
-            return objectManager.commitWALObject(request).thenApply(nil -> {
-                logger.info("Commit compact request succeed, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
-                        request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - compactionStart);
-                return CompactResult.SUCCESS;
-            });
-        } catch (Exception e) {
-            logger.error("Error while compaction objects", e);
-            return CompletableFuture.failedFuture(e);
+        long start = System.currentTimeMillis();
+        CommitWALObjectRequest request = buildCompactRequest(s3ObjectMetadata);
+
+        logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - start);
+        return objectManager.commitWALObject(request).thenApply(resp -> {
+            logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
+                    request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
+            return CompactResult.SUCCESS;
+        });
+
+    }
+
+    private void logCompactionPlans(List<CompactionPlan> compactionPlans) {
+        if (compactionPlans.isEmpty()) {
+            logger.info("No compaction plans to execute");
+            return;
         }
-
+        long streamObjectNum = compactionPlans.stream()
+                .mapToLong(p -> p.compactedObjects().stream()
+                        .filter(o -> o.type() == CompactionType.SPLIT)
+                        .count())
+                .sum();
+        long walObjectSize = compactionPlans.stream()
+                .mapToLong(p -> p.compactedObjects().stream()
+                        .filter(o -> o.type() == CompactionType.COMPACT)
+                        .mapToLong(CompactedObject::size)
+                        .sum())
+                .sum();
+        logger.info("Compaction plans: expect to generate {} StreamObject, 1 WAL object with size {} in {} iterations",
+                streamObjectNum, walObjectSize, compactionPlans.size());
     }
 
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
-        this.scheduledExecutorService.execute(() -> splitWALObjects(this.streamMetadataManager.getWALObjects())
-                .thenAccept(v -> cf.complete(null))
-                .exceptionally(ex -> {
-                    cf.completeExceptionally(ex);
-                    return null;
-                })
-        );
+        this.scheduledExecutorService.execute(() -> {
+            List<CompletableFuture<StreamObject>> cfList = splitWALObjects(this.streamMetadataManager.getWALObjects());
+            long successCnt = cfList.stream().map(e -> {
+                try {
+                    return e.join();
+                } catch (Exception ex) {
+                    logger.error("Error while force split object ", ex);
+                }
+                return null;
+            }).filter(Objects::nonNull).count();
+            logger.info("Force split all WAL objects, {}/{} success", successCnt, cfList.size());
+        });
         return cf;
     }
 
-    CompletableFuture<Void> splitWALObjects(List<S3WALObjectMetadata> objectMetadataList) {
+    List<CompletableFuture<StreamObject>> splitWALObjects(List<S3WALObjectMetadata> objectMetadataList) {
         if (objectMetadataList.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
+            return new ArrayList<>();
         }
 
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, s3Operator);
-        List<CompletableFuture<Void>> splitFutureList = new ArrayList<>();
+        List<CompletableFuture<StreamObject>> splitFutureList = new ArrayList<>();
         for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlocksMap.entrySet()) {
             List<StreamDataBlock> streamDataBlocks = entry.getValue();
             for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                splitFutureList.add(objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
+                CompletableFuture<StreamObject> streamObjectCf = new CompletableFuture<>();
+                splitFutureList.add(streamObjectCf);
+                objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
                         .thenAcceptAsync(objectId -> {
                             logger.info("Split {} to {}", streamDataBlock, objectId);
-                            //TODO: implement this
+                            DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
+                            writer.copyWrite(streamDataBlock);
+                            writer.close().thenAccept(v -> {
+                                StreamObject streamObject = new StreamObject();
+                                streamObject.setObjectId(objectId);
+                                streamObject.setStreamId(streamDataBlock.getStreamId());
+                                streamObject.setStartOffset(streamDataBlock.getStartOffset());
+                                streamObject.setEndOffset(streamDataBlock.getEndOffset());
+                                streamObject.setObjectSize(writer.size());
+                                streamObjectCf.complete(streamObject);
+                            });
                         }, executorService).exceptionally(ex -> {
                             logger.error("Prepare object failed", ex);
+                            streamObjectCf.completeExceptionally(ex);
                             return null;
-                        })
-                );
+                        });
             }
         }
-        return CompletableFuture.allOf(splitFutureList.toArray(new CompletableFuture[0]));
+        return splitFutureList;
     }
 
-    CommitWALObjectRequest buildCompactRequest(List<CompactionPlan> compactionPlans, List<S3WALObjectMetadata> s3ObjectMetadata)
-            throws IllegalArgumentException {
+    CommitWALObjectRequest buildCompactRequest(List<S3WALObjectMetadata> s3ObjectMetadata) {
+        Map<Boolean, List<S3WALObjectMetadata>> objectMetadataFilterMap = s3ObjectMetadata.stream()
+                .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().dataTimeInMs())
+                        >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod)));
+        // force split objects that exists for too long
+        logger.info("{} WAL objects to be force split", objectMetadataFilterMap.get(true).size());
+        List<CompletableFuture<StreamObject>> forceSplitCfs = splitWALObjects(objectMetadataFilterMap.get(true));
+
         CommitWALObjectRequest request = new CommitWALObjectRequest();
+        List<CompactionPlan> compactionPlans = new ArrayList<>();
+        try {
+            logger.info("{} WAL objects as compact candidates", objectMetadataFilterMap.get(false).size());
+            compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
+            logCompactionPlans(compactionPlans);
+            compactWALObjects(request, compactionPlans, s3ObjectMetadata);
+        } catch (Exception e) {
+            logger.error("Error while compacting objects ", e);
+        }
+
+        forceSplitCfs.stream().map(e -> {
+            try {
+                return e.join();
+            } catch (Exception ex) {
+                logger.error("Force split StreamObject failed ", ex);
+                return null;
+            }
+        }).filter(Objects::nonNull).forEach(request::addStreamObject);
+
+        Set<Long> compactedObjectIds = new HashSet<>();
+        objectMetadataFilterMap.get(true).forEach(e -> compactedObjectIds.add(e.getObjectMetadata().objectId()));
+        compactionPlans.forEach(c -> c.streamDataBlocksMap().values().forEach(v -> v.forEach(b -> compactedObjectIds.add(b.getObjectId()))));
+        request.setCompactedObjectIds(new ArrayList<>(compactedObjectIds));
+        return request;
+    }
+
+    void compactWALObjects(CommitWALObjectRequest request, List<CompactionPlan> compactionPlans, List<S3WALObjectMetadata> s3ObjectMetadata)
+            throws IllegalArgumentException {
+        if (compactionPlans.isEmpty()) {
+            return;
+        }
         Map<Long, S3WALObjectMetadata> s3ObjectMetadataMap = s3ObjectMetadata.stream()
                 .collect(Collectors.toMap(e -> e.getWalObject().objectId(), e -> e));
         for (CompactionPlan compactionPlan : compactionPlans) {
@@ -230,9 +292,7 @@ public class CompactionManager {
         request.setObjectId(uploader.getWALObjectId());
         // set wal object id to be the first object id of compacted objects
         request.setOrderId(s3ObjectMetadata.get(0).getObjectMetadata().objectId());
-        request.setCompactedObjectIds(s3ObjectMetadata.stream().map(s -> s.getObjectMetadata().objectId()).collect(Collectors.toList()));
         request.setObjectSize(uploader.completeWAL());
         uploader.reset();
-        return request;
     }
 }

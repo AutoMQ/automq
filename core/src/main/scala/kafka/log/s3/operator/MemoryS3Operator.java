@@ -44,7 +44,9 @@ public class MemoryS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> write(String path, ByteBuf data) {
-        storage.put(path, data.duplicate());
+        ByteBuf buf = Unpooled.buffer(data.readableBytes());
+        buf.writeBytes(data.duplicate());
+        storage.put(path, buf);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -65,7 +67,7 @@ public class MemoryS3Operator implements S3Operator {
                 if (source == null) {
                     throw new IllegalArgumentException("object not exist");
                 }
-                buf.writeBytes(source.slice(source.readerIndex() + (int) start, source.readerIndex() + (int) end));
+                buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
             }
 
             @Override

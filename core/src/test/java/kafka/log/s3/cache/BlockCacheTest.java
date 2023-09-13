@@ -78,7 +78,7 @@ public class BlockCacheTest {
 
     @Test
     public void testLRU() {
-        BlockCache.LRUCache<Long, Boolean> lru = new BlockCache.LRUCache<>();
+        LRUCache<Long, Boolean> lru = new LRUCache<>();
         lru.put(1L, true);
         lru.put(2L, true);
         lru.put(3L, true);
