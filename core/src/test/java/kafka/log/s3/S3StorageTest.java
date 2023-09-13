@@ -34,7 +34,6 @@ import kafka.server.KafkaConfig;
 import kafka.utils.TestUtils;
 import org.apache.kafka.metadata.stream.StreamMetadata;
 import org.apache.kafka.metadata.stream.StreamState;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
