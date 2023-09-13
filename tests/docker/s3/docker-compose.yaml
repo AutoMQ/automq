@@ -2,7 +2,8 @@ version: "3.8"
 
 services:
   localstack:
-    container_name: "${LOCALSTACK_DOCKER_NAME-localstack_main}"
+    container_name: "${LOCALSTACK_DOCKER_NAME-localstack}"
+    hostname: "${LOCALSTACK_DOCKER_NAME-localstack}"
     image: localstack/localstack
     ports:
       - "127.0.0.1:4566:4566"            # LocalStack Gateway
@@ -12,8 +13,12 @@ services:
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
+    # use a static ip
+    networks:
+      ducknet:
+        ipv4_address: 10.5.0.2
 
 networks:
-  default:
+  ducknet:
     name: ducknet
     external: true
