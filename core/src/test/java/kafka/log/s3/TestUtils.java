@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import java.util.Random;
+import java.util.UUID;
 
 public class TestUtils {
 
@@ -30,4 +31,7 @@ public class TestUtils {
         return Unpooled.wrappedBuffer(bytes);
     }
 
+    public static String tempFilePath() {
+        return System.getProperty("java.io.tmpdir") + "/kos-" + UUID.randomUUID();
+    }
 }
