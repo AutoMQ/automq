@@ -72,8 +72,8 @@ public class BlockWALService implements WriteAheadLog {
     public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
     public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
     public static final int WAL_HEADER_SIZE = 4 + 8 + 8 + 8 + 8 + 8 + 8 + 4 + 4;
-    public static final long WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
-    public static final long WAL_HEADER_CAPACITY_DOUBLE = WAL_HEADER_CAPACITY * 2;
+    public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
+    public static final int WAL_HEADER_CAPACITY_DOUBLE = WAL_HEADER_CAPACITY * 2;
     private final AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private ScheduledExecutorService scheduledExecutorService;
@@ -319,12 +319,12 @@ public class BlockWALService implements WriteAheadLog {
         // AppendResult
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
 
-        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset + RECORD_HEADER_SIZE, recordBodyCRC, record.limit(), appendResultFuture);
+        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, recordBodyCRC, record.limit(), appendResultFuture);
 
         // 生成写 IO 请求，入队执行异步 IO
         slidingWindowService.submitWriteRecordTask(new WriteRecordTask() {
             @Override
-            public long writeOffset() {
+            public long startOffset() {
                 return expectedWriteOffset;
             }
 
@@ -344,7 +344,7 @@ public class BlockWALService implements WriteAheadLog {
                 recordHeaderCoreData
                         .setMagicCode(RECORD_HEADER_MAGIC_CODE)
                         .setRecordBodyLength(record.limit())
-                        .setRecordBodyOffset(expectedWriteOffset + RECORD_HEADER_SIZE)
+                        .setRecordBodyOffset(expectedWriteOffset)
                         .setRecordBodyCRC(recordBodyCRC);
                 return recordHeaderCoreData.marshal();
             }

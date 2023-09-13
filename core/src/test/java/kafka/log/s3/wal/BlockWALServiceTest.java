@@ -17,7 +17,9 @@
 
 package kafka.log.s3.wal;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import kafka.log.s3.wal.util.WALUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -31,6 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
@@ -46,6 +49,8 @@ class BlockWALServiceTest {
 
     private static final int RECORD_SIZE = 4096 + 1;
 
+    private static final int IO_THREAD_NUMS = 4;
+
     private static final Random RANDOM = new Random();
 
     @BeforeEach
@@ -57,29 +62,35 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void singleThreadAppend() throws IOException {
+    void singleThreadAppend() throws IOException, OverCapacityException {
+        final int RECORD_SIZE = 4096 + 1;
+        final int RECORD_NUMS = 10;
+        final long BLOCK_DEVICE_CAPACITY = WALUtil.alignLargeByBlockSize(RECORD_SIZE) * RECORD_NUMS + WAL_HEADER_CAPACITY_DOUBLE;
+
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(BLOCK_DEVICE_CAPACITY)
                 .blockDevicePath(BLOCK_DEVICE_PATH + "singleThreadAppend")
-                .ioThreadNums(4)
+                .ioThreadNums(IO_THREAD_NUMS)
                 .createBlockWALService().start();
         try {
-            for (int i = 0; i < 10; i++) {
-                try {
-                    byte[] data = new byte[RECORD_SIZE];
-                    RANDOM.nextBytes(data);
+            for (int i = 0; i < RECORD_NUMS; i++) {
+                byte[] bytes = new byte[RECORD_SIZE];
+                RANDOM.nextBytes(bytes);
+                ByteBuf data = Unpooled.wrappedBuffer(bytes);
 
-                    final AppendResult appendResult = wal.append(Unpooled.wrappedBuffer(data));
+                final AppendResult appendResult = wal.append(data);
 
-                    assertEquals(RECORD_SIZE, appendResult.length());
-                    appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
-                        assertEquals(callbackResult.appendResult().recordBodyCRC(), appendResult.recordBodyCRC());
-                        assertEquals(callbackResult.appendResult().recordBodyOffset(), appendResult.recordBodyOffset());
-                        assertNull(throwable);
-                    });
-                } catch (OverCapacityException e) {
-                    e.printStackTrace(System.err);
-                }
+                final long expectedOffset = i * WALUtil.alignLargeByBlockSize(RECORD_SIZE);
+                final long expectedCRC = WALUtil.crc32(data.nioBuffer());
+                assertEquals(expectedOffset, appendResult.recordBodyOffset());
+                assertEquals(expectedCRC, appendResult.recordBodyCRC());
+                assertEquals(RECORD_SIZE, appendResult.length());
+                appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                    assertNull(throwable);
+                    System.out.printf("%d\n", callbackResult.flushedOffset());
+                    assertEquals(expectedCRC, callbackResult.appendResult().recordBodyCRC());
+                    assertEquals(expectedOffset, callbackResult.appendResult().recordBodyOffset());
+                });
             }
         } finally {
             wal.shutdownGracefully();
@@ -91,7 +102,7 @@ class BlockWALServiceTest {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(BLOCK_DEVICE_CAPACITY)
                 .blockDevicePath(blockDeviceName)
-                .ioThreadNums(4)
+                .ioThreadNums(IO_THREAD_NUMS)
                 .createBlockWALService().start();
         try {
             // append 1024
@@ -129,7 +140,7 @@ class BlockWALServiceTest {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(BLOCK_DEVICE_CAPACITY)
                 .blockDevicePath(BLOCK_DEVICE_PATH + "singleThreadRecover")
-                .ioThreadNums(4)
+                .ioThreadNums(IO_THREAD_NUMS)
                 .createBlockWALService().start();
 
         try {
@@ -156,7 +167,7 @@ class BlockWALServiceTest {
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(BLOCK_DEVICE_CAPACITY)
                 .blockDevicePath(BLOCK_DEVICE_PATH + "multiThreadAppend")
-                .ioThreadNums(4)
+                .ioThreadNums(IO_THREAD_NUMS)
                 .createBlockWALService().start();
         try {
             int nThreadNums = 8;

@@ -24,8 +24,8 @@ import java.util.concurrent.CompletableFuture;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 
 public interface WriteRecordTask {
-    // writeOffset 包含了 Record header 的大小
-    long writeOffset();
+    // startOffset 包含了 Record header 的大小
+    long startOffset();
 
     AppendResult appendResult();
 

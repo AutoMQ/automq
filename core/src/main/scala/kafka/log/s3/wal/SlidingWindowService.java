@@ -142,13 +142,13 @@ public class SlidingWindowService {
 
         totalRecord.position(0);
 
-        long position = WALUtil.recordOffsetToPosition(ioTask.writeOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE);
+        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE);
 
         walChannel.write(totalRecord, position);
     }
 
     public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) {
-        long newWindowEndOffset = writeRecordTask.writeOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
+        long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
         long newWindowSize = newWindowEndOffset - windowCoreData.getWindowStartOffset().get();
 
         if (newWindowSize > windowCoreData.getWindowMaxLength().get()) {
@@ -267,9 +267,13 @@ public class SlidingWindowService {
 
     public static class WindowCoreData {
         private final Lock treeMapIOTaskRequestLock = new ReentrantLock();
-        private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<Long, WriteRecordTask>();
+        private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<>();
         private final AtomicLong windowMaxLength = new AtomicLong(0);
         private final AtomicLong windowNextWriteOffset = new AtomicLong(0);
+        /**
+         * Start offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
+         * The data before this offset has already been written to the disk.
+         */
         private final AtomicLong windowStartOffset = new AtomicLong(0);
 
 
@@ -288,21 +292,21 @@ public class SlidingWindowService {
         public void putWriteRecordTask(WriteRecordTask writeRecordTask) {
             try {
                 this.treeMapIOTaskRequestLock.lock();
-                this.treeMapWriteRecordTask.put(writeRecordTask.writeOffset(), writeRecordTask);
+                this.treeMapWriteRecordTask.put(writeRecordTask.startOffset(), writeRecordTask);
             } finally {
                 this.treeMapIOTaskRequestLock.unlock();
             }
         }
 
 
-        public void calculateStartOffset(long writeOffset) {
+        public void calculateStartOffset(long wroteOffset) {
             try {
                 this.treeMapIOTaskRequestLock.lock();
 
-                treeMapWriteRecordTask.remove(writeOffset);
+                treeMapWriteRecordTask.remove(wroteOffset);
 
                 if (treeMapWriteRecordTask.isEmpty()) {
-                    windowStartOffset.set(windowNextWriteOffset.get());
+                    windowStartOffset.set(WALUtil.alignLargeByBlockSize(windowNextWriteOffset.get()));
                 } else {
                     windowStartOffset.set(treeMapWriteRecordTask.firstKey());
                 }
@@ -381,12 +385,12 @@ public class SlidingWindowService {
                     });
 
                     // 更新滑动窗口的最小 Offset
-                    windowCoreData.calculateStartOffset(writeRecordTask.writeOffset());
+                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
                 }
 
             } catch (Throwable e) {
                 writeRecordTask.future().completeExceptionally(e);
-                LOGGER.error(String.format("write task has exception. write offset: [%d]", writeRecordTask.writeOffset()), e);
+                LOGGER.error(String.format("write task has exception. write offset: [%d]", writeRecordTask.startOffset()), e);
             }
         }
     }
