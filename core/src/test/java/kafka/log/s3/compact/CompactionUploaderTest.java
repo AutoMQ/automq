@@ -66,10 +66,10 @@ public class CompactionUploaderTest extends CompactionTestBase {
     @Test
     public void testWriteWALObject() {
         List<StreamDataBlock> streamDataBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 20, -1, -1, 0, 20, 1),
-                new StreamDataBlock(STREAM_0, 20, 25, -1, -1, 20, 5, 1),
-                new StreamDataBlock(STREAM_2, 40, 120, -1, -1, 25, 80, 1),
-                new StreamDataBlock(STREAM_2, 120, 150, -1, -1, 105, 30, 1));
+                new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 0, 20, 1),
+                new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 20, 5, 1),
+                new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 25, 80, 1),
+                new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 105, 30, 1));
         CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks, 100);
         List<ObjectStreamRange> result = CompactionUtils.buildObjectStreamRange(compactedObject);
         Assertions.assertEquals(2, result.size());
@@ -96,7 +96,11 @@ public class CompactionUploaderTest extends CompactionTestBase {
         DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.WAL), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
+        Assertions.assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        long expectedBlockPosition = 0;
         for (int i = 0; i < streamDataBlocks.size(); i++) {
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
             compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
         }
         List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);
@@ -109,8 +113,8 @@ public class CompactionUploaderTest extends CompactionTestBase {
     @Test
     public void testWriteStreamObject() {
         List<StreamDataBlock> streamDataBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 60, -1, -1, 0, 60, 1),
-                new StreamDataBlock(STREAM_0, 60, 120, -1, -1, 60, 60, 1));
+                new StreamDataBlock(STREAM_0, 0, 60, 1, 0, 23, 60, 1),
+                new StreamDataBlock(STREAM_0, 60, 120, 0, 1, 45, 60, 1));
         CompactedObject compactedObject = new CompactedObject(CompactionType.SPLIT, streamDataBlocks, 100);
 
         CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
@@ -126,7 +130,11 @@ public class CompactionUploaderTest extends CompactionTestBase {
         DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, streamObject.getObjectSize(), S3ObjectType.STREAM), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
+        Assertions.assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        long expectedBlockPosition = 0;
         for (int i = 0; i < streamDataBlocks.size(); i++) {
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
             compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
         }
         List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);

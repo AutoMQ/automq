@@ -65,7 +65,7 @@ public class MemoryS3Operator implements S3Operator {
                 if (source == null) {
                     throw new IllegalArgumentException("object not exist");
                 }
-                buf.writeBytes(source.slice(source.readerIndex() + (int) start, source.readerIndex() + (int) end));
+                buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
             }
 
             @Override
