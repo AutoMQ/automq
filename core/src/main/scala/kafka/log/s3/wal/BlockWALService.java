@@ -585,11 +585,13 @@ public class BlockWALService implements WriteAheadLog {
 
     static class RecoverResultImpl implements RecoverResult {
         private final ByteBuffer record;
-        private long recordBodyOffset;
-        private int length;
+        private final long recordBodyOffset;
+        private final int length;
 
         public RecoverResultImpl(ByteBuffer record, long recordBodyOffset, int length) {
             this.record = record;
+            this.recordBodyOffset = recordBodyOffset;
+            this.length = length;
         }
 
         @Override

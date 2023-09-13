@@ -29,13 +29,17 @@ import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.streams.StreamManager;
 import kafka.log.s3.wal.MemoryWriteAheadLog;
+import kafka.log.s3.wal.WriteAheadLog;
 import kafka.server.KafkaConfig;
 import kafka.utils.TestUtils;
+import org.apache.kafka.metadata.stream.StreamMetadata;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -46,6 +50,7 @@ import java.util.concurrent.TimeoutException;
 
 import static kafka.log.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -181,7 +186,62 @@ public class S3StorageTest {
         cf2.get(1, TimeUnit.SECONDS);
     }
 
+    @Test
+    public void testRecoverContinuousRecords() {
+        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L)).nioBuffer()),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L)).nioBuffer()),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L)).nioBuffer()),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L)).nioBuffer()),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)).nioBuffer())
+        );
+
+        List<StreamMetadata> openingStreams = List.of(new StreamMetadata(233L, 0L, 0L, 11L, StreamState.OPENED));
+        LogCache.LogCacheBlock cacheBlock = storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        // ignore closed stream and noncontinuous records.
+        assertEquals(1, cacheBlock.records().size());
+        List<StreamRecordBatch> streamRecords = cacheBlock.records().get(233L);
+        assertEquals(2, streamRecords.size());
+        assertEquals(11L, streamRecords.get(0).getBaseOffset());
+        assertEquals(12L, streamRecords.get(1).getBaseOffset());
+
+
+        //
+        openingStreams = List.of(
+                new StreamMetadata(233L, 0L, 0L, 5L, StreamState.OPENED));
+        boolean exception = false;
+        try {
+            storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        } catch (IllegalStateException e) {
+            exception = true;
+        }
+        assertTrue(exception);
+    }
+
     private static StreamRecordBatch newRecord(long streamId, long offset) {
         return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
+    }
+
+    static class TestRecoverResult implements WriteAheadLog.RecoverResult {
+        private final ByteBuffer record;
+
+        public TestRecoverResult(ByteBuffer record) {
+            this.record = record;
+        }
+
+        @Override
+        public ByteBuffer record() {
+            return record;
+        }
+
+        @Override
+        public long recordBodyOffset() {
+            return 0;
+        }
+
+        @Override
+        public int length() {
+            return 0;
+        }
     }
 }
