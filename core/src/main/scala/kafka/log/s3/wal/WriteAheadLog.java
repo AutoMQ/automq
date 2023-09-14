@@ -49,8 +49,9 @@ public interface WriteAheadLog {
      * Trim data <= offset in log.
      *
      * @param offset inclusive trim offset.
+     * @return future complete when trim done.
      */
-    void trim(long offset);
+    CompletableFuture<Void> trim(long offset);
 
     class WalRecord {
         private final long offset;

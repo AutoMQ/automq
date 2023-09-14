@@ -29,6 +29,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -90,11 +91,17 @@ public class BlockWALService implements WriteAheadLog {
 
         this.slidingWindowService = new SlidingWindowService(ioThreadNums, walChannel);
 
-        this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> BlockWALService.this.flushWALHeader(
-                        this.slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
-                        this.slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
-                        this.slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
-                        ShutdownType.UNGRACEFULLY),
+        this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> {
+                    try {
+                        BlockWALService.this.flushWALHeader(
+                                this.slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
+                                this.slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
+                                this.slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
+                                ShutdownType.UNGRACEFULLY);
+                    } catch (IOException e) {
+                        LOGGER.error("failed to flush WAL header scheduled", e);
+                    }
+                },
                 10, 10, TimeUnit.SECONDS);
     }
 
@@ -103,7 +110,7 @@ public class BlockWALService implements WriteAheadLog {
                                 long windowMaxLength,
                                 long windowNextWriteOffset,
                                 ShutdownType shutdownType
-    ) {
+    ) throws IOException {
         walHeaderCoreData
                 .setSlidingWindowStartOffset(windowStartOffset)
                 .setSlidingWindowMaxLength(windowMaxLength)
@@ -112,7 +119,7 @@ public class BlockWALService implements WriteAheadLog {
         flushWALHeader();
     }
 
-    private synchronized void flushWALHeader() {
+    private synchronized void flushWALHeader() throws IOException {
         long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
         try {
             walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis());
@@ -122,6 +129,7 @@ public class BlockWALService implements WriteAheadLog {
             LOGGER.info("flushWALHeader success, position: {}, walHeader: {}", position, walHeaderCoreData);
         } catch (IOException e) {
             LOGGER.error("flushWALHeader IOException", e);
+            throw e;
         }
     }
 
@@ -243,7 +251,7 @@ public class BlockWALService implements WriteAheadLog {
         return paramWALHeader;
     }
 
-    private void recoverWALHeader() {
+    private void recoverWALHeader() throws IOException {
         WALHeaderCoreData[] walHeadersRecoveredCoreData = {null, null};
         WALHeaderCoreData walHeaderCoreDataAvailable = null;
 
@@ -302,12 +310,16 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         boolean gracefulShutdown = slidingWindowService.shutdown(1, TimeUnit.DAYS);
-        flushWALHeader(
-                slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
-                slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
-                slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
-                gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY
-        );
+        try {
+            flushWALHeader(
+                    slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
+                    slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
+                    slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
+                    gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY
+            );
+        } catch (IOException e) {
+            LOGGER.error("failed to flush WALHeader when shutdownGracefully", e);
+        }
 
         walChannel.close();
     }
@@ -358,7 +370,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             @Override
-            public void flushWALHeader(long windowMaxLength) {
+            public void flushWALHeader(long windowMaxLength) throws IOException {
                 BlockWALService.this.flushWALHeader(
                         slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
                         windowMaxLength,
@@ -399,11 +411,17 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     @Override
-    public void trim(long offset) {
+    public CompletableFuture<Void> trim(long offset) {
         checkReadyToServe();
 
         walHeaderCoreData.updateTrimOffset(offset);
-        flushWALHeaderScheduler.submit(() -> flushWALHeader());
+        return CompletableFuture.runAsync(() -> {
+            try {
+                flushWALHeader();
+            } catch (IOException e) {
+                throw new CompletionException(e);
+            }
+        }, flushWALHeaderScheduler);
     }
 
     private void checkReadyToServe() {

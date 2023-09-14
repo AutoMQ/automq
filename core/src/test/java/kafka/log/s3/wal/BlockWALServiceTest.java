@@ -116,7 +116,7 @@ class BlockWALServiceTest {
                         appendResult = wal.append(data);
                     } catch (OverCapacityException e) {
                         Thread.yield();
-                        wal.trim(appendedOffset.get());
+                        wal.trim(appendedOffset.get()).join();
                         continue;
                     }
                     break;
@@ -162,7 +162,7 @@ class BlockWALServiceTest {
                 offset = append(wal, recordSize);
                 recordOffsets.add(offset);
             } catch (OverCapacityException e) {
-                wal.trim(offset);
+                wal.trim(offset).join();
                 final long trimmedOffset = offset;
                 recordOffsets = recordOffsets.stream()
                         .filter(recordOffset -> recordOffset > trimmedOffset)

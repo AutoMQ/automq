@@ -62,7 +62,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public void trim(long offset) {
-
+    public CompletableFuture<Void> trim(long offset) {
+        return CompletableFuture.completedFuture(null);
     }
 }

@@ -148,7 +148,7 @@ public class SlidingWindowService {
         walChannel.write(totalRecord, position);
     }
 
-    public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) {
+    public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
         long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
         long newWindowSize = newWindowEndOffset - windowCoreData.getWindowStartOffset().get();
 
@@ -313,7 +313,7 @@ public class SlidingWindowService {
             }
         }
 
-        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) {
+        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) throws IOException {
             boolean scaleWindowHappend = false;
             treeMapIOTaskRequestLock.lock();
             try {
