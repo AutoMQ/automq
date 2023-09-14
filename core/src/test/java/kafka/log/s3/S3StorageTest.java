@@ -235,12 +235,7 @@ public class S3StorageTest {
         }
 
         @Override
-        public long recordBodyOffset() {
-            return 0;
-        }
-
-        @Override
-        public int length() {
+        public long recordOffset() {
             return 0;
         }
     }

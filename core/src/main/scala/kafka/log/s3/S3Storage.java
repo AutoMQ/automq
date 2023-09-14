@@ -138,7 +138,7 @@ public class S3Storage implements Storage {
         Map<Long, Long> streamNextOffsets = new HashMap<>();
         while (it.hasNext()) {
             WriteAheadLog.RecoverResult recoverResult = it.next();
-            logEndOffset = recoverResult.recordBodyOffset() + recoverResult.length();
+            logEndOffset = recoverResult.recordOffset();
             ByteBuf recordBuf = Unpooled.wrappedBuffer(recoverResult.record());
             StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
             long streamId = streamRecordBatch.getStreamId();

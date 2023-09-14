@@ -28,7 +28,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -41,6 +43,7 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -171,11 +174,46 @@ class BlockWALServiceTest {
         }
     }
 
+    long append(WriteAheadLog wal, int recordSize) throws OverCapacityException {
+        final AppendResult appendResult = wal.append(TestUtils.random(recordSize));
+        final long recordOffset = appendResult.recordOffset();
+        appendResult.future().whenComplete((callbackResult, throwable) -> {
+            assertNull(throwable);
+            assertTrue(callbackResult.flushedOffset() > recordOffset);
+            assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
+        });
+        return recordOffset;
+    }
+
+    List<Long> append(WriteAheadLog wal, int recordSize, int recordNums) {
+        List<Long> recordOffsets = new ArrayList<>(recordNums);
+        long offset = 0;
+        for (int i = 0; i < recordNums; i++) {
+            try {
+                offset = append(wal, recordSize);
+                recordOffsets.add(offset);
+            } catch (OverCapacityException e) {
+                wal.trim(offset);
+                i--;
+            }
+        }
+        return recordOffsets;
+    }
 
     @Test
-    void testSingleThreadRecover() throws IOException, InterruptedException {
+    void testSingleThreadRecover() throws IOException {
+        final int recordSize = 4096 + 1;
+        final int recordNums = 10;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
         final String tempFilePath = TestUtils.tempFilePath();
-        appendManyRecord(1024, tempFilePath);
+
+        final WriteAheadLog previousWAL = BlockWALService.BlockWALServiceBuilder.build()
+                .capacity(blockDeviceCapacity)
+                .blockDevicePath(tempFilePath)
+                .ioThreadNums(IO_THREAD_NUMS)
+                .createBlockWALService().start();
+        List<Long> appended = append(previousWAL, recordSize, recordNums);
+        previousWAL.shutdownGracefully();
 
         final WriteAheadLog wal = BlockWALService.BlockWALServiceBuilder.build()
                 .capacity(BLOCK_DEVICE_CAPACITY)
@@ -184,18 +222,15 @@ class BlockWALServiceTest {
                 .createBlockWALService().start();
 
         try {
-            TimeUnit.SECONDS.sleep(3);
             Iterator<RecoverResult> recover = wal.recover();
-            if (null == recover) {
-                System.out.println("recover is null");
-                return;
-            }
+            assertNotNull(recover);
 
+            List<Long> recovered = new ArrayList<>(recordNums);
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
-                System.out.println(next);
+                recovered.add(next.recordOffset());
             }
-
+            assertEquals(appended, recovered);
         } finally {
             wal.shutdownGracefully();
         }
