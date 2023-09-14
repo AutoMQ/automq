@@ -20,6 +20,7 @@ package kafka.log.s3.compact.operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import kafka.log.s3.ByteBufAlloc;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
@@ -57,15 +58,13 @@ public class DataBlockWriter {
         return objectId;
     }
 
-    public CompletableFuture<Void> write(StreamDataBlock dataBlock) {
-        CompletableFuture<Void> writeCf = new CompletableFuture<>();
-        waitingUploadBlockCfs.put(dataBlock, writeCf);
+    public void write(StreamDataBlock dataBlock) {
+        waitingUploadBlockCfs.put(dataBlock, new CompletableFuture<>());
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
         if (waitingUploadSize >= partSizeThreshold) {
             uploadWaitingList();
         }
-        return writeCf;
     }
 
     public void copyWrite(StreamDataBlock dataBlock) {
@@ -77,8 +76,13 @@ public class DataBlockWriter {
         nextDataBlockPosition += dataBlock.getBlockSize();
     }
 
-    public void uploadWaitingList() {
-        CompositeByteBuf partBuf = Unpooled.compositeBuffer();
+    public CompletableFuture<Void> forceUpload() {
+        uploadWaitingList();
+        return CompletableFuture.allOf(waitingUploadBlockCfs.values().toArray(new CompletableFuture[0]));
+    }
+
+    private void uploadWaitingList() {
+        CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             partBuf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);
@@ -91,11 +95,17 @@ public class DataBlockWriter {
                 waitingUploadBlockCfs.remove(block);
             }
         });
+        if (writer.hashBatchingPart()) {
+            // prevent blocking on part that's waiting for batch when force upload waiting list
+            for (StreamDataBlock block : blocks) {
+                waitingUploadBlockCfs.remove(block);
+            }
+        }
         waitingUploadBlocks.clear();
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = Unpooled.compositeBuffer();
+        CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             buf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);
