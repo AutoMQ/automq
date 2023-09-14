@@ -605,7 +605,8 @@ public class BlockWALService implements WriteAheadLog {
             BlockWALService blockWALService = new BlockWALService();
             blockWALService.blockDevicePath = this.blockDevicePath;
             blockWALService.ioThreadNums = this.ioThreadNums;
-            blockWALService.blockDeviceCapacityWant = this.blockDeviceCapacityWant;
+            // make blockDeviceCapacityWant align to BLOCK_SIZE
+            blockWALService.blockDeviceCapacityWant = blockDeviceCapacityWant / WALUtil.BLOCK_SIZE * WALUtil.BLOCK_SIZE;
             return blockWALService;
         }
     }
