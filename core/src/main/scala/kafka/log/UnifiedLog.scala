@@ -22,7 +22,7 @@ import com.yammer.metrics.core.MetricName
 import java.io.{File, IOException}
 import java.nio.file.{Files, Paths}
 import java.util.Optional
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
 import kafka.log.es.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
@@ -705,6 +705,13 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       localLog.close()
     }
   }
+
+  // Kafka on S3 inject start
+  def closeWithFuture(): CompletableFuture[Void] = {
+    close()
+    CompletableFuture.completedFuture(null)
+  }
+  // Kafka on S3 inject start
 
   /**
    * Rename the directory of the local log. If the log's directory is being renamed for async deletion due to a

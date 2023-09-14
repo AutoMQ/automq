@@ -641,8 +641,9 @@ class LogManager(logDirs: Seq[File],
     val threadPools = ArrayBuffer.empty[ExecutorService]
     val jobs = mutable.Map.empty[File, Seq[Future[_]]]
 
-    // elastic stream inject start
-    val closeStreamsJobs = mutable.Map.empty[File, Seq[Future[_]]]
+    // Kafka on S3 inject start
+    val closeStreamsFutures = ArrayBuffer.empty[CompletableFuture[Void]]
+    // Kafka on S3 inject end
 
     // stop the cleaner first
     if (cleaner != null) {
@@ -665,12 +666,10 @@ class LogManager(logDirs: Seq[File],
         val runnable: Runnable = () => {
           // flush the log to ensure latest possible recovery point
           log.flush(true)
-          log match {
-            case elasticUnifiedLog: ElasticUnifiedLog =>
-              elasticUnifiedLog.closeBasic()
-            case unifiedLog: UnifiedLog =>
-              unifiedLog.close()
-          }
+          // Kafka on S3 inject start
+          val future = log.closeWithFuture()
+          closeStreamsFutures.append(future)
+          // Kafka on S3 inject end
         }
         runnable
       }
@@ -700,30 +699,8 @@ class LogManager(logDirs: Seq[File],
         }
       }
 
-      // close streams should be triggered after all logs have been closed basically.
-      for (dir <- liveLogDirs) {
-        debug(s"close streams at $dir")
-        val pool = Executors.newFixedThreadPool(numRecoveryThreadsPerDataDir,
-          KafkaThread.nonDaemon(s"log-streams-closing-${dir.getAbsolutePath}", _))
-        threadPools.append(pool)
-        val jobsForDir = logsInDir(localLogsByDir, dir).values.filter(_.isInstanceOf[ElasticUnifiedLog]).map(log => {
-          val runnable: Runnable = () => {
-            try {
-              log.asInstanceOf[ElasticUnifiedLog].closeStreams().get()
-            } catch {
-              case e: Throwable =>
-                warn(s"error when trying to close streams for ${log.dir.getName} ", e)
-            }
-          }
-          runnable
-        })
-        closeStreamsJobs(dir) = jobsForDir.map(pool.submit).toSeq
-      }
-
-      closeStreamsJobs.forKeyValue { (_, dirJobs) =>
-        waitForAllToComplete(dirJobs,
-          e => warn(s"There was an error in one of the stream-closing threads during LogManager shutdown: ", e))
-      }
+      // wait for all streams to be closed
+      CoreUtils.swallow(CompletableFuture.allOf(closeStreamsFutures.toArray: _*).get(), this)
 
     } finally {
       threadPools.foreach(_.shutdown())
@@ -1200,7 +1177,12 @@ class LogManager(logDirs: Seq[File],
         sourceLog.renameDir(UnifiedLog.logDeleteDirName(topicPartition), true)
         // Now that replica in source log directory has been successfully renamed for deletion.
         // Close the log, update checkpoint files, and enqueue this log to be deleted.
-        sourceLog.close()
+
+        // Kafka on S3 inject start
+        val future = sourceLog.closeWithFuture()
+        CoreUtils.swallow(future.get(), this)
+        // Kafka on S3 inject end
+
         // elastic stream inject start
         if (!ElasticLogManager.enabled()) {
           val logDir = sourceLog.parentDirFile

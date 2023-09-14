@@ -580,7 +580,10 @@ class Partition(val topicPartition: TopicPartition,
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }
-    log.foreach(_.close())
+    log.foreach( unifiedLog => {
+      val future = unifiedLog.closeWithFuture()
+      CoreUtils.swallow(future.get(), this)
+    })
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()

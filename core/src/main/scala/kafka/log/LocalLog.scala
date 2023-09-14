@@ -33,7 +33,7 @@ import org.apache.kafka.common.utils.{Time, Utils}
 import kafka.log.es.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
 import kafka.log.es.ElasticLogManager
 
-import java.util.concurrent.ExecutionException
+import java.util.concurrent.{CompletableFuture, ExecutionException}
 import scala.jdk.CollectionConverters._
 import scala.collection.{Seq, immutable}
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -232,6 +232,13 @@ class LocalLog(@volatile private var _dir: File,
       segments.close()
     }
   }
+
+  // Kafka on S3 inject start
+  private[log] def closeWithFuture(): CompletableFuture[Void] = {
+    close()
+    CompletableFuture.completedFuture(null)
+  }
+  // Kafka on S3 inject end
 
   /**
    * Completely delete this log directory with no delay.
