@@ -38,10 +38,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
-    private static final int BLOCK_SIZE = 1024 * 1024;
-    private static final int MAX_READAHEAD_SIZE = 128 * 1024 * 1024;
+    static final int BLOCK_SIZE = 1024 * 1024;
+    static final int MAX_READAHEAD_SIZE = 128 * 1024 * 1024;
     private final long maxSize;
-    private final Map<Long, StreamCache> stream2cache = new HashMap<>();
+    final Map<Long, StreamCache> stream2cache = new HashMap<>();
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
     private final LRUCache<CacheKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
@@ -236,21 +236,23 @@ public class BlockCache {
         int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
         size = alignBlockSize(size);
         StreamCache streamCache = stream2cache.get(streamId);
-        if (streamCache != null) {
-            if (streamCache.evict) {
-                size = alignBlockSize(size / 2);
-                streamCache.evict = false;
+        if (streamCache != null && streamCache.evict) {
+            // exponential fallback when cache is tight.
+            size = alignBlockSize(size / 2);
+            streamCache.evict = false;
+        } else {
+            if (size < MAX_READAHEAD_SIZE / 2) {
+                // exponential growth
+                size = size * 2;
             } else {
-                if (size < MAX_READAHEAD_SIZE / 2) {
-                    size = size * 2;
-                }else {
-                    // slow increment
-                    size += BLOCK_SIZE;
-                }
+                // linear growth
+                size += BLOCK_SIZE;
             }
         }
         size = Math.min(Math.max(size, BLOCK_SIZE), MAX_READAHEAD_SIZE);
-        return new Readahead(startOffset, size);
+        return new
+
+                Readahead(startOffset, size);
     }
 
     int alignBlockSize(int size) {

@@ -19,6 +19,7 @@ package org.apache.kafka.metadata.stream;
 
 public class ObjectUtils {
     public static final long NOOP_OBJECT_ID = -1L;
+    public static final long NOOP_OFFSET = -1L;
     private static String namespace = "DEFAULT";
 
     public static void setNamespace(String namespace) {

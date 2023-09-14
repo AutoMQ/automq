@@ -30,8 +30,8 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
@@ -50,6 +50,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher {
 
@@ -174,6 +176,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                         streamId, startOffset, endOffset, limit, streamStartOffset);
                 return CompletableFuture.completedFuture(InRangeObjects.INVALID);
             }
+            endOffset = endOffset == NOOP_OFFSET ? streamEndOffset : endOffset;
             if (endOffset > streamEndOffset) {
                 // lag behind, need to wait for cache catch up
                 return pendingFetch(streamId, startOffset, endOffset, limit);
