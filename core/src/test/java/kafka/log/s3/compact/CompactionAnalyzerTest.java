@@ -289,7 +289,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
         List<S3WALObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
         s3ObjectMetadata.add(new S3WALObjectMetadata(new S3WALObject(100, 0, Map.of(
-                STREAM_2, List.of(new StreamOffsetRange(STREAM_2, 1000, 1200))
+                STREAM_2, new StreamOffsetRange(STREAM_2, 1000, 1200)
         ), 0), new S3ObjectMetadata(100, 0, S3ObjectType.WAL)));
         List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(s3ObjectMetadata);
         checkCompactionPlan2(compactionPlans);

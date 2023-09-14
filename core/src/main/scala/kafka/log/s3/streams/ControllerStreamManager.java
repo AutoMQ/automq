@@ -140,6 +140,8 @@ public class ControllerStreamManager implements StreamManager {
                     return ResponseHandleResult.withSuccess(null);
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
+                case STREAM_NOT_OPENED:
+                case OFFSET_NOT_MATCHED:
                 case STREAM_INNER_ERROR:
                     LOGGER.error("Unexpected error while trimming stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();

@@ -506,7 +506,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<TrimStreamResponseData> trimStream(ControllerRequestContext context, TrimStreamRequestData request) {;
+    public CompletableFuture<TrimStreamResponseData> trimStream(ControllerRequestContext context, TrimStreamRequestData request) {
         throw new UnsupportedOperationException();
     }
 

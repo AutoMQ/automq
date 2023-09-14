@@ -17,7 +17,6 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -28,7 +27,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
 
     private final long objectId;
     private final int brokerId;
-    private final Map<Long/*streamId*/, List<StreamOffsetRange>> streamOffsetRanges;
+    private final Map<Long/*streamId*/, StreamOffsetRange> streamOffsetRanges;
 
     /**
      * The order id of the object. Sort by this field to get the order of the objects which contains logically increasing streams.
@@ -40,11 +39,11 @@ public class S3WALObject implements Comparable<S3WALObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamOffsetRanges, long orderId) {
+    public S3WALObject(long objectId, int brokerId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
         this(objectId, brokerId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3WALObject(long objectId, int brokerId, final Map<Long, List<StreamOffsetRange>> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3WALObject(long objectId, int brokerId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.brokerId = brokerId;
@@ -53,16 +52,14 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
-        List<StreamOffsetRange> indexes = streamOffsetRanges.get(streamId);
-        if (indexes == null || indexes.isEmpty()) {
+        StreamOffsetRange offsetRange = streamOffsetRanges.get(streamId);
+        if (offsetRange == null) {
             return false;
         }
-        StreamOffsetRange firstIndex = indexes.get(0);
-        StreamOffsetRange lastIndex = indexes.get(indexes.size() - 1);
-        return startOffset >= firstIndex.getStartOffset() && startOffset <= lastIndex.getEndOffset();
+        return startOffset >= offsetRange.getStartOffset() && startOffset <= offsetRange.getEndOffset();
     }
 
-    public Map<Long, List<StreamOffsetRange>> offsetRanges() {
+    public Map<Long, StreamOffsetRange> offsetRanges() {
         return streamOffsetRanges;
     }
 
@@ -73,17 +70,20 @@ public class S3WALObject implements Comparable<S3WALObject> {
             .setOrderId(orderId)
             .setDataTimeInMs(dataTimeInMs)
             .setStreamsIndex(
-                streamOffsetRanges.values().stream().flatMap(List::stream)
+                streamOffsetRanges
+                    .values()
+                    .stream()
                     .map(StreamOffsetRange::toRecordStreamIndex)
                     .collect(Collectors.toList())), (short) 0);
     }
 
     public static S3WALObject of(WALObjectRecord record) {
-        Map<Long, List<StreamOffsetRange>> collect = record.streamsIndex().stream()
-            .map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset()))
-            .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
+        Map<Long, StreamOffsetRange> offsetRanges = record.streamsIndex()
+            .stream()
+            .collect(Collectors.toMap(index -> index.streamId(),
+                index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
         S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
-            collect, record.orderId(), record.dataTimeInMs());
+            offsetRanges, record.orderId(), record.dataTimeInMs());
         return s3WalObject;
     }
 

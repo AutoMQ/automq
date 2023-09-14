@@ -101,24 +101,24 @@ public class S3StreamsMetadataImageTest {
     @Test
     public void testGetObjects() {
         List<S3WALObject> broker0WalObjects = List.of(
-            new S3WALObject(0, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 100L, 120L))), 0L),
-            new S3WALObject(1, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 120L, 140L))), 1L),
-            new S3WALObject(2, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 180L, 200L))), 2L),
-            new S3WALObject(3, BROKER0, Map.of(STREAM0, List.of(
-                new StreamOffsetRange(STREAM0, 400L, 420L), new StreamOffsetRange(STREAM0, 500L, 520L))), 3L),
-            new S3WALObject(4, BROKER0, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 520L, 600L))), 4L));
+            new S3WALObject(0, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
+            new S3WALObject(1, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
+            new S3WALObject(2, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
+            new S3WALObject(3, BROKER0, Map.of(STREAM0,
+                new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
+            new S3WALObject(4, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
         List<S3WALObject> broker1WalObjects = List.of(
-            new S3WALObject(5, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 140L, 160L))), 0L),
-            new S3WALObject(6, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 160L, 180L))), 1L),
-            new S3WALObject(7, BROKER1, Map.of(STREAM0, List.of(new StreamOffsetRange(STREAM0, 420L, 500L))), 2L));
+            new S3WALObject(5, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
+            new S3WALObject(6, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
+            new S3WALObject(7, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
         BrokerS3WALMetadataImage broker0WALMetadataImage = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(broker0WalObjects));
         BrokerS3WALMetadataImage broker1WALMetadataImage = new BrokerS3WALMetadataImage(BROKER1, new SortedWALObjectsList(broker1WalObjects));
         Map<Integer, RangeMetadata> ranges = Map.of(
             0, new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),
             1, new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),
             2, new RangeMetadata(STREAM0, 2L, 2, 180L, 420L, BROKER0),
-            3, new RangeMetadata(STREAM0, 3L, 3, 420L, 500L, BROKER1),
-            4, new RangeMetadata(STREAM0, 4L, 4, 500L, 600L, BROKER0));
+            3, new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
+            4, new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
         Map<Long, S3StreamObject> streamObjects = Map.of(
             8L, new S3StreamObject(8, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS),
             9L, new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
@@ -140,16 +140,16 @@ public class S3StreamsMetadataImageTest {
         objects = streamsImage.getObjects(STREAM0, 10, 600, Integer.MAX_VALUE);
         assertEquals(10, objects.startOffset());
         assertEquals(600, objects.endOffset());
-        assertEquals(12, objects.objects().size());
+        assertEquals(11, objects.objects().size());
         List<Long> expectedObjectIds = List.of(
-            8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L, 7L, 3L, 4L);
+            8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L, 7L, 4L);
         assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 4. search stream_0 in [20, 550)
         objects = streamsImage.getObjects(STREAM0, 20, 550, Integer.MAX_VALUE);
         assertEquals(20, objects.startOffset());
         assertEquals(600, objects.endOffset());
-        assertEquals(12, objects.objects().size());
+        assertEquals(11, objects.objects().size());
         assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 5. search stream_0 in [20, 550) with limit 5
@@ -163,21 +163,21 @@ public class S3StreamsMetadataImageTest {
         objects = streamsImage.getObjects(STREAM0, 400, 520, Integer.MAX_VALUE);
         assertEquals(400, objects.startOffset());
         assertEquals(520, objects.endOffset());
-        assertEquals(3, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+        assertEquals(2, objects.objects().size());
+        assertEquals(expectedObjectIds.subList(8, 10), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 7. search stream_0 in [401, 519)
         objects = streamsImage.getObjects(STREAM0, 401, 519, Integer.MAX_VALUE);
         assertEquals(401, objects.startOffset());
         assertEquals(520, objects.endOffset());
-        assertEquals(3, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(8, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+        assertEquals(2, objects.objects().size());
+        assertEquals(expectedObjectIds.subList(8, 10), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 8. search stream_0 in [399, 521)
         objects = streamsImage.getObjects(STREAM0, 399, 521, Integer.MAX_VALUE);
         assertEquals(399, objects.startOffset());
         assertEquals(600, objects.endOffset());
-        assertEquals(5, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(7, 12), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+        assertEquals(4, objects.objects().size());
+        assertEquals(expectedObjectIds.subList(7, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
 }

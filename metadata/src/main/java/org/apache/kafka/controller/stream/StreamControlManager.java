@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller.stream;
 
+import java.util.HashMap;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -362,40 +363,12 @@ public class StreamControlManager {
         long streamId = data.streamId();
         int brokerId = data.brokerId();
         long epoch = data.streamEpoch();
-        if (!this.streamsMetadata.containsKey(streamId)) {
-            resp.setErrorCode(Errors.STREAM_NOT_EXIST.code());
-            log.warn("[CloseStream]: stream {} not exist", streamId);
+        Errors authResult = streamOwnershipAuth(streamId, epoch, brokerId, "CloseStream");
+        if (authResult != Errors.NONE) {
+            resp.setErrorCode(authResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // verify epoch match
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-        if (streamMetadata.currentEpoch() > epoch) {
-            resp.setErrorCode(Errors.STREAM_FENCED.code());
-            log.warn("[CloseStream]: stream {}'s epoch {} is larger than request epoch {}", streamId,
-                    streamMetadata.currentEpoch.get(), epoch);
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
-        if (streamMetadata.currentEpoch() < epoch) {
-            // should not happen
-            log.error("[CloseStream]: stream {}'s epoch {} is smaller than request epoch {}", streamId,
-                    streamMetadata.currentEpoch.get(), epoch);
-            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-        }
-        // verify broker
-        RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
-        if (rangeMetadata == null) {
-            // should not happen
-            log.error("[CloseStream]: stream {}'s current range {} not exist when close stream with epoch: {}", streamId,
-                    streamMetadata.currentRangeIndex(), epoch);
-            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
-        if (rangeMetadata.brokerId() != brokerId) {
-            log.warn("[CloseStream]: stream {}'s current range {}'s broker {} is not equal to request broker {}",
-                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
-            resp.setErrorCode(Errors.STREAM_FENCED.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
         if (streamMetadata.currentState() == StreamState.CLOSED) {
             // regard it as redundant close operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -413,8 +386,182 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
+    private Errors streamOwnershipAuth(long streamId, long epoch, int brokerId, String operationName) {
+        if (!this.streamsMetadata.containsKey(streamId)) {
+            log.warn("[{}]: stream {} not exist", operationName, streamId);
+            return Errors.STREAM_NOT_EXIST;
+        }
+        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        if (streamMetadata.currentEpoch() > epoch) {
+            log.warn("[{}]: stream {}'s epoch {} is larger than request epoch {}", operationName, streamId,
+                streamMetadata.currentEpoch.get(), epoch);
+            return Errors.STREAM_FENCED;
+        }
+        if (streamMetadata.currentEpoch() < epoch) {
+            // should not happen
+            log.error("[{}]: stream {}'s epoch {} is smaller than request epoch {}", operationName, streamId,
+                streamMetadata.currentEpoch.get(), epoch);
+            return Errors.STREAM_INNER_ERROR;
+        }
+        // verify broker
+        RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
+        if (rangeMetadata == null) {
+            // should not happen
+            log.error("[{}]: stream {}'s current range {} not exist when trim stream with epoch: {}", operationName, streamId,
+                streamMetadata.currentRangeIndex(), epoch);
+            return Errors.STREAM_INNER_ERROR;
+        }
+        if (rangeMetadata.brokerId() != brokerId) {
+            log.warn("[{}]: stream {}'s current range {}'s broker {} is not equal to request broker {}", operationName,
+                streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
+            return Errors.STREAM_FENCED;
+        }
+        return Errors.NONE;
+    }
+
     public ControllerResult<TrimStreamResponseData> trimStream(TrimStreamRequestData data) {
-        throw new UnsupportedOperationException();
+        // TODO: speed up offset updating
+        long epoch = data.streamEpoch();
+        long streamId = data.streamId();
+        long newStartOffset = data.newStartOffset();
+        int brokerId = data.brokerId();
+        TrimStreamResponseData resp = new TrimStreamResponseData();
+        Errors authResult = streamOwnershipAuth(streamId, epoch, brokerId, "TrimStream");
+        if (authResult != Errors.NONE) {
+            resp.setErrorCode(authResult.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        if (streamMetadata.currentState() == StreamState.CLOSED) {
+            log.warn("[TrimStream]: stream {}'s state is CLOSED, can't trim", streamId);
+            resp.setErrorCode(Errors.STREAM_NOT_OPENED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        if (streamMetadata.startOffset() > newStartOffset) {
+            log.warn("[TrimStream]: stream {}'s start offset {} is larger than request new start offset {}",
+                    streamId, streamMetadata.startOffset(), newStartOffset);
+            resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        if (streamMetadata.startOffset() == newStartOffset) {
+            // regard it as redundant trim operation, just return success
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
+        long endOffset = rangeMetadata.endOffset();
+        if (newStartOffset > endOffset) {
+            log.warn("[TrimStream]: stream {}'s new start offset {} is larger than current range's end offset {}",
+                    streamId, newStartOffset, endOffset);
+            resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        // now the request is valid
+        // update the stream metadata start offset
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        records.add(new ApiMessageAndVersion(new S3StreamRecord()
+                .setStreamId(streamId)
+                .setEpoch(epoch)
+                .setRangeIndex(streamMetadata.currentRangeIndex())
+                .setStartOffset(newStartOffset)
+                .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
+        // remove range or update range's start offset
+        streamMetadata.ranges.entrySet().stream().forEach(it -> {
+            Integer rangeIndex = it.getKey();
+            RangeMetadata range = it.getValue();
+            if (newStartOffset <= range.startOffset()) {
+                return;
+            }
+            if (newStartOffset >= range.endOffset()) {
+                // remove range
+                records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
+                        .setStreamId(streamId)
+                        .setRangeIndex(rangeIndex), (short) 0));
+                return;
+            }
+            // update range's start offset
+            records.add(new ApiMessageAndVersion(new RangeRecord()
+                    .setStreamId(streamId)
+                    .setBrokerId(range.brokerId())
+                    .setStartOffset(newStartOffset)
+                    .setEndOffset(range.endOffset())
+                    .setEpoch(range.epoch())
+                    .setRangeIndex(rangeIndex), (short) 0));
+        });
+        // remove stream object or update stream object's range start offset
+        streamMetadata.streamObjects.entrySet().stream().forEach(it -> {
+            Long objectId = it.getKey();
+            S3StreamObject streamObject = it.getValue();
+            long streamStartOffset = streamObject.streamOffsetRange().getStartOffset();
+            long streamEndOffset = streamObject.streamOffsetRange().getEndOffset();
+            if (newStartOffset <= streamStartOffset) {
+                return;
+            }
+            if (newStartOffset >= streamEndOffset) {
+                // remove stream object
+                records.add(new ApiMessageAndVersion(new RemoveS3StreamObjectRecord()
+                        .setStreamId(streamId)
+                        .setObjectId(objectId), (short) 0));
+                ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
+                    Collections.singletonList(objectId));
+                if (!markDestroyResult.response()) {
+                    log.error("[TrimStream]: Mark destroy stream object: {} failed", objectId);
+                    resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                    return;
+                }
+                records.addAll(markDestroyResult.records());
+                return;
+            }
+            // update wal object's stream range start offset
+            records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
+                .setStreamId(streamId)
+                .setObjectId(objectId)
+                .setStartOffset(newStartOffset)
+                .setEndOffset(streamEndOffset)
+                .setDataTimeInMs(streamObject.dataTimeInMs()), (short) 0));
+        });
+        // remove wal object or update wal object's stream range start offset
+        // TODO: optimize
+        this.brokersMetadata.values()
+            .stream()
+            .flatMap(entry -> entry.walObjects.values().stream())
+            .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
+            .filter(walObject -> walObject.offsetRanges().get(streamId).getStartOffset() < newStartOffset)
+            .forEach(walObj -> {
+                StreamOffsetRange offsetRange = walObj.offsetRanges().get(streamId);
+                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
+                if (offsetRange.getEndOffset() <= newStartOffset) {
+                    // remove offset range
+                    newOffsetRange.remove(streamId);
+                    if (walObj.offsetRanges().size() == 1) {
+                        // only this range, but we will remove this range, so now we can remove this wal object
+                        records.add(new ApiMessageAndVersion(
+                            new RemoveWALObjectRecord()
+                                .setBrokerId(walObj.brokerId())
+                                .setObjectId(walObj.objectId()), (short) 0
+                        ));
+                        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
+                            List.of(walObj.objectId()));
+                        if (!markDestroyResult.response()) {
+                            log.error("[TrimStream]: Mark destroy wal object: {} failed", walObj.objectId());
+                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                            return;
+                        }
+                        records.addAll(markDestroyResult.records());
+                        return;
+                    }
+                } else {
+                    // update offset range
+                    newOffsetRange.put(streamId, new StreamOffsetRange(streamId, newStartOffset, offsetRange.getEndOffset()));
+                }
+                records.add(new ApiMessageAndVersion(new WALObjectRecord()
+                    .setObjectId(walObj.objectId())
+                    .setBrokerId(walObj.brokerId())
+                    .setStreamsIndex(newOffsetRange.values().stream().map(StreamOffsetRange::toRecordStreamIndex).collect(Collectors.toList()))
+                    .setDataTimeInMs(walObj.dataTimeInMs())
+                    .setOrderId(walObj.orderId()), (short) 0));
+            });
+        log.info("[TrimStream]: broker: {} trim stream: {} to new start offset: {} with epoch: {} success", brokerId, streamId, newStartOffset, epoch);
+        return ControllerResult.atomicOf(records, resp);
     }
 
     public ControllerResult<DeleteStreamResponseData> deleteStream(DeleteStreamRequestData data) {
@@ -713,10 +860,9 @@ public class StreamControlManager {
         }
 
         // create wal object
-        Map<Long, List<StreamOffsetRange>> indexMap = streamIndexes
+        Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
-                .map(StreamOffsetRange::of)
-                .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
+                .collect(Collectors.toMap(StreamIndex::streamId, StreamOffsetRange::of));
         brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId, dataTs));
 
         // update range
@@ -817,37 +963,6 @@ public class StreamControlManager {
     public Long nextAssignedStreamId() {
         return nextAssignedStreamId.get();
     }
-
-    private boolean verifyWalStreamRanges(ObjectStreamRange range, long brokerId) {
-        long streamId = range.streamId();
-        long epoch = range.streamEpoch();
-        // verify
-        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-        if (streamMetadata == null) {
-            return false;
-        }
-        // compare epoch
-        if (streamMetadata.currentEpoch() > epoch) {
-            return false;
-        }
-        if (streamMetadata.currentEpoch() < epoch) {
-            return false;
-        }
-        RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
-        if (rangeMetadata == null) {
-            return false;
-        }
-        // compare broker
-        if (rangeMetadata.brokerId() != brokerId) {
-            return false;
-        }
-        // compare offset
-        if (rangeMetadata.endOffset() != range.startOffset()) {
-            return false;
-        }
-        return true;
-    }
-
 
     @Override
     public String toString() {

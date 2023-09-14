@@ -39,6 +39,13 @@
       "about": "The epoch of the requesting stream in the requesting broker"
     },
     {
+      "name": "BrokerId",
+      "type": "int32",
+      "versions": "0+",
+      "entityType": "brokerId",
+      "about": "The id of the requesting broker"
+    },
+    {
       "name": "NewStartOffset",
       "type": "int64",
       "versions": "0+",

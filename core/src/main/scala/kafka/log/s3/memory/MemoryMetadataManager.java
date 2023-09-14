@@ -170,12 +170,12 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             // build metadata
             MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
                     k -> new MemoryBrokerWALMetadata(k));
-            Map<Long, List<StreamOffsetRange>> index = new HashMap<>();
+            Map<Long, StreamOffsetRange> index = new HashMap<>();
             streamRanges.forEach(range -> {
                 long streamId = range.getStreamId();
                 long startOffset = range.getStartOffset();
                 long endOffset = range.getEndOffset();
-                index.put(streamId, List.of(new StreamOffsetRange(streamId, startOffset, endOffset)));
+                index.put(streamId, new StreamOffsetRange(streamId, startOffset, endOffset));
                 // update range endOffset
                 MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
                 streamMetadata.endOffset = endOffset;
