@@ -23,7 +23,6 @@ import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.compact.operator.DataBlockReader;
 import kafka.log.s3.memory.MemoryMetadataManager;
-import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.objects.StreamObject;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.server.KafkaConfig;
@@ -37,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -66,28 +66,18 @@ public class CompactionUploaderTest extends CompactionTestBase {
     @Test
     public void testWriteWALObject() {
         List<StreamDataBlock> streamDataBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 0, 20, 1),
-                new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 20, 5, 1),
-                new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 25, 80, 1),
-                new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 105, 30, 1));
-        CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks, 100);
-        List<ObjectStreamRange> result = CompactionUtils.buildObjectStreamRange(compactedObject);
-        Assertions.assertEquals(2, result.size());
-        Assertions.assertEquals(STREAM_0, result.get(0).getStreamId());
-        Assertions.assertEquals(0, result.get(0).getStartOffset());
-        Assertions.assertEquals(25, result.get(0).getEndOffset());
-        Assertions.assertEquals(STREAM_2, result.get(1).getStreamId());
-        Assertions.assertEquals(40, result.get(1).getStartOffset());
-        Assertions.assertEquals(150, result.get(1).getEndOffset());
-
+                new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 30, 20, 1),
+                new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 10, 5, 1),
+                new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 100, 80, 1),
+                new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 0, 30, 1));
+        CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks);
         CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
-        CompletableFuture<CompletableFuture<Void>> cf = uploader.writeWALObject(compactedObject);
+        CompletableFuture<Void> cf = uploader.chainWriteWALObject(null, compactedObject);
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            streamDataBlock.getDataCf().complete(TestUtils.random((int) streamDataBlock.getStreamRangeSize()));
+            streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
         }
-        CompletableFuture<Void> writeCf = cf.join();
-        uploader.forceUploadWAL();
-        writeCf.join();
+        cf.thenAccept(v -> uploader.forceUploadWAL()).join();
+        uploader.forceUploadWAL().join();
         long walObjectSize = uploader.completeWAL();
         System.out.printf("write size: %d%n", walObjectSize);
         Assertions.assertEquals(walObjectSize, calculateObjectSize(streamDataBlocks));
@@ -111,11 +101,64 @@ public class CompactionUploaderTest extends CompactionTestBase {
     }
 
     @Test
+    public void testWriteWALObject2() {
+        List<StreamDataBlock> streamDataBlocks1 = List.of(
+                new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 30, 20, 1),
+                new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 10, 5, 1),
+                new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 100, 80, 1),
+                new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 0, 30, 1));
+        CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks1);
+
+        List<StreamDataBlock> streamDataBlocks2 = List.of(
+                new StreamDataBlock(STREAM_3, 0, 15, 2, 4, 0, 15, 1),
+                new StreamDataBlock(STREAM_3, 15, 20, 1, 5, 20, 5, 1));
+        CompactedObject compactedObject2 = new CompactedObject(CompactionType.COMPACT, streamDataBlocks2);
+
+        CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
+        CompletableFuture<Void> cf = uploader.chainWriteWALObject(null, compactedObject);
+        cf = uploader.chainWriteWALObject(cf, compactedObject2);
+
+        for (StreamDataBlock streamDataBlock : streamDataBlocks2) {
+            streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
+        }
+
+        for (StreamDataBlock streamDataBlock : streamDataBlocks1) {
+            streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
+        }
+
+        cf.thenAccept(v -> uploader.forceUploadWAL()).join();
+        uploader.forceUploadWAL().join();
+        long walObjectSize = uploader.completeWAL();
+        System.out.printf("write size: %d%n", walObjectSize);
+
+        List<StreamDataBlock> expectedDataBlocks = new ArrayList<>(streamDataBlocks1);
+        expectedDataBlocks.addAll(streamDataBlocks2);
+        Assertions.assertEquals(walObjectSize, calculateObjectSize(expectedDataBlocks));
+
+        //check s3 object
+        DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.WAL), s3Operator);
+        reader.parseDataBlockIndex();
+        List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
+        Assertions.assertEquals(streamDataBlocksFromS3.size(), expectedDataBlocks.size());
+        long expectedBlockPosition = 0;
+        for (int i = 0; i < expectedDataBlocks.size(); i++) {
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
+            compare(streamDataBlocksFromS3.get(i), expectedDataBlocks.get(i));
+        }
+        List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);
+        List<DataBlockReader.DataBlock> dataBlocks = reader.readBlocks(blockIndices).join();
+        for (int i = 0; i < dataBlocks.size(); i++) {
+            Assertions.assertEquals(expectedDataBlocks.get(i).getDataCf().join(), dataBlocks.get(i).buffer());
+        }
+    }
+
+    @Test
     public void testWriteStreamObject() {
         List<StreamDataBlock> streamDataBlocks = List.of(
                 new StreamDataBlock(STREAM_0, 0, 60, 1, 0, 23, 60, 1),
                 new StreamDataBlock(STREAM_0, 60, 120, 0, 1, 45, 60, 1));
-        CompactedObject compactedObject = new CompactedObject(CompactionType.SPLIT, streamDataBlocks, 100);
+        CompactedObject compactedObject = new CompactedObject(CompactionType.SPLIT, streamDataBlocks);
 
         CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
         CompletableFuture<StreamObject> cf = uploader.writeStreamObject(compactedObject);

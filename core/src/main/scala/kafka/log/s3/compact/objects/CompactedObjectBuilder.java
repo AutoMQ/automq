@@ -128,6 +128,6 @@ public class CompactedObjectBuilder {
     }
 
     public CompactedObject build() {
-        return new CompactedObject(type, streamDataBlocks, totalBlockSize());
+        return new CompactedObject(type, streamDataBlocks);
     }
 }

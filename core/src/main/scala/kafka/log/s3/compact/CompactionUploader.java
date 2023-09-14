@@ -17,6 +17,7 @@
 
 package kafka.log.s3.compact;
 
+import kafka.log.es.utils.Threads;
 import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
@@ -29,18 +30,16 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class CompactionUploader {
     private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
     private final ObjectManager objectManager;
     private final TokenBucketThrottle throttle;
-    private final ExecutorService executorService;
+    private final ExecutorService streamObjectUploadPool;
+    private final ExecutorService walObjectUploadPool;
     private final S3Operator s3Operator;
     private final KafkaConfig kafkaConfig;
     private CompletableFuture<Long> walObjectIdCf = null;
@@ -52,45 +51,49 @@ public class CompactionUploader {
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
         this.throttle = new TokenBucketThrottle(kafkaConfig.s3ObjectCompactionNWOutBandwidth());
-        this.executorService = Executors.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
-                ThreadUtils.createThreadFactory("compaction-uploader-%d", true));
+        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
+                ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
+        this.walObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("compaction-wal-object-uploader-%d", true), LOGGER);
     }
 
     public void stop() {
-        this.executorService.shutdown();
+        this.walObjectUploadPool.shutdown();
+        this.streamObjectUploadPool.shutdown();
         this.throttle.stop();
     }
 
-    public CompletableFuture<CompletableFuture<Void>> writeWALObject(CompactedObject compactedObject) {
+    public CompletableFuture<Void> chainWriteWALObject(CompletableFuture<Void> prev, CompactedObject compactedObject) {
         if (compactedObject.type() != CompactionType.COMPACT) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("wrong compacted object type, expected COMPACT"));
         }
-        return CompletableFuture.allOf(compactedObject.streamDataBlocks()
+        if (prev == null) {
+            return CompletableFuture.allOf(compactedObject.streamDataBlocks()
+                            .stream()
+                            .map(StreamDataBlock::getDataCf)
+                            .toArray(CompletableFuture[]::new))
+                    .thenComposeAsync(v -> prepareObjectAndWrite(compactedObject), walObjectUploadPool);
+        }
+        return prev.thenComposeAsync(v ->
+                CompletableFuture.allOf(compactedObject.streamDataBlocks()
                         .stream()
                         .map(StreamDataBlock::getDataCf)
                         .toArray(CompletableFuture[]::new))
-                .thenComposeAsync(v -> prepareObjectAndWrite(compactedObject), executorService)
-                .exceptionally(ex -> {
-                    LOGGER.error("wal object write failed", ex);
-                    return null;
-                });
+                .thenComposeAsync(vv -> prepareObjectAndWrite(compactedObject), walObjectUploadPool));
     }
 
-    private CompletableFuture<CompletableFuture<Void>> prepareObjectAndWrite(CompactedObject compactedObject) {
-        // no race condition, only one thread at a time will request for wal object id
+    private CompletableFuture<Void> prepareObjectAndWrite(CompactedObject compactedObject) {
         if (walObjectIdCf == null) {
             walObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
         }
-        return walObjectIdCf.thenApplyAsync(objectId -> {
+        return walObjectIdCf.thenAcceptAsync(objectId -> {
             if (walObjectWriter == null) {
                 walObjectWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
             }
-            List<CompletableFuture<Void>> writeFutureList = new ArrayList<>();
             for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
-                writeFutureList.add(walObjectWriter.write(streamDataBlock));
+                walObjectWriter.write(streamDataBlock);
             }
-            return CompletableFuture.allOf(writeFutureList.toArray(new CompletableFuture[0]));
-        }, executorService).exceptionally(ex -> {
+        }, streamObjectUploadPool).exceptionally(ex -> {
             LOGGER.error("prepare and write wal object failed", ex);
             return null;
         });
@@ -122,19 +125,19 @@ public class CompactionUploader {
                                         streamObject.setObjectSize(dataBlockWriter.size());
                                         return streamObject;
                                     });
-                                }, executorService),
-                        executorService)
+                                }, streamObjectUploadPool),
+                        streamObjectUploadPool)
                 .exceptionally(ex -> {
                     LOGGER.error("stream object write failed", ex);
                     return null;
                 });
     }
 
-    public void forceUploadWAL() {
+    public CompletableFuture<Void> forceUploadWAL() {
         if (walObjectWriter == null) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
-        walObjectWriter.uploadWaitingList();
+        return walObjectWriter.forceUpload();
     }
 
     public long completeWAL() {

@@ -251,6 +251,11 @@ public class DefaultS3Operator implements S3Operator {
             return objectPart.getFuture();
         }
 
+        @Override
+        public boolean hashBatchingPart() {
+            return objectPart != null;
+        }
+
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffer(part.nioBuffer());
             UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)

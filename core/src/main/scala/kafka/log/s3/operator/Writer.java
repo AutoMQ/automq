@@ -62,6 +62,8 @@ public interface Writer {
      */
     void copyWrite(String sourcePath, long start, long end);
 
+    boolean hashBatchingPart();
+
     /**
      * Complete the object.
      */
