@@ -294,13 +294,22 @@ public class BlockWALService implements WriteAheadLog {
     @Override
     public void shutdownGracefully() {
         scheduledExecutorService.shutdown();
-        slidingWindowService.shutdown();
+        try {
+            if (!scheduledExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                scheduledExecutorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            scheduledExecutorService.shutdownNow();
+        }
+
+        boolean gracefulShutdown = slidingWindowService.shutdown(1, TimeUnit.DAYS);
         flushWALHeader(
                 slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
                 slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
                 slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
-                ShutdownType.GRACEFULLY
+                gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY
         );
+
         walChannel.close();
     }
 

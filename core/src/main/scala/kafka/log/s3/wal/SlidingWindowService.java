@@ -90,14 +90,15 @@ public class SlidingWindowService {
         this.executorService = newCachedThreadPool(ioThreadNums);
     }
 
-    public void shutdown() {
+    public boolean shutdown(long timeout, TimeUnit unit) {
+        this.executorService.shutdown();
         try {
-            //noinspection ResultOfMethodCallIgnored
-            this.executorService.awaitTermination(3, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {
+            return this.executorService.awaitTermination(timeout, unit);
+        } catch (InterruptedException e) {
+            this.executorService.shutdownNow();
+            return false;
         }
     }
-
 
     public long allocateWriteOffset(final int recordBodyLength, final long trimOffset, final long recordSectionCapacity) throws OverCapacityException {
         // 计算要写入的总大小
