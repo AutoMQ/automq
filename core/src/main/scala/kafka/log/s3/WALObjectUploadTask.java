@@ -32,6 +32,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static kafka.log.es.FutureUtil.exec;
@@ -49,9 +50,10 @@ public class WALObjectUploadTask {
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
+    private final ExecutorService executor;
 
     public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, boolean forceSplit) {
+                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, boolean forceSplit, ExecutorService executor) {
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = objectBlockSize;
         this.objectPartSize = objectPartSize;
@@ -59,27 +61,31 @@ public class WALObjectUploadTask {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.forceSplit = forceSplit;
+        this.executor = executor;
     }
 
     public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold) {
-        this(streamRecordsMap, objectManager, s3Operator, objectBlockSize, objectPartSize, streamSplitSizeThreshold, streamRecordsMap.size() == 1);
+                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, ExecutorService executor) {
+        this(streamRecordsMap, objectManager, s3Operator, objectBlockSize, objectPartSize, streamSplitSizeThreshold, streamRecordsMap.size() == 1, executor);
     }
 
     public CompletableFuture<Long> prepare() {
         if (forceSplit) {
             prepareCf.complete(NOOP_OBJECT_ID);
         } else {
-            objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(prepareCf::complete).exceptionally(ex -> {
-                prepareCf.completeExceptionally(ex);
-                return null;
-            });
+            objectManager
+                    .prepareObject(1, TimeUnit.MINUTES.toMillis(30))
+                    .thenAcceptAsync(prepareCf::complete)
+                    .exceptionally(ex -> {
+                        prepareCf.completeExceptionally(ex);
+                        return null;
+                    });
         }
         return prepareCf;
     }
 
     public CompletableFuture<CommitWALObjectRequest> upload() {
-        prepareCf.thenAccept(objectId -> exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"));
+        prepareCf.thenAcceptAsync(objectId -> exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
         return uploadCf;
     }
 
@@ -136,7 +142,7 @@ public class WALObjectUploadTask {
 
     private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords) {
         CompletableFuture<Long> objectIdCf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
-        return objectIdCf.thenCompose(objectId -> {
+        return objectIdCf.thenComposeAsync(objectId -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
@@ -151,6 +157,6 @@ public class WALObjectUploadTask {
                 streamObject.setObjectSize(streamObjectWriter.size());
                 return streamObject;
             });
-        });
+        }, executor);
     }
 }

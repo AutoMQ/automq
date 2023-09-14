@@ -25,6 +25,8 @@ import java.util.Queue;
 import java.util.Stack;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import kafka.log.s3.model.StreamRecordBatch;
@@ -192,7 +194,7 @@ class StreamObjectsCompactionTaskTest {
             Map<Long, List<StreamRecordBatch>> map = Map.of(streamId,
                 List.of(new StreamRecordBatch(streamId, 0, startOffset, Math.toIntExact(endOffset - startOffset), random(recordsSize))));
             WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024,
-                recordsSize - 1, false);
+                recordsSize - 1, false, ForkJoinPool.commonPool());
 
             walObjectUploadTask.prepare().get();
             walObjectUploadTask.upload().get();

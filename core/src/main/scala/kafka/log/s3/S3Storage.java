@@ -302,7 +302,7 @@ public class S3Storage implements Storage {
 
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
         WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
-                config.s3ObjectBlockSize(), config.s3ObjectPartSize(), config.s3StreamSplitSize());
+                config.s3ObjectBlockSize(), config.s3ObjectPartSize(), config.s3StreamSplitSize(), backgroundExecutor);
         WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
         context.task = walObjectUploadTask;
         context.cache = logCacheBlock;
@@ -352,7 +352,11 @@ public class S3Storage implements Storage {
             if (next != null) {
                 commitWALObject(next);
             }
-        }, backgroundExecutor);
+        }, backgroundExecutor).exceptionally(ex -> {
+            LOGGER.error("Unexpected exception when commit WAL object", ex);
+            context.cf.completeExceptionally(ex);
+            return null;
+        });
     }
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
