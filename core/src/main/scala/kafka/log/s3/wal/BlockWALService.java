@@ -135,7 +135,7 @@ public class BlockWALService implements WriteAheadLog {
     private ByteBuffer readRecord(WALHeaderCoreData paramWALHeader, long recoverStartOffset) throws ReadRecordException {
         try {
             final ByteBuffer recordHeader = ByteBuffer.allocate(RECORD_HEADER_SIZE);
-            final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity());
+            final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_CAPACITY_DOUBLE);
             int read = walChannel.read(recordHeader, position);
             // 检查点：无法读取 RecordHeader
             if (read != RECORD_HEADER_SIZE) {
@@ -184,7 +184,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             ByteBuffer recordBody = ByteBuffer.allocate(recordBodyLength);
-            read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity()));
+            read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_CAPACITY_DOUBLE));
             // 检查点：无法读取 RecordBody
             if (read != recordBodyLength) {
                 throw new ReadRecordException(

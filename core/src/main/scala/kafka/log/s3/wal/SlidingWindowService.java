@@ -144,9 +144,10 @@ public class SlidingWindowService {
 
         totalRecord.position(0);
 
-        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE);
+        // TODO: make this beautiful
+        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_CAPACITY_DOUBLE, WAL_HEADER_CAPACITY_DOUBLE);
 
-        walChannel.write(totalRecord, position + WAL_HEADER_CAPACITY_DOUBLE);
+        walChannel.write(totalRecord, position);
     }
 
     public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
