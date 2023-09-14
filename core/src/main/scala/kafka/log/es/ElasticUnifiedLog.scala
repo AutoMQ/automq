@@ -20,7 +20,7 @@ package kafka.log.es
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, LogOffsetMetadata}
-import kafka.utils.{CoreUtils, Logging}
+import kafka.utils.Logging
 import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -82,12 +82,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     elasticLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete, LogDeletion(elasticLog))
   }
 
-  override def close(): Unit = {
-    val future = closeWithFuture()
-    CoreUtils.swallow(future.get(), this)
-  }
-
-  override def closeWithFuture(): CompletableFuture[Void] = {
+  override def close(): CompletableFuture[Void] = {
     info("Closing log")
     val closeFuture = lock synchronized {
       maybeFlushMetadataFile()
@@ -101,7 +96,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
       }
       // flush all inflight data/index
       flush(true)
-      elasticLog.closeWithFuture()
+      elasticLog.close()
     }
     elasticLog.segments.clear()
     elasticLog.isMemoryMappedBufferClosed = true

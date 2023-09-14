@@ -687,11 +687,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   def numberOfSegments: Int = localLog.segments.numberOfSegments
 
+  // Kafka on S3 inject start
   /**
    * Close this log.
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
    */
-  def close(): Unit = {
+  def close(): CompletableFuture[Void] = {
     lock synchronized {
       maybeFlushMetadataFile()
       localLog.checkIfMemoryMappedBufferClosed()
@@ -705,13 +706,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       localLog.close()
     }
   }
-
-  // Kafka on S3 inject start
-  def closeWithFuture(): CompletableFuture[Void] = {
-    close()
-    CompletableFuture.completedFuture(null)
-  }
-  // Kafka on S3 inject start
+  // Kafka on S3 inject end
 
   /**
    * Rename the directory of the local log. If the log's directory is being renamed for async deletion due to a

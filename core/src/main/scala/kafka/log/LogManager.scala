@@ -667,7 +667,7 @@ class LogManager(logDirs: Seq[File],
           // flush the log to ensure latest possible recovery point
           log.flush(true)
           // Kafka on S3 inject start
-          val future = log.closeWithFuture()
+          val future = log.close()
           closeStreamsFutures.append(future)
           // Kafka on S3 inject end
         }
@@ -1180,7 +1180,7 @@ class LogManager(logDirs: Seq[File],
         // Close the log, update checkpoint files, and enqueue this log to be deleted.
 
         // Kafka on S3 inject start
-        val future = sourceLog.closeWithFuture()
+        val future = sourceLog.close()
         CoreUtils.swallow(future.get(), this)
         // Kafka on S3 inject end
 

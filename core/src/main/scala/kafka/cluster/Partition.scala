@@ -581,7 +581,7 @@ class Partition(val topicPartition: TopicPartition,
       closed = true
     }
     log.foreach( unifiedLog => {
-      val future = unifiedLog.closeWithFuture()
+      val future = unifiedLog.close()
       CoreUtils.swallow(future.get(), this)
     })
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted

@@ -223,19 +223,15 @@ class LocalLog(@volatile private var _dir: File,
     isMemoryMappedBufferClosed = true
   }
 
+  // Kafka on S3 inject start
   /**
    * Closes the segments of the log.
    */
-  private[log] def close(): Unit = {
+  private[log] def close(): CompletableFuture[Void] = {
     maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()
       segments.close()
     }
-  }
-
-  // Kafka on S3 inject start
-  private[log] def closeWithFuture(): CompletableFuture[Void] = {
-    close()
     CompletableFuture.completedFuture(null)
   }
   // Kafka on S3 inject end
