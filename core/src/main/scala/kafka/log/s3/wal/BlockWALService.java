@@ -165,6 +165,14 @@ public class BlockWALService implements WriteAheadLog {
                 );
             }
 
+            // 检查点：recordBodyOffset 不匹配，可能遇到了RingBuffer轮转的旧数据
+            if (recordBodyOffset != recoverStartOffset + RECORD_HEADER_SIZE) {
+                throw new ReadRecordException(
+                        WALUtil.alignNextBlock(recoverStartOffset),
+                        String.format("recordBodyOffset[%d] != recoverStartOffset[%d] + RecordHeaderSize[%d]", recordBodyOffset, recoverStartOffset, RECORD_HEADER_SIZE)
+                );
+            }
+
             ByteBuffer recordBody = ByteBuffer.allocate(recordBodyLength);
             read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity()));
             // 检查点：无法读取 RecordBody
@@ -182,14 +190,6 @@ public class BlockWALService implements WriteAheadLog {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
                         String.format("recordBodyCRC[%d] != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())[%d]", recordBodyCRC, WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit()))
-                );
-            }
-
-            // 检查点：recordBodyOffset 不匹配，可能遇到了RingBuffer轮转的旧数据
-            if (recordBodyOffset != recoverStartOffset + RECORD_HEADER_SIZE) {
-                throw new ReadRecordException(
-                        WALUtil.alignNextBlock(recoverStartOffset),
-                        String.format("recordBodyOffset[%d] != recoverStartOffset[%d] + RecordHeaderSize[%d]", recordBodyOffset, recoverStartOffset, RECORD_HEADER_SIZE)
                 );
             }
 
@@ -217,7 +217,7 @@ public class BlockWALService implements WriteAheadLog {
         long meetIllegalRecordTimes = 0;
 
         do {
-            long nextRecoverStartOffset = 0;
+            long nextRecoverStartOffset;
 
             try {
                 ByteBuffer body = readRecord(paramWALHeader, recoverStartOffset);
@@ -337,7 +337,7 @@ public class BlockWALService implements WriteAheadLog {
                 recordHeaderCoreData
                         .setMagicCode(RECORD_HEADER_MAGIC_CODE)
                         .setRecordBodyLength(record.limit())
-                        .setRecordBodyOffset(expectedWriteOffset)
+                        .setRecordBodyOffset(expectedWriteOffset + RECORD_HEADER_SIZE)
                         .setRecordBodyCRC(recordBodyCRC);
                 return recordHeaderCoreData.marshal();
             }
