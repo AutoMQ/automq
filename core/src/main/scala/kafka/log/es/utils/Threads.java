@@ -24,6 +24,24 @@ import java.util.concurrent.ThreadFactory;
 
 public class Threads {
 
+    public static ScheduledThreadPoolExecutor newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger) {
+        return newFixedThreadPool(nThreads, threadFactory, logger, false);
+    }
+
+    public static ScheduledThreadPoolExecutor newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger, boolean removeOnCancelPolicy) {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(nThreads, threadFactory) {
+            @Override
+            protected void afterExecute(Runnable r, Throwable t) {
+                super.afterExecute(r, t);
+                if (t != null) {
+                    logger.error("[FATAL] Uncaught exception in executor thread {}", Thread.currentThread().getName(), t);
+                }
+            }
+        };
+        executor.setRemoveOnCancelPolicy(removeOnCancelPolicy);
+        return executor;
+    }
+
     public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
         return newSingleThreadScheduledExecutor(threadFactory, logger, false);
     }

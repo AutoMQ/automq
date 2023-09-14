@@ -20,6 +20,7 @@ package kafka.log.s3.compact.operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import kafka.log.s3.ByteBufAlloc;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.operator.S3Operator;
 import kafka.log.s3.operator.Writer;
@@ -81,7 +82,7 @@ public class DataBlockWriter {
     }
 
     private void uploadWaitingList() {
-        CompositeByteBuf partBuf = Unpooled.compositeBuffer();
+        CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             partBuf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);
@@ -104,7 +105,7 @@ public class DataBlockWriter {
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = Unpooled.compositeBuffer();
+        CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             buf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);

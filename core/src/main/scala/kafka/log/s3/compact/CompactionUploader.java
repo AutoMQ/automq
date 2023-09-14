@@ -17,6 +17,7 @@
 
 package kafka.log.s3.compact;
 
+import kafka.log.es.utils.Threads;
 import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
@@ -31,7 +32,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class CompactionUploader {
@@ -51,10 +51,10 @@ public class CompactionUploader {
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
         this.throttle = new TokenBucketThrottle(kafkaConfig.s3ObjectCompactionNWOutBandwidth());
-        this.streamObjectUploadPool = Executors.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
-                ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true));
-        this.walObjectUploadPool = Executors.newFixedThreadPool(1,
-                ThreadUtils.createThreadFactory("compaction-wal-object-uploader-%d", true));
+        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
+                ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
+        this.walObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("compaction-wal-object-uploader-%d", true), LOGGER);
     }
 
     public void stop() {
