@@ -573,17 +573,12 @@ class Partition(val topicPartition: TopicPartition,
    * 1) This broker(current leader) has closed the partition and the related streams.
    * 2) The next leader will then open the partition and the related streams.
    */
-  def close(): Unit = {
-    val closeStartTime = System.currentTimeMillis()
+  def close(): CompletableFuture[Void] = {
     logManager.removeFromCurrentLogs(topicPartition)
     ElasticLogManager.removeLog(topicPartition)
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }
-    log.foreach( unifiedLog => {
-      val future = unifiedLog.close()
-      CoreUtils.swallow(future.get(), this)
-    })
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
@@ -595,10 +590,11 @@ class Partition(val topicPartition: TopicPartition,
       leaderEpochStartOffsetOpt = None
       Partition.removeMetrics(topicPartition)
     }
-    val closeTimeCost = System.currentTimeMillis() - closeStartTime
-    info(s"closed with time cost $closeTimeCost ms, trigger leader re-election")
-    // trigger leader re-election
-    alterIsrManager.tryElectLeader(topicPartition)
+    if (log.isDefined) {
+      log.get.close()
+    } else {
+      CompletableFuture.completedFuture(null)
+    }
   }
   // elastic stream inject end
 

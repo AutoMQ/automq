@@ -64,7 +64,8 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{Executors, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{CompletableFuture, Executors, ThreadPoolExecutor, TimeUnit}
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
@@ -225,6 +226,7 @@ class ReplicaManager(val config: KafkaConfig,
   // This threadPool is used to handle partition open/close in case of throttling metadata replay.
   val partitionOpenCloseExecutors = new ThreadPoolExecutor(4, 32, 30, TimeUnit.SECONDS, new util.concurrent.LinkedBlockingQueue[Runnable](32),
     ThreadUtils.createThreadFactory("partition-open-close-executor-%d", true))
+  var partitionWaitingClosingFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null);
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
@@ -466,6 +468,9 @@ class ReplicaManager(val config: KafkaConfig,
     // Second remove deleted partitions from the partition map. Fetchers rely on the
     // ReplicaManager to get Partition's information so they must be stopped first.
     val partitionsToDelete = mutable.Set.empty[TopicPartition]
+    // Kafka on S3 inject start
+    val partitionClosingFutures = ArrayBuffer.empty[CompletableFuture[Void]]
+    // Kafka on S3 inject end
     partitionsToStop.forKeyValue { (topicPartition, shouldDelete) =>
       if (shouldDelete) {
         getPartition(topicPartition) match {
@@ -480,7 +485,13 @@ class ReplicaManager(val config: KafkaConfig,
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
-                hostedPartition.partition.close()
+                val closingFuture = hostedPartition.partition.close()
+                    .thenRun(() => {
+                  // trigger leader election for this partition
+                  info(s"partition $topicPartition is closed, trigger leader election")
+                  alterPartitionManager.tryElectLeader(topicPartition)
+                })
+                partitionClosingFutures.append(closingFuture)
               } else {
                 hostedPartition.partition.delete()
               }
@@ -495,6 +506,19 @@ class ReplicaManager(val config: KafkaConfig,
       // We force completion to prevent them from timing out.
       completeDelayedFetchOrProduceRequests(topicPartition)
     }
+
+    // Kafka on S3 inject start
+    if (partitionClosingFutures.nonEmpty) {
+      partitionWaitingClosingFuture = partitionWaitingClosingFuture.thenRun(() => {
+        val closeStartTime = System.currentTimeMillis()
+        // Wait for all logs to be closed.
+        CoreUtils.swallow(CompletableFuture.allOf(partitionClosingFutures.toArray: _*).get(), this)
+        val closeTimeCost = System.currentTimeMillis() - closeStartTime
+        debug(s"closing ${partitionClosingFutures.size} partitions with time cost $closeTimeCost ms")
+      })
+    }
+    // Kafka on S3 inject end
+
 
     // Third delete the logs and checkpoint.
     val errorMap = new mutable.HashMap[TopicPartition, Throwable]()
@@ -2396,6 +2420,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   def shutdownAdditionalThreadPools(): Unit = {
     slowFetchExecutors.shutdownNow()
+    CoreUtils.swallow(partitionWaitingClosingFuture.get(), this)
     partitionOpenCloseExecutors.shutdownNow()
   }
 }

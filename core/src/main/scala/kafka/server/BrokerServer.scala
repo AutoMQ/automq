@@ -589,7 +589,7 @@ class BrokerServer(
       // Note that logs are closed in logManager.shutdown().
       // Make sure these thread pools are shutdown after the log manager's shutdown.
       CoreUtils.swallow(replicaManager.shutdownAdditionalThreadPools(), this)
-      ElasticLogManager.shutdownNow()
+      CoreUtils.swallow(ElasticLogManager.shutdownNow(), this)
       // elastic stream inject end
 
       if (quotaManagers != null)
