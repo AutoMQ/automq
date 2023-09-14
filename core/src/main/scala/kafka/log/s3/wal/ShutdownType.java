@@ -37,23 +37,7 @@ public enum ShutdownType {
         return null;
     }
 
-    private String getDesc() {
-        switch (this) {
-            case GRACEFULLY:
-                return "GRACEFULLY";
-            case UNGRACEFULLY:
-                return "UNGRACEFULLY";
-            default:
-                return "UNKNOWN";
-        }
-    }
-
     public Integer getCode() {
         return code;
-    }
-
-    @Override
-    public String toString() {
-        return getDesc();
     }
 }
