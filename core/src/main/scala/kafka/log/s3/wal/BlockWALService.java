@@ -92,17 +92,16 @@ public class BlockWALService implements WriteAheadLog {
         this.slidingWindowService = new SlidingWindowService(ioThreadNums, walChannel);
 
         this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> {
-                    try {
-                        BlockWALService.this.flushWALHeader(
-                                this.slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
-                                this.slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
-                                this.slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
-                                ShutdownType.UNGRACEFULLY);
-                    } catch (IOException e) {
-                        LOGGER.error("failed to flush WAL header scheduled", e);
-                    }
-                },
-                10, 10, TimeUnit.SECONDS);
+            try {
+                BlockWALService.this.flushWALHeader(
+                        this.slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
+                        this.slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
+                        this.slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
+                        ShutdownType.UNGRACEFULLY);
+            } catch (IOException e) {
+                LOGGER.error("failed to flush WAL header scheduled", e);
+            }
+        }, 10, 10, TimeUnit.SECONDS);
     }
 
     @Deprecated

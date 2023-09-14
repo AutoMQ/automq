@@ -143,6 +143,42 @@ class BlockWALServiceTest {
         }
     }
 
+    @Test
+    void testMultiThreadAppend() throws InterruptedException, IOException {
+        final int recordSize = 4096 + 1;
+        final int recordNums = 10;
+        final int nThreadNums = 8;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums * nThreadNums + WAL_HEADER_CAPACITY_DOUBLE;
+
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
+                .capacity(blockDeviceCapacity)
+                .ioThreadNums(IO_THREAD_NUMS)
+                .build()
+                .start();
+        ExecutorService executorService = Executors.newFixedThreadPool(nThreadNums);
+        try {
+            for (int t = 0; t < nThreadNums; t++) {
+                executorService.submit(() -> assertDoesNotThrow(() -> {
+                    for (int i = 0; i < recordNums; i++) {
+                        ByteBuf data = TestUtils.random(recordSize);
+
+                        final AppendResult appendResult = wal.append(data);
+
+                        appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                            assertNull(throwable);
+                            assertTrue(callbackResult.flushedOffset() > appendResult.recordOffset());
+                            assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                        });
+                    }
+                }));
+            }
+        } finally {
+            executorService.shutdown();
+            assertTrue(executorService.awaitTermination(15, TimeUnit.SECONDS));
+            wal.shutdownGracefully();
+        }
+    }
+
     long append(WriteAheadLog wal, int recordSize) throws OverCapacityException {
         final AppendResult appendResult = wal.append(TestUtils.random(recordSize));
         final long recordOffset = appendResult.recordOffset();
@@ -219,42 +255,6 @@ class BlockWALServiceTest {
             }
             assertEquals(appended, recovered);
         } finally {
-            wal.shutdownGracefully();
-        }
-    }
-
-    @Test
-    void testMultiThreadAppend() throws InterruptedException, IOException {
-        final int recordSize = 4096 + 1;
-        final int recordNums = 10;
-        final int nThreadNums = 8;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums * nThreadNums + WAL_HEADER_CAPACITY_DOUBLE;
-
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
-                .build()
-                .start();
-        ExecutorService executorService = Executors.newFixedThreadPool(nThreadNums);
-        try {
-            for (int t = 0; t < nThreadNums; t++) {
-                executorService.submit(() -> assertDoesNotThrow(() -> {
-                    for (int i = 0; i < recordNums; i++) {
-                        ByteBuf data = TestUtils.random(recordSize);
-
-                        final AppendResult appendResult = wal.append(data);
-
-                        appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
-                            assertNull(throwable);
-                            assertTrue(callbackResult.flushedOffset() > appendResult.recordOffset());
-                            assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
-                        });
-                    }
-                }));
-            }
-        } finally {
-            executorService.shutdown();
-            assertTrue(executorService.awaitTermination(15, TimeUnit.SECONDS));
             wal.shutdownGracefully();
         }
     }
