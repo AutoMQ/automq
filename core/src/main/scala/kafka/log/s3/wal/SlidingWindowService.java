@@ -37,6 +37,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
@@ -145,7 +146,7 @@ public class SlidingWindowService {
 
         long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE);
 
-        walChannel.write(totalRecord, position);
+        walChannel.write(totalRecord, position + WAL_HEADER_CAPACITY_DOUBLE);
     }
 
     public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {

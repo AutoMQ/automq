@@ -83,9 +83,10 @@ class BlockWALServiceTest {
 
                 final long expectedOffset = i * WALUtil.alignLargeByBlockSize(recordSize);
                 assertEquals(expectedOffset, appendResult.recordOffset());
+                assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
                 appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
                     assertNull(throwable);
-                    assertTrue(callbackResult.flushedOffset() > expectedOffset);
+                    assertTrue(callbackResult.flushedOffset() > expectedOffset, "flushedOffset: " + callbackResult.flushedOffset() + ", expectedOffset: " + expectedOffset);
                     assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
                 });
             }
@@ -123,9 +124,10 @@ class BlockWALServiceTest {
                 }
 
                 final long recordOffset = appendResult.recordOffset();
+                assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
                 appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
                     assertNull(throwable);
-                    assertTrue(callbackResult.flushedOffset() > recordOffset);
+                    assertTrue(callbackResult.flushedOffset() > recordOffset, "flushedOffset: " + callbackResult.flushedOffset() + ", recordOffset: " + recordOffset);
                     assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
 
                     // Update the appended offset.
@@ -166,7 +168,8 @@ class BlockWALServiceTest {
 
                         appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
                             assertNull(throwable);
-                            assertTrue(callbackResult.flushedOffset() > appendResult.recordOffset());
+                            assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
+                            assertTrue(callbackResult.flushedOffset() > appendResult.recordOffset(), "flushedOffset: " + callbackResult.flushedOffset() + ", recordOffset: " + appendResult.recordOffset());
                             assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
                         });
                     }
@@ -182,11 +185,12 @@ class BlockWALServiceTest {
     long append(WriteAheadLog wal, int recordSize) throws OverCapacityException {
         final AppendResult appendResult = wal.append(TestUtils.random(recordSize));
         final long recordOffset = appendResult.recordOffset();
+        assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
         appendResult.future().whenComplete((callbackResult, throwable) -> {
             assertNull(throwable);
-            assertTrue(callbackResult.flushedOffset() > recordOffset);
+            assertTrue(callbackResult.flushedOffset() > recordOffset, "flushedOffset: " + callbackResult.flushedOffset() + ", recordOffset: " + recordOffset);
             assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
-        });
+        }).join();
         return recordOffset;
     }
 
