@@ -65,6 +65,7 @@ public class S3Storage implements Storage {
     private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
     private final Queue<WALObjectUploadTaskContext> walObjectPrepareQueue = new LinkedList<>();
     private final Queue<WALObjectUploadTaskContext> walObjectCommitQueue = new LinkedList<>();
+    private CompletableFuture<Void> lastForceUploadCf = CompletableFuture.completedFuture(null);
     private final ScheduledExecutorService mainExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
@@ -249,10 +250,13 @@ public class S3Storage implements Storage {
         });
     }
 
+    /**
+     * Force upload stream WAL cache to S3. Use sequence&group upload to avoid generate too many S3 objects when broker shutdown.
+     */
     @Override
-    public CompletableFuture<Void> forceUpload(long streamId) {
+    public synchronized CompletableFuture<Void> forceUpload(long streamId) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        mainExecutor.execute(() -> {
+        lastForceUploadCf.whenComplete((nil, ex) -> mainExecutor.execute(() -> {
             logCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
             Optional<LogCache.LogCacheBlock> blockOpt = logCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
@@ -261,7 +265,8 @@ public class S3Storage implements Storage {
                 cf.complete(null);
             }
             callbackSequencer.tryFree(streamId);
-        });
+        }));
+        this.lastForceUploadCf = cf;
         return cf;
     }
 
