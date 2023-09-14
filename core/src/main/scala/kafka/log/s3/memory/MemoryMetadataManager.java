@@ -56,6 +56,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
+
+
+// TODO: deprecate or fix it.
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     private static final int MOCK_BROKER_ID = 0;
@@ -162,9 +166,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             // commit object
             S3Object s3Object = new S3Object(
-                objectId, objectSize, object.getObjectKey(),
-                object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                S3ObjectState.COMMITTED);
+                    objectId, objectSize, object.getObjectKey(),
+                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+                    S3ObjectState.COMMITTED);
             this.objectsMetadata.put(objectId, s3Object
             );
             // build metadata
@@ -237,11 +241,13 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: support search not only in wal objects
+        endOffset = endOffset == NOOP_OFFSET ? Long.MAX_VALUE : endOffset;
+        long finalEndOffset = endOffset;
         CompletableFuture<List<S3ObjectMetadata>> future = this.submitEvent(() -> {
             int need = limit;
             List<S3ObjectMetadata> objs = new ArrayList<>();
             MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            if (endOffset <= streamMetadata.startOffset) {
+            if (finalEndOffset <= streamMetadata.startOffset) {
                 return objs;
             }
             MemoryBrokerWALMetadata metadata = this.brokerWALMetadata.get(MOCK_BROKER_ID);
@@ -252,7 +258,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 if (need <= 0) {
                     break;
                 }
-                if (!walObject.intersect(streamId, startOffset, endOffset)) {
+                if (!walObject.intersect(streamId, startOffset, finalEndOffset)) {
                     continue;
                 }
                 // find stream index, get object

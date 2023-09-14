@@ -17,9 +17,10 @@
 
 package kafka.log.s3.objects;
 
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 /**
  * Object metadata registry.
@@ -62,7 +63,7 @@ public interface ObjectManager {
      * </ul>
      * @param streamId stream id.
      * @param startOffset get range start offset.
-     * @param endOffset get range end offset.
+     * @param endOffset get range end offset. NOOP_OFFSET represent endOffset is unlimited.
      * @param limit max object range count.
      * @return {@link S3ObjectMetadata}
      */

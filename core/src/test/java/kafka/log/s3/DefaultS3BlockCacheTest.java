@@ -23,6 +23,7 @@ import kafka.log.s3.model.StreamRecordBatch;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
+import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,11 +31,18 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -83,6 +91,37 @@ public class DefaultS3BlockCacheTest {
         assertEquals(5, rst.getRecords().size());
         assertEquals(10, rst.getRecords().get(0).getBaseOffset());
         assertEquals(60, rst.getRecords().get(4).getLastOffset());
+    }
+
+    @Test
+    public void testRead_readahead() throws ExecutionException, InterruptedException {
+        objectManager = mock(ObjectManager.class);
+        s3Operator = spy(new MemoryS3Operator());
+        s3BlockCache = new DefaultS3BlockCache(1024 * 1024, objectManager, s3Operator);
+
+        ObjectWriter objectWriter = ObjectWriter.writer(0, s3Operator, 1024, 1024);
+        objectWriter.write(233, List.of(
+                newRecord(233, 10, 5, 512),
+                newRecord(233, 15, 5, 512)
+        ));
+        objectWriter.close();
+        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL);
+
+        objectWriter = ObjectWriter.writer(1, s3Operator, 1024, 1024);
+        objectWriter.write(233, List.of(newRecord(233, 20, 10, 512)));
+        objectWriter.close();
+        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL);
+
+        when(objectManager.getObjects(eq(233L), eq(10L), eq(11L), eq(2))).thenReturn(List.of(metadata1));
+
+        s3BlockCache.read(233L, 10L, 11L, 10000).get();
+        // range read index and range read data
+        verify(s3Operator, times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), anyLong(), anyLong(), any());
+        verify(s3Operator, times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), anyLong(), anyLong(), any());
+        // trigger readahead
+        when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(List.of(metadata2));
+        s3BlockCache.read(233L, 15L, 16L, 10000).get();
+        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), anyLong(), anyLong(), any());
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {

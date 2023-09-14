@@ -26,6 +26,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 public class BlockCacheTest {
@@ -89,6 +90,55 @@ public class BlockCacheTest {
         assertEquals(3, lru.pop().getKey());
         assertEquals(2, lru.pop().getKey());
         assertNull(lru.pop());
+    }
+
+    @Test
+    public void testReadahead() {
+        BlockCache blockCache = new BlockCache(16 * 1024 * 1024);
+        blockCache.put(233L, List.of(
+                newRecord(233L, 10, 1, 1024 * 1024),
+                newRecord(233L, 11, 1, 1024)
+        ));
+
+        // first read the block
+        BlockCache.GetCacheResult rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
+        assertEquals(1, rst.getRecords().size());
+        assertEquals(10L, rst.getRecords().get(0).getBaseOffset());
+        assertEquals(12, rst.getReadahead().get().getStartOffset());
+        assertEquals(1024 * 1024 * 2 * 2, rst.getReadahead().get().getSize());
+
+        // repeat read the block, the readahead mark is clear.
+        rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
+        assertTrue(rst.getReadahead().isEmpty());
+    }
+
+    @Test
+    public void testGenReadahead() {
+        BlockCache blockCache = new BlockCache(16 * 1024 * 1024);
+        BlockCache.Readahead readahead = blockCache.genReadahead(233L, List.of(
+                newRecord(233L, 10, 1, 1024 * 1024),
+                newRecord(233L, 11, 1, 1024)
+        ));
+        assertEquals(12, readahead.getStartOffset());
+        // exponential growth
+        assertEquals(BlockCache.BLOCK_SIZE * 2 * 2, readahead.getSize());
+
+
+        readahead = blockCache.genReadahead(233L, List.of(
+                newRecord(233L, 10, 1, BlockCache.MAX_READAHEAD_SIZE / 2 + 1)
+        ));
+        assertEquals(11, readahead.getStartOffset());
+        // linear growth
+        assertEquals(BlockCache.MAX_READAHEAD_SIZE / 2 + BlockCache.BLOCK_SIZE * 2, readahead.getSize());
+
+        BlockCache.StreamCache streamCache = new BlockCache.StreamCache();
+        streamCache.evict = true;
+        blockCache.stream2cache.put(233L, streamCache);
+        // exponential fallback
+        readahead = blockCache.genReadahead(233L, List.of(
+                newRecord(233L, 10, 1, 2 * BlockCache.BLOCK_SIZE)
+        ));
+        assertEquals(BlockCache.BLOCK_SIZE, readahead.getSize());
     }
 
     private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {

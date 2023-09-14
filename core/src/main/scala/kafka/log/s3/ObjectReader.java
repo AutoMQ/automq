@@ -36,6 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static kafka.log.s3.ObjectWriter.Footer.FOOTER_SIZE;
+import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
 
 public class ObjectReader implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
@@ -225,7 +226,7 @@ public class ObjectReader implements AutoCloseable {
                         nextMaxBytes -= Math.min(nextMaxBytes, blockSize);
                     }
                     matched = true;
-                    if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
+                    if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
                         break;
                     }
                 } else if (matched) {
