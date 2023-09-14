@@ -372,12 +372,27 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public Iterator<RecoverResult> recover() {
-        return recover(walHeaderCoreData.getTrimOffset());
+        long trimmedOffset = walHeaderCoreData.getTrimOffset();
+        if (trimmedOffset != 0) {
+            // As the offset in {@link this#trim(long)} is an inclusive offset, we need to skip the first record.
+            return recover(trimmedOffset, true);
+        } else {
+            return recover(trimmedOffset, false);
+        }
     }
 
-    private Iterator<RecoverResult> recover(long startOffset) {
+    /**
+     * Recover from the given offset.
+     */
+    private Iterator<RecoverResult> recover(long startOffset, boolean skipFirstRecord) {
         long recoverStartOffset = WALUtil.alignSmallByBlockSize(startOffset);
-        return new RecoverIterator(recoverStartOffset);
+        RecoverIterator iterator = new RecoverIterator(recoverStartOffset);
+        if (skipFirstRecord) {
+            if (iterator.hasNext()) {
+                iterator.next();
+            }
+        }
+        return iterator;
     }
 
     @Override

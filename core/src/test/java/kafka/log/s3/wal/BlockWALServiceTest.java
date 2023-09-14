@@ -191,6 +191,7 @@ class BlockWALServiceTest {
         }
         final String tempFilePath = TestUtils.tempFilePath();
 
+        // Append records
         final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath)
                 .capacity(blockDeviceCapacity)
                 .ioThreadNums(IO_THREAD_NUMS)
@@ -201,12 +202,12 @@ class BlockWALServiceTest {
             previousWAL.shutdownGracefully();
         }
 
+        // Recover records
         final WriteAheadLog wal = BlockWALService.builder(tempFilePath)
                 .capacity(BLOCK_DEVICE_CAPACITY)
                 .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
-
         try {
             Iterator<RecoverResult> recover = wal.recover();
             assertNotNull(recover);

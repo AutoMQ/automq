@@ -46,9 +46,9 @@ public interface WriteAheadLog {
     Iterator<RecoverResult> recover();
 
     /**
-     * Trim data < offset in log.
+     * Trim data <= offset in log.
      *
-     * @param offset exclusive trim offset.
+     * @param offset inclusive trim offset.
      */
     void trim(long offset);
 
