@@ -75,7 +75,7 @@ public class BlockWALService implements WriteAheadLog {
     public static final long WAL_HEADER_INIT_WINDOW_MAX_LENGTH = 1024 * 1024;
     private final AtomicBoolean readyToServe = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
-    private ScheduledExecutorService scheduledExecutorService;
+    private ScheduledExecutorService flushWALHeaderScheduler;
     private String blockDevicePath;
     private int ioThreadNums;
     private long blockDeviceCapacityWant;
@@ -84,13 +84,13 @@ public class BlockWALService implements WriteAheadLog {
     private WALHeaderCoreData walHeaderCoreData;
 
     private void init() {
-        this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
+        this.flushWALHeaderScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
 
         this.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
 
         this.slidingWindowService = new SlidingWindowService(ioThreadNums, walChannel);
 
-        this.scheduledExecutorService.scheduleAtFixedRate(() -> BlockWALService.this.flushWALHeader(
+        this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> BlockWALService.this.flushWALHeader(
                         this.slidingWindowService.getWindowCoreData().getWindowStartOffset().get(),
                         this.slidingWindowService.getWindowCoreData().getWindowMaxLength().get(),
                         this.slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get(),
@@ -292,13 +292,13 @@ public class BlockWALService implements WriteAheadLog {
     @Override
     public void shutdownGracefully() {
         readyToServe.set(false);
-        scheduledExecutorService.shutdown();
+        flushWALHeaderScheduler.shutdown();
         try {
-            if (!scheduledExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduledExecutorService.shutdownNow();
+            if (!flushWALHeaderScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                flushWALHeaderScheduler.shutdownNow();
             }
         } catch (InterruptedException e) {
-            scheduledExecutorService.shutdownNow();
+            flushWALHeaderScheduler.shutdownNow();
         }
 
         boolean gracefulShutdown = slidingWindowService.shutdown(1, TimeUnit.DAYS);
@@ -402,8 +402,8 @@ public class BlockWALService implements WriteAheadLog {
     public void trim(long offset) {
         checkReadyToServe();
 
-        // TODO: silent reject offset less than current trimOffset
-        walHeaderCoreData.setTrimOffset(offset);
+        walHeaderCoreData.updateTrimOffset(offset);
+        flushWALHeaderScheduler.submit(() -> flushWALHeader());
     }
 
     private void checkReadyToServe() {
@@ -475,8 +475,15 @@ public class BlockWALService implements WriteAheadLog {
             return trimOffsetPos2.get();
         }
 
-        public WALHeaderCoreData setTrimOffset(long trimOffset) {
-            this.trimOffsetPos2.set(trimOffset);
+        // Update the trim offset if the given trim offset is larger than the current one.
+        public WALHeaderCoreData updateTrimOffset(long trimOffset) {
+            long currentTrimOffset;
+            do {
+                currentTrimOffset = trimOffsetPos2.get();
+                if (trimOffset <= currentTrimOffset) {
+                    return this;
+                }
+            } while (!trimOffsetPos2.compareAndSet(currentTrimOffset, trimOffset));
             return this;
         }
 
