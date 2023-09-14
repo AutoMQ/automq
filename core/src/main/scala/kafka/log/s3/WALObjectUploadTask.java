@@ -102,13 +102,13 @@ public class WALObjectUploadTask {
             walObject = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
         }
 
-        List<CompletableFuture<StreamObject>> streamObjectCfList = new LinkedList<>();
+        List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
 
         for (Long streamId : streamIds) {
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
             long streamSize = streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
             if (forceSplit || streamSize >= streamSplitSizeThreshold) {
-                streamObjectCfList.add(writeStreamObject(streamRecords));
+                streamObjectCfList.add(writeStreamObject(streamRecords).thenAccept(request::addStreamObject));
             } else {
                 walObject.write(streamId, streamRecords);
                 long startOffset = streamRecords.get(0).getBaseOffset();
@@ -119,9 +119,6 @@ public class WALObjectUploadTask {
         request.setObjectId(objectId);
         request.setOrderId(objectId);
         CompletableFuture<Void> walObjectCf = walObject.close().thenAccept(nil -> request.setObjectSize(walObject.size()));
-        for (CompletableFuture<StreamObject> streamObjectCf : streamObjectCfList) {
-            streamObjectCf.thenAccept(request::addStreamObject);
-        }
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(walObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
