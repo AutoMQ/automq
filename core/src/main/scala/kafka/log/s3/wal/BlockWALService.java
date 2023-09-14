@@ -73,7 +73,7 @@ public class BlockWALService implements WriteAheadLog {
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_CAPACITY_DOUBLE = WAL_HEADER_CAPACITY * 2;
     public static final long WAL_HEADER_INIT_WINDOW_MAX_LENGTH = 1024 * 1024;
-    private final AtomicBoolean recoverWALFinished = new AtomicBoolean(false);
+    private final AtomicBoolean readyToServe = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private ScheduledExecutorService scheduledExecutorService;
     private String blockDevicePath;
@@ -82,7 +82,6 @@ public class BlockWALService implements WriteAheadLog {
     private WALChannel walChannel;
     private SlidingWindowService slidingWindowService;
     private WALHeaderCoreData walHeaderCoreData;
-
 
     private void init() {
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
@@ -99,26 +98,28 @@ public class BlockWALService implements WriteAheadLog {
                 10, 10, TimeUnit.SECONDS);
     }
 
-
-    private synchronized void flushWALHeader(long windowStartOffset,
-                                             long windowMaxLength,
-                                             long windowNextWriteOffset,
-                                             ShutdownType shutdownType
+    @Deprecated
+    private void flushWALHeader(long windowStartOffset,
+                                long windowMaxLength,
+                                long windowNextWriteOffset,
+                                ShutdownType shutdownType
     ) {
-        if (recoverWALFinished.get()) {
-            long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
-            try {
-                walHeaderCoreData
-                        .setLastWriteTimestamp(System.currentTimeMillis())
-                        .setSlidingWindowStartOffset(windowStartOffset)
-                        .setSlidingWindowMaxLength(windowMaxLength)
-                        .setSlidingWindowNextWriteOffset(windowNextWriteOffset)
-                        .setShutdownType(shutdownType);
-                this.walChannel.write(walHeaderCoreData.marshal(), position);
-                LOGGER.info("flushWALHeader success, position: {}, walHeader: {}", position, walHeaderCoreData);
-            } catch (IOException e) {
-                LOGGER.error("flushWALHeader IOException", e);
-            }
+        walHeaderCoreData
+                .setSlidingWindowStartOffset(windowStartOffset)
+                .setSlidingWindowMaxLength(windowMaxLength)
+                .setSlidingWindowNextWriteOffset(windowNextWriteOffset)
+                .setShutdownType(shutdownType);
+        flushWALHeader();
+    }
+
+    private synchronized void flushWALHeader() {
+        long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
+        try {
+            walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis());
+            this.walChannel.write(walHeaderCoreData.marshal(), position);
+            LOGGER.info("flushWALHeader success, position: {}, walHeader: {}", position, walHeaderCoreData);
+        } catch (IOException e) {
+            LOGGER.error("flushWALHeader IOException", e);
         }
     }
 
@@ -202,7 +203,6 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-
     private WALHeaderCoreData recoverEntireWALAndCorrectWALHeader(WALHeaderCoreData paramWALHeader) {
         // 优雅关闭，不需要纠正 Header
         if (paramWALHeader.getShutdownType().equals(ShutdownType.GRACEFULLY)) {
@@ -271,9 +271,9 @@ public class BlockWALService implements WriteAheadLog {
                     .setSlidingWindowStartOffset(0)
                     .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, WAL_HEADER_INIT_WINDOW_MAX_LENGTH))
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
-            flushWALHeader(0, WAL_HEADER_INIT_WINDOW_MAX_LENGTH, 0, ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
+        flushWALHeader();
         slidingWindowService.resetWindowWhenRecoverOver(
                 walHeaderCoreData.getSlidingWindowStartOffset(),
                 walHeaderCoreData.getSlidingWindowNextWriteOffset(),
@@ -287,12 +287,13 @@ public class BlockWALService implements WriteAheadLog {
         walChannel.open();
         recoverWALHeader();
         slidingWindowService.start();
-        recoverWALFinished.set(true);
+        readyToServe.set(true);
         return this;
     }
 
     @Override
     public void shutdownGracefully() {
+        readyToServe.set(false);
         scheduledExecutorService.shutdown();
         try {
             if (!scheduledExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -315,6 +316,8 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(ByteBuf buf, int crc) throws OverCapacityException {
+        checkReadyToServe();
+
         ByteBuffer record = buf.nioBuffer();
 
         // 生成 crc
@@ -372,6 +375,8 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public Iterator<RecoverResult> recover() {
+        checkReadyToServe();
+
         long trimmedOffset = walHeaderCoreData.getTrimOffset();
         if (trimmedOffset != 0) {
             // As the offset in {@link this#trim(long)} is an inclusive offset, we need to skip the first record.
@@ -397,8 +402,16 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public void trim(long offset) {
+        checkReadyToServe();
+
         // TODO: silent reject offset less than current trimOffset
         walHeaderCoreData.setTrimOffset(offset);
+    }
+
+    private void checkReadyToServe() {
+        if (!readyToServe.get()) {
+            throw new IllegalStateException("WriteAheadLog is not ready to serve");
+        }
     }
 
     static class WALHeaderCoreData {

@@ -277,7 +277,6 @@ public class SlidingWindowService {
          */
         private final AtomicLong windowStartOffset = new AtomicLong(0);
 
-
         public AtomicLong getWindowMaxLength() {
             return windowMaxLength;
         }
@@ -298,7 +297,6 @@ public class SlidingWindowService {
                 this.treeMapIOTaskRequestLock.unlock();
             }
         }
-
 
         public void calculateStartOffset(long wroteOffset) {
             this.treeMapIOTaskRequestLock.lock();
