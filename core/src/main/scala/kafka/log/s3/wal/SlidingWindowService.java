@@ -363,6 +363,9 @@ public class SlidingWindowService {
 
                     writeRecord(writeRecordTask);
 
+                    // 更新滑动窗口的最小 Offset
+                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
+
                     writeRecordTask.future().complete(new AppendResult.CallbackResult() {
                         @Override
                         public long flushedOffset() {
@@ -374,9 +377,6 @@ public class SlidingWindowService {
                             return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                         }
                     });
-
-                    // 更新滑动窗口的最小 Offset
-                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
                 }
 
             } catch (Throwable e) {
