@@ -31,6 +31,8 @@ import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
@@ -47,9 +49,12 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
+import org.apache.kafka.controller.stream.StreamControlManager.BrokerS3WALMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
+import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,6 +71,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 
@@ -369,14 +375,30 @@ public class StreamControlManagerTest {
         assertEquals(0, manager.getOpeningStreams(request).response().streamMetadataList().size());
     }
 
-    private void createAndOpenStream(int brokerId, long epoch) {
+    private long createStream() {
         CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
         replay(manager, result0.records());
-        long streamId = result0.response().streamId();
+        return result0.response().streamId();
+    }
+
+    private void openStream(int brokerId, long epoch, long streamId) {
         ControllerResult<OpenStreamResponseData> result1 = manager.openStream(
-                new OpenStreamRequestData().setStreamId(streamId).setStreamEpoch(epoch).setBrokerId(brokerId));
+            new OpenStreamRequestData().setStreamId(streamId).setStreamEpoch(epoch).setBrokerId(brokerId));
         replay(manager, result1.records());
+    }
+
+    private void closeStream(int brokerId, long epoch, long streamId) {
+        ControllerResult<CloseStreamResponseData> result = manager.closeStream(new CloseStreamRequestData()
+            .setStreamId(streamId)
+            .setStreamEpoch(epoch)
+            .setBrokerId(brokerId));
+        replay(manager, result.records());
+    }
+
+    private void createAndOpenStream(int brokerId, long epoch) {
+        long streamId = createStream();
+        openStream(brokerId, epoch, streamId);
     }
 
     @Test
@@ -662,6 +684,106 @@ public class StreamControlManagerTest {
         assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
         assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getStartOffset());
         assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());
+    }
+
+    @Test
+    public void testTrim() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+
+        // 1. create and open stream0 and stream1 for broker0
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        // 2. commit wal object with stream0-[0, 10)
+        CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(0)
+            .setObjectId(0)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0)
+                .setEndOffset(10)));
+        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(requestData);
+        replay(manager, result.records());
+        // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10) and a stream object with stream0-[20, 40)
+        requestData = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(1)
+            .setObjectId(1)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(10)
+                .setEndOffset(20), new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0)
+                .setEndOffset(10)))
+            .setStreamObjects(List.of(new StreamObject()
+                .setStreamId(STREAM0)
+                .setObjectSize(999)
+                .setObjectId(2)
+                .setStartOffset(20)
+                .setEndOffset(40)));
+        result = manager.commitWALObject(requestData);
+        replay(manager, result.records());
+        // 4. broker0 close stream0 and broker1 open stream1
+        closeStream(BROKER0, EPOCH0, STREAM0);
+        openStream(BROKER1, EPOCH1, STREAM0);
+        // 5. commit wal object with stream0-[40, 70)
+        requestData = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER1)
+            .setObjectSize(999)
+            .setObjectId(3)
+            .setOrderId(3)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH1)
+                .setStartOffset(40)
+                .setEndOffset(70)));
+        result = manager.commitWALObject(requestData);
+        replay(manager, result.records());
+
+        // 6. trim stream0 to [60, ..)
+        TrimStreamRequestData trimRequest = new TrimStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setBrokerId(BROKER1)
+            .setNewStartOffset(60);
+        ControllerResult<TrimStreamResponseData> result1 = manager.trimStream(trimRequest);
+        assertEquals(Errors.NONE.code(), result1.response().errorCode());
+        replay(manager, result1.records());
+
+        // 7. verify
+        S3StreamMetadata streamMetadata = manager.streamsMetadata().get(STREAM0);
+        assertEquals(60, streamMetadata.startOffset());
+        assertEquals(1, streamMetadata.ranges().size());
+        RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
+        assertEquals(1, rangeMetadata.rangeIndex());
+        assertEquals(60, rangeMetadata.startOffset());
+        assertEquals(70, rangeMetadata.endOffset());
+        assertEquals(0, streamMetadata.streamObjects().size());
+        BrokerS3WALMetadata broker0Metadata = manager.brokersMetadata().get(BROKER0);
+        assertEquals(1, broker0Metadata.walObjects().size());
+        S3WALObject s3WALObject = broker0Metadata.walObjects().get(1L);
+        assertEquals(1, s3WALObject.offsetRanges().size());
+        StreamOffsetRange range = s3WALObject.offsetRanges().get(STREAM0);
+        assertNull(range);
+        BrokerS3WALMetadata broker1Metadata = manager.brokersMetadata().get(BROKER1);
+        assertEquals(1, broker1Metadata.walObjects().size());
+        s3WALObject = broker1Metadata.walObjects().get(3L);
+        assertEquals(1, s3WALObject.offsetRanges().size());
+        range = s3WALObject.offsetRanges().get(STREAM0);
+        assertNotNull(range);
+        assertEquals(60, range.getStartOffset());
+        assertEquals(70, range.getEndOffset());
+    }
+
+    private void mockTrimStreamMetadata() {
+
     }
 
     private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {

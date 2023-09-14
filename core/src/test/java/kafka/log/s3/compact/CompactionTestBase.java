@@ -71,10 +71,10 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_2, List.of(r3));
             objectWriter.close().join();
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, List<StreamOffsetRange>> streamsIndex = Map.of(
-                    STREAM_0, List.of(new StreamOffsetRange(STREAM_0, 0, 20)),
-                    STREAM_1, List.of(new StreamOffsetRange(STREAM_1, 30, 60)),
-                    STREAM_2, List.of(new StreamOffsetRange(STREAM_2, 30, 60))
+            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
+                    STREAM_0, new StreamOffsetRange(STREAM_0, 0, 20),
+                    STREAM_1, new StreamOffsetRange(STREAM_1, 30, 60),
+                    STREAM_2, new StreamOffsetRange(STREAM_2, 30, 60)
             );
             S3WALObject walObject = new S3WALObject(OBJECT_0, BROKER_0, streamsIndex, OBJECT_0, System.currentTimeMillis());
             S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
@@ -90,9 +90,9 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_1, List.of(r5));
             objectWriter.close().join();
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, List<StreamOffsetRange>> streamsIndex = Map.of(
-                    STREAM_0, List.of(new StreamOffsetRange(STREAM_0, 20, 25)),
-                    STREAM_1, List.of(new StreamOffsetRange(STREAM_1, 60, 120))
+            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
+                    STREAM_0, new StreamOffsetRange(STREAM_0, 20, 25),
+                    STREAM_1, new StreamOffsetRange(STREAM_1, 60, 120)
             );
             S3WALObject walObject = new S3WALObject(OBJECT_1, BROKER_0, streamsIndex, OBJECT_1, System.currentTimeMillis());
             S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
@@ -111,9 +111,9 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_2, List.of(r8));
             objectWriter.close().join();
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, List<StreamOffsetRange>> streamsIndex = Map.of(
-                    STREAM_1, List.of(new StreamOffsetRange(STREAM_1, 400, 500)),
-                    STREAM_2, List.of(new StreamOffsetRange(STREAM_2, 230, 270))
+            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
+                    STREAM_1, new StreamOffsetRange(STREAM_1, 400, 500),
+                    STREAM_2, new StreamOffsetRange(STREAM_2, 230, 270)
             );
             S3WALObject walObject = new S3WALObject(OBJECT_2, BROKER_0, streamsIndex, OBJECT_2, System.currentTimeMillis());
             S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));

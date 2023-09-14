@@ -40,6 +40,7 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVResponse;
+import org.apache.kafka.common.requests.s3.TrimStreamResponse;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
     public static final int DEFAULT_THROTTLE_TIME = 0;
@@ -269,6 +270,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return DeleteStreamResponse.parse(responseBuffer, version);
             case CLOSE_STREAM:
                 return CloseStreamResponse.parse(responseBuffer, version);
+            case TRIM_STREAM:
+                return TrimStreamResponse.parse(responseBuffer, version);
             case PREPARE_S3_OBJECT:
                 return PrepareS3ObjectResponse.parse(responseBuffer, version);
             case COMMIT_STREAM_OBJECT:

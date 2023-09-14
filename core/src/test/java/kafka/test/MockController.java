@@ -63,6 +63,8 @@ import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
 import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.protocol.Errors;
@@ -500,6 +502,11 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData response) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<TrimStreamResponseData> trimStream(ControllerRequestContext context, TrimStreamRequestData request) {
         throw new UnsupportedOperationException();
     }
 

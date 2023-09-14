@@ -37,6 +37,7 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVRequest;
+import org.apache.kafka.common.requests.s3.TrimStreamRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
@@ -325,6 +326,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return CloseStreamRequest.parse(buffer, apiVersion);
             case DELETE_STREAM:
                 return DeleteStreamRequest.parse(buffer, apiVersion);
+            case TRIM_STREAM:
+                return TrimStreamRequest.parse(buffer, apiVersion);
             case PREPARE_S3_OBJECT:
                 return PrepareS3ObjectRequest.parse(buffer, apiVersion);
             case COMMIT_WALOBJECT:

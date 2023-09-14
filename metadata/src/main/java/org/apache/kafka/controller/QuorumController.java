@@ -68,6 +68,8 @@ import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
 import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
@@ -2282,9 +2284,15 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData response) {
+    public CompletableFuture<CloseStreamResponseData> closeStream(ControllerRequestContext context, CloseStreamRequestData request) {
         return appendWriteEvent("closeStream", context.deadlineNs(),
-            () -> streamControlManager.closeStream(response));
+            () -> streamControlManager.closeStream(request));
+    }
+
+    @Override
+    public CompletableFuture<TrimStreamResponseData> trimStream(ControllerRequestContext context, TrimStreamRequestData request) {
+        return appendWriteEvent("trimStream", context.deadlineNs(),
+            () -> streamControlManager.trimStream(request));
     }
 
     @Override

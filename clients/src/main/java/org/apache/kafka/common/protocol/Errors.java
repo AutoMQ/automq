@@ -129,6 +129,7 @@ import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
+import org.apache.kafka.common.errors.s3.OffsetNotMatchedException;
 import org.apache.kafka.common.errors.s3.RedundantOperationException;
 import org.apache.kafka.common.errors.s3.StreamExistException;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
@@ -391,6 +392,7 @@ public enum Errors {
     STREAM_NOT_CLOSED(506, "The stream is not closed.", StreamNotClosedException::new),
     REDUNDANT_OPERATION(507, "The operation is redundant.", RedundantOperationException::new),
     COMPACTED_OBJECTS_NOT_FOUND(508, "The compacted objects are not found.", CompactedObjectsNotFoundException::new),
+    OFFSET_NOT_MATCHED(509, "The offset is not matched.", OffsetNotMatchedException::new),
 
 
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
