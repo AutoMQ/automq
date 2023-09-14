@@ -91,6 +91,13 @@ public class BlockCacheTest {
         assertNull(lru.pop());
     }
 
+    @Test
+    public void testReadahead() {
+        // TODO:
+        // 正常 readahead
+        // 被驱逐后的 readahead
+    }
+
     private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
         return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
     }

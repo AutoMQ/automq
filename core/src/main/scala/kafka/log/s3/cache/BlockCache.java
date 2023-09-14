@@ -19,6 +19,8 @@ package kafka.log.s3.cache;
 
 
 import kafka.log.s3.model.StreamRecordBatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,8 +37,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache {
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
+    private static final int BLOCK_SIZE = 1024 * 1024;
+    private static final int MAX_READAHEAD_SIZE = 128 * 1024 * 1024;
     private final long maxSize;
-    private final Map<Long, NavigableMap<Long, CacheBlock>> stream2cache = new HashMap<>();
+    private final Map<Long, StreamCache> stream2cache = new HashMap<>();
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
     private final LRUCache<CacheKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
@@ -62,56 +67,56 @@ public class BlockCache {
             records.forEach(StreamRecordBatch::release);
             return;
         }
-        boolean overlapped = false;
         records = new ArrayList<>(records);
-        NavigableMap<Long, CacheBlock> streamCache = stream2cache.computeIfAbsent(streamId, id -> new TreeMap<>());
+        StreamCache streamCache = stream2cache.computeIfAbsent(streamId, id -> new StreamCache());
         long startOffset = records.get(0).getBaseOffset();
         long endOffset = records.get(records.size() - 1).getLastOffset();
-        // TODO: generate readahead.
-        Map.Entry<Long, CacheBlock> floorEntry = streamCache.floorEntry(startOffset);
-        SortedMap<Long, CacheBlock> tailMap = streamCache.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset);
+
+        // generate readahead.
+        Readahead readahead = genReadahead(streamId, records);
+
         // remove overlapped part.
+        Map.Entry<Long, CacheBlock> floorEntry = streamCache.blocks.floorEntry(startOffset);
+        SortedMap<Long, CacheBlock> tailMap = streamCache.blocks.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset);
         for (Map.Entry<Long, CacheBlock> entry : tailMap.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
             if (cacheBlock.firstOffset >= endOffset) {
                 break;
             }
             // overlap is a rare case, so removeIf is fine for the performance.
-            if (records.removeIf(record -> {
+            records.removeIf(record -> {
                 boolean remove = record.getLastOffset() > cacheBlock.firstOffset && record.getBaseOffset() < cacheBlock.lastOffset;
                 if (remove) {
                     record.release();
                 }
                 return remove;
-            })) {
-                overlapped = true;
-            }
+            });
         }
 
         // ensure the cache size.
         int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
         ensureCapacity(size);
 
-        // TODO: split records to 1MB blocks.
-        if (overlapped) {
-            // split to multiple cache blocks.
-            long expectStartOffset = -1L;
-            List<StreamRecordBatch> part = new ArrayList<>(records.size() / 2);
-            for (StreamRecordBatch record : records) {
-                if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) {
-                    part.add(record);
-                } else {
-                    put(streamId, streamCache, new CacheBlock(part));
-                    part = new ArrayList<>(records.size() / 2);
-                    part.add(record);
-                }
-                expectStartOffset = record.getLastOffset();
+        // split to 1MB cache blocks which one block contains sequential records.
+        long expectStartOffset = -1L;
+        List<StreamRecordBatch> part = new ArrayList<>(records.size() / 2);
+        int partSize = 0;
+        for (StreamRecordBatch record : records) {
+            if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset || partSize >= BLOCK_SIZE) {
+                part.add(record);
+                partSize += record.size();
+            } else {
+                // put readahead to the first block.
+                put(streamId, streamCache, new CacheBlock(part, readahead));
+                readahead = null;
+                part = new ArrayList<>(records.size() / 2);
+                partSize = 0;
+                part.add(record);
             }
-            if (!part.isEmpty()) {
-                put(streamId, streamCache, new CacheBlock(part));
-            }
-        } else {
-            put(streamId, streamCache, new CacheBlock(records));
+            expectStartOffset = record.getLastOffset();
+        }
+        if (!part.isEmpty()) {
+            put(streamId, streamCache, new CacheBlock(part, readahead));
         }
 
     }
@@ -131,23 +136,24 @@ public class BlockCache {
     }
 
     public GetCacheResult get0(long streamId, long startOffset, long endOffset, int maxBytes) {
-        NavigableMap<Long, CacheBlock> streamCache = stream2cache.get(streamId);
+        StreamCache streamCache = stream2cache.get(streamId);
         if (streamCache == null) {
             return GetCacheResult.empty();
         }
-        Map.Entry<Long, CacheBlock> floorEntry = streamCache.floorEntry(startOffset);
-        streamCache = streamCache.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset, true);
+        Map.Entry<Long, CacheBlock> floorEntry = streamCache.blocks.floorEntry(startOffset);
+        NavigableMap<Long, CacheBlock> streamCacheBlocks = streamCache.blocks.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset, true);
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
         Readahead readahead = null;
         LinkedList<StreamRecordBatch> records = new LinkedList<>();
-        for (Map.Entry<Long, CacheBlock> entry : streamCache.entrySet()) {
+        for (Map.Entry<Long, CacheBlock> entry : streamCacheBlocks.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
             if (cacheBlock.lastOffset < nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
                 break;
             }
             if (readahead == null && cacheBlock.readahead != null) {
                 readahead = cacheBlock.readahead;
+                cacheBlock.readahead = null;
             }
             nextMaxBytes = readFromCacheBlock(records, cacheBlock, nextStartOffset, endOffset, nextMaxBytes);
             nextStartOffset = records.getLast().getLastOffset();
@@ -201,7 +207,12 @@ public class BlockCache {
                 if (entry == null) {
                     break;
                 }
-                CacheBlock cacheBlock = stream2cache.get(entry.getKey().streamId).remove(entry.getKey().startOffset);
+                StreamCache streamCache = stream2cache.get(entry.getKey().streamId);
+                if (streamCache == null) {
+                    LOGGER.error("[BUG] Stream cache not found for streamId: {}", entry.getKey().streamId);
+                    continue;
+                }
+                CacheBlock cacheBlock = streamCache.blocks.remove(entry.getKey().startOffset);
                 cacheBlock.free();
                 if (maxSize - this.size.addAndGet(-entry.getValue()) >= size) {
                     return;
@@ -210,10 +221,51 @@ public class BlockCache {
         }
     }
 
-    private void put(long streamId, NavigableMap<Long, CacheBlock> streamCache, CacheBlock cacheBlock) {
-        streamCache.put(cacheBlock.firstOffset, cacheBlock);
+    private void put(long streamId, StreamCache streamCache, CacheBlock cacheBlock) {
+        streamCache.blocks.put(cacheBlock.firstOffset, cacheBlock);
         active.put(new CacheKey(streamId, cacheBlock.firstOffset), cacheBlock.size);
         size.getAndAdd(cacheBlock.size);
+    }
+
+
+    Readahead genReadahead(long streamId, List<StreamRecordBatch> records) {
+        if (records.isEmpty()) {
+            return null;
+        }
+        long startOffset = records.get(records.size() - 1).getLastOffset();
+        int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
+        size = alignBlockSize(size);
+        StreamCache streamCache = stream2cache.get(streamId);
+        if (streamCache != null) {
+            if (streamCache.evict) {
+                size = alignBlockSize(size / 2);
+                streamCache.evict = false;
+            } else {
+                if (size < MAX_READAHEAD_SIZE / 2) {
+                    size = size * 2;
+                }else {
+                    // slow increment
+                    size += BLOCK_SIZE;
+                }
+            }
+        }
+        size = Math.min(Math.max(size, BLOCK_SIZE), MAX_READAHEAD_SIZE);
+        return new Readahead(startOffset, size);
+    }
+
+    int alignBlockSize(int size) {
+        return (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
+    }
+
+    static class StreamCache {
+        NavigableMap<Long, CacheBlock> blocks;
+        boolean evict;
+
+        public StreamCache() {
+            blocks = new TreeMap<>();
+            evict = false;
+        }
+
     }
 
     static class CacheKey {
@@ -254,10 +306,6 @@ public class BlockCache {
             this.lastOffset = records.get(records.size() - 1).getLastOffset();
             this.size = records.stream().mapToInt(StreamRecordBatch::size).sum();
             this.readahead = readahead;
-        }
-
-        public CacheBlock(List<StreamRecordBatch> records) {
-            this(records, null);
         }
 
         public void free() {
