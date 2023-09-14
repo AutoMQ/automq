@@ -87,6 +87,7 @@ public class S3StreamClient implements StreamClient {
                     return;
                 }
                 try {
+                    LOGGER.info("start to do stream objects compaction for stream {}", stream.streamId());
                     stream.triggerCompactionTask();
                 } catch (InterruptedException | ExecutionException e) {
                     LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
@@ -97,7 +98,7 @@ public class S3StreamClient implements StreamClient {
                     LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
                 }
             });
-        }, 60, config.s3StreamObjectCompactionTaskIntervalMinutes(), TimeUnit.MINUTES);
+        }, config.s3StreamObjectCompactionTaskIntervalMinutes(), config.s3StreamObjectCompactionTaskIntervalMinutes(), TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
