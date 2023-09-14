@@ -58,6 +58,8 @@ import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
 import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -410,11 +412,19 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to close a stream. (unused now)
+     * Broker trys to close a stream.
      */
     CompletableFuture<CloseStreamResponseData> closeStream(
         ControllerRequestContext context,
-        CloseStreamRequestData response
+        CloseStreamRequestData request
+    );
+
+    /**
+     * Broker trys to trim a stream.
+     */
+    CompletableFuture<TrimStreamResponseData> trimStream(
+        ControllerRequestContext context,
+        TrimStreamRequestData request
     );
 
     /**

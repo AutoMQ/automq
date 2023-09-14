@@ -116,6 +116,7 @@ public enum ApiKeys {
     DELETE_STREAM(ApiMessageType.DELETE_STREAM, false, true),
     OPEN_STREAM(ApiMessageType.OPEN_STREAM, false, true),
     CLOSE_STREAM(ApiMessageType.CLOSE_STREAM, false, true),
+    TRIM_STREAM(ApiMessageType.TRIM_STREAM, false, true),
     PREPARE_S3_OBJECT(ApiMessageType.PREPARE_S3_OBJECT, false, true),
     COMMIT_WALOBJECT(ApiMessageType.COMMIT_WALOBJECT, false, true),
     COMMIT_STREAM_OBJECT(ApiMessageType.COMMIT_STREAM_OBJECT, false, true),

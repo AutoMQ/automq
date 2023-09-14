@@ -30,6 +30,7 @@ import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
@@ -37,6 +38,8 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.metadata.stream.StreamMetadata;
 import org.apache.kafka.metadata.stream.StreamState;
+import org.apache.kafka.common.requests.s3.TrimStreamRequest;
+import org.apache.kafka.common.requests.s3.TrimStreamRequest.Builder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -124,8 +127,29 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
-        // TODO: implement
-        return CompletableFuture.completedFuture(null);
+        TrimStreamRequest.Builder request = new Builder(
+            new TrimStreamRequestData()
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch)
+                .setNewStartOffset(newStartOffset)
+        );
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<OpenStreamResponseData, Void> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(null);
+                case STREAM_NOT_EXIST:
+                case STREAM_FENCED:
+                case STREAM_INNER_ERROR:
+                    LOGGER.error("Unexpected error while trimming stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+                default:
+                    LOGGER.warn("Error while trimming stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
     }
 
     @Override

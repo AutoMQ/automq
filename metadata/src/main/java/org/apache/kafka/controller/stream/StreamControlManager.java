@@ -34,6 +34,8 @@ import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamMetadata;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
@@ -409,6 +411,10 @@ public class StreamControlManager {
                         .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
         log.info("[CloseStream]: broker: {} close stream: {} with epoch: {} success", brokerId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    public ControllerResult<TrimStreamResponseData> trimStream(TrimStreamRequestData data) {
+        throw new UnsupportedOperationException();
     }
 
     public ControllerResult<DeleteStreamResponseData> deleteStream(DeleteStreamRequestData data) {
