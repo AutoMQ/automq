@@ -70,6 +70,8 @@ public class S3Storage implements Storage {
             ThreadUtils.createThreadFactory("s3-storage-main", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
+    private final ScheduledExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
+            4, ThreadUtils.createThreadFactory("s3-storage-upload-wal", true), LOGGER);
 
     private final StreamManager streamManager;
     private final ObjectManager objectManager;
@@ -302,7 +304,7 @@ public class S3Storage implements Storage {
 
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
         WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(logCacheBlock.records(), objectManager, s3Operator,
-                config.s3ObjectBlockSize(), config.s3ObjectPartSize(), config.s3StreamSplitSize());
+                config.s3ObjectBlockSize(), config.s3ObjectPartSize(), config.s3StreamSplitSize(), uploadWALExecutor);
         WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
         context.task = walObjectUploadTask;
         context.cache = logCacheBlock;
@@ -352,7 +354,11 @@ public class S3Storage implements Storage {
             if (next != null) {
                 commitWALObject(next);
             }
-        }, backgroundExecutor);
+        }, backgroundExecutor).exceptionally(ex -> {
+            LOGGER.error("Unexpected exception when commit WAL object", ex);
+            context.cf.completeExceptionally(ex);
+            return null;
+        });
     }
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
