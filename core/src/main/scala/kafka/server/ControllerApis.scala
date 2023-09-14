@@ -955,9 +955,7 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new TrimStreamResponse(new TrimStreamResponseData().
-              setThrottleTimeMs(requestThrottleMs).
-              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+            new TrimStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

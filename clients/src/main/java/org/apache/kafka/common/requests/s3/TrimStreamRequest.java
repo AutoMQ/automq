@@ -19,7 +19,7 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.TrimStreamRequestData;
-import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -30,7 +30,7 @@ public class TrimStreamRequest extends AbstractRequest {
 
         private final TrimStreamRequestData data;
         public Builder(TrimStreamRequestData data) {
-            super(ApiKeys.OPEN_STREAM);
+            super(ApiKeys.TRIM_STREAM);
             this.data = data;
         }
 
@@ -52,12 +52,12 @@ public class TrimStreamRequest extends AbstractRequest {
     }
 
     @Override
-    public OpenStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public TrimStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        OpenStreamResponseData response = new OpenStreamResponseData()
+        TrimStreamResponseData response = new TrimStreamResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new OpenStreamResponse(response);
+        return new TrimStreamResponse(response);
     }
 
     @Override

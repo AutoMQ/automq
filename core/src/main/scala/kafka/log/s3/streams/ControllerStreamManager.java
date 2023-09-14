@@ -31,6 +31,7 @@ import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
 import org.apache.kafka.common.message.OpenStreamResponseData;
 import org.apache.kafka.common.message.TrimStreamRequestData;
+import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
@@ -131,10 +132,11 @@ public class ControllerStreamManager implements StreamManager {
             new TrimStreamRequestData()
                 .setStreamId(streamId)
                 .setStreamEpoch(epoch)
+                .setBrokerId(config.brokerId())
                 .setNewStartOffset(newStartOffset)
         );
         CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<OpenStreamResponseData, Void> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
+        RequestTask<TrimStreamResponseData, Void> task = new RequestTask<>(future, request, TrimStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
