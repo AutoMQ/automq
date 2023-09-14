@@ -116,7 +116,9 @@ public class BlockWALService implements WriteAheadLog {
         long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
         try {
             walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis());
+            long trimOffset = walHeaderCoreData.getTrimOffset();
             this.walChannel.write(walHeaderCoreData.marshal(), position);
+            walHeaderCoreData.setFlushedTrimOffset(trimOffset);
             LOGGER.info("flushWALHeader success, position: {}, walHeader: {}", position, walHeaderCoreData);
         } catch (IOException e) {
             LOGGER.error("flushWALHeader IOException", e);
@@ -265,10 +267,6 @@ public class BlockWALService implements WriteAheadLog {
         } else {
             walHeaderCoreData = new WALHeaderCoreData()
                     .setCapacity(walChannel.capacity())
-                    .setTrimOffset(0)
-                    .setLastWriteTimestamp(System.currentTimeMillis())
-                    .setSlidingWindowNextWriteOffset(0)
-                    .setSlidingWindowStartOffset(0)
                     .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, WAL_HEADER_INIT_WINDOW_MAX_LENGTH))
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
@@ -324,7 +322,7 @@ public class BlockWALService implements WriteAheadLog {
         final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record) : crc;
 
         // 计算写入 wal offset
-        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_CAPACITY_DOUBLE);
+        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_CAPACITY_DOUBLE);
 
         // AppendResult
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
@@ -416,6 +414,7 @@ public class BlockWALService implements WriteAheadLog {
 
     static class WALHeaderCoreData {
         private final AtomicLong trimOffsetPos2 = new AtomicLong(0);
+        private final AtomicLong flushedTrimOffset = new AtomicLong(0);
         private final AtomicLong slidingWindowStartOffsetPos5 = new AtomicLong(0);
         private final AtomicLong slidingWindowNextWriteOffsetPos4 = new AtomicLong(0);
         private final AtomicLong slidingWindowMaxLengthPos6 = new AtomicLong(0);
@@ -479,6 +478,14 @@ public class BlockWALService implements WriteAheadLog {
         public WALHeaderCoreData setTrimOffset(long trimOffset) {
             this.trimOffsetPos2.set(trimOffset);
             return this;
+        }
+
+        public long getFlushedTrimOffset() {
+            return flushedTrimOffset.get();
+        }
+
+        public void setFlushedTrimOffset(long flushedTrimOffset) {
+            this.flushedTrimOffset.set(flushedTrimOffset);
         }
 
         public long getLastWriteTimestamp() {
