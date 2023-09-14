@@ -699,15 +699,16 @@ class LogManager(logDirs: Seq[File],
         }
       }
 
+      // Kafka on S3 inject start
       // wait for all streams to be closed
       CoreUtils.swallow(CompletableFuture.allOf(closeStreamsFutures.toArray: _*).get(), this)
+      // elastic stream inject end
 
     } finally {
       threadPools.foreach(_.shutdown())
       // regardless of whether the close succeeded, we need to unlock the data directories
       dirLocks.foreach(_.destroy())
     }
-    // elastic stream inject end
 
     info("Shutdown complete.")
   }

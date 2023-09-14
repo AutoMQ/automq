@@ -304,7 +304,7 @@ class ElasticLog(val metaStream: MetaStream,
       CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
       CoreUtils.swallow(segments.close(), this)
     }
-    info("log(except for st) closed")
+    info("log(except for streams) closed")
     closeStreams()
   }
 
