@@ -280,11 +280,7 @@ class ElasticLog(val metaStream: MetaStream,
     deletedNotReplaced
   }
 
-
-  /**
-   * Closes the segments of the log.
-   */
-  override private[log] def close(): Unit = {
+  override private[log] def close(): CompletableFuture[Void] = {
     // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
     partitionMeta.setCleanedShutdown(true)
     partitionMeta.setStartOffset(logStartOffset)
@@ -298,21 +294,16 @@ class ElasticLog(val metaStream: MetaStream,
       }
       CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
       CoreUtils.swallow(segments.close(), this)
-      CoreUtils.swallow(closeStreams(), this)
     }
-    info("log closed");
+    info("log(except for streams) closed")
+    closeStreams()
   }
 
   /**
-   * Directly close all streams of the log. This method may throw IOException.
+   * Directly close all streams of the log.
    */
-  def closeStreams(): Unit = {
-    try {
-      CompletableFuture.allOf(streamManager.close(), metaStream.close()).get()
-    } catch {
-      case e: ExecutionException =>
-        throw e.getCause
-    }
+  def closeStreams(): CompletableFuture[Void] = {
+    CompletableFuture.allOf(streamManager.close(), metaStream.close())
   }
 }
 

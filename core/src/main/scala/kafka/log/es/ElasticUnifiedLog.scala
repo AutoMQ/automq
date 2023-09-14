@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 
+import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -81,9 +82,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     elasticLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete, LogDeletion(elasticLog))
   }
 
-  override def close(): Unit = {
+  override def close(): CompletableFuture[Void] = {
     info("Closing log")
-    lock synchronized {
+    val closeFuture = lock synchronized {
       maybeFlushMetadataFile()
       elasticLog.checkIfMemoryMappedBufferClosed()
       producerExpireCheck.cancel(true)
@@ -100,12 +101,13 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     elasticLog.segments.clear()
     elasticLog.isMemoryMappedBufferClosed = true
     elasticLog.deleteEmptyDir()
+    closeFuture
   }
 
   /**
-   * Quickly close the log without flushing. This is used when partition is offline
+   * Only close streams.
    */
-  def quicklyClose(): Unit = {
+  def closeStreams(): CompletableFuture[Void] = {
     elasticLog.closeStreams()
   }
 

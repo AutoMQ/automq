@@ -22,7 +22,7 @@ import com.yammer.metrics.core.MetricName
 import java.io.{File, IOException}
 import java.nio.file.{Files, Paths}
 import java.util.Optional
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
 import kafka.log.es.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
@@ -687,11 +687,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   def numberOfSegments: Int = localLog.segments.numberOfSegments
 
+  // Kafka on S3 inject start
   /**
    * Close this log.
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
    */
-  def close(): Unit = {
+  def close(): CompletableFuture[Void] = {
     lock synchronized {
       maybeFlushMetadataFile()
       localLog.checkIfMemoryMappedBufferClosed()
@@ -705,6 +706,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       localLog.close()
     }
   }
+  // Kafka on S3 inject end
 
   /**
    * Rename the directory of the local log. If the log's directory is being renamed for async deletion due to a
