@@ -516,30 +516,24 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    public static BlockWALServiceBuilder builder() {
-        return new BlockWALServiceBuilder();
+    public static BlockWALServiceBuilder builder(String blockDevicePath) {
+        return new BlockWALServiceBuilder(blockDevicePath);
     }
-
 
     public static class BlockWALServiceBuilder {
         private int ioThreadNums = Integer.parseInt(System.getProperty(
                 "automq.ebswal.ioThreadNums",
                 "8"
         ));
-        private String blockDevicePath;
+        private final String blockDevicePath;
         private long blockDeviceCapacityWant = 0;
 
-        public static BlockWALServiceBuilder build() {
-            return new BlockWALServiceBuilder();
+        BlockWALServiceBuilder(String blockDevicePath) {
+            this.blockDevicePath = blockDevicePath;
         }
 
         public BlockWALServiceBuilder ioThreadNums(int ioThreadNums) {
             this.ioThreadNums = ioThreadNums;
-            return this;
-        }
-
-        public BlockWALServiceBuilder blockDevicePath(String blockDevicePath) {
-            this.blockDevicePath = blockDevicePath;
             return this;
         }
 
@@ -548,8 +542,7 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
-
-        public BlockWALService createBlockWALService() {
+        public BlockWALService build() {
             BlockWALService blockWALService = new BlockWALService();
             blockWALService.blockDevicePath = this.blockDevicePath;
             blockWALService.ioThreadNums = this.ioThreadNums;
