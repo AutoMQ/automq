@@ -27,20 +27,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 public class LogCache {
+    private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> block
+            .records().forEach(
+                    (streamId, records) -> records.forEach(StreamRecordBatch::release)
+            );
     private final long cacheBlockMaxSize;
     private final List<LogCacheBlock> archiveBlocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
     private final AtomicLong size = new AtomicLong();
+    private final Consumer<LogCacheBlock> blockFreeListener;
 
-    public LogCache(long cacheBlockMaxSize) {
+    public LogCache(long cacheBlockMaxSize, Consumer<LogCacheBlock> blockFreeListener) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
+        this.blockFreeListener = blockFreeListener;
+    }
+
+    public LogCache(long cacheBlockMaxSize) {
+        this(cacheBlockMaxSize, DEFAULT_BLOCK_FREE_LISTENER);
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
+        tryRealFree();
         size.addAndGet(recordBatch.size());
         return activeBlock.put(recordBatch);
     }
@@ -94,14 +106,21 @@ public class LogCache {
         }
     }
 
-    public void free(long blockId) {
+    public void markFree(LogCacheBlock block) {
+        block.free = true;
+        tryRealFree();
+    }
+
+    private void tryRealFree() {
+        if (size.get() <= cacheBlockMaxSize * 0.9) {
+            return;
+        }
         archiveBlocks.removeIf(b -> {
-            boolean remove = b.blockId == blockId;
-            if (remove) {
+            if (b.free) {
                 size.addAndGet(-b.size);
-                b.records().clear();
+                blockFreeListener.accept(b);
             }
-            return remove;
+            return b.free;
         });
     }
 
@@ -120,6 +139,7 @@ public class LogCache {
         private final Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         private long size = 0;
         private long confirmOffset;
+        boolean free;
 
         public LogCacheBlock(long maxSize) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();

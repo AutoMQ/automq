@@ -83,10 +83,10 @@ public class S3Storage implements Storage {
         this.config = config;
         this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
-        this.logCache = new LogCache(config.s3WALObjectSize());
+        this.blockCache = blockCache;
+        this.logCache = new LogCache(config.s3WALObjectSize(), block -> blockCache.put(block.records()));
         this.streamManager = streamManager;
         this.objectManager = objectManager;
-        this.blockCache = blockCache;
         this.s3Operator = s3Operator;
     }
 
@@ -362,10 +362,7 @@ public class S3Storage implements Storage {
     }
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
-        mainExecutor.execute(() -> {
-            blockCache.put(cacheBlock.records());
-            logCache.free(cacheBlock.blockId());
-        });
+        mainExecutor.execute(() -> logCache.markFree(cacheBlock));
     }
 
     /**

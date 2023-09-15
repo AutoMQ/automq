@@ -128,6 +128,10 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
+        if (true) {
+            // FIXME
+            return CompletableFuture.completedFuture(null);
+        }
         TrimStreamRequest.Builder request = new Builder(
             new TrimStreamRequestData()
                 .setStreamId(streamId)
