@@ -108,7 +108,11 @@ public class WALObjectUploadTask {
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
             long streamSize = streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
             if (forceSplit || streamSize >= streamSplitSizeThreshold) {
-                streamObjectCfList.add(writeStreamObject(streamRecords).thenAccept(request::addStreamObject));
+                streamObjectCfList.add(writeStreamObject(streamRecords).thenAccept(so -> {
+                    synchronized (request) {
+                        request.addStreamObject(so);
+                    }
+                }));
             } else {
                 walObject.write(streamId, streamRecords);
                 long startOffset = streamRecords.get(0).getBaseOffset();
