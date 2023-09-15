@@ -261,11 +261,10 @@ public class SlidingWindowService {
 
         public ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            byteBuffer.putInt(WALUtil.crc32(byteBuffer.array(), 0, RECORD_HEADER_SIZE - 4));
+            byteBuffer.putInt(WALUtil.crc32(byteBuffer, RECORD_HEADER_SIZE - 4));
             return byteBuffer.position(0);
         }
     }
-
 
     public static class WindowCoreData {
         private final Lock treeMapIOTaskRequestLock = new ReentrantLock();

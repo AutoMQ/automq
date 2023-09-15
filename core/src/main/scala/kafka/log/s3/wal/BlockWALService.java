@@ -160,10 +160,11 @@ public class BlockWALService implements WriteAheadLog {
             int recordHeaderCRC = readRecordHeader.getRecordHeaderCRC();
 
             // 检查点：RecordHeaderCRC 不匹配，可能遇到了损坏的数据
-            if (recordHeaderCRC != WALUtil.crc32(recordHeader.array(), 0, RECORD_HEADER_SIZE - 4)) {
+            int calculatedRecordHeaderCRC = WALUtil.crc32(recordHeader, RECORD_HEADER_SIZE - 4);
+            if (recordHeaderCRC != calculatedRecordHeaderCRC) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset),
-                        String.format("recordHeaderCRC[%d] != WALUtil.crc32(recordHeader.array(), 0, RecordHeaderSize - 4)[%d]", recordHeaderCRC, WALUtil.crc32(recordHeader.array(), 0, RECORD_HEADER_SIZE - 4))
+                        String.format("recordHeaderCRC[%d] != WALUtil.crc32(recordHeader.array(), 0, RecordHeaderSize - 4)[%d]", recordHeaderCRC, calculatedRecordHeaderCRC)
                 );
             }
 
@@ -196,10 +197,11 @@ public class BlockWALService implements WriteAheadLog {
             recordBody.position(0).limit(recordBodyLength);
 
             // 检查点：RecordBodyCRC 不匹配，可能遇到了损坏的数据
-            if (recordBodyCRC != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())) {
+            int calculatedRecordBodyCRC = WALUtil.crc32(recordBody);
+            if (recordBodyCRC != calculatedRecordBodyCRC) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
-                        String.format("recordBodyCRC[%d] != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())[%d]", recordBodyCRC, WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit()))
+                        String.format("recordBodyCRC[%d] != WALUtil.crc32(recordBody.array(), recordBody.position(), recordBody.limit())[%d]", recordBodyCRC, calculatedRecordBodyCRC)
                 );
             }
 
@@ -458,7 +460,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             ByteBuffer headerExceptCRC = walHeaderCoreData.marshalHeaderExceptCRC();
-            int crc = WALUtil.crc32(headerExceptCRC.array(), 0, WAL_HEADER_SIZE - 4);
+            int crc = WALUtil.crc32(headerExceptCRC, WAL_HEADER_SIZE - 4);
             if (crc != walHeaderCoreData.crcPos8) {
                 throw new RuntimeException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crcPos8, crc));
             }
@@ -569,7 +571,7 @@ public class BlockWALService implements WriteAheadLog {
 
         ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            this.crcPos8 = WALUtil.crc32(byteBuffer.array(), 0, WAL_HEADER_SIZE - 4);
+            this.crcPos8 = WALUtil.crc32(byteBuffer, WAL_HEADER_SIZE - 4);
             byteBuffer.putInt(crcPos8);
             return byteBuffer.position(0);
         }
