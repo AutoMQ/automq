@@ -295,7 +295,7 @@ public class BlockCache {
         }
     }
 
-    static class CacheBlock {
+    public static class CacheBlock {
         List<StreamRecordBatch> records;
         long firstOffset;
         long lastOffset;
