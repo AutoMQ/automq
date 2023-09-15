@@ -37,6 +37,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
@@ -112,7 +113,6 @@ public class SlidingWindowService {
 
             expectedWriteOffset = WALUtil.alignLargeByBlockSize(lastWriteOffset);
 
-            // FIXME: error RingBuffer logic.
             // 如果物理设备末尾不足这次写入，则跳转到物理设备起始位置
             if ((recordSectionCapacity - expectedWriteOffset % recordSectionCapacity) < totalWriteSize) {
                 expectedWriteOffset = expectedWriteOffset + recordSectionCapacity - expectedWriteOffset % recordSectionCapacity;
@@ -143,12 +143,13 @@ public class SlidingWindowService {
 
         totalRecord.position(0);
 
-        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE);
+        // TODO: make this beautiful
+        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_CAPACITY_DOUBLE, WAL_HEADER_CAPACITY_DOUBLE);
 
         walChannel.write(totalRecord, position);
     }
 
-    public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) {
+    public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
         long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
         long newWindowSize = newWindowEndOffset - windowCoreData.getWindowStartOffset().get();
 
@@ -277,7 +278,6 @@ public class SlidingWindowService {
          */
         private final AtomicLong windowStartOffset = new AtomicLong(0);
 
-
         public AtomicLong getWindowMaxLength() {
             return windowMaxLength;
         }
@@ -299,7 +299,6 @@ public class SlidingWindowService {
             }
         }
 
-
         public void calculateStartOffset(long wroteOffset) {
             this.treeMapIOTaskRequestLock.lock();
             try {
@@ -315,7 +314,7 @@ public class SlidingWindowService {
             }
         }
 
-        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) {
+        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) throws IOException {
             boolean scaleWindowHappend = false;
             treeMapIOTaskRequestLock.lock();
             try {
@@ -363,6 +362,9 @@ public class SlidingWindowService {
 
                     writeRecord(writeRecordTask);
 
+                    // 更新滑动窗口的最小 Offset
+                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
+
                     writeRecordTask.future().complete(new AppendResult.CallbackResult() {
                         @Override
                         public long flushedOffset() {
@@ -374,9 +376,6 @@ public class SlidingWindowService {
                             return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                         }
                     });
-
-                    // 更新滑动窗口的最小 Offset
-                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
                 }
 
             } catch (Throwable e) {

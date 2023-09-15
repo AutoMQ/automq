@@ -18,6 +18,7 @@
 package kafka.log.s3.wal;
 
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
@@ -33,5 +34,5 @@ public interface WriteRecordTask {
 
     ByteBuffer recordBody();
 
-    void flushWALHeader(long windowMaxLength);
+    void flushWALHeader(long windowMaxLength) throws IOException;
 }
