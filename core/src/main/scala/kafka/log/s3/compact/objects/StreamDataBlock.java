@@ -102,7 +102,7 @@ public class StreamDataBlock {
 
     @Override
     public String toString() {
-        return "ObjectStreamRangePosition{" +
+        return "StreamDataBlock{" +
                 "streamId=" + streamId +
                 ", startOffset=" + startOffset +
                 ", endOffset=" + endOffset +

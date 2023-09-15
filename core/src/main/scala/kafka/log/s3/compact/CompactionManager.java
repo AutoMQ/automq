@@ -206,13 +206,15 @@ public class CompactionManager {
                 .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.getWalObject().dataTimeInMs())
                         >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod)));
         // force split objects that exists for too long
-        logger.info("{} WAL objects to be force split", objectMetadataFilterMap.get(true).size());
+        logger.info("{} WAL objects to be force split, total split size {}", objectMetadataFilterMap.get(true).size(),
+                objectMetadataFilterMap.get(true).stream().mapToLong(e -> e.getObjectMetadata().objectSize()).sum());
         List<CompletableFuture<StreamObject>> forceSplitCfs = splitWALObjects(objectMetadataFilterMap.get(true));
 
         CommitWALObjectRequest request = new CommitWALObjectRequest();
         List<CompactionPlan> compactionPlans = new ArrayList<>();
         try {
-            logger.info("{} WAL objects as compact candidates", objectMetadataFilterMap.get(false).size());
+            logger.info("{} WAL objects as compact candidates, total compaction size: {}",
+                    objectMetadataFilterMap.get(false).size(), objectMetadataFilterMap.get(false).stream().mapToLong(e -> e.getObjectMetadata().objectSize()).sum());
             compactionPlans = this.compactionAnalyzer.analyze(objectMetadataFilterMap.get(false));
             logCompactionPlans(compactionPlans);
             compactWALObjects(request, compactionPlans, s3ObjectMetadata);

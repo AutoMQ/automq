@@ -70,8 +70,10 @@ public class CompactionAnalyzer {
                     if (shouldSplitObject(compactedObjectBuilder)) {
                         // split object to fit into cache
                         int endOffset = 0;
+                        long tmpSize = totalSize;
                         for (int j = 0; j < compactedObjectBuilder.streamDataBlocks().size(); j++) {
-                            if (totalSize + compactedObjectBuilder.streamDataBlocks().get(j).getBlockSize() > compactionCacheSize) {
+                            tmpSize += compactedObjectBuilder.streamDataBlocks().get(j).getBlockSize();
+                            if (tmpSize > compactionCacheSize) {
                                 endOffset = j;
                                 break;
                             }
