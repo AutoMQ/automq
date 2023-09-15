@@ -110,7 +110,8 @@ public class StreamObjectsCompactionTask {
             .thenCompose(request -> objectManager
                 .commitStreamObject(request)
                 .thenApply(resp -> {
-                    LOGGER.info("stream objects compaction task for stream {} from {} to {} is done", stream.streamId(), startOffset, endOffset);
+                    LOGGER.info("stream objects compaction task for stream {} with range [{}, {}) is done, objects {} => object {}",
+                        stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(), request.getObjectId());
                     return null;
                 })
             );
@@ -143,6 +144,9 @@ public class StreamObjectsCompactionTask {
 
     public void prepare() {
         this.compactGroups = prepareCompactGroups(this.nextStartSearchingOffset);
+        if (!this.compactGroups.isEmpty()) {
+            LOGGER.info("prepared {} groups for compaction", this.compactGroups.size());
+        }
     }
 
     /**

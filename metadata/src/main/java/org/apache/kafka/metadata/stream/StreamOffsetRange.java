@@ -78,6 +78,11 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
         return Objects.hash(streamId, startOffset, endOffset);
     }
 
+    @Override
+    public String toString() {
+        return "StreamOffsetRange(streamId=" + streamId + ", startOffset=" + startOffset + ", endOffset=" + endOffset + ")";
+    }
+
     public StreamIndex toRecordStreamIndex() {
         return new StreamIndex()
             .setStreamId(streamId)

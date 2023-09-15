@@ -23,6 +23,7 @@ import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.server.KafkaConfig;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
@@ -120,7 +121,7 @@ public class ControllerObjectManager implements ObjectManager {
                         .setEndOffset(request.getEndOffset())
                         .setSourceObjectIds(request.getSourceObjectIds()));
         CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<CommitWALObjectResponseData, Void> task = new RequestTask<>(future, wrapRequestBuilder, CommitWALObjectResponseData.class, resp -> {
+        RequestTask<CommitStreamObjectResponseData, Void> task = new RequestTask<>(future, wrapRequestBuilder, CommitStreamObjectResponseData.class, resp -> {
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
