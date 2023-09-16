@@ -19,13 +19,11 @@ package org.apache.kafka.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.anyList;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
@@ -56,10 +54,11 @@ public class S3ObjectControlManagerTest {
     private static final int BROKER0 = 0;
     private static final int BROKER1 = 1;
     private static final String CLUSTER = "kafka-on-S3_cluster";
+    private static final String S3_ENDPOINT = "http://localhost:4066";
     private static final String S3_REGION = "us-east-1";
     private static final String S3_BUCKET = "kafka-on-S3-bucket";
 
-    private static final S3Config S3_CONFIG = new S3Config(S3_REGION, S3_BUCKET);
+    private static final S3Config S3_CONFIG = new S3Config(S3_ENDPOINT, S3_REGION, S3_BUCKET);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private S3Operator operator;
@@ -68,6 +67,10 @@ public class S3ObjectControlManagerTest {
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
         operator = Mockito.mock(S3Operator.class);
+        Mockito.when(operator.delete(anyList())).then(inv -> {
+            List<String> objectKeys = inv.getArgument(0);
+            return CompletableFuture.completedFuture(objectKeys);
+        });
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
         manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, operator);
@@ -185,25 +188,16 @@ public class S3ObjectControlManagerTest {
 
     @Test
     public void testExpiredCheck() throws InterruptedException {
-        AtomicBoolean hit = new AtomicBoolean(false);
-        Mockito.when(operator.delele(any(String[].class)))
-            .then(ink -> {
-                List<String> keys = List.of((String[]) ink.getArgument(0));
-                if (keys.size() > 0) {
-                    hit.set(true);
-                }
-                return CompletableFuture.completedFuture(true);
-            });
         Mockito.when(controller.checkS3ObjectsLifecycle(any(ControllerRequestContext.class)))
             .then(inv -> {
                 ControllerResult<Void> result = manager.checkS3ObjectsLifecycle();
-                result.records().stream().map(record -> (S3ObjectRecord) record.message()).forEach(manager::replay);
+                replay(manager, result.records());
                 return CompletableFuture.completedFuture(null);
             });
-        Mockito.when(controller.notifyS3ObjectDeleted(any(ControllerRequestContext.class), anySet()))
+        Mockito.when(controller.notifyS3ObjectDeleted(any(ControllerRequestContext.class), anyList()))
             .then(inv -> {
                 ControllerResult<Void> result = manager.notifyS3ObjectDeleted(inv.getArgument(1));
-                result.records().stream().map(record -> (RemoveS3ObjectRecord) record.message()).forEach(manager::replay);
+                replay(manager, result.records());
                 return CompletableFuture.completedFuture(null);
             });
         // 1. prepare 1 object
@@ -212,7 +206,7 @@ public class S3ObjectControlManagerTest {
         // 3. wait for expired
         Thread.sleep(11 * 1000);
         assertEquals(0, manager.objectsMetadata().size());
-        assertTrue(hit.get());
+        Mockito.verify(operator, Mockito.times(1)).delete(anyList());
     }
 
     private void prepareOneObject(long ttl) {

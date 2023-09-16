@@ -212,7 +212,7 @@ class ControllerServer(
         val maxIdleIntervalNs = config.metadataMaxIdleIntervalNs.fold(OptionalLong.empty)(OptionalLong.of)
 
         // elastic stream inject start
-        val s3Config = new S3Config(config.s3Region, config.s3Bucket)
+        val s3Config = new S3Config(config.s3Endpoint, config.s3Region, config.s3Bucket)
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
           "_kafka_" + clusterId

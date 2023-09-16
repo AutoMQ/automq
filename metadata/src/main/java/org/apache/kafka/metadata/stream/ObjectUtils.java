@@ -43,4 +43,23 @@ public class ObjectUtils {
         }
     }
 
+    public static long parseObjectId(int version, String key) {
+        if (namespace.isEmpty()) {
+            throw new IllegalStateException("NAMESPACE is not set");
+        }
+        return parseObjectId(version, key, namespace);
+    }
+
+    public static long parseObjectId(int version, String key, String namespace) {
+        if (version == 0) {
+            String[] parts = key.split("/");
+            if (parts.length != 3) {
+                throw new IllegalArgumentException("Invalid key: " + key);
+            }
+            return Long.parseLong(parts[2]);
+        } else {
+            throw new UnsupportedOperationException("Unsupported version: " + version);
+        }
+    }
+
 }

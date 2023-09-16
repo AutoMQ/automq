@@ -18,6 +18,7 @@
 package org.apache.kafka.controller.stream;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.metadata.stream.S3Object;
@@ -27,15 +28,15 @@ public class MockS3Operator implements S3Operator {
     private final Map<String/*objectKey*/, S3Object> objects = new HashMap<>();
 
     @Override
-    public CompletableFuture<Boolean> delete(String objectKey) {
-        return delele(new String[] {objectKey});
-    }
-
-    @Override
-    public CompletableFuture<Boolean> delele(String[] objectKeys) {
+    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
         for (String objectKey : objectKeys) {
             objects.remove(objectKey);
         }
-        return CompletableFuture.completedFuture(true);
+        return CompletableFuture.completedFuture(objectKeys);
+    }
+
+    @Override
+    public void close() {
+
     }
 }

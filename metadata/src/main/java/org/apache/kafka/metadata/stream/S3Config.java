@@ -22,21 +22,27 @@ package org.apache.kafka.metadata.stream;
  */
 public class S3Config {
 
+    private final String endpoint;
+
     private final String region;
 
-    private final String bucketName;
+    private final String bucket;
 
-    public S3Config(final String region, final String bucketName) {
+    public S3Config(final String endpoint, final String region, final String bucket) {
+        this.endpoint = endpoint;
         this.region = region;
-        this.bucketName = bucketName;
+        this.bucket = bucket;
     }
 
-    public String getRegion() {
+    public String region() {
         return region;
     }
 
-    public String getBucketName() {
-        return bucketName;
+    public String bucket() {
+        return bucket;
     }
 
+    public String endpoint() {
+        return endpoint;
+    }
 }
