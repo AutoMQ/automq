@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class MemoryStreamClient implements StreamClient {
     private final AtomicLong streamIdAlloc = new AtomicLong();
+
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
         return CompletableFuture.completedFuture(new MemoryStream(streamIdAlloc.getAndIncrement()));
@@ -55,6 +56,7 @@ public class MemoryStreamClient implements StreamClient {
     public void shutdown() {
 
     }
+
     static class MemoryStream implements Stream {
         private final AtomicLong nextOffsetAlloc = new AtomicLong();
         private NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
@@ -83,7 +85,8 @@ public class MemoryStreamClient implements StreamClient {
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
             long baseOffset = nextOffsetAlloc.getAndAdd(recordBatch.count());
             recordMap.put(baseOffset, new RecordBatchWithContextWrapper(recordBatch, baseOffset));
-            return CompletableFuture.completedFuture(() -> baseOffset);        }
+            return CompletableFuture.completedFuture(() -> baseOffset);
+        }
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
@@ -129,7 +132,7 @@ public class MemoryStreamClient implements StreamClient {
 
         @Override
         public long lastOffset() {
-            return baseOffset + recordBatch.count();
+            return baseOffset + recordBatch.count() - 1;
         }
 
         @Override
