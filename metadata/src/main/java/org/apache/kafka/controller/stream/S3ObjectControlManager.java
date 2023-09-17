@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller.stream;
 
+import java.util.Arrays;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -27,7 +28,7 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
-import org.apache.kafka.controller.stream.S3ObjectKeyGeneratorManager.GenerateContextV0;
+import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
@@ -39,13 +40,11 @@ import org.apache.kafka.timeline.TimelineLong;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
@@ -212,8 +211,7 @@ public class S3ObjectControlManager {
     }
 
     public void replay(S3ObjectRecord record) {
-        GenerateContextV0 ctx = new GenerateContextV0(clusterId, record.objectId());
-        String objectKey = S3ObjectKeyGeneratorManager.getByVersion(0).generate(ctx);
+        String objectKey = ObjectUtils.genKey(0, record.objectId());
         S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
                 record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
                 S3ObjectState.fromByte(record.objectState()));
@@ -264,31 +262,30 @@ public class S3ObjectControlManager {
                     });
                 });
         // check the mark destroyed objects
-        ObjectPair[] destroyedObjects = this.markDestroyedObjects.stream()
-                // must guarantee that the objects in markDestroyedObjects also exist in objectsMetadata
-                .map(id -> new ObjectPair(id, objectsMetadata.get(id).getObjectKey()))
-                .toArray(ObjectPair[]::new);
-        String[] destroyedObjectKeys = Arrays.stream(destroyedObjects).map(ObjectPair::objectKey).toArray(String[]::new);
-        if (destroyedObjectKeys == null || destroyedObjectKeys.length == 0) {
+        List<String> destroyedObjectKeys = this.markDestroyedObjects.stream()
+            .map(id -> this.objectsMetadata.get(id).getObjectKey())
+            .collect(Collectors.toList());
+        if (destroyedObjectKeys == null || destroyedObjectKeys.size() == 0) {
             return ControllerResult.of(records, null);
         }
-        Set<Long> destroyedObjectIds = Arrays.stream(destroyedObjects).map(ObjectPair::objectId).collect(Collectors.toSet());
-        // TODO: deal with failed objects in batch object deletion request
-        this.operator.delele(destroyedObjectKeys).whenCompleteAsync((success, e) -> {
-            if (e != null || !success) {
+        this.operator.delete(destroyedObjectKeys).whenCompleteAsync((resp, e) -> {
+            if (e != null) {
                 log.error("Failed to delete the S3Object from S3, objectKeys: {}",
                         String.join(",", destroyedObjectKeys), e);
                 return;
             }
-            // notify the controller an objects deletion event to drive the removal of the objects
-            ControllerRequestContext ctx = new ControllerRequestContext(
+            if (resp != null && !resp.isEmpty()) {
+                List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
+                // notify the controller an objects deletion event to drive the removal of the objects
+                ControllerRequestContext ctx = new ControllerRequestContext(
                     null, null, OptionalLong.empty());
-            this.quorumController.notifyS3ObjectDeleted(ctx, destroyedObjectIds).whenComplete((ignore, exp) -> {
-                if (exp != null) {
-                    log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
-                            destroyedObjectIds, exp);
-                }
-            });
+                this.quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                    if (exp != null) {
+                        log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                            Arrays.toString(deletedObjectIds.toArray()), exp);
+                    }
+                });
+            }
         });
         return ControllerResult.of(records, null);
     }
@@ -299,12 +296,10 @@ public class S3ObjectControlManager {
      * @param deletedObjectIds the deleted S3Objects' ids
      * @return the result of the generation, contains the records which should be applied to the raft.
      */
-    public ControllerResult<Void> notifyS3ObjectDeleted(Set<Long> deletedObjectIds) {
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        deletedObjectIds.stream().filter(markDestroyedObjects::contains).forEach(objectId -> {
-            records.add(new ApiMessageAndVersion(
-                    new RemoveS3ObjectRecord().setObjectId(objectId), (short) 0));
-        });
+    public ControllerResult<Void> notifyS3ObjectDeleted(List<Long> deletedObjectIds) {
+        List<ApiMessageAndVersion> records = deletedObjectIds.stream().filter(markDestroyedObjects::contains)
+            .map(objectId -> new ApiMessageAndVersion(new RemoveS3ObjectRecord()
+                .setObjectId(objectId), (short) 0)).collect(Collectors.toList());
         return ControllerResult.of(records, null);
     }
 

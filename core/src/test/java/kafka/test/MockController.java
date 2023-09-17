@@ -486,7 +486,7 @@ public class MockController implements Controller {
     }
 
     public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
-        Set<Long/*objectId*/> deletedObjectIds) {
+        List<Long/*objectId*/> deletedObjectIds) {
         throw new UnsupportedOperationException();
     }
 

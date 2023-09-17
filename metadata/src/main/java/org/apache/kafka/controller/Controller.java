@@ -391,7 +391,7 @@ public interface Controller extends AclMutator, AutoCloseable {
      */
     CompletableFuture<Void> notifyS3ObjectDeleted(
         ControllerRequestContext context,
-        Set<Long/*objectId*/> deletedObjectIds
+        List<Long/*objectId*/> deletedObjectIds
     );
 
 
