@@ -38,6 +38,7 @@
   <allow pkg="org.ietf.jgss" />
   <allow pkg="net.jqwik.api" />
   <allow pkg="io.netty" />
+  <allow pkg="software.amazon.awssdk" />
 
   <!-- no one depends on the server -->
   <disallow pkg="kafka" />

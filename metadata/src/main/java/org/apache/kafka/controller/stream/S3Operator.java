@@ -17,10 +17,16 @@
 
 package org.apache.kafka.controller.stream;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface S3Operator {
-    CompletableFuture<Boolean> delete(String objectKey);
+    void close();
 
-    CompletableFuture<Boolean> delele(String[] objectKeys);
+    /**
+     * Delete a list of objects.
+     * @param objectKeys object keys to delete.
+     * @return deleted object keys.
+     */
+    CompletableFuture<List<String>> delete(List<String> objectKeys);
 }

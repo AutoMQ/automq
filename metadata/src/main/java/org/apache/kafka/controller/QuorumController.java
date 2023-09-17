@@ -113,9 +113,11 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.DefaultS3Operator;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.MockS3Operator;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.S3Operator;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
@@ -1886,8 +1888,15 @@ public final class QuorumController implements Controller {
 
         // Kafka on S3 inject start
         this.s3Config = s3Config;
+        S3Operator s3Operator;
+        if (s3Config.mock()) {
+            // only use for test
+            s3Operator = new MockS3Operator();
+        } else {
+            s3Operator = new DefaultS3Operator(s3Config);
+        }
         this.s3ObjectControlManager = new S3ObjectControlManager(
-            this, snapshotRegistry, logContext, clusterId, s3Config, new MockS3Operator());
+            this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         // Kafka on S3 inject end
@@ -2264,7 +2273,7 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
-        Set<Long/*objectId*/> deletedObjectIds) {
+        List<Long/*objectId*/> deletedObjectIds) {
         return appendWriteEvent("notifyS3ObjectDeleted", context.deadlineNs(),
             () -> s3ObjectControlManager.notifyS3ObjectDeleted(deletedObjectIds));
     }

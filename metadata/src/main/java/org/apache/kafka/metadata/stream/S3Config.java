@@ -21,22 +21,44 @@ package org.apache.kafka.metadata.stream;
  * S3Config contains the configuration of S3, such as the bucket name, the region, etc.
  */
 public class S3Config {
+    // Only for test, if true, use mocked S3 related classes
+    private final boolean mock;
+
+    private final String endpoint;
 
     private final String region;
 
-    private final String bucketName;
+    private final String bucket;
 
-    public S3Config(final String region, final String bucketName) {
-        this.region = region;
-        this.bucketName = bucketName;
+    // Only for test
+    public S3Config(final boolean mock) {
+        this(null, null, null, mock);
     }
 
-    public String getRegion() {
+    public S3Config(final String endpoint, final String region, final String bucket) {
+        this(endpoint, region, bucket, false);
+    }
+
+    public S3Config(final String endpoint, final String region, final String bucket, final boolean mock) {
+        this.endpoint = endpoint;
+        this.region = region;
+        this.bucket = bucket;
+        this.mock = mock;
+    }
+
+    public String region() {
         return region;
     }
 
-    public String getBucketName() {
-        return bucketName;
+    public String bucket() {
+        return bucket;
     }
 
+    public String endpoint() {
+        return endpoint;
+    }
+
+    public boolean mock() {
+        return mock;
+    }
 }
