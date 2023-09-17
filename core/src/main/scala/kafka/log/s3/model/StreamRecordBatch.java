@@ -127,4 +127,14 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
         }
         return Long.compare(baseOffset, o.baseOffset);
     }
+
+    @Override
+    public String toString() {
+        return "StreamRecordBatch{" +
+                "streamId=" + streamId +
+                ", epoch=" + epoch +
+                ", baseOffset=" + baseOffset +
+                ", count=" + count +
+                ", size=" + size() + '}';
+    }
 }

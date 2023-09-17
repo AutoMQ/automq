@@ -237,19 +237,34 @@ public class S3Storage implements Storage {
 
     private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<StreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
-        if (!records.isEmpty()) {
+        if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(records));
         }
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
-            long nextStartOffset = readDataBlock.endOffset().orElse(startOffset);
-            int nextMaxBytes = maxBytes - Math.min(maxBytes, readDataBlock.sizeInBytes());
-            if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
-                return readDataBlock;
+        if (!records.isEmpty()) {
+            endOffset = records.get(0).getBaseOffset();
+        }
+        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApplyAsync(readDataBlock -> {
+            List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
+            int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
+            for (int i = 0; i < records.size() && remainingBytesSize > 0; i++) {
+                StreamRecordBatch record = records.get(i);
+                rst.add(record);
+                remainingBytesSize -= record.size();
             }
-            List<StreamRecordBatch> finalRecords = new LinkedList<>(readDataBlock.getRecords());
-            finalRecords.addAll(logCache.get(streamId, nextStartOffset, endOffset, maxBytes));
-            return new ReadDataBlock(finalRecords);
-        });
+            continuousCheck(records);
+            return new ReadDataBlock(rst);
+        }, mainExecutor);
+    }
+
+    private void continuousCheck(List<StreamRecordBatch> records) {
+        long expectStartOffset = -1L;
+        for (StreamRecordBatch record : records) {
+            if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) {
+                expectStartOffset = record.getLastOffset();
+            } else {
+                throw new IllegalArgumentException("Continuous check fail" + records);
+            }
+        }
     }
 
     /**

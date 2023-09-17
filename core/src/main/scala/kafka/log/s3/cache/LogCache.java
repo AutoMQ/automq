@@ -29,13 +29,15 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+import static kafka.log.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
+
 public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> block
             .records().forEach(
                     (streamId, records) -> records.forEach(StreamRecordBatch::release)
             );
     private final long cacheBlockMaxSize;
-    private final List<LogCacheBlock> archiveBlocks = new ArrayList<>();
+    private final List<LogCacheBlock> blocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
     private final AtomicLong size = new AtomicLong();
@@ -44,6 +46,7 @@ public class LogCache {
     public LogCache(long cacheBlockMaxSize, Consumer<LogCacheBlock> blockFreeListener) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
+        this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
     }
 
@@ -59,7 +62,12 @@ public class LogCache {
 
     /**
      * Get streamId [startOffset, endOffset) range records with maxBytes limit.
-     * If the cache only contain records after startOffset, the return list is empty.
+     * - If the cache can fully fulfill the request, then returns the cached records.
+     * - Else the cache will search from last continuous stream records range and return the matched records.
+     * ex. cache data <code>[0, 10) [100, 200)</code>
+     * - query <code>[0,10)</code> will return <code>[0,10)</code>
+     * - query <code>[0, 11)</code> will return empty
+     * - query <code>[90, 110)</code> will return <code>[100, 110)</code>
      * Note: the records is retained, the caller should release it.
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -72,8 +80,8 @@ public class LogCache {
         List<StreamRecordBatch> rst = new LinkedList<>();
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
-        for (LogCacheBlock archiveBlock : archiveBlocks) {
-            // TODO: fast break when cache doesn't contains the startOffset.
+        boolean fulfill = false;
+        for (LogCacheBlock archiveBlock : blocks) {
             List<StreamRecordBatch> records = archiveBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
             if (records.isEmpty()) {
                 continue;
@@ -82,19 +90,38 @@ public class LogCache {
             nextMaxBytes -= Math.min(nextMaxBytes, records.stream().mapToInt(StreamRecordBatch::size).sum());
             rst.addAll(records);
             if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
-                return rst;
+                fulfill = true;
+                break;
             }
         }
-        List<StreamRecordBatch> records = activeBlock.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
-        rst.addAll(records);
-        return rst;
+        if (fulfill) {
+            return rst;
+        } else {
+            long lastBlockStreamStartOffset = NOOP_OFFSET;
+            for (int i = blocks.size() - 1; i >= 0; i--) {
+                LogCacheBlock block = blocks.get(i);
+                StreamRange streamRange = block.getStreamRange(streamId);
+                if (streamRange.endOffset == NOOP_OFFSET) {
+                    continue;
+                }
+                if (lastBlockStreamStartOffset == NOOP_OFFSET || lastBlockStreamStartOffset == streamRange.endOffset) {
+                    lastBlockStreamStartOffset = streamRange.startOffset;
+                } else {
+                    break;
+                }
+            }
+            if (lastBlockStreamStartOffset == NOOP_OFFSET || lastBlockStreamStartOffset >= endOffset) {
+                return Collections.emptyList();
+            }
+            return get0(streamId, Math.max(lastBlockStreamStartOffset, startOffset), endOffset, maxBytes);
+        }
     }
 
     public LogCacheBlock archiveCurrentBlock() {
         LogCacheBlock block = activeBlock;
         block.confirmOffset = confirmOffset;
-        archiveBlocks.add(block);
         activeBlock = new LogCacheBlock(cacheBlockMaxSize);
+        blocks.add(activeBlock);
         return block;
     }
 
@@ -115,7 +142,7 @@ public class LogCache {
         if (size.get() <= cacheBlockMaxSize * 0.9) {
             return;
         }
-        archiveBlocks.removeIf(b -> {
+        blocks.removeIf(b -> {
             if (b.free) {
                 size.addAndGet(-b.size);
                 blockFreeListener.accept(b);
@@ -186,6 +213,15 @@ public class LogCache {
             return streamRecords.subList(startIndex, endIndex);
         }
 
+        StreamRange getStreamRange(long streamId) {
+            List<StreamRecordBatch> streamRecords = map.get(streamId);
+            if (streamRecords == null || streamRecords.isEmpty()) {
+                return new StreamRange(NOOP_OFFSET, NOOP_OFFSET);
+            } else {
+                return new StreamRange(streamRecords.get(0).getBaseOffset(), streamRecords.get(streamRecords.size() - 1).getLastOffset());
+            }
+        }
+
         public Map<Long, List<StreamRecordBatch>> records() {
             return map;
         }
@@ -201,6 +237,16 @@ public class LogCache {
         public long size() {
             return size;
         }
+    }
 
+    static class StreamRange {
+        public static final long NOOP_OFFSET = -1L;
+        long startOffset;
+        long endOffset;
+
+        public StreamRange(long startOffset, long endOffset) {
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+        }
     }
 }
