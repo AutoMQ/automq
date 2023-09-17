@@ -71,6 +71,7 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 controller.propertyOverrides().putAll(overridingNodeProps());
                 controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
                 controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
+                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
             }
 
             KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);
