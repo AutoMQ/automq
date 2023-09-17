@@ -168,13 +168,13 @@ public class StreamObjectsCompactionTask {
     }
 
     static class CompactionResult {
-        private long streamId;
-        private long startOffset;
-        private long endOffset;
-        private List<Long> sourceObjectIds;
-        private long objectId;
-        private long objectSize;
-        private long timeCostInMs;
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+        private final List<Long> sourceObjectIds;
+        private final long objectId;
+        private final long objectSize;
+        private final long timeCostInMs;
 
         public CompactionResult(long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds, long objectId, long objectSize, long timeCostInMs) {
             this.streamId = streamId;
@@ -229,13 +229,13 @@ public class StreamObjectsCompactionTask {
     }
 
     public static class CompactionSummary {
-        private long streamId;
-        private long startOffset;
-        private long endOffset;
-        private long timeCostInMs;
-        private long totalObjectSize;
-        private long sourceObjectsCount;
-        private long targetObjectCount;
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+        private final long timeCostInMs;
+        private final long totalObjectSize;
+        private final long sourceObjectsCount;
+        private final long targetObjectCount;
 
         public CompactionSummary(long streamId, long startOffset, long endOffset, long timeCostInMs, long totalObjectSize, long sourceObjectsCount, long targetObjectCount) {
             this.streamId = streamId;
