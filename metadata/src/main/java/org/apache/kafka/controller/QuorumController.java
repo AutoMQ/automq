@@ -115,6 +115,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.controller.stream.DefaultS3Operator;
 import org.apache.kafka.controller.stream.KVControlManager;
+import org.apache.kafka.controller.stream.MockS3Operator;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.S3Operator;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -1887,7 +1888,13 @@ public final class QuorumController implements Controller {
 
         // Kafka on S3 inject start
         this.s3Config = s3Config;
-        S3Operator s3Operator = new DefaultS3Operator(s3Config);
+        S3Operator s3Operator;
+        if (s3Config.mock()) {
+            // only use for test
+            s3Operator = new MockS3Operator();
+        } else {
+            s3Operator = new DefaultS3Operator(s3Config);
+        }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
