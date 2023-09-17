@@ -447,14 +447,6 @@ public class StreamControlManager {
             // regard it as redundant trim operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
-        long endOffset = rangeMetadata.endOffset();
-        if (newStartOffset > endOffset) {
-            log.warn("[TrimStream]: stream {}'s new start offset {} is larger than current range's end offset {}",
-                    streamId, newStartOffset, endOffset);
-            resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
         // now the request is valid
         // update the stream metadata start offset
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -472,6 +464,17 @@ public class StreamControlManager {
                 return;
             }
             if (newStartOffset >= range.endOffset()) {
+                if (rangeIndex == streamMetadata.currentRangeIndex()) {
+                    // update current range's start offset and end offset
+                    records.add(new ApiMessageAndVersion(new RangeRecord()
+                        .setStreamId(streamId)
+                        .setRangeIndex(rangeIndex)
+                        .setBrokerId(range.brokerId())
+                        .setEpoch(range.epoch())
+                        .setStartOffset(newStartOffset)
+                        .setEndOffset(newStartOffset), (short) 0));
+                    return;
+                }
                 // remove range
                 records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
                         .setStreamId(streamId)
@@ -487,7 +490,7 @@ public class StreamControlManager {
                     .setEpoch(range.epoch())
                     .setRangeIndex(rangeIndex), (short) 0));
         });
-        // remove stream object or update stream object's range start offset
+        // remove stream object
         streamMetadata.streamObjects.entrySet().stream().forEach(it -> {
             Long objectId = it.getKey();
             S3StreamObject streamObject = it.getValue();
@@ -509,15 +512,7 @@ public class StreamControlManager {
                     return;
                 }
                 records.addAll(markDestroyResult.records());
-                return;
             }
-            // update wal object's stream range start offset
-            records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
-                .setStreamId(streamId)
-                .setObjectId(objectId)
-                .setStartOffset(newStartOffset)
-                .setEndOffset(streamEndOffset)
-                .setDataTimeInMs(streamObject.dataTimeInMs()), (short) 0));
         });
         // remove wal object or update wal object's stream range start offset
         // TODO: optimize
@@ -525,34 +520,28 @@ public class StreamControlManager {
             .stream()
             .flatMap(entry -> entry.walObjects.values().stream())
             .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
-            .filter(walObject -> walObject.offsetRanges().get(streamId).getStartOffset() < newStartOffset)
+            .filter(walObject -> walObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
             .forEach(walObj -> {
-                StreamOffsetRange offsetRange = walObj.offsetRanges().get(streamId);
-                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
-                if (offsetRange.getEndOffset() <= newStartOffset) {
-                    // remove offset range
-                    newOffsetRange.remove(streamId);
-                    if (walObj.offsetRanges().size() == 1) {
-                        // only this range, but we will remove this range, so now we can remove this wal object
-                        records.add(new ApiMessageAndVersion(
-                            new RemoveWALObjectRecord()
-                                .setBrokerId(walObj.brokerId())
-                                .setObjectId(walObj.objectId()), (short) 0
-                        ));
-                        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                            List.of(walObj.objectId()));
-                        if (!markDestroyResult.response()) {
-                            log.error("[TrimStream]: Mark destroy wal object: {} failed", walObj.objectId());
-                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-                            return;
-                        }
-                        records.addAll(markDestroyResult.records());
+                if (walObj.offsetRanges().size() == 1) {
+                    // only this range, but we will remove this range, so now we can remove this wal object
+                    records.add(new ApiMessageAndVersion(
+                        new RemoveWALObjectRecord()
+                            .setBrokerId(walObj.brokerId())
+                            .setObjectId(walObj.objectId()), (short) 0
+                    ));
+                    ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
+                        List.of(walObj.objectId()));
+                    if (!markDestroyResult.response()) {
+                        log.error("[TrimStream]: Mark destroy wal object: {} failed", walObj.objectId());
+                        resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                         return;
                     }
-                } else {
-                    // update offset range
-                    newOffsetRange.put(streamId, new StreamOffsetRange(streamId, newStartOffset, offsetRange.getEndOffset()));
+                    records.addAll(markDestroyResult.records());
+                    return;
                 }
+                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
+                // remove offset range
+                newOffsetRange.remove(streamId);
                 records.add(new ApiMessageAndVersion(new WALObjectRecord()
                     .setObjectId(walObj.objectId())
                     .setBrokerId(walObj.brokerId())
