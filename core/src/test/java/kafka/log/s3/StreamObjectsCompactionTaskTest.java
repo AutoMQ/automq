@@ -90,31 +90,29 @@ class StreamObjectsCompactionTaskTest {
         StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, Long.MAX_VALUE, 0);
 
         AtomicLong objectIdAlloc = new AtomicLong(100);
-        List<CommitStreamObjectRequest> committedRequests = new ArrayList<>();
         when(objectManager.prepareObject(anyInt(), anyLong())).thenAnswer(
             invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement()));
-        when(objectManager.commitStreamObject(any(CommitStreamObjectRequest.class))).thenAnswer(invocation -> {
-            committedRequests.add(invocation.getArgument(0));
-            return CompletableFuture.completedFuture(null);
-        });
+        when(objectManager.commitStreamObject(any(CommitStreamObjectRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
 
         // trigger a stream object compaction task
         task.prepare();
-        task.doCompactions();
+        task.doCompactions().get();
 
         // 40L > stream.startOffset, expecting no changes to startSearchingOffset
         assertEquals(stream.startOffset(), task.getNextStartSearchingOffset());
 
         verify(objectManager, Mockito.times(2)).commitStreamObject(any(CommitStreamObjectRequest.class));
 
-        assertEquals(100, committedRequests.get(0).getObjectId());
-        assertEquals(40, committedRequests.get(0).getStartOffset());
-        assertEquals(60, committedRequests.get(0).getEndOffset());
-        assertEquals(List.of(11L, 13L), committedRequests.get(0).getSourceObjectIds());
-        assertEquals(101, committedRequests.get(1).getObjectId());
-        assertEquals(65, committedRequests.get(1).getStartOffset());
-        assertEquals(80, committedRequests.get(1).getEndOffset());
-        assertEquals(List.of(15L, 17L), committedRequests.get(1).getSourceObjectIds());
+        List<StreamObjectsCompactionTask.CompactionResult> compactionResults = task.getCompactionResults();
+
+        assertEquals(100, compactionResults.get(0).getObjectId());
+        assertEquals(40, compactionResults.get(0).getStartOffset());
+        assertEquals(60, compactionResults.get(0).getEndOffset());
+        assertEquals(List.of(11L, 13L), compactionResults.get(0).getSourceObjectIds());
+        assertEquals(101, compactionResults.get(1).getObjectId());
+        assertEquals(65, compactionResults.get(1).getStartOffset());
+        assertEquals(80, compactionResults.get(1).getEndOffset());
+        assertEquals(List.of(15L, 17L), compactionResults.get(1).getSourceObjectIds());
     }
 
     @Test

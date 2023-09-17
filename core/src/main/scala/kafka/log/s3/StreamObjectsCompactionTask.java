@@ -18,6 +18,7 @@
 package kafka.log.s3;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -56,6 +57,8 @@ public class StreamObjectsCompactionTask {
     private final S3Stream stream;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
+    private List<CompactionResult> compactionResults;
+    private final String logIdent;
 
     /**
      * Constructor of StreamObjectsCompactionTask.
@@ -75,9 +78,12 @@ public class StreamObjectsCompactionTask {
         this.compactedStreamObjectMaxSizeInBytes = Utils.min(compactedStreamObjectMaxSizeInBytes, MAX_OBJECT_SIZE);
         this.eligibleStreamObjectLivingTimeInMs = eligibleStreamObjectLivingTimeInMs;
         this.nextStartSearchingOffset = stream.startOffset();
+        this.compactionResults = Collections.emptyList();
+        this.logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
     }
 
-    private CompletableFuture<Void> doCompaction(List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList) {
+    private CompletableFuture<CompactionResult> doCompaction(List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList) {
+        long startTimestamp = System.currentTimeMillis();
         long startOffset = streamObjectMetadataList.get(0).s3StreamObjectMetadata().startOffset();
         long endOffset = streamObjectMetadataList.get(streamObjectMetadataList.size() - 1).s3StreamObjectMetadata().endOffset();
         List<Long> sourceObjectIds = streamObjectMetadataList
@@ -86,9 +92,7 @@ public class StreamObjectsCompactionTask {
             .collect(Collectors.toList());
 
         if (stream.isClosed()) {
-            return CompletableFuture.failedFuture(new HaltException("halt compaction task with stream "
-                + stream.streamId()
-                + " with offset range from "
+            return CompletableFuture.failedFuture(new HaltException(logIdent + " halt with offset range from "
                 + startOffset
                 + " to "
                 + endOffset));
@@ -110,18 +114,19 @@ public class StreamObjectsCompactionTask {
             .thenCompose(request -> objectManager
                 .commitStreamObject(request)
                 .thenApply(resp -> {
-                    LOGGER.info("stream objects compaction task for stream {} with range [{}, {}) is done, objects {} => object {}",
-                        stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(), request.getObjectId());
-                    return null;
+                    LOGGER.debug("{} stream objects compaction task with range [{}, {}) is done, objects {} => object {}, size {}",
+                        logIdent, startOffset, endOffset, request.getSourceObjectIds(), request.getObjectId(), request.getObjectSize());
+                    return new CompactionResult(stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(),
+                        request.getObjectId(), request.getObjectSize(), System.currentTimeMillis() - startTimestamp);
                 })
             );
     }
 
     public CompletableFuture<Void> doCompactions() {
-        CompletableFuture<Void> lastCompactionFuture = CompletableFuture.completedFuture(null);
+        CompletableFuture<CompactionResult> lastCompactionFuture = CompletableFuture.completedFuture(null);
         while (!compactGroups.isEmpty()) {
             List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList = compactGroups.poll();
-            CompletableFuture<Void> future = new CompletableFuture<>();
+            CompletableFuture<CompactionResult> future = new CompletableFuture<>();
             lastCompactionFuture.whenComplete((v, ex) -> {
                 if (ex != null) {
                     future.completeExceptionally(ex);
@@ -129,9 +134,10 @@ public class StreamObjectsCompactionTask {
                     // only start when last compaction is done.
                     doCompaction(streamObjectMetadataList).whenComplete((v1, ex1) -> {
                         if (ex1 != null) {
-                            LOGGER.error("get exception when do compactions: {}", ex1.getMessage());
+                            LOGGER.error("{} get exception when do compactions: {}", logIdent, ex1.getMessage());
                             future.completeExceptionally(ex1);
                         } else {
+                            compactionResults.add(v1);
                             future.complete(v1);
                         }
                     });
@@ -139,13 +145,127 @@ public class StreamObjectsCompactionTask {
             });
             lastCompactionFuture = future;
         }
-        return lastCompactionFuture;
+        return lastCompactionFuture.thenApply(v -> null);
+    }
+
+    // used for test only.
+    List<CompactionResult> getCompactionResults() {
+        return compactionResults;
+    }
+
+    public CompactionSummary getCompactionsSummary() {
+        if (compactionResults == null || compactionResults.isEmpty()) {
+            return null;
+        }
+        long streamId = stream.streamId();
+        long startOffset = compactionResults.get(0).startOffset;
+        long endOffset = compactionResults.get(compactionResults.size() - 1).endOffset;
+        long timeCostInMs = compactionResults.stream().mapToLong(r -> r.timeCostInMs).sum();
+        long totalObjectSize = compactionResults.stream().mapToLong(r -> r.objectSize).sum();
+        long sourceObjectsCount = compactionResults.stream().mapToLong(r -> r.sourceObjectIds.size()).sum();
+        long targetObjectCount = compactionResults.size();
+        return new CompactionSummary(streamId, startOffset, endOffset, timeCostInMs, totalObjectSize, sourceObjectsCount, targetObjectCount);
+    }
+
+    static class CompactionResult {
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+        private final List<Long> sourceObjectIds;
+        private final long objectId;
+        private final long objectSize;
+        private final long timeCostInMs;
+
+        public CompactionResult(long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds, long objectId, long objectSize, long timeCostInMs) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.sourceObjectIds = sourceObjectIds;
+            this.objectId = objectId;
+            this.objectSize = objectSize;
+            this.timeCostInMs = timeCostInMs;
+        }
+
+        public long getStreamId() {
+            return streamId;
+        }
+
+        public long getStartOffset() {
+            return startOffset;
+        }
+
+        public long getEndOffset() {
+            return endOffset;
+        }
+
+        public List<Long> getSourceObjectIds() {
+            return sourceObjectIds;
+        }
+
+        public long getObjectId() {
+            return objectId;
+        }
+
+        public long getObjectSize() {
+            return objectSize;
+        }
+
+        public long getTimeCostInMs() {
+            return timeCostInMs;
+        }
+
+        @Override
+        public String toString() {
+            return "CompactionResult{" +
+                    "streamId=" + streamId +
+                    ", startOffset=" + startOffset +
+                    ", endOffset=" + endOffset +
+                    ", sourceObjectIds=" + sourceObjectIds +
+                    ", objectId=" + objectId +
+                    ", objectSize=" + objectSize +
+                    ", timeCostInMs=" + timeCostInMs +
+                    '}';
+        }
+    }
+
+    public static class CompactionSummary {
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+        private final long timeCostInMs;
+        private final long totalObjectSize;
+        private final long sourceObjectsCount;
+        private final long targetObjectCount;
+
+        public CompactionSummary(long streamId, long startOffset, long endOffset, long timeCostInMs, long totalObjectSize, long sourceObjectsCount, long targetObjectCount) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.timeCostInMs = timeCostInMs;
+            this.totalObjectSize = totalObjectSize;
+            this.sourceObjectsCount = sourceObjectsCount;
+            this.targetObjectCount = targetObjectCount;
+        }
+
+        @Override
+        public String toString() {
+            return "CompactionSummary{" +
+                    "streamId=" + streamId +
+                    ", startOffset=" + startOffset +
+                    ", endOffset=" + endOffset +
+                    ", timeCostInMs=" + timeCostInMs +
+                    ", totalObjectSize=" + totalObjectSize +
+                    ", sourceObjectsCount=" + sourceObjectsCount +
+                    ", targetObjectCount=" + targetObjectCount +
+                    '}';
+        }
     }
 
     public void prepare() {
+        this.compactionResults = new ArrayList<>();
         this.compactGroups = prepareCompactGroups(this.nextStartSearchingOffset);
         if (!this.compactGroups.isEmpty()) {
-            LOGGER.info("prepared {} groups for compaction", this.compactGroups.size());
+            LOGGER.info("{} prepared {} groups for compaction", this.logIdent, this.compactGroups.size());
         }
     }
 
@@ -205,6 +325,11 @@ public class StreamObjectsCompactionTask {
             lastEndOffset = streamObjects.get(index).endOffset();
             index += 1;
         }
+        if (lastEndOffset == rawStartSearchingOffset) {
+            LOGGER.debug("{} startSearchingOffset not moved with value {}", logIdent, rawStartSearchingOffset);
+        } else {
+            LOGGER.debug("{} startSearchingOffset moved from {} to {}", logIdent, rawStartSearchingOffset, lastEndOffset);
+        }
         return lastEndOffset;
     }
 
@@ -228,7 +353,7 @@ public class StreamObjectsCompactionTask {
                 stack.push(object);
             } else {
                 if (object.startOffset() < stack.peek().endOffset()) {
-                    throw new RuntimeException("get overlapped stream objects");
+                    throw new RuntimeException(logIdent + " get overlapped stream objects");
                 }
                 if (object.startOffset() == stack.peek().endOffset()) {
                     stack.push(object);
@@ -240,11 +365,15 @@ public class StreamObjectsCompactionTask {
             }
         }
 
-        return stackList
+        List<List<S3ObjectMetadata>> continuousObjectGroups = stackList
             .stream()
             .filter(s -> s.size() > 1)
             .map(ArrayList::new)
             .collect(Collectors.toList());
+        if (continuousObjectGroups.isEmpty()) {
+            LOGGER.trace("{} no continuous stream objects found", logIdent);
+        }
+        return continuousObjectGroups;
     }
 
     /**
@@ -286,6 +415,11 @@ public class StreamObjectsCompactionTask {
             } else {
                 startIndex += 1;
             }
+        }
+        if (groups.isEmpty()) {
+            long startOffset = streamObjects.get(0).getOffsetRanges().get(0).getStartOffset();
+            long endOffset = streamObjects.get(streamObjects.size() - 1).getOffsetRanges().get(0).getEndOffset();
+            LOGGER.trace("{} no eligible stream objects found for range [{}, {})", logIdent, startOffset, endOffset);
         }
         return groups;
     }

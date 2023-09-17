@@ -87,7 +87,6 @@ public class S3StreamClient implements StreamClient {
                     return;
                 }
                 try {
-                    LOGGER.info("start to do stream objects compaction for stream {}", stream.streamId());
                     stream.triggerCompactionTask();
                 } catch (InterruptedException | ExecutionException e) {
                     LOGGER.error("get exception when do stream objects compaction: {}", e.getMessage());
