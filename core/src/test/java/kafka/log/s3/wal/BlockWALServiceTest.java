@@ -67,6 +67,7 @@ class BlockWALServiceTest {
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
                 .slidingWindowInitialSize(0)
+                .slidingWindowScaleUnit(4096)
                 .build()
                 .start();
         try {
@@ -97,6 +98,8 @@ class BlockWALServiceTest {
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
+                .slidingWindowInitialSize(0)
+                .slidingWindowScaleUnit(4096)
                 .build()
                 .start();
         try {
