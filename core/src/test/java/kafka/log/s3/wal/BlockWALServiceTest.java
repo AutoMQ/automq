@@ -211,16 +211,20 @@ class BlockWALServiceTest {
         return recordOffsets;
     }
 
-    @ParameterizedTest
+    @ParameterizedTest(name = "Test {index}: shutdown={0}, overCapacity={1}, recordNums={2}")
     @CsvSource({
-            "true, true",
-            "true, false",
-            "false, true",
-            "false, false"
+            "true, false, 10",
+            "true, true, 9",
+            "true, true, 10",
+            "true, true, 11",
+
+            "false, false, 10",
+            "false, true, 9",
+            "false, true, 10",
+            "false, true, 11",
     })
-    void testSingleThreadRecover(boolean shutdown, boolean overCapacity) throws IOException {
+    void testSingleThreadRecover(boolean shutdown, boolean overCapacity, int recordNums) throws IOException {
         final int recordSize = 4096 + 1;
-        final int recordNums = 10;
         long blockDeviceCapacity;
         if (overCapacity) {
             blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
