@@ -220,6 +220,9 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private WALHeaderCoreData recoverEntireWALAndCorrectWALHeader(WALHeaderCoreData paramWALHeader) {
+        // initialize flushTrimOffset
+        paramWALHeader.setFlushedTrimOffset(paramWALHeader.getTrimOffset());
+
         // 优雅关闭，不需要纠正 Header
         if (paramWALHeader.getShutdownType().equals(ShutdownType.GRACEFULLY)) {
             return paramWALHeader;
