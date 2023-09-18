@@ -87,16 +87,12 @@ public class CompactionUploaderTest extends CompactionTestBase {
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
         Assertions.assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
         for (int i = 0; i < streamDataBlocks.size(); i++) {
-            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
             compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
-        }
-        List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);
-        List<DataBlockReader.DataBlock> dataBlocks = reader.readBlocks(blockIndices).join();
-        for (int i = 0; i < dataBlocks.size(); i++) {
-            Assertions.assertEquals(streamDataBlocks.get(i).getDataCf().join(), dataBlocks.get(i).buffer());
         }
     }
 
@@ -129,7 +125,6 @@ public class CompactionUploaderTest extends CompactionTestBase {
         cf.thenAccept(v -> uploader.forceUploadWAL()).join();
         uploader.forceUploadWAL().join();
         long walObjectSize = uploader.completeWAL();
-        System.out.printf("write size: %d%n", walObjectSize);
 
         List<StreamDataBlock> expectedDataBlocks = new ArrayList<>(streamDataBlocks1);
         expectedDataBlocks.addAll(streamDataBlocks2);
@@ -140,16 +135,12 @@ public class CompactionUploaderTest extends CompactionTestBase {
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
         Assertions.assertEquals(streamDataBlocksFromS3.size(), expectedDataBlocks.size());
+        reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
         for (int i = 0; i < expectedDataBlocks.size(); i++) {
-            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
             compare(streamDataBlocksFromS3.get(i), expectedDataBlocks.get(i));
-        }
-        List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);
-        List<DataBlockReader.DataBlock> dataBlocks = reader.readBlocks(blockIndices).join();
-        for (int i = 0; i < dataBlocks.size(); i++) {
-            Assertions.assertEquals(expectedDataBlocks.get(i).getDataCf().join(), dataBlocks.get(i).buffer());
         }
     }
 
@@ -166,7 +157,6 @@ public class CompactionUploaderTest extends CompactionTestBase {
             streamDataBlock.getDataCf().complete(TestUtils.random((int) streamDataBlock.getStreamRangeSize()));
         }
         StreamObject streamObject = cf.join();
-        System.out.printf("write size: %d%n", streamObject.getObjectSize());
         Assertions.assertEquals(streamObject.getObjectSize(), calculateObjectSize(streamDataBlocks));
 
         //check s3 object
@@ -174,16 +164,12 @@ public class CompactionUploaderTest extends CompactionTestBase {
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
         Assertions.assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
         for (int i = 0; i < streamDataBlocks.size(); i++) {
-            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockPosition());
+            Assertions.assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
             compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
-        }
-        List<DataBlockReader.DataBlockIndex> blockIndices = CompactionUtils.buildBlockIndicesFromStreamDataBlock(streamDataBlocksFromS3);
-        List<DataBlockReader.DataBlock> dataBlocks = reader.readBlocks(blockIndices).join();
-        for (int i = 0; i < dataBlocks.size(); i++) {
-            Assertions.assertEquals(streamDataBlocks.get(i).getDataCf().join(), dataBlocks.get(i).buffer());
         }
     }
 }

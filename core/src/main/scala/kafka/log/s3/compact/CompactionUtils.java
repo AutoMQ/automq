@@ -56,15 +56,6 @@ public class CompactionUtils {
         return objectStreamRanges;
     }
 
-    public static List<DataBlockReader.DataBlockIndex> buildBlockIndicesFromStreamDataBlock(List<StreamDataBlock> streamDataBlocks) {
-        List<DataBlockReader.DataBlockIndex> blockIndices = new ArrayList<>();
-        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            blockIndices.add(new DataBlockReader.DataBlockIndex(streamDataBlock.getBlockId(), streamDataBlock.getBlockPosition(),
-                    streamDataBlock.getBlockSize(), streamDataBlock.getRecordCount()));
-        }
-        return blockIndices;
-    }
-
     public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3WALObjectMetadata> objectMetadataList, S3Operator s3Operator) {
         Map<Long, S3WALObject> s3WALObjectMap = objectMetadataList.stream()
                 .collect(Collectors.toMap(e -> e.getWalObject().objectId(), S3WALObjectMetadata::getWalObject));

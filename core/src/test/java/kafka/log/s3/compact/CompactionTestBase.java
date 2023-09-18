@@ -126,11 +126,22 @@ public class CompactionTestBase {
     }
 
     protected boolean compare(StreamDataBlock block1, StreamDataBlock block2) {
-        return block1.getStreamId() == block2.getStreamId() &&
+        boolean attr = block1.getStreamId() == block2.getStreamId() &&
                 block1.getStartOffset() == block2.getStartOffset() &&
                 block1.getEndOffset() == block2.getEndOffset() &&
-                block1.getRecordCount() == block2.getRecordCount() &&
-                block1.getObjectId() == block2.getObjectId();
+                block1.getRecordCount() == block2.getRecordCount();
+        if (!attr) {
+            return false;
+        }
+        if (!block1.getDataCf().isDone()) {
+            return !block2.getDataCf().isDone();
+        } else {
+            if (!block2.getDataCf().isDone()) {
+                return false;
+            } else {
+                return block1.getDataCf().join().compareTo(block2.getDataCf().join()) == 0;
+            }
+        }
     }
 
     protected boolean compare(List<StreamDataBlock> streamDataBlocks1, List<StreamDataBlock> streamDataBlocks2) {

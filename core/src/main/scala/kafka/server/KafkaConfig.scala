@@ -319,6 +319,7 @@ object Defaults {
   val S3ObjectCompactionExecutionScoreThreshold: Double = 0.5
   val S3ObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
   val S3ObjectCompactionForceSplitPeriod: Int = 120 // 120min
+  val S3ObjectCompactionMaxObjectNum: Int = 500
 }
 
 object KafkaConfig {
@@ -707,6 +708,7 @@ object KafkaConfig {
   val S3ObjectCompactionExecutionScoreThresholdProp = "s3.object.compaction.execution.score.threshold"
   val S3ObjectCompactionStreamSplitSizeProp = "s3.object.compaction.stream.split.size"
   val S3ObjectCompactionForceSplitPeriodProp = "s3.object.compaction.force.split.time"
+  val S3ObjectCompactionMaxObjectNumProp = "s3.object.compaction.max.num"
   val S3MockEnableProp = "s3.mock.enable"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
@@ -734,6 +736,7 @@ object KafkaConfig {
   val S3ObjectCompactionExecutionScoreThresholdDoc = "The S3 object compaction execution score threshold."
   val S3ObjectCompactionStreamSplitSizeDoc = "The S3 object compaction stream split size threshold in Bytes."
   val S3ObjectCompactionForceSplitPeriodDoc = "The S3 object compaction force split period in minutes."
+  val S3ObjectCompactionMaxObjectNumDoc = "The maximum num of WAL objects to be compact at one time"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
 
   // Kafka on S3 inject end
@@ -1558,6 +1561,7 @@ object KafkaConfig {
       .define(S3ObjectCompactionExecutionScoreThresholdProp, DOUBLE, Defaults.S3ObjectCompactionExecutionScoreThreshold, MEDIUM, S3ObjectCompactionExecutionScoreThresholdDoc)
       .define(S3ObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3ObjectCompactionStreamSplitSize, MEDIUM, S3ObjectCompactionStreamSplitSizeDoc)
       .define(S3ObjectCompactionForceSplitPeriodProp, INT, Defaults.S3ObjectCompactionForceSplitPeriod, MEDIUM, S3ObjectCompactionForceSplitPeriodDoc)
+      .define(S3ObjectCompactionMaxObjectNumProp, INT, Defaults.S3ObjectCompactionMaxObjectNum, MEDIUM, S3ObjectCompactionMaxObjectNumDoc)
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
     // Kafka on S3 inject end
   }
@@ -2119,6 +2123,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectCompactionExecutionScoreThreshold = getDouble(KafkaConfig.S3ObjectCompactionExecutionScoreThresholdProp)
   val s3ObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3ObjectCompactionStreamSplitSizeProp)
   val s3ObjectCompactionForceSplitPeriod = getInt(KafkaConfig.S3ObjectCompactionForceSplitPeriodProp)
+  val s3ObjectCompactionMaxObjectNum = getInt(KafkaConfig.S3ObjectCompactionMaxObjectNumProp)
   val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
   // Kafka on S3 inject end
 

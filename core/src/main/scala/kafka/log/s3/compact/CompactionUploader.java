@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
 public class CompactionUploader {
     private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
     private final ObjectManager objectManager;
-    private final TokenBucketThrottle throttle;
+//    private final TokenBucketThrottle throttle;
     private final ExecutorService streamObjectUploadPool;
     private final ExecutorService walObjectUploadPool;
     private final S3Operator s3Operator;
@@ -50,7 +50,7 @@ public class CompactionUploader {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
-        this.throttle = new TokenBucketThrottle(kafkaConfig.s3ObjectCompactionNWOutBandwidth());
+//        this.throttle = new TokenBucketThrottle(kafkaConfig.s3ObjectCompactionNWOutBandwidth());
         this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
                 ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
         this.walObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
@@ -60,7 +60,7 @@ public class CompactionUploader {
     public void stop() {
         this.walObjectUploadPool.shutdown();
         this.streamObjectUploadPool.shutdown();
-        this.throttle.stop();
+//        this.throttle.stop();
     }
 
     public CompletableFuture<Void> chainWriteWALObject(CompletableFuture<Void> prev, CompactedObject compactedObject) {

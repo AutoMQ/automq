@@ -71,7 +71,7 @@ public class DataBlockWriter {
         // size of data block is always smaller than MAX_PART_SIZE, no need to split into multiple parts
         String originObjectKey = ObjectUtils.genKey(0, dataBlock.getObjectId());
         writer.copyWrite(originObjectKey,
-                dataBlock.getBlockPosition(), dataBlock.getBlockPosition() + dataBlock.getBlockSize());
+                dataBlock.getBlockStartPosition(), dataBlock.getBlockStartPosition() + dataBlock.getBlockSize());
         completedBlocks.add(dataBlock);
         nextDataBlockPosition += dataBlock.getBlockSize();
     }
