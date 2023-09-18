@@ -87,15 +87,19 @@ public class CompactionManager {
 
     public void start() {
         this.scheduledExecutorService.scheduleWithFixedDelay(() -> {
-            logger.info("Compaction started");
-            long start = System.currentTimeMillis();
-            this.compact()
-                    .thenAccept(result -> logger.info("Compaction complete, total cost {} ms, result {}",
-                            System.currentTimeMillis() - start, result))
-                    .exceptionally(ex -> {
-                        logger.error("Compaction failed, cost {} ms, ", System.currentTimeMillis() - start, ex);
-                        return null;
-                    });
+            try {
+                logger.info("Compaction started");
+                long start = System.currentTimeMillis();
+                this.compact()
+                        .thenAccept(result -> logger.info("Compaction complete, total cost {} ms, result {}",
+                                System.currentTimeMillis() - start, result))
+                        .exceptionally(ex -> {
+                            logger.error("Compaction failed, cost {} ms, ", System.currentTimeMillis() - start, ex);
+                            return null;
+                        });
+            } catch (Exception ex) {
+                logger.error("Error while compacting objects ", ex);
+            }
         }, 1, this.compactionInterval, TimeUnit.MINUTES);
     }
 

@@ -157,7 +157,12 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public List<S3ObjectMetadata> getServerObjects() {
-        return null;
+        try {
+            return this.metadataManager.getWALObjects();
+        } catch (Exception e) {
+            LOGGER.error("Error while get server objects", e);
+            return Collections.emptyList();
+        }
     }
 
     @Override
