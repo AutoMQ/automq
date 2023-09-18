@@ -21,9 +21,7 @@ import kafka.log.s3.compact.objects.CompactedObject;
 import kafka.log.s3.compact.objects.CompactedObjectBuilder;
 import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
-import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -40,27 +38,25 @@ public class CompactionAnalyzer {
     private final long compactionCacheSize;
     private final double executionScoreThreshold;
     private final long streamSplitSize;
-    private final S3Operator s3Operator;
 
-    public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize, S3Operator s3Operator) {
-        this(compactionCacheSize, executionScoreThreshold, streamSplitSize, s3Operator, new LogContext("[CompactionAnalyzer]"));
+    public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize) {
+        this(compactionCacheSize, executionScoreThreshold, streamSplitSize, new LogContext("[CompactionAnalyzer]"));
     }
 
-    public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize, S3Operator s3Operator, LogContext logContext) {
+    public CompactionAnalyzer(long compactionCacheSize, double executionScoreThreshold, long streamSplitSize, LogContext logContext) {
         this.logger = logContext.logger(CompactionAnalyzer.class);
         this.compactionCacheSize = compactionCacheSize;
         this.executionScoreThreshold = executionScoreThreshold;
         this.streamSplitSize = streamSplitSize;
-        this.s3Operator = s3Operator;
     }
 
-    public List<CompactionPlan> analyze(List<S3ObjectMetadata> objectMetadataList) {
-        if (objectMetadataList.isEmpty()) {
+    public List<CompactionPlan> analyze(Map<Long, List<StreamDataBlock>> streamDataBlockMap) {
+        if (streamDataBlockMap.isEmpty()) {
             return new ArrayList<>();
         }
         List<CompactionPlan> compactionPlans = new ArrayList<>();
         try {
-            List<CompactedObjectBuilder> compactedObjectBuilders = buildCompactedObjects(objectMetadataList);
+            List<CompactedObjectBuilder> compactedObjectBuilders = buildCompactedObjects(streamDataBlockMap);
             List<CompactedObject> compactedObjects = new ArrayList<>();
             CompactedObjectBuilder compactedWALObjectBuilder = null;
             long totalSize = 0L;
@@ -142,8 +138,7 @@ public class CompactionAnalyzer {
         return new CompactionPlan(new ArrayList<>(compactedObjects), streamDataBlockMap);
     }
 
-    public List<CompactedObjectBuilder> buildCompactedObjects(List<S3ObjectMetadata> objects) {
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objects, s3Operator);
+    public List<CompactedObjectBuilder> buildCompactedObjects(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
         Map<Long, List<StreamDataBlock>> filteredMap = filterBlocksToCompact(streamDataBlocksMap);
         this.logger.info("{} WAL objects to compact after filter", filteredMap.size());
         if (filteredMap.isEmpty()) {

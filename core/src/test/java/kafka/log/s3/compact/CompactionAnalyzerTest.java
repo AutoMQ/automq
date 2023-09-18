@@ -68,7 +68,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testFilterBlocksToCompact() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> filteredMap = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
         Assertions.assertTrue(compare(filteredMap, streamDataBlocksMap));
@@ -76,7 +76,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testFilterBlocksToCompact2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
@@ -101,7 +101,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testSortStreamRangePositions() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE, s3Operator);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
@@ -119,8 +119,9 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testBuildCompactedObject1() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
-        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(S3_WAL_OBJECT_METADATA_LIST);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(streamDataBlocksMap);
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
@@ -146,8 +147,9 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testBuildCompactedObject2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 30, s3Operator);
-        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(S3_WAL_OBJECT_METADATA_LIST);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 30);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(streamDataBlocksMap);
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
@@ -173,8 +175,9 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testCompactionPlans1() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(S3_WAL_OBJECT_METADATA_LIST);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
         Assertions.assertEquals(1, compactionPlans.size());
         List<CompactedObject> expectCompactedObjects = List.of(
                 new CompactedObjectBuilder()
@@ -277,20 +280,22 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testCompactionPlans2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(S3_WAL_OBJECT_METADATA_LIST);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
         checkCompactionPlan2(compactionPlans);
     }
 
     @Test
     public void testCompactionPlansWithInvalidObject() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100);
         List<S3ObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
         s3ObjectMetadata.add(
                 new S3ObjectMetadata(100, S3ObjectType.WAL,
                         List.of(new StreamOffsetRange(STREAM_2, 1000, 1200)), System.currentTimeMillis(),
                         System.currentTimeMillis(), 512, 100));
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(s3ObjectMetadata);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
         checkCompactionPlan2(compactionPlans);
     }
 }
