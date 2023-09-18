@@ -423,6 +423,10 @@ public class BlockWALService implements WriteAheadLog {
     public CompletableFuture<Void> trim(long offset) {
         checkReadyToServe();
 
+        if (offset >= slidingWindowService.getWindowCoreData().getWindowStartOffset().get()) {
+            throw new IllegalArgumentException("failed to trim: record at offset " + offset + " has not been flushed yet");
+        }
+
         walHeaderCoreData.updateTrimOffset(offset);
         return CompletableFuture.runAsync(() -> {
             // TODO: more beautiful
