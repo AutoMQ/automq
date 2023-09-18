@@ -120,6 +120,7 @@ public class S3Storage implements Storage {
         if (cacheBlock.size() != 0) {
             LOGGER.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
             uploadWALObject(cacheBlock).get();
+            cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
         for (StreamMetadata stream : streams) {
             long newEndOffset = streamEndOffsets.getOrDefault(stream.getStreamId(), stream.getEndOffset());
