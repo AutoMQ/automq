@@ -105,8 +105,12 @@ public class StreamControlManagerTest {
 
     @Test
     public void testBasicCreateStream() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+
         // 1. create stream_0 success
-        CreateStreamRequestData request0 = new CreateStreamRequestData();
+        CreateStreamRequestData request0 = new CreateStreamRequestData()
+            .setBrokerId(BROKER0);
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
         List<ApiMessageAndVersion> records0 = result0.records();
         CreateStreamResponseData response0 = result0.response();
@@ -168,6 +172,9 @@ public class StreamControlManagerTest {
 
     @Test
     public void testBasicOpenCloseStream() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+
         // 1. create stream_0 and stream_1
         CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
@@ -285,6 +292,9 @@ public class StreamControlManagerTest {
             }
             return ControllerResult.of(Collections.emptyList(), Errors.NONE);
         });
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+
         // 1. create and open stream_0
         CreateStreamRequestData request0 = new CreateStreamRequestData();
         ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
@@ -406,6 +416,7 @@ public class StreamControlManagerTest {
     public void testCommitWalCompacted() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        registerAlwaysSuccessEpoch(BROKER0);
 
         // 1. create and open stream_0 and stream_1
         createAndOpenStream(BROKER0, EPOCH0);
@@ -537,6 +548,7 @@ public class StreamControlManagerTest {
     public void testCommitWalWithStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        registerAlwaysSuccessEpoch(BROKER0);
 
         // 1. create and open stream_0 and stream_1
         createAndOpenStream(BROKER0, EPOCH0);
@@ -610,6 +622,7 @@ public class StreamControlManagerTest {
     public void testCommitStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        registerAlwaysSuccessEpoch(BROKER0);
 
         // 1. create and open stream_0 and stream_1
         createAndOpenStream(BROKER0, EPOCH0);
@@ -715,7 +728,8 @@ public class StreamControlManagerTest {
     public void testTrim() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
-
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
         // 1. create and open stream0 and stream1 for broker0
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
@@ -862,20 +876,65 @@ public class StreamControlManagerTest {
         assertEquals(100, rangeMetadata.endOffset());
     }
 
-    private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {
-        List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
-                .setStreamId(streamId)
-                .setStreamEpoch(epoch)
-                .setStartOffset(startOffset)
-                .setEndOffset(endOffset));
-        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
-                .setObjectId(objectId)
-                .setOrderId(orderId)
-                .setBrokerId(brokerId)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(commitRequest0);
-        assertEquals(Errors.NONE.code(), result.response().errorCode());
+    @Test
+    public void testGetOpeningStreams() {
+        // 1. create stream without register
+        CreateStreamRequestData request0 = new CreateStreamRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(0);
+        ControllerResult<CreateStreamResponseData> result0 = manager.createStream(request0);
+        assertEquals(Errors.BROKER_EPOCH_NOT_EXIST, Errors.forCode(result0.response().errorCode()));
+
+        // 2. register
+        GetOpeningStreamsRequestData request1 = new GetOpeningStreamsRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(1);
+        ControllerResult<GetOpeningStreamsResponseData> result1 = manager.getOpeningStreams(request1);
+        assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
+        assertEquals(0, result1.response().streamMetadataList().size());
+        replay(manager, result1.records());
+
+        // 3. register with lower epoch again
+        request1 = new GetOpeningStreamsRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(0);
+        result1 = manager.getOpeningStreams(request1);
+        assertEquals(Errors.BROKER_EPOCH_EXPIRED, Errors.forCode(result1.response().errorCode()));
+
+        // 4. register with higher epoch
+        request1 = new GetOpeningStreamsRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(2);
+        result1 = manager.getOpeningStreams(request1);
+        assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
+        assertEquals(0, result1.response().streamMetadataList().size());
+        replay(manager, result1.records());
+
+        // 5. verify broker's epoch
+        assertEquals(2, manager.brokersMetadata().get(BROKER0).getBrokerEpoch());
+
+        // 6. create stream with lower epoch
+        CreateStreamRequestData request2 = new CreateStreamRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(0);
+        ControllerResult<CreateStreamResponseData> result2 = manager.createStream(request2);
+        assertEquals(Errors.BROKER_EPOCH_EXPIRED, Errors.forCode(result2.response().errorCode()));
+
+        // 7. create stream with matched epoch
+        CreateStreamRequestData request3 = new CreateStreamRequestData()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(2);
+        ControllerResult<CreateStreamResponseData> result3 = manager.createStream(request3);
+        assertEquals(Errors.NONE, Errors.forCode(result3.response().errorCode()));
+        replay(manager, result3.records());
+
+    }
+
+    private void registerAlwaysSuccessEpoch(int brokerId) {
+        GetOpeningStreamsRequestData req = new GetOpeningStreamsRequestData()
+            .setBrokerId(brokerId)
+            .setBrokerEpoch(-1);
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(req);
         replay(manager, result.records());
     }
 

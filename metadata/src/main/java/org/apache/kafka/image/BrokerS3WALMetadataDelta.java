@@ -25,13 +25,12 @@ import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.SortedWALObjects;
-import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 
 public class BrokerS3WALMetadataDelta {
 
     private final BrokerS3WALMetadataImage image;
     private int brokerId;
+    private long brokerEpoch;
     private final Map<Long/*objectId*/, S3WALObject> addedS3WALObjects = new HashMap<>();
 
     private final Set<Long/*objectId*/> removedS3WALObjects = new HashSet<>();
@@ -39,10 +38,12 @@ public class BrokerS3WALMetadataDelta {
     public BrokerS3WALMetadataDelta(BrokerS3WALMetadataImage image) {
         this.image = image;
         this.brokerId = image.getBrokerId();
+        this.brokerEpoch = image.getBrokerEpoch();
     }
 
     public void replay(BrokerWALMetadataRecord record) {
         this.brokerId = record.brokerId();
+        this.brokerEpoch = record.brokerEpoch();
     }
 
     public void replay(WALObjectRecord record) {
@@ -58,12 +59,12 @@ public class BrokerS3WALMetadataDelta {
     }
 
     public BrokerS3WALMetadataImage apply() {
-        SortedWALObjects newS3WALObjects = new SortedWALObjectsList(image.getWalObjects());
+        Map<Long, S3WALObject> newS3WALObjects = new HashMap<>(image.getWalObjects());
         // add all changed WAL objects
-        newS3WALObjects.addAll(addedS3WALObjects.values());
+        newS3WALObjects.putAll(addedS3WALObjects);
         // remove all removed WAL objects
-        newS3WALObjects.removeIf(s3WALObject -> removedS3WALObjects.contains(s3WALObject.objectId()));
-        return new BrokerS3WALMetadataImage(this.brokerId, newS3WALObjects);
+        removedS3WALObjects.forEach(newS3WALObjects::remove);
+        return new BrokerS3WALMetadataImage(this.brokerId, this.brokerEpoch, newS3WALObjects);
     }
 
 }

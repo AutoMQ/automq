@@ -135,7 +135,7 @@ public final class S3StreamsMetadataImage {
         if (wal == null) {
             return Collections.emptyList();
         }
-        return wal.getWalObjects().list();
+        return wal.orderList();
     }
 
     private List<RangeSearcher> rangeSearchers(long streamId, long startOffset, long endOffset) {
@@ -173,7 +173,7 @@ public final class S3StreamsMetadataImage {
 
         private Queue<S3ObjectMetadataWrapper> rangeOfWalObjects() {
             BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
-            return wal.getWalObjects().list().stream()
+            return wal.orderList().stream()
                 .filter(obj -> obj.offsetRanges().containsKey(streamId))
                 .filter(obj -> {
                     StreamOffsetRange offsetRange = obj.offsetRanges().get(streamId);

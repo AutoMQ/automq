@@ -18,26 +18,41 @@
 
 package org.apache.kafka.image;
 
-import java.util.Iterator;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.SortedMap;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.metadata.stream.SortedWALObjects;
-import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class BrokerS3WALMetadataImage {
 
-    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID, new SortedWALObjectsList());
+    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
+        S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
     private final int brokerId;
-    private final SortedWALObjects s3WalObjects;
+    private final long brokerEpoch;
+    private final Map<Long/*objectId*/, S3WALObject> s3WalObjects;
+    private final SortedMap<Long/*orderId*/, S3WALObject> orderIndex;
 
-    public BrokerS3WALMetadataImage(int brokerId, SortedWALObjects sourceWALObjects) {
+    public BrokerS3WALMetadataImage(int brokerId, long brokerEpoch, Map<Long, S3WALObject> walObjects) {
         this.brokerId = brokerId;
-        this.s3WalObjects = new SortedWALObjectsList(sourceWALObjects);
+        this.brokerEpoch = brokerEpoch;
+        this.s3WalObjects = new HashMap<>(walObjects);
+        // build order index
+        if (s3WalObjects.isEmpty()) {
+            this.orderIndex = Collections.emptySortedMap();
+        } else {
+            this.orderIndex = new TreeMap<>();
+            s3WalObjects.values().forEach(s3WALObject -> orderIndex.put(s3WALObject.orderId(), s3WALObject));
+        }
     }
 
     @Override
@@ -49,36 +64,48 @@ public class BrokerS3WALMetadataImage {
             return false;
         }
         BrokerS3WALMetadataImage that = (BrokerS3WALMetadataImage) o;
-        return brokerId == that.brokerId && Objects.equals(s3WalObjects, that.s3WalObjects);
+        return brokerId == that.brokerId && brokerEpoch == that.brokerEpoch && Objects.equals(s3WalObjects, that.s3WalObjects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(brokerId, s3WalObjects);
+        return Objects.hash(brokerId, brokerEpoch, s3WalObjects);
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
-            .setBrokerId(brokerId), (short) 0));
-        Iterator<S3WALObject> iterator = s3WalObjects.iterator();
-        while (iterator.hasNext()) {
-            S3WALObject s3WALObject = iterator.next();
-            writer.write(s3WALObject.toRecord());
-        }
+            .setBrokerId(brokerId)
+            .setBrokerEpoch(brokerEpoch), (short) 0));
+        s3WalObjects.values().forEach(wal -> {
+            writer.write(wal.toRecord());
+        });
     }
 
-    public SortedWALObjects getWalObjects() {
+    public Map<Long, S3WALObject> getWalObjects() {
         return s3WalObjects;
+    }
+
+    public SortedMap<Long, S3WALObject> getOrderIndex() {
+        return orderIndex;
+    }
+
+    public List<S3WALObject> orderList() {
+        return orderIndex.values().stream().collect(Collectors.toList());
     }
 
     public int getBrokerId() {
         return brokerId;
     }
 
+    public long getBrokerEpoch() {
+        return brokerEpoch;
+    }
+
     @Override
     public String toString() {
         return "BrokerS3WALMetadataImage{" +
             "brokerId=" + brokerId +
+            ", brokerEpoch=" + brokerEpoch +
             ", s3WalObjects=" + s3WalObjects +
             '}';
     }
