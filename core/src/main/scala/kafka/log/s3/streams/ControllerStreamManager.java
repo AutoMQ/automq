@@ -76,6 +76,9 @@ public class ControllerStreamManager implements StreamManager {
                     return ResponseHandleResult.withSuccess(resp.streamMetadataList().stream()
                         .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
                         .collect(Collectors.toList()));
+                case BROKER_EPOCH_EXPIRED:
+                    LOGGER.error("Broker epoch expired: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -97,6 +100,10 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(resp.streamId());
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while creating stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -121,6 +128,10 @@ public class ControllerStreamManager implements StreamManager {
                 case NONE:
                     return ResponseHandleResult.withSuccess(
                         new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
@@ -151,6 +162,10 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_NOT_OPENED:
@@ -181,6 +196,10 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_INNER_ERROR:

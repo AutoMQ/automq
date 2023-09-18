@@ -104,6 +104,10 @@ public class ControllerObjectManager implements ObjectManager {
             switch (code) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(new CommitWALObjectResponse());
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
                     throw code.exception();
@@ -135,6 +139,10 @@ public class ControllerObjectManager implements ObjectManager {
                 switch (code) {
                     case NONE:
                         return ResponseHandleResult.withSuccess(null);
+                    case BROKER_EPOCH_EXPIRED:
+                    case BROKER_EPOCH_NOT_EXIST:
+                        LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                        throw Errors.forCode(resp.errorCode()).exception();
                     case OBJECT_NOT_EXIST:
                     case COMPACTED_OBJECTS_NOT_FOUND:
                         throw code.exception();
