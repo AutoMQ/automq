@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
@@ -261,6 +262,20 @@ class BlockWALServiceTest {
                 recovered.add(next.recordOffset());
             }
             assertEquals(appended, recovered);
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    @Test
+    void testTrimInvalidOffset() throws IOException, OverCapacityException {
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
+                .capacity(16384)
+                .build()
+                .start();
+        try {
+            long appended = append(wal, 42);
+            assertThrows(IllegalArgumentException.class, () -> wal.trim(appended + 4096 + 1).join());
         } finally {
             wal.shutdownGracefully();
         }
