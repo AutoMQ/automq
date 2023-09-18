@@ -20,6 +20,7 @@ package kafka.log.s3.operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
 import kafka.log.es.metrics.Counter;
 import kafka.log.es.metrics.Timer;
 import kafka.log.s3.ByteBufAlloc;
@@ -45,11 +46,14 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -59,6 +63,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import static kafka.log.es.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
@@ -89,6 +95,7 @@ public class DefaultS3Operator implements S3Operator {
         );
         this.s3 = builder.build();
         this.bucket = bucket;
+        checkAvailable();
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
     }
 
@@ -187,7 +194,20 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private static boolean isUnrecoverable(Throwable ex) {
-        return ex instanceof NoSuchKeyException || ex instanceof NoSuchBucketException;
+        ex = cause(ex);
+        return ex instanceof NoSuchKeyException
+                || ex instanceof NoSuchBucketException
+                || (ex instanceof S3Exception && ((S3Exception) ex).statusCode() == 403);
+    }
+
+    private void checkAvailable() {
+        String content = new Date().toString();
+        try {
+            this.write("/check_available", Unpooled.wrappedBuffer(content.getBytes(StandardCharsets.UTF_8))).get(30, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            LOGGER.error("Try connect s3 fail, please re-check the server configs", e);
+            throw new IllegalArgumentException("Try connect s3 fail, please re-check the server configs", e);
+        }
     }
 
 
