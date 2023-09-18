@@ -295,7 +295,16 @@ public class StreamControlManager {
             // epoch equals, broker equals, regard it as redundant open operation, just return success
             resp.setStartOffset(streamMetadata.startOffset());
             resp.setNextOffset(rangeMetadata.endOffset());
-            return ControllerResult.of(Collections.emptyList(), resp);
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            if (streamMetadata.currentState() == StreamState.CLOSED) {
+                records.add(new ApiMessageAndVersion(new S3StreamRecord()
+                        .setStreamId(streamId)
+                        .setEpoch(epoch)
+                        .setRangeIndex(streamMetadata.currentRangeIndex())
+                        .setStartOffset(streamMetadata.startOffset())
+                        .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+            }
+            return ControllerResult.of(records, resp);
         }
         if (streamMetadata.currentState() == StreamState.OPENED) {
             // stream still in opened state, can't open until it is closed
