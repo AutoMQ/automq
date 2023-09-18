@@ -633,6 +633,7 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
+    @SuppressWarnings("all")
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         long objectId = data.objectId();
