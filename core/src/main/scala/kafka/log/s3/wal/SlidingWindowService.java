@@ -37,7 +37,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
 import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
-import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
+import static kafka.log.s3.wal.BlockWALService.RECORD_HEADER_WITHOUT_CRC_SIZE;
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 
@@ -72,7 +73,7 @@ public class SlidingWindowService {
     }
 
     private static ExecutorService newCachedThreadPool(int nThreads) {
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>(WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY);
+        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY);
         ThreadFactoryImpl threadFactory = new ThreadFactoryImpl("block-wal-io-thread-");
         return new ThreadPoolExecutor(1, nThreads, 1L, TimeUnit.MINUTES, workQueue, threadFactory);
     }
@@ -144,7 +145,7 @@ public class SlidingWindowService {
         totalRecord.position(0);
 
         // TODO: make this beautiful
-        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_CAPACITY_DOUBLE, WAL_HEADER_CAPACITY_DOUBLE);
+        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
 
         walChannel.write(totalRecord, position);
     }
@@ -165,7 +166,7 @@ public class SlidingWindowService {
                 return false;
             }
 
-            final long recordSectionTotalLength = walChannel.capacity() - BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
+            final long recordSectionTotalLength = walChannel.capacity() - BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
             if (newSlidingWindowMaxLength > recordSectionTotalLength) {
                 LOGGER.warn("[KEY_EVENT_003] new sliding window length[{}] is too large than record section total length[{}], reset to default",
                         newSlidingWindowMaxLength, recordSectionTotalLength);
@@ -261,7 +262,7 @@ public class SlidingWindowService {
 
         public ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            byteBuffer.putInt(WALUtil.crc32(byteBuffer, RECORD_HEADER_SIZE - 4));
+            byteBuffer.putInt(WALUtil.crc32(byteBuffer, RECORD_HEADER_WITHOUT_CRC_SIZE));
             return byteBuffer.position(0);
         }
     }

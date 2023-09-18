@@ -68,11 +68,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public class BlockWALService implements WriteAheadLog {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
     public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
+    public static final int RECORD_HEADER_WITHOUT_CRC_SIZE = RECORD_HEADER_SIZE - 4;
     public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
     public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
     public static final int WAL_HEADER_SIZE = 4 + 8 + 8 + 8 + 8 + 8 + 8 + 4 + 4;
+    public static final int WAL_HEADER_WITHOUT_CRC_SIZE = WAL_HEADER_SIZE - 4;
+    public static final int WAL_HEADER_COUNT = 2;
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
-    public static final int WAL_HEADER_CAPACITY_DOUBLE = WAL_HEADER_CAPACITY * 2;
+    public static final int WAL_HEADER_TOTAL_CAPACITY = WAL_HEADER_CAPACITY * WAL_HEADER_COUNT;
+    public static final int WAL_HEADER_FLUSH_INTERVAL_SECONDS = 10;
     public static final long WAL_HEADER_INIT_WINDOW_MAX_LENGTH = 1024 * 1024;
     private final AtomicBoolean readyToServe = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
@@ -101,7 +105,7 @@ public class BlockWALService implements WriteAheadLog {
             } catch (IOException e) {
                 LOGGER.error("failed to flush WAL header scheduled", e);
             }
-        }, 10, 10, TimeUnit.SECONDS);
+        }, WAL_HEADER_FLUSH_INTERVAL_SECONDS, WAL_HEADER_FLUSH_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
     @Deprecated
@@ -119,7 +123,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private synchronized void flushWALHeader() throws IOException {
-        long position = writeHeaderRoundTimes.getAndIncrement() % 2 * WAL_HEADER_CAPACITY;
+        long position = writeHeaderRoundTimes.getAndIncrement() % WAL_HEADER_COUNT * WAL_HEADER_CAPACITY;
         try {
             walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis());
             long trimOffset = walHeaderCoreData.getTrimOffset();
@@ -135,7 +139,7 @@ public class BlockWALService implements WriteAheadLog {
     private ByteBuffer readRecord(WALHeaderCoreData paramWALHeader, long recoverStartOffset) throws ReadRecordException {
         try {
             final ByteBuffer recordHeader = ByteBuffer.allocate(RECORD_HEADER_SIZE);
-            final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_CAPACITY_DOUBLE);
+            final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY);
             int read = walChannel.read(recordHeader, position);
             // 检查点：无法读取 RecordHeader
             if (read != RECORD_HEADER_SIZE) {
@@ -160,7 +164,7 @@ public class BlockWALService implements WriteAheadLog {
             int recordHeaderCRC = readRecordHeader.getRecordHeaderCRC();
 
             // 检查点：RecordHeaderCRC 不匹配，可能遇到了损坏的数据
-            int calculatedRecordHeaderCRC = WALUtil.crc32(recordHeader, RECORD_HEADER_SIZE - 4);
+            int calculatedRecordHeaderCRC = WALUtil.crc32(recordHeader, RECORD_HEADER_WITHOUT_CRC_SIZE);
             if (recordHeaderCRC != calculatedRecordHeaderCRC) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset),
@@ -185,7 +189,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             ByteBuffer recordBody = ByteBuffer.allocate(recordBodyLength);
-            read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_CAPACITY_DOUBLE));
+            read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY));
             // 检查点：无法读取 RecordBody
             if (read != recordBodyLength) {
                 throw new ReadRecordException(
@@ -253,16 +257,15 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private void recoverWALHeader() throws IOException {
-        WALHeaderCoreData[] walHeadersRecoveredCoreData = {null, null};
         WALHeaderCoreData walHeaderCoreDataAvailable = null;
 
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < WAL_HEADER_COUNT; i++) {
             try {
                 final ByteBuffer byteBuffer = ByteBuffer.allocate(WAL_HEADER_SIZE);
                 walChannel.read(byteBuffer, i * WAL_HEADER_CAPACITY);
-                walHeadersRecoveredCoreData[i] = WALHeaderCoreData.unmarshal(byteBuffer.position(0).limit(WAL_HEADER_SIZE));
-                if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestampPos3 < walHeadersRecoveredCoreData[i].lastWriteTimestampPos3) {
-                    walHeaderCoreDataAvailable = walHeadersRecoveredCoreData[i];
+                WALHeaderCoreData walHeaderCoreData = WALHeaderCoreData.unmarshal(byteBuffer.position(0).limit(WAL_HEADER_SIZE));
+                if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestampPos3 < walHeaderCoreData.lastWriteTimestampPos3) {
+                    walHeaderCoreDataAvailable = walHeaderCoreData;
                 }
             } catch (Throwable e) {
                 // failed to parse WALHeader, ignore
@@ -335,7 +338,7 @@ public class BlockWALService implements WriteAheadLog {
         final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record) : crc;
 
         // 计算写入 wal offset
-        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_CAPACITY_DOUBLE);
+        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
 
         // AppendResult
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
@@ -460,7 +463,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             ByteBuffer headerExceptCRC = walHeaderCoreData.marshalHeaderExceptCRC();
-            int crc = WALUtil.crc32(headerExceptCRC, WAL_HEADER_SIZE - 4);
+            int crc = WALUtil.crc32(headerExceptCRC, WAL_HEADER_WITHOUT_CRC_SIZE);
             if (crc != walHeaderCoreData.crcPos8) {
                 throw new RuntimeException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crcPos8, crc));
             }
@@ -469,7 +472,7 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         public long recordSectionCapacity() {
-            return capacityPos1 - WAL_HEADER_CAPACITY_DOUBLE;
+            return capacityPos1 - WAL_HEADER_TOTAL_CAPACITY;
         }
 
         public long getCapacity() {
@@ -571,7 +574,7 @@ public class BlockWALService implements WriteAheadLog {
 
         ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            this.crcPos8 = WALUtil.crc32(byteBuffer, WAL_HEADER_SIZE - 4);
+            this.crcPos8 = WALUtil.crc32(byteBuffer, WAL_HEADER_WITHOUT_CRC_SIZE);
             byteBuffer.putInt(crcPos8);
             return byteBuffer.position(0);
         }

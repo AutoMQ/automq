@@ -37,8 +37,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_CAPACITY_DOUBLE;
 import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_INIT_WINDOW_MAX_LENGTH;
+import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
 import static kafka.log.s3.wal.WriteAheadLog.RecoverResult;
@@ -50,8 +50,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 class BlockWALServiceTest {
-
-    private static final int BLOCK_DEVICE_CAPACITY = 4096 * 4096;
 
     private static final int IO_THREAD_NUMS = 4;
 
@@ -68,7 +66,7 @@ class BlockWALServiceTest {
         // Set to WAL_HEADER_INIT_WINDOW_MAX_LENGTH to trigger window scale
         final int recordSize = (int) WAL_HEADER_INIT_WINDOW_MAX_LENGTH + 1;
         final int recordNums = 10;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_TOTAL_CAPACITY;
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
@@ -99,7 +97,7 @@ class BlockWALServiceTest {
     void testSingleThreadAppendWhenOverCapacity() throws IOException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_CAPACITY_DOUBLE;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
@@ -150,7 +148,7 @@ class BlockWALServiceTest {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final int nThreadNums = 8;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums * nThreadNums + WAL_HEADER_CAPACITY_DOUBLE;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums * nThreadNums + WAL_HEADER_TOTAL_CAPACITY;
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
@@ -225,9 +223,9 @@ class BlockWALServiceTest {
         final int recordNums = 10;
         long blockDeviceCapacity;
         if (overCapacity) {
-            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_CAPACITY_DOUBLE;
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
         } else {
-            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_CAPACITY_DOUBLE;
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_TOTAL_CAPACITY;
         }
         final String tempFilePath = TestUtils.tempFilePath();
 
@@ -244,7 +242,7 @@ class BlockWALServiceTest {
 
         // Recover records
         final WriteAheadLog wal = BlockWALService.builder(tempFilePath)
-                .capacity(BLOCK_DEVICE_CAPACITY)
+                .capacity(blockDeviceCapacity)
                 .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
