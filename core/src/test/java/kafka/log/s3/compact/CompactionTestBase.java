@@ -28,14 +28,14 @@ import kafka.log.s3.operator.MemoryS3Operator;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.junit.jupiter.api.Assertions;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class CompactionTestBase {
@@ -51,12 +51,12 @@ public class CompactionTestBase {
     protected static final long CACHE_SIZE = 1024;
     protected static final double EXECUTION_SCORE_THRESHOLD = 0.5;
     protected static final long STREAM_SPLIT_SIZE = 30;
-    protected static final List<S3WALObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
+    protected static final List<S3ObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
     protected MemoryMetadataManager objectManager;
     protected S3Operator s3Operator;
 
     public void setUp() throws Exception {
-        objectManager = new MemoryMetadataManager();
+        objectManager = Mockito.spy(MemoryMetadataManager.class);
         objectManager.start();
         s3Operator = new MemoryS3Operator();
         // stream data for object 0
@@ -70,14 +70,14 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_1, List.of(r2));
             objectWriter.write(STREAM_2, List.of(r3));
             objectWriter.close().join();
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
-                    STREAM_0, new StreamOffsetRange(STREAM_0, 0, 20),
-                    STREAM_1, new StreamOffsetRange(STREAM_1, 30, 60),
-                    STREAM_2, new StreamOffsetRange(STREAM_2, 30, 60)
+            List<StreamOffsetRange> streamsIndices = List.of(
+                    new StreamOffsetRange(STREAM_0, 0, 20),
+                    new StreamOffsetRange(STREAM_1, 30, 60),
+                    new StreamOffsetRange(STREAM_2, 30, 60)
             );
-            S3WALObject walObject = new S3WALObject(OBJECT_0, BROKER_0, streamsIndex, OBJECT_0, System.currentTimeMillis());
-            S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+                    System.currentTimeMillis(), objectWriter.size(), OBJECT_0);
+            S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
         }).join();
 
         // stream data for object 1
@@ -89,13 +89,13 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_0, List.of(r4));
             objectWriter.write(STREAM_1, List.of(r5));
             objectWriter.close().join();
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
-                    STREAM_0, new StreamOffsetRange(STREAM_0, 20, 25),
-                    STREAM_1, new StreamOffsetRange(STREAM_1, 60, 120)
+            List<StreamOffsetRange> streamsIndices = List.of(
+                    new StreamOffsetRange(STREAM_0, 20, 25),
+                    new StreamOffsetRange(STREAM_1, 60, 120)
             );
-            S3WALObject walObject = new S3WALObject(OBJECT_1, BROKER_0, streamsIndex, OBJECT_1, System.currentTimeMillis());
-            S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+                    System.currentTimeMillis(), objectWriter.size(), OBJECT_1);
+            S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
         }).join();
 
         // stream data for object 2
@@ -110,14 +110,15 @@ public class CompactionTestBase {
             objectWriter.write(STREAM_1, List.of(r7));
             objectWriter.write(STREAM_2, List.of(r8));
             objectWriter.close().join();
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, objectWriter.size(), S3ObjectType.WAL);
-            Map<Long, StreamOffsetRange> streamsIndex = Map.of(
-                    STREAM_1, new StreamOffsetRange(STREAM_1, 400, 500),
-                    STREAM_2, new StreamOffsetRange(STREAM_2, 230, 270)
+            List<StreamOffsetRange> streamsIndices = List.of(
+                    new StreamOffsetRange(STREAM_1, 400, 500),
+                    new StreamOffsetRange(STREAM_2, 230, 270)
             );
-            S3WALObject walObject = new S3WALObject(OBJECT_2, BROKER_0, streamsIndex, OBJECT_2, System.currentTimeMillis());
-            S3_WAL_OBJECT_METADATA_LIST.add(new S3WALObjectMetadata(walObject, objectMetadata));
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+                    System.currentTimeMillis(), objectWriter.size(), OBJECT_2);
+            S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
         }).join();
+        Mockito.doReturn(CompletableFuture.completedFuture(S3_WAL_OBJECT_METADATA_LIST)).when(objectManager).getServerObjects();
     }
 
     public void tearDown() {
@@ -126,11 +127,22 @@ public class CompactionTestBase {
     }
 
     protected boolean compare(StreamDataBlock block1, StreamDataBlock block2) {
-        return block1.getStreamId() == block2.getStreamId() &&
+        boolean attr = block1.getStreamId() == block2.getStreamId() &&
                 block1.getStartOffset() == block2.getStartOffset() &&
                 block1.getEndOffset() == block2.getEndOffset() &&
-                block1.getRecordCount() == block2.getRecordCount() &&
-                block1.getObjectId() == block2.getObjectId();
+                block1.getRecordCount() == block2.getRecordCount();
+        if (!attr) {
+            return false;
+        }
+        if (!block1.getDataCf().isDone()) {
+            return !block2.getDataCf().isDone();
+        } else {
+            if (!block2.getDataCf().isDone()) {
+                return false;
+            } else {
+                return block1.getDataCf().join().compareTo(block2.getDataCf().join()) == 0;
+            }
+        }
     }
 
     protected boolean compare(List<StreamDataBlock> streamDataBlocks1, List<StreamDataBlock> streamDataBlocks2) {

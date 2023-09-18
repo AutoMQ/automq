@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);
-    public static final Comparator<StreamDataBlock> BLOCK_POSITION_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getBlockPosition);
+    public static final Comparator<StreamDataBlock> BLOCK_POSITION_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getBlockStartPosition);
 
     // Stream attributes
     private final long streamId;
@@ -76,8 +76,12 @@ public class StreamDataBlock {
         return objectId;
     }
 
-    public long getBlockPosition() {
+    public long getBlockStartPosition() {
         return blockPosition;
+    }
+
+    public long getBlockEndPosition() {
+        return blockPosition + blockSize;
     }
 
     public int getBlockSize() {

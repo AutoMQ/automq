@@ -137,6 +137,18 @@ public class S3ObjectMetadata {
         return offsetRanges.get(offsetRanges.size() - 1).getEndOffset();
     }
 
+    public boolean intersect(long streamId, long startOffset) {
+        if (offsetRanges == null || offsetRanges.isEmpty()) {
+            return false;
+        }
+        for (StreamOffsetRange offsetRange : offsetRanges) {
+            if (offsetRange.getStreamId() == streamId && offsetRange.intersect(startOffset)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public String toString() {
         return "S3ObjectMetadata(objectId=" + objectId + ", objectSize=" + objectSize + ", type=" + type + ", offsetRanges=" + offsetRanges
                 + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ")";

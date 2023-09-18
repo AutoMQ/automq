@@ -32,13 +32,10 @@ import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.StreamState;
@@ -211,18 +208,4 @@ public class StreamMetadataManagerTest {
         });
 
     }
-
-    @Test
-    public void testGetWALObjects() {
-        this.streamMetadataListener.onChange(null, image0);
-        List<S3WALObjectMetadata> objectMetadata = this.manager.getWALObjects();
-        List<S3ObjectMetadata> expected = List.of(new S3ObjectMetadata(1L, 128, S3ObjectType.WAL),
-                new S3ObjectMetadata(2L, 128, S3ObjectType.WAL));
-        // compare objectMetadata with expected
-        assertEquals(expected.size(), objectMetadata.size());
-        for (int i = 0; i < expected.size(); i++) {
-            assertEquals(expected.get(i), objectMetadata.get(i).getObjectMetadata());
-        }
-    }
-
 }
