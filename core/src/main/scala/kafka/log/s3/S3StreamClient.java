@@ -108,7 +108,7 @@ public class S3StreamClient implements StreamClient {
                         .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000);
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
-                        metadata.getStartOffset(), metadata.getNextOffset(),
+                        metadata.getStartOffset(), metadata.getEndOffset(),
                         storage, streamManager, builder, id -> {
                         openedStreams.remove(id);
                         return null;

@@ -20,7 +20,6 @@ package kafka.log.s3.streams;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
-import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
@@ -62,7 +61,9 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
         GetOpeningStreamsRequest.Builder request = new GetOpeningStreamsRequest.Builder(
-                new GetOpeningStreamsRequestData().setBrokerId(config.brokerId()).setBrokerEpoch(config.brokerEpoch()));
+                new GetOpeningStreamsRequestData()
+                    .setBrokerId(config.brokerId())
+                    .setBrokerEpoch(config.brokerEpoch()));
         CompletableFuture<List<StreamMetadata>> future = new CompletableFuture<>();
         RequestTask<GetOpeningStreamsResponseData, List<StreamMetadata>> task = new RequestTask<>(future, request, GetOpeningStreamsResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
@@ -99,24 +100,24 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<OpenStreamMetadata> openStream(long streamId, long epoch) {
+    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
         OpenStreamRequest.Builder request = new OpenStreamRequest.Builder(
                 new OpenStreamRequestData()
                         .setStreamId(streamId)
                         .setStreamEpoch(epoch)
                         .setBrokerId(config.brokerId())
         );
-        CompletableFuture<OpenStreamMetadata> future = new CompletableFuture<>();
-        RequestTask<OpenStreamResponseData, OpenStreamMetadata> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
+        CompletableFuture<StreamMetadata> future = new CompletableFuture<>();
+        RequestTask<OpenStreamResponseData, StreamMetadata> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return ResponseHandleResult.withSuccess(new OpenStreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset()));
+                    return ResponseHandleResult.withSuccess(new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
-                case STREAM_NOT_CLOSED:
                 case STREAM_INNER_ERROR:
                     LOGGER.error("Unexpected error while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_NOT_CLOSED:
                 default:
                     LOGGER.error("Error while opening stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
