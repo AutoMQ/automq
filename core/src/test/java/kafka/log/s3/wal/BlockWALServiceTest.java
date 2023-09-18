@@ -235,6 +235,7 @@ class BlockWALServiceTest {
         // Append records
         final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath)
                 .capacity(blockDeviceCapacity)
+                .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
         List<Long> appended = append(previousWAL, recordSize, recordNums);
