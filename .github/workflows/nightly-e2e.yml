@@ -14,10 +14,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Clean last run results
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+      - name: Clean last running results
         run: |
           rm -rf results
       - name: Run E2E tests
-        run: bash ./tests/docker/run_tests.sh
-      - name: Bring down dockers
+        run: ./tests/docker/run_tests.sh
+      - name: Report results
+        run: python3 tests/report_e2e_results.py
+        env:
+          WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
+      - name: Bring down docker containers
         run: bash ./tests/docker/ducker-ak down
+        if: ${{ always() }}
