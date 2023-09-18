@@ -222,28 +222,20 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public List<S3ObjectMetadata> getServerObjects() {
-        CompletableFuture<List<S3ObjectMetadata>> future = this.submitEvent(() -> {
-            return this.brokerWALMetadata.get(MOCK_BROKER_ID).walObjects.stream().map(obj -> {
-                S3Object s3Object = this.objectsMetadata.get(obj.objectId());
-                return new S3ObjectMetadata(obj.objectId(), s3Object.getObjectSize(), obj.objectType());
-            }).collect(Collectors.toList());
-        });
-        try {
-            return future.get();
-        } catch (Exception e) {
-            LOGGER.error("Error in getServerObjects", e);
-            return Collections.emptyList();
-        }
+    public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
+        return this.submitEvent(() -> this.brokerWALMetadata.get(MOCK_BROKER_ID).walObjects.stream().map(obj -> {
+            S3Object s3Object = this.objectsMetadata.get(obj.objectId());
+            return new S3ObjectMetadata(obj.objectId(), s3Object.getObjectSize(), obj.objectType());
+        }).collect(Collectors.toList()));
     }
 
 
     @Override
-    public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: support search not only in wal objects
         endOffset = endOffset == NOOP_OFFSET ? Long.MAX_VALUE : endOffset;
         long finalEndOffset = endOffset;
-        CompletableFuture<List<S3ObjectMetadata>> future = this.submitEvent(() -> {
+        return this.submitEvent(() -> {
             int need = limit;
             List<S3ObjectMetadata> objs = new ArrayList<>();
             MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
@@ -269,16 +261,10 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             }
             return objs;
         });
-        try {
-            return future.get();
-        } catch (Exception e) {
-            LOGGER.error("Error in getObjects", e);
-            return Collections.emptyList();
-        }
     }
 
     @Override
-    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
         throw new UnsupportedOperationException("Not support");
     }
 

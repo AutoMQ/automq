@@ -139,36 +139,22 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit) {
-        try {
-            return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
-                if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                    List<S3ObjectMetadata> objects = Collections.emptyList();
-                    return objects;
-                }
-                return inRangeObjects.objects();
-            }).get();
-        } catch (Exception e) {
-            LOGGER.error("Error while get objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset, limit,
-                    e);
-            return Collections.emptyList();
-        }
+    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
+        return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
+            if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
+                return Collections.emptyList();
+            }
+            return inRangeObjects.objects();
+        });
     }
 
     @Override
-    public List<S3ObjectMetadata> getServerObjects() {
+    public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
         return null;
     }
 
     @Override
-    public List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        try {
-            return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit).get();
-        } catch (Exception e) {
-            LOGGER.error("Error while get stream objects, streamId: {}, startOffset: {}, endOffset: {}, limit: {}", streamId, startOffset, endOffset,
-                limit,
-                e);
-            return Collections.emptyList();
-        }
+    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+        return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit);
     }
 }

@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static kafka.log.es.FutureUtil.failedFuture;
@@ -97,12 +98,16 @@ public class DefaultS3BlockCache implements S3BlockCache {
             return CompletableFuture.completedFuture(new ReadDataBlock(cacheRecords));
         }
         // 2. get from s3
-        List<S3ObjectMetadata> objects = objectManager.getObjects(streamId, nextStartOffset, endOffset, 2);
-        ReadContext context = new ReadContext(objects, nextStartOffset, nextMaxBytes);
-        return readFromS3(streamId, endOffset, context).thenApply(s3Rst -> {
-            List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
-            records.addAll(s3Rst.getRecords());
-            return new ReadDataBlock(records);
+
+        ReadContext context = new ReadContext(Collections.emptyList(), nextStartOffset, nextMaxBytes);
+        CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextStartOffset, endOffset, 2);
+        return getObjectsCf.thenCompose(objects -> {
+            context.objects = objects;
+            return readFromS3(streamId, endOffset, context).thenApply(s3Rst -> {
+                List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
+                records.addAll(s3Rst.getRecords());
+                return new ReadDataBlock(records);
+            });
         });
     }
 
@@ -112,81 +117,95 @@ public class DefaultS3BlockCache implements S3BlockCache {
     }
 
     private CompletableFuture<ReadDataBlock> readFromS3(long streamId, long endOffset, ReadContext context) {
+        CompletableFuture<Void> getObjectsCf = CompletableFuture.completedFuture(null);
         if (context.objectIndex >= context.objects.size()) {
-            context.objects = objectManager.getObjects(streamId, context.nextStartOffset, endOffset, 2);
-            context.objectIndex = 0;
-            if (context.objects.isEmpty()) {
-                LOGGER.error("[BUG] fail to read, expect objects not empty, streamId={}, startOffset={}, endOffset={}",
-                        streamId, context.nextStartOffset, endOffset);
-                return failedFuture(new IllegalStateException("fail to read, expect objects not empty"));
-            }
+            getObjectsCf = objectManager
+                    .getObjects(streamId, context.nextStartOffset, endOffset, 2)
+                    .orTimeout(1, TimeUnit.MINUTES)
+                    .thenAccept(objects -> {
+                        context.objects = objects;
+                        context.objectIndex = 0;
+                        if (context.objects.isEmpty()) {
+                            LOGGER.error("[BUG] fail to read, expect objects not empty, streamId={}, startOffset={}, endOffset={}",
+                                    streamId, context.nextStartOffset, endOffset);
+                            throw new IllegalStateException("fail to read, expect objects not empty");
+                        }
+                    });
         }
-        ObjectReader reader = getObjectReader(context.objects.get(context.objectIndex));
-        context.objectIndex++;
-        return reader.find(streamId, context.nextStartOffset, endOffset, context.nextMaxBytes).thenCompose(blockIndexes -> {
-            List<CompletableFuture<ObjectReader.DataBlock>> blockCfList = blockIndexes.stream().map(reader::read).collect(Collectors.toList());
+        CompletableFuture<List<ObjectReader.DataBlockIndex>> findIndexCf = getObjectsCf.thenCompose(nil -> {
+            ObjectReader reader = getObjectReader(context.objects.get(context.objectIndex));
+            context.objectIndex++;
+            context.reader = reader;
+            return reader.find(streamId, context.nextStartOffset, endOffset, context.nextMaxBytes);
+        });
+        CompletableFuture<List<CompletableFuture<ObjectReader.DataBlock>>> getDataCf = findIndexCf.thenCompose(blockIndexes -> {
+            List<CompletableFuture<ObjectReader.DataBlock>> blockCfList = blockIndexes.stream().map(context.reader::read).collect(Collectors.toList());
             CompletableFuture<Void> allBlockCf = CompletableFuture.allOf(blockCfList.toArray(new CompletableFuture[0]));
-            return allBlockCf.thenCompose(nil -> {
-                try {
-                    long nextStartOffset = context.nextStartOffset;
-                    int nextMaxBytes = context.nextMaxBytes;
-                    boolean fulfill = false;
-                    List<StreamRecordBatch> remaining = new ArrayList<>();
-                    for (CompletableFuture<ObjectReader.DataBlock> blockCf : blockCfList) {
-                        ObjectReader.DataBlock dataBlock = blockCf.get();
-                        try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
-                            while (it.hasNext()) {
-                                StreamRecordBatch recordBatch = it.next();
-                                if (recordBatch.getLastOffset() <= nextStartOffset) {
-                                    recordBatch.release();
-                                    continue;
-                                }
-                                if (fulfill) {
-                                    remaining.add(recordBatch);
-                                } else {
-                                    context.records.add(recordBatch);
-                                    nextStartOffset = recordBatch.getLastOffset();
-                                    nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.getRecordBatch().rawPayload().remaining());
-                                    if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
-                                        fulfill = true;
-                                    }
+            return allBlockCf.thenApply(nil -> {
+                context.reader.release();
+                context.reader = null;
+                return blockCfList; });
+        });
+        return getDataCf.thenCompose(blockCfList -> {
+            try {
+                long nextStartOffset = context.nextStartOffset;
+                int nextMaxBytes = context.nextMaxBytes;
+                boolean fulfill = false;
+                List<StreamRecordBatch> remaining = new ArrayList<>();
+                for (CompletableFuture<ObjectReader.DataBlock> blockCf : blockCfList) {
+                    ObjectReader.DataBlock dataBlock = blockCf.get();
+                    try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
+                        while (it.hasNext()) {
+                            StreamRecordBatch recordBatch = it.next();
+                            if (recordBatch.getLastOffset() <= nextStartOffset) {
+                                recordBatch.release();
+                                continue;
+                            }
+                            if (fulfill) {
+                                remaining.add(recordBatch);
+                            } else {
+                                context.records.add(recordBatch);
+                                nextStartOffset = recordBatch.getLastOffset();
+                                nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.getRecordBatch().rawPayload().remaining());
+                                if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
+                                    fulfill = true;
                                 }
                             }
                         }
-                        dataBlock.close();
                     }
-                    if (!remaining.isEmpty()) {
-                        cache.put(streamId, remaining);
-                    }
-                    context.nextStartOffset = nextStartOffset;
-                    context.nextMaxBytes = nextMaxBytes;
-                    if (fulfill) {
-                        return CompletableFuture.completedFuture(new ReadDataBlock(context.records));
-                    } else {
-                        return readFromS3(streamId, endOffset, context);
-                    }
-                } catch (Throwable e) {
-                    return failedFuture(e);
-                } finally {
-                    reader.release();
+                    dataBlock.close();
                 }
-            });
+                if (!remaining.isEmpty()) {
+                    cache.put(streamId, remaining);
+                }
+                context.nextStartOffset = nextStartOffset;
+                context.nextMaxBytes = nextMaxBytes;
+                if (fulfill) {
+                    return CompletableFuture.completedFuture(new ReadDataBlock(context.records));
+                } else {
+                    return readFromS3(streamId, endOffset, context);
+                }
+            } catch (Throwable e) {
+                return failedFuture(e);
+            }
         });
     }
 
     private void backgroundReadahead(long streamId, BlockCache.Readahead readahead) {
         backgroundExectutor.execute(() -> {
-            List<S3ObjectMetadata> objects = objectManager.getObjects(streamId, readahead.getStartOffset(), NOOP_OFFSET, 2);
-            if (objects.isEmpty()) {
-                return;
-            }
-            CompletableFuture<ReadDataBlock> readaheadCf = readFromS3(streamId, NOOP_OFFSET,
-                    new ReadContext(objects, readahead.getStartOffset(), readahead.getSize()));
-            ReadingTaskKey readingTaskKey = new ReadingTaskKey(streamId, readahead.getStartOffset());
-            readaheadTasks.put(readingTaskKey, readaheadCf);
-            readaheadCf
-                    .thenAccept(readDataBlock -> cache.put(streamId, readDataBlock.getRecords()))
-                    .whenComplete((nil, ex) -> readaheadTasks.remove(readingTaskKey, readaheadCf));
+            CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, readahead.getStartOffset(), NOOP_OFFSET, 2);
+            getObjectsCf.thenAccept(objects -> {
+                if (objects.isEmpty()) {
+                    return;
+                }
+                CompletableFuture<ReadDataBlock> readaheadCf = readFromS3(streamId, NOOP_OFFSET,
+                        new ReadContext(objects, readahead.getStartOffset(), readahead.getSize()));
+                ReadingTaskKey readingTaskKey = new ReadingTaskKey(streamId, readahead.getStartOffset());
+                readaheadTasks.put(readingTaskKey, readaheadCf);
+                readaheadCf
+                        .thenAccept(readDataBlock -> cache.put(streamId, readDataBlock.getRecords()))
+                        .whenComplete((nil, ex) -> readaheadTasks.remove(readingTaskKey, readaheadCf));
+            });
         });
     }
 
@@ -208,6 +227,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
     static class ReadContext {
         List<S3ObjectMetadata> objects;
         int objectIndex;
+        ObjectReader reader;
         List<StreamRecordBatch> records;
         long nextStartOffset;
         int nextMaxBytes;
