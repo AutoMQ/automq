@@ -34,6 +34,7 @@ import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -257,16 +258,40 @@ public class CompactionManager {
 
     boolean sanityCheckCompactionResult(List<S3ObjectMetadata> objectsToSplit, List<S3ObjectMetadata> objectsToCompact,
                                         CommitWALObjectRequest request) {
-        Set<Long> expectedStreamIds = new HashSet<>();
-        objectsToSplit.forEach(o -> expectedStreamIds.addAll(o.getOffsetRanges().stream().map(StreamOffsetRange::getStreamId).collect(Collectors.toList())));
-        objectsToCompact.forEach(o -> expectedStreamIds.addAll(o.getOffsetRanges().stream().map(StreamOffsetRange::getStreamId).collect(Collectors.toList())));
-        Set<Long> compactedStreamIds = new HashSet<>();
-        request.getStreamRanges().forEach(o -> compactedStreamIds.add(o.getStreamId()));
-        request.getStreamObjects().forEach(o -> compactedStreamIds.add(o.getStreamId()));
-        if (expectedStreamIds.retainAll(compactedStreamIds)) {
-            logger.error("Missing streams after compaction");
-            return false;
+
+        Map<Long, S3ObjectMetadata> objectMetadataMap = objectsToCompact.stream()
+                .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
+        objectMetadataMap.putAll(objectsToSplit.stream()
+                .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e)));
+
+        List<StreamOffsetRange> compactedStreamOffsetRanges = new ArrayList<>();
+        request.getStreamRanges().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
+        request.getStreamObjects().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
+        Map<Long, List<StreamOffsetRange>> sortedStreamOffsetRanges = compactedStreamOffsetRanges.stream()
+                .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
+        sortedStreamOffsetRanges.values().forEach(Collections::sort);
+        for (long objectId : request.getCompactedObjectIds()) {
+            S3ObjectMetadata metadata = objectMetadataMap.get(objectId);
+            for (StreamOffsetRange streamOffsetRange : metadata.getOffsetRanges()) {
+                if (!sortedStreamOffsetRanges.containsKey(streamOffsetRange.getStreamId())) {
+                    logger.error("Sanity check failed, stream {} is missing after compact", streamOffsetRange.getStreamId());
+                    return false;
+                }
+                boolean contained = false;
+                for (StreamOffsetRange compactedStreamOffsetRange : sortedStreamOffsetRanges.get(streamOffsetRange.getStreamId())) {
+                    if (streamOffsetRange.getStartOffset() >= compactedStreamOffsetRange.getStartOffset()
+                            && streamOffsetRange.getEndOffset() <= compactedStreamOffsetRange.getEndOffset()) {
+                        contained = true;
+                        break;
+                    }
+                }
+                if (!contained) {
+                    logger.error("Sanity check failed, object {} offset range {} is missing after compact", objectId, streamOffsetRange);
+                    return false;
+                }
+            }
         }
+
         return true;
     }
 
