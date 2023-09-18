@@ -15,34 +15,14 @@
  * limitations under the License.
  */
 
-package kafka.log.s3.objects;
+package org.apache.kafka.common.errors.s3;
 
-public class OpenStreamMetadata {
-    private final long streamId;
-    private final long epoch;
-    private final long startOffset;
-    private final long nextOffset;
+import org.apache.kafka.common.errors.ApiException;
 
-    public OpenStreamMetadata(long streamId, long epoch, long startOffset, long nextOffset) {
-        this.streamId = streamId;
-        this.epoch = epoch;
-        this.startOffset = startOffset;
-        this.nextOffset = nextOffset;
+public class BrokerEpochNotExistException extends ApiException {
+
+    public BrokerEpochNotExistException(String message) {
+        super(message);
     }
 
-    public long getStreamId() {
-        return streamId;
-    }
-
-    public long getEpoch() {
-        return epoch;
-    }
-
-    public long getStartOffset() {
-        return startOffset;
-    }
-
-    public long getNextOffset() {
-        return nextOffset;
-    }
 }

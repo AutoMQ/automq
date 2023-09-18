@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
@@ -28,9 +29,9 @@ import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
+import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -48,12 +49,13 @@ public class BrokerS3WALMetadataImageTest {
 
     @Test
     public void testS3WALObjects() {
-        BrokerS3WALMetadataImage image0 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList());
+        BrokerS3WALMetadataImage image0 = new BrokerS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
         List<ApiMessageAndVersion> delta0Records = new ArrayList<>();
         BrokerS3WALMetadataDelta delta0 = new BrokerS3WALMetadataDelta(image0);
         // 1. create WALObject0 and WALObject1
         delta0Records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
-            .setBrokerId(BROKER0), (short) 0));
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(1), (short) 0));
         delta0Records.add(new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(0L)
             .setBrokerId(BROKER0)
@@ -78,27 +80,55 @@ public class BrokerS3WALMetadataImageTest {
                     .setEndOffset(200L))), (short) 0));
         RecordTestUtils.replayAll(delta0, delta0Records);
         // verify delta and check image's write
-        BrokerS3WALMetadataImage image1 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
-            new S3WALObject(0L, BROKER0, Map.of(
-                STREAM0, new StreamOffsetRange(STREAM0, 0L, 100L),
-                STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
-            new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L))));
+        BrokerS3WALMetadataImage image1 = new BrokerS3WALMetadataImage(BROKER0, 1,
+            Map.of(
+                0L, new S3WALObject(0L, BROKER0, Map.of(
+                    STREAM0, new StreamOffsetRange(STREAM0, 0L, 100L),
+                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
+                1L, new S3WALObject(1L, BROKER0, Map.of(
+                    STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
-        // 2. remove WALObject0
+        // 2. remove range of stream0 in WALObject0 and update epoch
         List<ApiMessageAndVersion> delta1Records = new ArrayList<>();
         BrokerS3WALMetadataDelta delta1 = new BrokerS3WALMetadataDelta(image1);
-        delta1Records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
-            .setObjectId(0L), (short) 0));
+        delta1Records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
+            .setBrokerId(BROKER0)
+            .setBrokerEpoch(2), (short) 0));
+        delta1Records.add(new ApiMessageAndVersion(new WALObjectRecord()
+            .setObjectId(0L)
+            .setBrokerId(BROKER0)
+            .setOrderId(0L)
+            .setStreamsIndex(List.of(
+                new WALObjectRecord.StreamIndex()
+                    .setStreamId(STREAM1)
+                    .setStartOffset(0)
+                    .setEndOffset(200))), (short) 0));
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
-        BrokerS3WALMetadataImage image2 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
-            new S3WALObject(1L, BROKER0, Map.of(
-                STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L))));
+        BrokerS3WALMetadataImage image2 = new BrokerS3WALMetadataImage(BROKER0, 2,
+            Map.of(
+                0L, new S3WALObject(0L, BROKER0, Map.of(
+                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
+                1L, new S3WALObject(1L, BROKER0, Map.of(
+                    STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
+
+        // 3. remove WALObject1
+        List<ApiMessageAndVersion> delta2Records = new ArrayList<>();
+        BrokerS3WALMetadataDelta delta2 = new BrokerS3WALMetadataDelta(image2);
+        delta2Records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
+            .setObjectId(1L), (short) 0));
+        RecordTestUtils.replayAll(delta2, delta2Records);
+        // verify delta and check image's write
+        BrokerS3WALMetadataImage image3 = new BrokerS3WALMetadataImage(BROKER0, 2,
+            Map.of(
+                0L, new S3WALObject(0L, BROKER0, Map.of(
+                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L)));
+        assertEquals(image3, delta2.apply());
+        testToImageAndBack(image3);
     }
 
     private void testToImageAndBack(BrokerS3WALMetadataImage image) {

@@ -20,7 +20,6 @@ package kafka.log.s3.streams;
 import kafka.log.s3.network.ControllerRequestSender;
 import kafka.log.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.s3.network.ControllerRequestSender.ResponseHandleResult;
-import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
@@ -53,23 +52,33 @@ public class ControllerStreamManager implements StreamManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerStreamManager.class);
     private final KafkaConfig config;
     private final ControllerRequestSender requestSender;
+    private final int brokerId;
+    private final long brokerEpoch;
 
     public ControllerStreamManager(ControllerRequestSender requestSender, KafkaConfig config) {
         this.config = config;
         this.requestSender = requestSender;
+        this.brokerId = config.brokerId();
+        this.brokerEpoch = config.brokerEpoch();
     }
 
     @Override
     public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
         GetOpeningStreamsRequest.Builder request = new GetOpeningStreamsRequest.Builder(
-                new GetOpeningStreamsRequestData().setBrokerId(config.brokerId()).setBrokerEpoch(config.brokerEpoch()));
+            new GetOpeningStreamsRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch));
         CompletableFuture<List<StreamMetadata>> future = new CompletableFuture<>();
-        RequestTask<GetOpeningStreamsResponseData, List<StreamMetadata>> task = new RequestTask<>(future, request, GetOpeningStreamsResponseData.class, resp -> {
+        RequestTask<GetOpeningStreamsResponseData, List<StreamMetadata>> task = new RequestTask<>(future, request,
+            GetOpeningStreamsResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(resp.streamMetadataList().stream()
-                            .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
-                            .collect(Collectors.toList()));
+                        .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
+                        .collect(Collectors.toList()));
+                case BROKER_EPOCH_EXPIRED:
+                    LOGGER.error("Broker epoch expired: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -82,13 +91,19 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<Long> createStream() {
         CreateStreamRequest.Builder request = new CreateStreamRequest.Builder(
-                new CreateStreamRequestData()
+            new CreateStreamRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch)
         );
         CompletableFuture<Long> future = new CompletableFuture<>();
         RequestTask<CreateStreamResponseData, Long> task = new RequestTask<>(future, request, CreateStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(resp.streamId());
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while creating stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -99,24 +114,30 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<OpenStreamMetadata> openStream(long streamId, long epoch) {
+    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
         OpenStreamRequest.Builder request = new OpenStreamRequest.Builder(
-                new OpenStreamRequestData()
-                        .setStreamId(streamId)
-                        .setStreamEpoch(epoch)
-                        .setBrokerId(config.brokerId())
+            new OpenStreamRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch)
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch)
         );
-        CompletableFuture<OpenStreamMetadata> future = new CompletableFuture<>();
-        RequestTask<OpenStreamResponseData, OpenStreamMetadata> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
+        CompletableFuture<StreamMetadata> future = new CompletableFuture<>();
+        RequestTask<OpenStreamResponseData, StreamMetadata> task = new RequestTask<>(future, request, OpenStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
-                    return ResponseHandleResult.withSuccess(new OpenStreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset()));
+                    return ResponseHandleResult.withSuccess(
+                        new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
-                case STREAM_NOT_CLOSED:
                 case STREAM_INNER_ERROR:
                     LOGGER.error("Unexpected error while opening stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_NOT_CLOSED:
                 default:
                     LOGGER.error("Error while opening stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -130,9 +151,10 @@ public class ControllerStreamManager implements StreamManager {
     public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
         TrimStreamRequest.Builder request = new Builder(
             new TrimStreamRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch)
                 .setStreamId(streamId)
                 .setStreamEpoch(epoch)
-                .setBrokerId(config.brokerId())
                 .setNewStartOffset(newStartOffset)
         );
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -140,6 +162,10 @@ public class ControllerStreamManager implements StreamManager {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_NOT_OPENED:
@@ -159,16 +185,21 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
         CloseStreamRequest.Builder request = new CloseStreamRequest.Builder(
-                new CloseStreamRequestData()
-                        .setStreamId(streamId)
-                        .setStreamEpoch(epoch)
-                        .setBrokerId(config.brokerId())
+            new CloseStreamRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch)
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch)
         );
         CompletableFuture<Void> future = new CompletableFuture<>();
         RequestTask<CloseStreamResponseData, Void> task = new RequestTask<>(future, request, CloseStreamResponseData.class, resp -> {
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
