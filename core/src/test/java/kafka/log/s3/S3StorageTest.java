@@ -43,10 +43,10 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static kafka.log.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -141,12 +141,13 @@ public class S3StorageTest {
 
     @Test
     public void testUploadWALObject_sequence() throws ExecutionException, InterruptedException, TimeoutException {
-        List<CompletableFuture<Long>> objectIdCfList = new CopyOnWriteArrayList<>();
-        doAnswer(invocation -> {
-            CompletableFuture<Long> objectIdCf = new CompletableFuture<>();
-            objectIdCfList.add(objectIdCf);
-            return objectIdCf;
-        }).when(objectManager).prepareObject(anyInt(), anyLong());
+        List<CompletableFuture<Long>> objectIdCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
+        AtomicInteger objectCfIndex = new AtomicInteger();
+        doAnswer(invocation -> objectIdCfList.get(objectCfIndex.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+
+        List<CompletableFuture<CommitWALObjectResponse>> commitCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
+        AtomicInteger commitCfIndex = new AtomicInteger();
+        doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitWALObject(any());
 
         LogCache.LogCacheBlock logCacheBlock1 = new LogCache.LogCacheBlock(1024);
         logCacheBlock1.put(newRecord(233L, 10L));
@@ -162,13 +163,6 @@ public class S3StorageTest {
 
         // sequence get objectId
         verify(objectManager, timeout(1000).times(1)).prepareObject(anyInt(), anyLong());
-
-        List<CompletableFuture<CommitWALObjectResponse>> commitCfList = new CopyOnWriteArrayList<>();
-        doAnswer(invocation -> {
-            CompletableFuture<CommitWALObjectResponse> cf = new CompletableFuture<>();
-            commitCfList.add(cf);
-            return cf;
-        }).when(objectManager).commitWALObject(any());
 
         objectIdCfList.get(0).complete(1L);
         // trigger next upload prepare objectId
