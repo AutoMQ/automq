@@ -75,7 +75,7 @@ public class WALBlockDeviceChannel implements WALChannel {
             if (randomAccessFile != null) {
                 randomAccessFile.close();
             }
-        } catch (Throwable ignored) {
+        } catch (IOException ignored) {
         }
     }
 

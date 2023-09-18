@@ -62,7 +62,7 @@ public class WALFileChannel implements WALChannel {
             if (randomAccessFile != null) {
                 randomAccessFile.close();
             }
-        } catch (Throwable ignored) {
+        } catch (IOException ignored) {
         }
 
         try {
@@ -70,7 +70,7 @@ public class WALFileChannel implements WALChannel {
                 fileChannel.force(true);
                 fileChannel.close();
             }
-        } catch (Throwable ignored) {
+        } catch (IOException ignored) {
         }
     }
 

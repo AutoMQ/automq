@@ -203,7 +203,7 @@ public class BlockWALService implements WriteAheadLog {
             }
 
             return recordBody.position(0);
-        } catch (Throwable e) {
+        } catch (IOException e) {
             throw new ReadRecordException(
                     WALUtil.alignNextBlock(recoverStartOffset),
                     String.format("readRecord Exception: %s", e.getMessage())
@@ -263,7 +263,7 @@ public class BlockWALService implements WriteAheadLog {
                 if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestampPos3 < walHeaderCoreData.lastWriteTimestampPos3) {
                     walHeaderCoreDataAvailable = walHeaderCoreData;
                 }
-            } catch (Throwable e) {
+            } catch (IOException | UnmarshalException ignored) {
                 // failed to parse WALHeader, ignore
             }
         }
@@ -450,7 +450,7 @@ public class BlockWALService implements WriteAheadLog {
         private ShutdownType shutdownTypePos7 = ShutdownType.UNGRACEFULLY;
         private int crcPos8;
 
-        public static WALHeaderCoreData unmarshal(ByteBuffer byteBuffer) {
+        public static WALHeaderCoreData unmarshal(ByteBuffer byteBuffer) throws UnmarshalException {
             WALHeaderCoreData walHeaderCoreData = new WALHeaderCoreData();
             walHeaderCoreData.magicCodePos0 = byteBuffer.getInt();
             walHeaderCoreData.capacityPos1 = byteBuffer.getLong();
@@ -463,13 +463,13 @@ public class BlockWALService implements WriteAheadLog {
             walHeaderCoreData.crcPos8 = byteBuffer.getInt();
 
             if (walHeaderCoreData.magicCodePos0 != WAL_HEADER_MAGIC_CODE) {
-                throw new RuntimeException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.magicCodePos0, WAL_HEADER_MAGIC_CODE));
+                throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.magicCodePos0, WAL_HEADER_MAGIC_CODE));
             }
 
             ByteBuffer headerExceptCRC = walHeaderCoreData.marshalHeaderExceptCRC();
             int crc = WALUtil.crc32(headerExceptCRC, WAL_HEADER_WITHOUT_CRC_SIZE);
             if (crc != walHeaderCoreData.crcPos8) {
-                throw new RuntimeException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crcPos8, crc));
+                throw new UnmarshalException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crcPos8, crc));
             }
 
             return walHeaderCoreData;
@@ -790,6 +790,12 @@ public class BlockWALService implements WriteAheadLog {
 
         public long getJumpNextRecoverOffset() {
             return jumpNextRecoverOffset;
+        }
+    }
+
+    static class UnmarshalException extends Exception {
+        public UnmarshalException(String message) {
+            super(message);
         }
     }
 }

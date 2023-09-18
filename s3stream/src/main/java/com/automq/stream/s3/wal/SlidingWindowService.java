@@ -147,12 +147,9 @@ public class SlidingWindowService {
         if (newWindowSize > windowCoreData.getWindowMaxLength().get()) {
             long newSlidingWindowMaxLength = newWindowSize + scaleUnit;
             if (newSlidingWindowMaxLength > upperLimit) {
-                try {
-                    // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
-                    String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, upperLimit);
-                    writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage));
-                } catch (Throwable ignored) {
-                }
+                // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
+                String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, upperLimit);
+                writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage));
                 return false;
             }
 
@@ -368,7 +365,7 @@ public class SlidingWindowService {
                     });
                 }
 
-            } catch (Throwable e) {
+            } catch (IOException e) {
                 writeRecordTask.future().completeExceptionally(e);
                 LOGGER.error(String.format("write task has exception. write offset: [%d]", writeRecordTask.startOffset()), e);
             }
