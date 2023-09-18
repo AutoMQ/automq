@@ -67,13 +67,13 @@ public interface ObjectManager {
      * @param limit max object range count.
      * @return {@link S3ObjectMetadata}
      */
-    List<S3ObjectMetadata> getObjects(long streamId, long startOffset, long endOffset, int limit);
+    CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
      * Get current server wal objects.
      * When server is starting, wal need server wal objects to recover.
      */
-    List<S3ObjectMetadata> getServerObjects();
+    CompletableFuture<List<S3ObjectMetadata>> getServerObjects();
 
     /**
      * Get stream objects by stream range.
@@ -88,6 +88,6 @@ public interface ObjectManager {
      * @param limit max object count.
      * @return {@link S3ObjectMetadata}
      */
-    List<S3ObjectMetadata> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
+    CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
 }
 

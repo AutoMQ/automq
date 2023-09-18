@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -80,12 +81,12 @@ public class DefaultS3BlockCacheTest {
         objectWriter.close();
         S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL);
 
-        when(objectManager.getObjects(eq(233L), eq(11L), eq(60L), eq(2))).thenReturn(List.of(
+        when(objectManager.getObjects(eq(233L), eq(11L), eq(60L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(
                 metadata1, metadata2
-        ));
-        when(objectManager.getObjects(eq(233L), eq(40L), eq(60L), eq(2))).thenReturn(List.of(
+        )));
+        when(objectManager.getObjects(eq(233L), eq(40L), eq(60L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(
                 metadata3
-        ));
+        )));
 
         ReadDataBlock rst = s3BlockCache.read(233L, 11L, 60L, 10000).get(3, TimeUnit.SECONDS);
         assertEquals(5, rst.getRecords().size());
@@ -112,14 +113,14 @@ public class DefaultS3BlockCacheTest {
         objectWriter.close();
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL);
 
-        when(objectManager.getObjects(eq(233L), eq(10L), eq(11L), eq(2))).thenReturn(List.of(metadata1));
+        when(objectManager.getObjects(eq(233L), eq(10L), eq(11L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata1)));
 
         s3BlockCache.read(233L, 10L, 11L, 10000).get();
         // range read index and range read data
         verify(s3Operator, times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), anyLong(), anyLong(), any());
         verify(s3Operator, times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), anyLong(), anyLong(), any());
         // trigger readahead
-        when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(List.of(metadata2));
+        when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata2)));
         s3BlockCache.read(233L, 15L, 16L, 10000).get();
         verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), anyLong(), anyLong(), any());
     }
