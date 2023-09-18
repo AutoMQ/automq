@@ -126,7 +126,7 @@ public class BlockWALService implements WriteAheadLog {
     private synchronized void flushWALHeader() throws IOException {
         long position = writeHeaderRoundTimes.getAndIncrement() % WAL_HEADER_COUNT * WAL_HEADER_CAPACITY;
         try {
-            walHeaderCoreData.setLastWriteTimestamp(System.currentTimeMillis());
+            walHeaderCoreData.setLastWriteTimestamp(System.nanoTime());
             long trimOffset = walHeaderCoreData.getTrimOffset();
             this.walChannel.write(walHeaderCoreData.marshal(), position);
             walHeaderCoreData.setFlushedTrimOffset(trimOffset);
@@ -455,7 +455,7 @@ public class BlockWALService implements WriteAheadLog {
         private final AtomicLong slidingWindowMaxLengthPos6 = new AtomicLong(0);
         private int magicCodePos0 = WAL_HEADER_MAGIC_CODE;
         private long capacityPos1;
-        private long lastWriteTimestampPos3 = System.currentTimeMillis();
+        private long lastWriteTimestampPos3 = System.nanoTime();
         private ShutdownType shutdownTypePos7 = ShutdownType.UNGRACEFULLY;
         private int crcPos8;
 
@@ -568,7 +568,17 @@ public class BlockWALService implements WriteAheadLog {
 
         @Override
         public String toString() {
-            return "WALHeader{" + "magicCode=" + magicCodePos0 + ", capacity=" + capacityPos1 + ", trimOffset=" + trimOffsetPos2 + ", lastWriteTimestamp=" + lastWriteTimestampPos3 + ", nextWriteOffset=" + slidingWindowNextWriteOffsetPos4 + ", slidingWindowMaxLength=" + slidingWindowMaxLengthPos6 + ", shutdownType=" + shutdownTypePos7 + ", crc=" + crcPos8 + '}';
+            return "WALHeader{"
+                    + "magicCode=" + magicCodePos0
+                    + ", capacity=" + capacityPos1
+                    + ", trimOffset=" + trimOffsetPos2
+                    + ", lastWriteTimestamp=" + lastWriteTimestampPos3
+                    + ", nextWriteOffset=" + slidingWindowNextWriteOffsetPos4
+                    + ", slidingWindowStartOffset=" + slidingWindowStartOffsetPos5
+                    + ", slidingWindowMaxLength=" + slidingWindowMaxLengthPos6
+                    + ", shutdownType=" + shutdownTypePos7
+                    + ", crc=" + crcPos8
+                    + '}';
         }
 
         private ByteBuffer marshalHeaderExceptCRC() {
