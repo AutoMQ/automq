@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import kafka.log.s3.wal.util.ThreadFactoryImpl;
 import kafka.log.s3.wal.util.WALChannel;
 import kafka.log.s3.wal.util.WALUtil;
+import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -610,6 +611,16 @@ public class BlockWALService implements WriteAheadLog {
 
         BlockWALServiceBuilder(String blockDevicePath) {
             this.blockDevicePath = blockDevicePath;
+        }
+
+        public BlockWALServiceBuilder config(KafkaConfig config) {
+            return this.capacity(config.s3WALCapacity())
+                    .flushHeaderIntervalSeconds(config.s3WALHeaderFlushIntervalSeconds())
+                    .ioThreadNums(config.s3WALThread())
+                    .slidingWindowInitialSize(config.s3WALWindowInitial())
+                    .slidingWindowScaleUnit(config.s3WALWindowIncrement())
+                    .slidingWindowUpperLimit(config.s3WALWindowMax())
+                    .writeQueueCapacity(config.s3WALQueue());
         }
 
         public BlockWALServiceBuilder capacity(long blockDeviceCapacityWant) {
