@@ -89,6 +89,9 @@ public final class S3StreamsMetadataImage {
             if (inRangeObjects == InRangeObjects.INVALID) {
                 break;
             }
+            if (inRangeObjects.objects().isEmpty()) {
+                throw new IllegalStateException("[BUG] expect getObjects return objects from " + rangeSearcher);
+            }
             realEndOffset = inRangeObjects.endOffset();
             objects.addAll(inRangeObjects.objects());
             limit -= inRangeObjects.objects().size();
@@ -248,6 +251,15 @@ public final class S3StreamsMetadataImage {
             return new InRangeObjects(streamId, startOffset, nextStartOffset, inRangeObjects);
         }
 
+        @Override
+        public String toString() {
+            return "RangeSearcher{" +
+                    "startOffset=" + startOffset +
+                    ", endOffset=" + endOffset +
+                    ", streamId=" + streamId +
+                    ", brokerId=" + brokerId +
+                    '}';
+        }
     }
 
     static class S3ObjectMetadataWrapper {

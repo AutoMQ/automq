@@ -148,11 +148,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
         CompletableFuture<List<CompletableFuture<ObjectReader.DataBlock>>> getDataCf = findIndexCf.thenCompose(blockIndexes -> {
             List<CompletableFuture<ObjectReader.DataBlock>> blockCfList = blockIndexes.stream().map(context.reader::read).collect(Collectors.toList());
             CompletableFuture<Void> allBlockCf = CompletableFuture.allOf(blockCfList.toArray(new CompletableFuture[0]));
-            return allBlockCf.thenApply(nil -> {
-                context.reader.release();
-                context.reader = null;
-                return blockCfList;
-            });
+            return allBlockCf.thenApply(nil -> blockCfList);
+        });
+        getDataCf.whenComplete((rst, ex) -> {
+            context.reader.release();
+            context.reader = null;
         });
         return getDataCf.thenComposeAsync(blockCfList -> {
             try {
