@@ -1,0 +1,26 @@
+name: Nightly E2E tests
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  run_e2e:
+    name: "Run E2E tests"
+    runs-on: [ self-hosted ]
+    env:
+      TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
+      ESK_TEST_YML: "tests/kos_test_suite.yml"
+    defaults:
+      run:
+        working-directory: /data/github-actions
+    strategy:
+      matrix:
+        jdk: [ 17 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Show env info
+        run : echo "ESK_TEST_YML=$ESK_TEST_YML"
+      - name: Run E2E tests
+        run: bash ./tests/run_tests.sh
