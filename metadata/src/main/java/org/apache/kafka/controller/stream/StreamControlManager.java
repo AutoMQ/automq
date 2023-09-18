@@ -18,6 +18,7 @@
 package org.apache.kafka.controller.stream;
 
 import java.util.HashMap;
+import java.util.stream.Stream;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -88,6 +89,9 @@ public class StreamControlManager {
         private final TimelineLong currentEpoch;
         // rangeIndex, when created but not open, there is no range, use -1 represent
         private final TimelineInteger currentRangeIndex;
+        /**
+         * The visible start offset of stream, it may be larger than the start offset of current range.
+         */
         private final TimelineLong startOffset;
         private final TimelineObject<StreamState> currentState;
         private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
@@ -463,18 +467,23 @@ public class StreamControlManager {
             if (newStartOffset <= range.startOffset()) {
                 return;
             }
+            if (rangeIndex == streamMetadata.currentRangeIndex()) {
+                // current range, update start offset
+                // if current range is [50, 100)
+                // 1. try to trim to 60, then current range will be [60, 100)
+                // 2. try to trim to 100, then current range will be [100, 100)
+                // 3. try to trim to 110, then current range will be [100, 100)
+                long newRangeStartOffset = newStartOffset < range.endOffset() ? newStartOffset : range.endOffset();
+                records.add(new ApiMessageAndVersion(new RangeRecord()
+                    .setStreamId(streamId)
+                    .setRangeIndex(rangeIndex)
+                    .setBrokerId(range.brokerId())
+                    .setEpoch(range.epoch())
+                    .setStartOffset(newRangeStartOffset)
+                    .setEndOffset(range.endOffset()), (short) 0));
+                return;
+            }
             if (newStartOffset >= range.endOffset()) {
-                if (rangeIndex == streamMetadata.currentRangeIndex()) {
-                    // update current range's start offset and end offset
-                    records.add(new ApiMessageAndVersion(new RangeRecord()
-                        .setStreamId(streamId)
-                        .setRangeIndex(rangeIndex)
-                        .setBrokerId(range.brokerId())
-                        .setEpoch(range.epoch())
-                        .setStartOffset(newStartOffset)
-                        .setEndOffset(newStartOffset), (short) 0));
-                    return;
-                }
                 // remove range
                 records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
                         .setStreamId(streamId)
@@ -514,7 +523,7 @@ public class StreamControlManager {
                 records.addAll(markDestroyResult.records());
             }
         });
-        // remove wal object or update wal object's stream range start offset
+        // remove wal object or remove stream range in wal object
         // TODO: optimize
         this.brokersMetadata.values()
             .stream()
@@ -558,6 +567,53 @@ public class StreamControlManager {
     }
 
     /**
+     * Check whether these stream-offset-ranges can be committed to advance the streams' offset
+     * <p>
+     *     <ul>
+     *         <li>
+     *             <code>Stream Exist Check</code>
+     *         </li>
+     *         <li>
+     *             <code>Stream Open Check</code>
+     *         </li>
+     *         <li>
+     *             <code>Stream Continuity Check</code>
+     *         </li>
+     *     <ul/>
+     */
+    private Errors streamAdvanceCheck(List<StreamOffsetRange> ranges) {
+        if (ranges == null || ranges.isEmpty()) {
+            return Errors.NONE;
+        }
+        for (StreamOffsetRange range : ranges) {
+            // verify stream exist
+            if (!this.streamsMetadata.containsKey(range.getStreamId())) {
+                log.warn("[StreamContinuityCheck]: stream {} not exist", range.getStreamId());
+                return Errors.STREAM_NOT_EXIST;
+            }
+            // check if this stream open
+            if (this.streamsMetadata.get(range.getStreamId()).currentState() != StreamState.OPENED) {
+                log.warn("[StreamContinuityCheck]: stream {} not opened", range.getStreamId());
+                return Errors.STREAM_NOT_OPENED;
+            }
+            RangeMetadata rangeMetadata = this.streamsMetadata.get(range.getStreamId()).currentRangeMetadata();
+            if (rangeMetadata == null) {
+                // should not happen
+                log.error("[StreamContinuityCheck]: stream {}'s current range {} not exist when stream has been ",
+                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex());
+                return Errors.STREAM_INNER_ERROR;
+            }
+            if (rangeMetadata.endOffset() != range.getStartOffset()) {
+                log.warn("[StreamContinuityCheck]: stream {}'s current range {}'s end offset {} is not equal to request start offset {}",
+                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex(),
+                        rangeMetadata.endOffset(), range.getStartOffset());
+                return Errors.OFFSET_NOT_MATCHED;
+            }
+        }
+        return Errors.NONE;
+    }
+
+    /**
      * Commit wal object.
      * <p>
      * <b>Response Errors Enum:</b>
@@ -587,6 +643,24 @@ public class StreamControlManager {
         List<Long> compactedObjectIds = data.compactedObjectIds();
         List<StreamObject> streamObjects = data.streamObjects();
         long committedTs = System.currentTimeMillis();
+
+        if (compactedObjectIds == null || compactedObjectIds.isEmpty()) {
+            // verify stream continuity
+            List<StreamOffsetRange> offsetRanges = Stream.concat(
+                    streamRanges
+                        .stream()
+                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
+                    streamObjects
+                        .stream()
+                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
+                .collect(Collectors.toList());
+            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges);
+            if (continuityCheckResult != Errors.NONE) {
+                log.error("[CommitWALObject]: stream: {} advance check failed, error: {}", offsetRanges, continuityCheckResult);
+                resp.setErrorCode(continuityCheckResult.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
+        }
 
         // commit object
         ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
