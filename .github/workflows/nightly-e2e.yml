@@ -11,9 +11,13 @@ jobs:
     env:
       TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
       ESK_TEST_YML: "tests/kos_test_suite.yml"
-      GITHUB_WORKSPACE: "/data/github-actions"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Clean last run results
+        run: |
+          rm -rf results
       - name: Run E2E tests
-        run: bash ./tests/run_tests.sh
+        run: bash ./tests/docker/run_tests.sh
+      - name: Bring down dockers
+        run: bash ./tests/docker/ducker-ak down
