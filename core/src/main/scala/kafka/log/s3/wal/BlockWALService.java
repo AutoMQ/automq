@@ -425,6 +425,10 @@ public class BlockWALService implements WriteAheadLog {
 
         walHeaderCoreData.updateTrimOffset(offset);
         return CompletableFuture.runAsync(() -> {
+            // TODO: more beautiful
+            this.walHeaderCoreData.setSlidingWindowStartOffset(slidingWindowService.getWindowCoreData().getWindowStartOffset().get());
+            this.walHeaderCoreData.setSlidingWindowNextWriteOffset(slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get());
+            this.walHeaderCoreData.setSlidingWindowMaxLength(slidingWindowService.getWindowCoreData().getWindowMaxLength().get());
             try {
                 flushWALHeader();
             } catch (IOException e) {
