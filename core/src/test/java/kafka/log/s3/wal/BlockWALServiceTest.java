@@ -280,4 +280,19 @@ class BlockWALServiceTest {
             wal.shutdownGracefully();
         }
     }
+
+    @Test
+    void testWindowGreaterThanCapacity() throws IOException, OverCapacityException {
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
+                .capacity(WALUtil.BLOCK_SIZE * 3L)
+                .slidingWindowUpperLimit(WALUtil.BLOCK_SIZE * 4L)
+                .build()
+                .start();
+        try {
+            append(wal, 42);
+            assertThrows(OverCapacityException.class, () -> append(wal, 42));
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
 }

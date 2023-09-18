@@ -276,7 +276,7 @@ public class BlockWALService implements WriteAheadLog {
         } else {
             walHeaderCoreData = new WALHeaderCoreData()
                     .setCapacity(walChannel.capacity())
-                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, initialWindowSize))
+                    .setSlidingWindowMaxLength(initialWindowSize)
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
@@ -663,6 +663,11 @@ public class BlockWALService implements WriteAheadLog {
 
             // make blockDeviceCapacityWant align to BLOCK_SIZE
             blockDeviceCapacityWant = blockDeviceCapacityWant / WALUtil.BLOCK_SIZE * WALUtil.BLOCK_SIZE;
+
+            // make sure window size is less than capacity
+            slidingWindowInitialSize = Math.min(slidingWindowInitialSize, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
+            slidingWindowUpperLimit = Math.min(slidingWindowUpperLimit, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
+
             blockWALService.blockDeviceCapacityWant = blockDeviceCapacityWant;
             blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
             blockWALService.initialWindowSize = slidingWindowInitialSize;
