@@ -1527,17 +1527,17 @@ object KafkaConfig {
       .define(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG, INT, Defaults.QuorumRetryBackoffMs, null, LOW, RaftConfig.QUORUM_RETRY_BACKOFF_MS_DOC)
 
     // elastic stream inject start
-    /** ********* Elastic stream Configuration *********/
+      /** ********* Elastic stream Configuration ******** */
       .define(ElasticStreamEnableProp, BOOLEAN, false, HIGH, ElasticStreamEnableDoc)
       .define(ElasticStreamEndpointProp, STRING, null, HIGH, ElasticStreamEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
-    // elastic stream inject end
+      // elastic stream inject end
 
-    // Kafka on S3 inject start
+      // Kafka on S3 inject start
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
-      .define(S3WALPathProp, STRING, null, HIGH, S3WALPathProp)
+      .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, 1073741824L, MEDIUM, S3WALCacheSizeDoc)
       .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
       .define(S3WALObjectSizeProp, LONG, 524288000L, MEDIUM, S3WALObjectSizeDoc)
