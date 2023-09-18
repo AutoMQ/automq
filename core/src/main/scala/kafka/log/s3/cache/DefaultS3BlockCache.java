@@ -41,6 +41,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static kafka.log.es.FutureUtil.exec;
 import static kafka.log.es.FutureUtil.failedFuture;
 import static kafka.log.es.FutureUtil.propagate;
 import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
@@ -50,15 +51,15 @@ public class DefaultS3BlockCache implements S3BlockCache {
     private final LRUCache<Long, ObjectReader> objectReaderLRU = new LRUCache<>();
     private final Map<ReadingTaskKey, CompletableFuture<?>> readaheadTasks = new ConcurrentHashMap<>();
     private final BlockCache cache;
-    private final ExecutorService backgroundExectutor;
+    private final ExecutorService mainExecutor;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
 
     public DefaultS3BlockCache(long cacheBytesSize, ObjectManager objectManager, S3Operator s3Operator) {
         this.cache = new BlockCache(cacheBytesSize);
-        this.backgroundExectutor = Threads.newFixedThreadPool(
-                1,
-                ThreadUtils.createThreadFactory("s3-block-cache-background-%d", false),
+        this.mainExecutor = Threads.newFixedThreadPool(
+                2,
+                ThreadUtils.createThreadFactory("s3-block-cache-main-%d", false),
                 LOGGER);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -66,7 +67,12 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return read0(streamId, startOffset, endOffset, maxBytes, true);
+        CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
+        // submit read task to mainExecutor to avoid read slower the caller thread.
+        mainExecutor.execute(() -> exec(() ->
+                propagate(read0(streamId, startOffset, endOffset, maxBytes, true), readCf), readCf, LOGGER, "read")
+        );
+        return readCf;
     }
 
     public CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, boolean awaitReadahead) {
@@ -101,14 +107,15 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
         ReadContext context = new ReadContext(Collections.emptyList(), nextStartOffset, nextMaxBytes);
         CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextStartOffset, endOffset, 2);
-        return getObjectsCf.thenCompose(objects -> {
+        return getObjectsCf.thenComposeAsync(objects -> {
             context.objects = objects;
-            return readFromS3(streamId, endOffset, context).thenApply(s3Rst -> {
-                List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
-                records.addAll(s3Rst.getRecords());
-                return new ReadDataBlock(records);
-            });
-        });
+            return readFromS3(streamId, endOffset, context)
+                    .thenApply(s3Rst -> {
+                        List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
+                        records.addAll(s3Rst.getRecords());
+                        return new ReadDataBlock(records);
+                    });
+        }, mainExecutor);
     }
 
     @Override
@@ -144,9 +151,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
             return allBlockCf.thenApply(nil -> {
                 context.reader.release();
                 context.reader = null;
-                return blockCfList; });
+                return blockCfList;
+            });
         });
-        return getDataCf.thenCompose(blockCfList -> {
+        return getDataCf.thenComposeAsync(blockCfList -> {
             try {
                 long nextStartOffset = context.nextStartOffset;
                 int nextMaxBytes = context.nextMaxBytes;
@@ -188,11 +196,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
             } catch (Throwable e) {
                 return failedFuture(e);
             }
-        });
+        }, mainExecutor);
     }
 
     private void backgroundReadahead(long streamId, BlockCache.Readahead readahead) {
-        backgroundExectutor.execute(() -> {
+        mainExecutor.execute(() -> {
             CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, readahead.getStartOffset(), NOOP_OFFSET, 2);
             getObjectsCf.thenAccept(objects -> {
                 if (objects.isEmpty()) {
