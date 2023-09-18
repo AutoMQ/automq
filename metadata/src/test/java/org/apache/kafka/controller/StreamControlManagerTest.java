@@ -778,8 +778,32 @@ public class StreamControlManagerTest {
         assertEquals(1, s3WALObject.offsetRanges().size());
         range = s3WALObject.offsetRanges().get(STREAM0);
         assertNotNull(range);
-        assertEquals(60, range.getStartOffset());
+        assertEquals(40, range.getStartOffset());
         assertEquals(70, range.getEndOffset());
+
+        // 7. trim stream0 to [100, ..)
+        trimRequest = new TrimStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setBrokerId(BROKER1)
+            .setNewStartOffset(100);
+        result1 = manager.trimStream(trimRequest);
+        assertEquals(Errors.NONE.code(), result1.response().errorCode());
+        replay(manager, result1.records());
+
+        // 8. verify
+        streamMetadata = manager.streamsMetadata().get(STREAM0);
+        assertEquals(100, streamMetadata.startOffset());
+        assertEquals(1, streamMetadata.ranges().size());
+        rangeMetadata = streamMetadata.currentRangeMetadata();
+        assertEquals(1, rangeMetadata.rangeIndex());
+        assertEquals(100, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.endOffset());
+        assertEquals(0, streamMetadata.streamObjects().size());
+        broker0Metadata = manager.brokersMetadata().get(BROKER0);
+        assertEquals(1, broker0Metadata.walObjects().size());
+        broker1Metadata = manager.brokersMetadata().get(BROKER1);
+        assertEquals(0, broker1Metadata.walObjects().size());
     }
 
     private void mockTrimStreamMetadata() {
