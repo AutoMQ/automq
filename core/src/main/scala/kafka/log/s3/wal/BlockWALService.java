@@ -76,23 +76,15 @@ public class BlockWALService implements WriteAheadLog {
     public static final int WAL_HEADER_COUNT = 2;
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_TOTAL_CAPACITY = WAL_HEADER_CAPACITY * WAL_HEADER_COUNT;
-    public static final int WAL_HEADER_FLUSH_INTERVAL_SECONDS = 10;
-    public static final long WAL_HEADER_INIT_WINDOW_MAX_LENGTH = 1024 * 1024;
+    private int walHeaderFlushIntervalSeconds;
+    private long initialWindowSize;
     private final AtomicBoolean readyToServe = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private ScheduledExecutorService flushWALHeaderScheduler;
-    private String blockDevicePath;
-    private int ioThreadNums;
     private long blockDeviceCapacityWant;
     private WALChannel walChannel;
     private SlidingWindowService slidingWindowService;
     private WALHeaderCoreData walHeaderCoreData;
-
-    private void init() {
-        this.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
-
-        this.slidingWindowService = new SlidingWindowService(ioThreadNums, walChannel);
-    }
 
     private void startFlushWALHeaderScheduler() {
         this.flushWALHeaderScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
@@ -106,7 +98,7 @@ public class BlockWALService implements WriteAheadLog {
             } catch (IOException e) {
                 LOGGER.error("failed to flush WAL header scheduled", e);
             }
-        }, WAL_HEADER_FLUSH_INTERVAL_SECONDS, WAL_HEADER_FLUSH_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        }, walHeaderFlushIntervalSeconds, walHeaderFlushIntervalSeconds, TimeUnit.SECONDS);
     }
 
     @Deprecated
@@ -283,7 +275,7 @@ public class BlockWALService implements WriteAheadLog {
         } else {
             walHeaderCoreData = new WALHeaderCoreData()
                     .setCapacity(walChannel.capacity())
-                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, WAL_HEADER_INIT_WINDOW_MAX_LENGTH))
+                    .setSlidingWindowMaxLength(Math.min(blockDeviceCapacityWant, initialWindowSize))
                     .setShutdownType(ShutdownType.UNGRACEFULLY);
             LOGGER.info("recoverWALHeader failed, no available walHeader, Initialize with a complete new wal");
         }
@@ -297,7 +289,6 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public WriteAheadLog start() throws IOException {
-        init();
         walChannel.open();
         recoverWALHeader();
         startFlushWALHeaderScheduler();
@@ -608,20 +599,17 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     public static class BlockWALServiceBuilder {
-        private int ioThreadNums = Integer.parseInt(System.getProperty(
-                "automq.ebswal.ioThreadNums",
-                "8"
-        ));
         private final String blockDevicePath;
         private long blockDeviceCapacityWant = 0;
+        private int flushHeaderIntervalSeconds = 10;
+        private int ioThreadNums = 8;
+        private long slidingWindowInitialSize = 1 << 20;
+        private long slidingWindowUpperLimit = 512 << 20;
+        private long slidingWindowScaleUnit = 4 << 20;
+        private int writeQueueCapacity = 10000;
 
         BlockWALServiceBuilder(String blockDevicePath) {
             this.blockDevicePath = blockDevicePath;
-        }
-
-        public BlockWALServiceBuilder ioThreadNums(int ioThreadNums) {
-            this.ioThreadNums = ioThreadNums;
-            return this;
         }
 
         public BlockWALServiceBuilder capacity(long blockDeviceCapacityWant) {
@@ -629,12 +617,55 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
+        public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {
+            this.flushHeaderIntervalSeconds = flushHeaderIntervalSeconds;
+            return this;
+        }
+
+        public BlockWALServiceBuilder ioThreadNums(int ioThreadNums) {
+            this.ioThreadNums = ioThreadNums;
+            return this;
+        }
+
+        public BlockWALServiceBuilder slidingWindowInitialSize(long slidingWindowInitialSize) {
+            this.slidingWindowInitialSize = slidingWindowInitialSize;
+            return this;
+        }
+
+        public BlockWALServiceBuilder slidingWindowUpperLimit(long slidingWindowUpperLimit) {
+            this.slidingWindowUpperLimit = slidingWindowUpperLimit;
+            return this;
+        }
+
+        public BlockWALServiceBuilder slidingWindowScaleUnit(long slidingWindowScaleUnit) {
+            this.slidingWindowScaleUnit = slidingWindowScaleUnit;
+            return this;
+        }
+
+        public BlockWALServiceBuilder writeQueueCapacity(int writeQueueCapacity) {
+            this.writeQueueCapacity = writeQueueCapacity;
+            return this;
+        }
+
         public BlockWALService build() {
             BlockWALService blockWALService = new BlockWALService();
-            blockWALService.blockDevicePath = this.blockDevicePath;
-            blockWALService.ioThreadNums = this.ioThreadNums;
+
             // make blockDeviceCapacityWant align to BLOCK_SIZE
-            blockWALService.blockDeviceCapacityWant = blockDeviceCapacityWant / WALUtil.BLOCK_SIZE * WALUtil.BLOCK_SIZE;
+            blockDeviceCapacityWant = blockDeviceCapacityWant / WALUtil.BLOCK_SIZE * WALUtil.BLOCK_SIZE;
+            blockWALService.blockDeviceCapacityWant = blockDeviceCapacityWant;
+            blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
+            blockWALService.initialWindowSize = slidingWindowInitialSize;
+
+            blockWALService.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
+
+            blockWALService.slidingWindowService = new SlidingWindowService(
+                    blockWALService.walChannel,
+                    ioThreadNums,
+                    slidingWindowUpperLimit,
+                    slidingWindowScaleUnit,
+                    writeQueueCapacity
+            );
+
             return blockWALService;
         }
     }

@@ -37,7 +37,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_INIT_WINDOW_MAX_LENGTH;
 import static kafka.log.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static kafka.log.s3.wal.WriteAheadLog.AppendResult;
 import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
@@ -51,8 +50,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 class BlockWALServiceTest {
 
-    private static final int IO_THREAD_NUMS = 4;
-
     @BeforeEach
     void setUp() {
     }
@@ -63,14 +60,13 @@ class BlockWALServiceTest {
 
     @Test
     void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
-        // Set to WAL_HEADER_INIT_WINDOW_MAX_LENGTH to trigger window scale
-        final int recordSize = (int) WAL_HEADER_INIT_WINDOW_MAX_LENGTH + 1;
+        final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_TOTAL_CAPACITY;
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
+                .slidingWindowInitialSize(0)
                 .build()
                 .start();
         try {
@@ -101,7 +97,6 @@ class BlockWALServiceTest {
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
         try {
@@ -157,7 +152,6 @@ class BlockWALServiceTest {
 
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
                 .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
         ExecutorService executorService = Executors.newFixedThreadPool(nThreadNums);
@@ -241,7 +235,6 @@ class BlockWALServiceTest {
         // Append records
         final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath)
                 .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
         List<Long> appended = append(previousWAL, recordSize, recordNums);
@@ -252,7 +245,6 @@ class BlockWALServiceTest {
         // Recover records
         final WriteAheadLog wal = BlockWALService.builder(tempFilePath)
                 .capacity(blockDeviceCapacity)
-                .ioThreadNums(IO_THREAD_NUMS)
                 .build()
                 .start();
         try {

@@ -50,30 +50,24 @@ import static kafka.log.s3.wal.WriteAheadLog.OverCapacityException;
  */
 public class SlidingWindowService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
-    private static final long SLIDING_WINDOW_UPPER_LIMIT = Long.parseLong(System.getProperty(
-            "automq.ebswal.slidingWindowUpperLimit",
-            String.valueOf(1024 * 1024 * 512)
-    ));
-    private static final long SLIDING_WINDOW_SCALE_UNIT = Long.parseLong(System.getProperty(
-            "automq.ebswal.slidingWindowScaleUnit",
-            String.valueOf(1024 * 1024 * 16)
-    ));
-    private static final int WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY = Integer.parseInt(System.getProperty(
-            "automq.ebswal.writeRecordTaskWorkQueueCapacity",
-            String.valueOf(10000)
-    ));
     private final int ioThreadNums;
+    private final long upperLimit;
+    private final long scaleUnit;
+    private final int writeRecordTaskWorkQueueCapacity;
     private final WALChannel walChannel;
     private final WindowCoreData windowCoreData = new WindowCoreData();
     private ExecutorService executorService;
 
-    public SlidingWindowService(int ioThreadNums, WALChannel walChannel) {
-        this.ioThreadNums = ioThreadNums;
+    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, int queueCapacity) {
         this.walChannel = walChannel;
+        this.ioThreadNums = ioThreadNums;
+        this.upperLimit = upperLimit;
+        this.scaleUnit = scaleUnit;
+        this.writeRecordTaskWorkQueueCapacity = queueCapacity;
     }
 
-    private static ExecutorService newCachedThreadPool(int nThreads) {
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(WRITE_RECORD_TASK_WORK_QUEUE_CAPACITY);
+    private ExecutorService newCachedThreadPool(int nThreads) {
+        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(writeRecordTaskWorkQueueCapacity);
         ThreadFactoryImpl threadFactory = new ThreadFactoryImpl("block-wal-io-thread-");
         return new ThreadPoolExecutor(1, nThreads, 1L, TimeUnit.MINUTES, workQueue, threadFactory);
     }
@@ -155,11 +149,11 @@ public class SlidingWindowService {
         long newWindowSize = newWindowEndOffset - windowCoreData.getWindowStartOffset().get();
 
         if (newWindowSize > windowCoreData.getWindowMaxLength().get()) {
-            long newSlidingWindowMaxLength = newWindowSize + SLIDING_WINDOW_SCALE_UNIT;
-            if (newSlidingWindowMaxLength > SLIDING_WINDOW_UPPER_LIMIT) {
+            long newSlidingWindowMaxLength = newWindowSize + scaleUnit;
+            if (newSlidingWindowMaxLength > upperLimit) {
                 try {
                     // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
-                    String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, SLIDING_WINDOW_UPPER_LIMIT);
+                    String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, upperLimit);
                     writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage));
                 } catch (Throwable ignored) {
                 }
@@ -267,7 +261,7 @@ public class SlidingWindowService {
         }
     }
 
-    public static class WindowCoreData {
+    public class WindowCoreData {
         private final Lock treeMapIOTaskRequestLock = new ReentrantLock();
         private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<>();
         private final AtomicLong windowMaxLength = new AtomicLong(0);
@@ -324,7 +318,7 @@ public class SlidingWindowService {
                 }
 
                 // 滑动窗口大小不能超过 RecordSection 的总大小
-                if (newWindowMaxLength > SLIDING_WINDOW_UPPER_LIMIT) {
+                if (newWindowMaxLength > upperLimit) {
                     return;
                 }
 
