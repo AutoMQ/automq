@@ -89,12 +89,13 @@ public class BlockWALService implements WriteAheadLog {
     private WALHeaderCoreData walHeaderCoreData;
 
     private void init() {
-        this.flushWALHeaderScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
-
         this.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
 
         this.slidingWindowService = new SlidingWindowService(ioThreadNums, walChannel);
+    }
 
+    private void startFlushWALHeaderScheduler() {
+        this.flushWALHeaderScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("block-wal-scheduled-thread-"));
         this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> {
             try {
                 BlockWALService.this.flushWALHeader(
@@ -296,6 +297,7 @@ public class BlockWALService implements WriteAheadLog {
         init();
         walChannel.open();
         recoverWALHeader();
+        startFlushWALHeaderScheduler();
         slidingWindowService.start();
         readyToServe.set(true);
         return this;
