@@ -52,6 +52,10 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
         return endOffset;
     }
 
+    public boolean intersect(long startOffset) {
+        return startOffset >= this.startOffset && startOffset <= this.endOffset;
+    }
+
     @Override
     public int compareTo(StreamOffsetRange o) {
         int res = Long.compare(this.streamId, o.streamId);

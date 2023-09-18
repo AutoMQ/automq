@@ -23,8 +23,6 @@ import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -287,10 +285,11 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testCompactionPlansWithInvalidObject() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100, s3Operator);
-        List<S3WALObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
-        s3ObjectMetadata.add(new S3WALObjectMetadata(new S3WALObject(100, 0, Map.of(
-                STREAM_2, new StreamOffsetRange(STREAM_2, 1000, 1200)
-        ), 0), new S3ObjectMetadata(100, 0, S3ObjectType.WAL)));
+        List<S3ObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
+        s3ObjectMetadata.add(
+                new S3ObjectMetadata(100, S3ObjectType.WAL,
+                        List.of(new StreamOffsetRange(STREAM_2, 1000, 1200)), System.currentTimeMillis(),
+                        System.currentTimeMillis(), 512, 100));
         List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(s3ObjectMetadata);
         checkCompactionPlan2(compactionPlans);
     }

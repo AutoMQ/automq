@@ -23,7 +23,7 @@ import kafka.log.s3.compact.objects.CompactionType;
 import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.operator.S3Operator;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -54,7 +54,7 @@ public class CompactionAnalyzer {
         this.s3Operator = s3Operator;
     }
 
-    public List<CompactionPlan> analyze(List<S3WALObjectMetadata> objectMetadataList) {
+    public List<CompactionPlan> analyze(List<S3ObjectMetadata> objectMetadataList) {
         if (objectMetadataList.isEmpty()) {
             return new ArrayList<>();
         }
@@ -142,7 +142,7 @@ public class CompactionAnalyzer {
         return new CompactionPlan(new ArrayList<>(compactedObjects), streamDataBlockMap);
     }
 
-    public List<CompactedObjectBuilder> buildCompactedObjects(List<S3WALObjectMetadata> objects) {
+    public List<CompactedObjectBuilder> buildCompactedObjects(List<S3ObjectMetadata> objects) {
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objects, s3Operator);
         Map<Long, List<StreamDataBlock>> filteredMap = filterBlocksToCompact(streamDataBlocksMap);
         this.logger.info("{} WAL objects to compact after filter", filteredMap.size());

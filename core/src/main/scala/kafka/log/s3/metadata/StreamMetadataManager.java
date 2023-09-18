@@ -31,7 +31,6 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
@@ -101,13 +100,15 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
     }
 
-    public List<S3WALObjectMetadata> getWALObjects() {
+    public List<S3ObjectMetadata> getWALObjects() {
         synchronized (this) {
             return this.streamsImage.getWALObjects(config.brokerId()).stream()
-                    .map(walObject -> {
-                        S3Object s3Object = this.objectsImage.getObjectMetadata(walObject.objectId());
-                        S3ObjectMetadata metadata = new S3ObjectMetadata(walObject.objectId(), s3Object.getObjectSize(), walObject.objectType());
-                        return new S3WALObjectMetadata(walObject, metadata);
+                    .map(object -> {
+                        S3Object s3Object = this.objectsImage.getObjectMetadata(object.objectId());
+                        return new S3ObjectMetadata(object.objectId(), object.objectType(),
+                                new ArrayList<>(object.offsetRanges().values()), object.dataTimeInMs(),
+                                s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
+                                object.orderId());
                     })
                     .collect(Collectors.toList());
         }
