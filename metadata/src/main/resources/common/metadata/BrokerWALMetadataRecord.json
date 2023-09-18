@@ -24,7 +24,13 @@
       "name": "BrokerId",
       "type": "int32",
       "versions": "0+",
-      "about": "The Broker ID"
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
     }
   ]
 }

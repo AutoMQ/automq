@@ -22,7 +22,6 @@ import kafka.log.s3.objects.CommitWALObjectRequest;
 import kafka.log.s3.objects.CommitWALObjectResponse;
 import kafka.log.s3.objects.ObjectManager;
 import kafka.log.s3.objects.ObjectStreamRange;
-import kafka.log.s3.objects.OpenStreamMetadata;
 import kafka.log.s3.streams.StreamManager;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.common.errors.s3.StreamNotClosedException;
@@ -284,7 +283,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public CompletableFuture<OpenStreamMetadata> openStream(long streamId, long epoch) {
+    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
         return this.submitEvent(() -> {
             // TODO: all task should wrapped with try catch to avoid future is forgot to complete
             // verify stream exist
@@ -299,7 +298,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             if (streamMetadata.epoch == epoch) {
                 if (streamMetadata.state == StreamState.OPENED) {
                     // duplicate open
-                    return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
+                    return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
                 }
                 if (streamMetadata.state == StreamState.CLOSED) {
                     // stream is closed, can't open again at same epoch
@@ -313,7 +312,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             // update epoch
             streamMetadata.epoch = epoch;
             streamMetadata.state = StreamState.OPENED;
-            return new OpenStreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset);
+            return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
         });
     }
 

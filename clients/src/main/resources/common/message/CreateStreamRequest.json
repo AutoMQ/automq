@@ -24,5 +24,17 @@
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
+    {
+      "name": "BrokerId",
+      "type": "int32",
+      "versions": "0+",
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
+    }
   ]
 }

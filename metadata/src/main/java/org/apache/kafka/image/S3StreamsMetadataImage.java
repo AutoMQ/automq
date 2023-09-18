@@ -89,6 +89,9 @@ public final class S3StreamsMetadataImage {
             if (inRangeObjects == InRangeObjects.INVALID) {
                 break;
             }
+            if (inRangeObjects.objects().isEmpty()) {
+                throw new IllegalStateException("[BUG] expect getObjects return objects from " + rangeSearcher);
+            }
             realEndOffset = inRangeObjects.endOffset();
             objects.addAll(inRangeObjects.objects());
             limit -= inRangeObjects.objects().size();
@@ -132,7 +135,7 @@ public final class S3StreamsMetadataImage {
         if (wal == null) {
             return Collections.emptyList();
         }
-        return wal.getWalObjects().list();
+        return wal.orderList();
     }
 
     private List<RangeSearcher> rangeSearchers(long streamId, long startOffset, long endOffset) {
@@ -170,7 +173,7 @@ public final class S3StreamsMetadataImage {
 
         private Queue<S3ObjectMetadataWrapper> rangeOfWalObjects() {
             BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
-            return wal.getWalObjects().list().stream()
+            return wal.orderList().stream()
                 .filter(obj -> obj.offsetRanges().containsKey(streamId))
                 .filter(obj -> {
                     StreamOffsetRange offsetRange = obj.offsetRanges().get(streamId);
@@ -248,6 +251,15 @@ public final class S3StreamsMetadataImage {
             return new InRangeObjects(streamId, startOffset, nextStartOffset, inRangeObjects);
         }
 
+        @Override
+        public String toString() {
+            return "RangeSearcher{" +
+                    "startOffset=" + startOffset +
+                    ", endOffset=" + endOffset +
+                    ", streamId=" + streamId +
+                    ", brokerId=" + brokerId +
+                    '}';
+        }
     }
 
     static class S3ObjectMetadataWrapper {

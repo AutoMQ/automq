@@ -25,6 +25,18 @@
   "flexibleVersions": "0+",
   "fields": [
     {
+      "name": "BrokerId",
+      "type": "int32",
+      "versions": "0+",
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
+    },
+    {
       "name": "StreamId",
       "type": "int64",
       "versions": "0+",
@@ -37,13 +49,6 @@
       "versions": "0+",
       "entityType": "streamEpoch",
       "about": "The epoch of the requesting stream in the requesting broker"
-    },
-    {
-      "name": "BrokerId",
-      "type": "int32",
-      "versions": "0+",
-      "entityType": "brokerId",
-      "about": "The id of the requesting broker"
     },
     {
       "name": "NewStartOffset",

@@ -32,14 +32,10 @@ import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3ObjectType;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
-import org.apache.kafka.metadata.stream.SortedWALObjectsList;
 import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.StreamState;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +45,6 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -111,11 +106,11 @@ public class StreamMetadataManagerTest {
                 0L, new S3StreamObject(0L, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
 
-        BrokerS3WALMetadataImage walMetadataImage0 = new BrokerS3WALMetadataImage(BROKER0, new SortedWALObjectsList(List.of(
-                new S3WALObject(1L, BROKER0, Map.of(
+        BrokerS3WALMetadataImage walMetadataImage0 = new BrokerS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
+                1L, new S3WALObject(1L, BROKER0, Map.of(
                         STREAM1, new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
-                new S3WALObject(2L, BROKER0, Map.of(
-                        STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 1L))));
+                2L, new S3WALObject(2L, BROKER0, Map.of(
+                        STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
             Map.of(BROKER0, walMetadataImage0));
@@ -211,18 +206,4 @@ public class StreamMetadataManagerTest {
         });
 
     }
-
-    @Test
-    public void testGetWALObjects() {
-        this.streamMetadataListener.onChange(null, image0);
-        List<S3WALObjectMetadata> objectMetadata = this.manager.getWALObjects();
-        List<S3ObjectMetadata> expected = List.of(new S3ObjectMetadata(1L, 128, S3ObjectType.WAL),
-                new S3ObjectMetadata(2L, 128, S3ObjectType.WAL));
-        // compare objectMetadata with expected
-        assertEquals(expected.size(), objectMetadata.size());
-        for (int i = 0; i < expected.size(); i++) {
-            assertEquals(expected.get(i), objectMetadata.get(i).getObjectMetadata());
-        }
-    }
-
 }

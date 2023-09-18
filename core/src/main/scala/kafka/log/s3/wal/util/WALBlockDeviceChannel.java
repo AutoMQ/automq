@@ -30,11 +30,11 @@ public class WALBlockDeviceChannel implements WALChannel {
             "4096"
     ));
     private static final DirectIOLib DIRECT_IO_LIB = DirectIOLib.getLibForPath("/");
+    // TODO: move these to config
     private static final int PREALLOCATED_BYTE_BUFFER_SIZE = Integer.parseInt(System.getProperty(
             "automq.ebswal.preallocatedByteBufferSize",
             String.valueOf(1024 * 1024 * 2)
     ));
-
     private static final int PREALLOCATED_BYTE_BUFFER_MAX_SIZE = Integer.parseInt(System.getProperty(
             "automq.ebswal.preallocatedByteBufferMaxSize",
             String.valueOf(1024 * 1024 * 16)

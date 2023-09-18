@@ -15,22 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.metadata.stream;
+package org.apache.kafka.common.errors.s3;
 
-public class S3WALObjectMetadata {
-    private final S3WALObject walObject;
-    private final S3ObjectMetadata objectMetadata;
+import org.apache.kafka.common.errors.ApiException;
 
-    public S3WALObjectMetadata(S3WALObject walObject, S3ObjectMetadata objectMetadata) {
-        this.walObject = walObject;
-        this.objectMetadata = objectMetadata;
-    }
+public class BrokerEpochExpiredException extends ApiException {
 
-    public S3WALObject getWalObject() {
-        return walObject;
-    }
-
-    public S3ObjectMetadata getObjectMetadata() {
-        return objectMetadata;
+    public BrokerEpochExpiredException(String message) {
+        super(message);
     }
 }

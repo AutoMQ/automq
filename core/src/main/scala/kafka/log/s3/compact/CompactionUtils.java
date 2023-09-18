@@ -22,8 +22,7 @@ import kafka.log.s3.compact.objects.StreamDataBlock;
 import kafka.log.s3.compact.operator.DataBlockReader;
 import kafka.log.s3.objects.ObjectStreamRange;
 import kafka.log.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.S3WALObjectMetadata;
+import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -56,33 +55,24 @@ public class CompactionUtils {
         return objectStreamRanges;
     }
 
-    public static List<DataBlockReader.DataBlockIndex> buildBlockIndicesFromStreamDataBlock(List<StreamDataBlock> streamDataBlocks) {
-        List<DataBlockReader.DataBlockIndex> blockIndices = new ArrayList<>();
-        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            blockIndices.add(new DataBlockReader.DataBlockIndex(streamDataBlock.getBlockId(), streamDataBlock.getBlockPosition(),
-                    streamDataBlock.getBlockSize(), streamDataBlock.getRecordCount()));
-        }
-        return blockIndices;
-    }
-
-    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3WALObjectMetadata> objectMetadataList, S3Operator s3Operator) {
-        Map<Long, S3WALObject> s3WALObjectMap = objectMetadataList.stream()
-                .collect(Collectors.toMap(e -> e.getWalObject().objectId(), S3WALObjectMetadata::getWalObject));
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3ObjectMetadata> objectMetadataList, S3Operator s3Operator) {
+        Map<Long, S3ObjectMetadata> objectMetadataMap = objectMetadataList.stream()
+                .collect(Collectors.toMap(S3ObjectMetadata::objectId, o -> o));
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
-        for (S3WALObjectMetadata walObjectMetadata : objectMetadataList) {
-            DataBlockReader dataBlockReader = new DataBlockReader(walObjectMetadata.getObjectMetadata(), s3Operator);
+        for (S3ObjectMetadata objectMetadata : objectMetadataList) {
+            DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, s3Operator);
             dataBlockReader.parseDataBlockIndex();
-            objectStreamRangePositionFutures.put(walObjectMetadata.getObjectMetadata().objectId(), dataBlockReader.getDataBlockIndex());
+            objectStreamRangePositionFutures.put(objectMetadata.objectId(), dataBlockReader.getDataBlockIndex());
         }
         return objectStreamRangePositionFutures.entrySet().stream()
                 .map(f -> {
                     try {
                         List<StreamDataBlock> streamDataBlocks = f.getValue().join();
                         List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
-                        S3WALObject s3WALObject = s3WALObjectMap.get(streamDataBlocks.get(0).getObjectId());
+                        S3ObjectMetadata objectMetadata = objectMetadataMap.get(streamDataBlocks.get(0).getObjectId());
                         // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
                         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                            if (s3WALObject.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
+                            if (objectMetadata.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset())) {
                                 validStreamDataBlocks.add(streamDataBlock);
                             }
                         }

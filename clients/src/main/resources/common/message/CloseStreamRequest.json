@@ -28,8 +28,13 @@
       "name": "BrokerId",
       "type": "int32",
       "versions": "0+",
-      "entityType": "brokerId",
-      "about": "The ID of the requesting broker"
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
     },
     {
       "name": "StreamId",

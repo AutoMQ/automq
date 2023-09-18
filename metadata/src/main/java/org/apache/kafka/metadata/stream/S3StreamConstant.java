@@ -43,4 +43,6 @@ public class S3StreamConstant {
 
     public static final long INVALID_OBJECT_SIZE = -1L;
 
+    public static final long INVALID_BROKER_EPOCH = -1L;
+
 }

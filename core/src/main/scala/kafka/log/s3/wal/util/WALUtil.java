@@ -26,15 +26,20 @@ public class WALUtil {
             "4096"
     ));
 
-    public static int crc32(byte[] array, int offset, int length) {
-        CRC32 crc32 = new CRC32();
-        crc32.update(array, offset, length);
-        return (int) (crc32.getValue() & 0x7FFFFFFF);
+    public static int crc32(ByteBuffer buf) {
+        return crc32(buf, 0, buf.limit());
     }
 
-    public static int crc32(ByteBuffer buf) {
+    public static int crc32(ByteBuffer buf, int length) {
+        return crc32(buf, 0, length);
+    }
+
+    public static int crc32(ByteBuffer buf, int start, int end) {
         CRC32 crc32 = new CRC32();
-        crc32.update(buf.duplicate());
+        ByteBuffer dup = buf.duplicate();
+        dup.position(start);
+        dup.limit(end);
+        crc32.update(dup);
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 
