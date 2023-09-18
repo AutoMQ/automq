@@ -65,7 +65,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         Mockito.when(config.s3ObjectCompactionForceSplitPeriod()).thenReturn(120);
         Mockito.when(config.s3ObjectCompactionMaxObjectNum()).thenReturn(100);
         compactionAnalyzer = new CompactionAnalyzer(config.s3ObjectCompactionCacheSize(),
-                config.s3ObjectCompactionExecutionScoreThreshold(), config.s3ObjectCompactionStreamSplitSize(), s3Operator);
+                config.s3ObjectCompactionExecutionScoreThreshold(), config.s3ObjectCompactionStreamSplitSize());
     }
 
     @AfterEach
@@ -148,7 +148,8 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void testCompactNoneExistObjects() {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
-        List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(s3ObjectMetadata);
+        Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator);
+        List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMap);
         s3Operator.delete(s3ObjectMetadata.get(0).key()).join();
         CommitWALObjectRequest request = new CommitWALObjectRequest();
         Assertions.assertThrowsExactly(IllegalArgumentException.class,
