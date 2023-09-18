@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+\.[0-9]+\.[0-9]+'
+
+jobs:
+  release:
+    name: Release with tgz
+    strategy:
+      matrix:
+        platform: [ "ubuntu-22.04" ]
+        jdk: ["17"]
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: build tgz
+        run: |
+          ./gradlew releaseTarGz
+          tag_version=$(echo ${{ github.ref_name }} | sed 's/v//')
+          for name in `ls core/build/distributions/kafka_*.tgz`;do mv $name ${name%.tgz}_v${tag_version}.tgz;done
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            ./core/build/distributions/kafka_*.tgz
