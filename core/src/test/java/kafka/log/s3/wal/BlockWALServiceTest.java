@@ -94,7 +94,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void testSingleThreadAppendWhenOverCapacity() throws IOException {
+    void testSingleThreadAppendWhenOverCapacity() throws IOException, InterruptedException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
@@ -105,7 +105,7 @@ class BlockWALServiceTest {
                 .build()
                 .start();
         try {
-            AtomicLong appendedOffset = new AtomicLong(0);
+            AtomicLong appendedOffset = new AtomicLong(-1);
             for (int i = 0; i < recordNums; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
                 AppendResult appendResult;
@@ -115,7 +115,12 @@ class BlockWALServiceTest {
                         appendResult = wal.append(data);
                     } catch (OverCapacityException e) {
                         Thread.yield();
-                        wal.trim(appendedOffset.get()).join();
+                        long appendedOffsetValue = appendedOffset.get();
+                        if (appendedOffsetValue < 0) {
+                            Thread.sleep(100);
+                            continue;
+                        }
+                        wal.trim(appendedOffsetValue).join();
                         continue;
                     }
                     break;
