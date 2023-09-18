@@ -82,7 +82,6 @@ public class BlockWALService implements WriteAheadLog {
     private final AtomicBoolean readyToServe = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private ScheduledExecutorService flushWALHeaderScheduler;
-    private long blockDeviceCapacityWant;
     private WALChannel walChannel;
     private SlidingWindowService slidingWindowService;
     private WALHeaderCoreData walHeaderCoreData;
@@ -595,8 +594,8 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    public static BlockWALServiceBuilder builder(String blockDevicePath) {
-        return new BlockWALServiceBuilder(blockDevicePath);
+    public static BlockWALServiceBuilder builder(String blockDevicePath, long capacity) {
+        return new BlockWALServiceBuilder(blockDevicePath, capacity);
     }
 
     public static class BlockWALServiceBuilder {
@@ -609,23 +608,19 @@ public class BlockWALService implements WriteAheadLog {
         private long slidingWindowScaleUnit = 4 << 20;
         private int writeQueueCapacity = 10000;
 
-        BlockWALServiceBuilder(String blockDevicePath) {
+        BlockWALServiceBuilder(String blockDevicePath, long capacity) {
             this.blockDevicePath = blockDevicePath;
+            this.blockDeviceCapacityWant = capacity;
         }
 
         public BlockWALServiceBuilder config(Config config) {
-            return this.capacity(config.s3WALCapacity())
+            return this
                     .flushHeaderIntervalSeconds(config.s3WALHeaderFlushIntervalSeconds())
                     .ioThreadNums(config.s3WALThread())
                     .slidingWindowInitialSize(config.s3WALWindowInitial())
                     .slidingWindowScaleUnit(config.s3WALWindowIncrement())
                     .slidingWindowUpperLimit(config.s3WALWindowMax())
                     .writeQueueCapacity(config.s3WALQueue());
-        }
-
-        public BlockWALServiceBuilder capacity(long blockDeviceCapacityWant) {
-            this.blockDeviceCapacityWant = blockDeviceCapacityWant;
-            return this;
         }
 
         public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {
@@ -668,7 +663,6 @@ public class BlockWALService implements WriteAheadLog {
             slidingWindowInitialSize = Math.min(slidingWindowInitialSize, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
             slidingWindowUpperLimit = Math.min(slidingWindowUpperLimit, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
 
-            blockWALService.blockDeviceCapacityWant = blockDeviceCapacityWant;
             blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
             blockWALService.initialWindowSize = slidingWindowInitialSize;
 
