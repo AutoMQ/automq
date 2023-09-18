@@ -75,7 +75,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     public void testFilterS3Object() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         Mockito.when(config.s3ObjectCompactionMaxObjectNum()).thenReturn(2);
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
         Map<Boolean, List<S3ObjectMetadata>> filteredMap = compactionManager.filterS3Objects(s3ObjectMetadata);
@@ -86,7 +86,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     public void testForceSplit() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         List<StreamDataBlock> streamDataBlocks = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator)
                 .values().stream().flatMap(Collection::stream).collect(Collectors.toList());
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
@@ -132,7 +132,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     public void testCompact() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
         CommitWALObjectRequest request = compactionManager.buildCompactRequest(s3ObjectMetadata);
 
@@ -146,7 +146,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     public void testCompactNoneExistObjects() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
         List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(s3ObjectMetadata);
         s3Operator.delete(s3ObjectMetadata.get(0).key()).join();
@@ -159,7 +159,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         Mockito.when(config.s3ObjectCompactionNWInBandwidth()).thenReturn(networkInThreshold);
         CompactionManager compactionManager = new CompactionManager(config, objectManager, s3Operator);
 
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
 
         long expectedMinCompleteTime = 530 / networkInThreshold;
         System.out.printf("Expect to complete no less than %ds%n", expectedMinCompleteTime);

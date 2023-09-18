@@ -51,6 +51,7 @@ import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager.BrokerS3WALMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
+import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -579,6 +580,30 @@ public class StreamControlManagerTest {
 
         // 4. verify stream object is added
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
+
+        // 5. commit wal object with not continuous stream
+        List<ObjectStreamRange> streamRanges1 = List.of(
+                new ObjectStreamRange()
+                        .setStreamId(STREAM0)
+                        .setStreamEpoch(EPOCH0)
+                        .setStartOffset(99L)
+                        .setEndOffset(200L));
+        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+                .setObjectId(1L)
+                .setOrderId(1L)
+                .setBrokerId(BROKER0)
+                .setObjectSize(999)
+                .setObjectStreamRanges(streamRanges1)
+                .setStreamObjects(List.of(
+                        new StreamObject()
+                                .setStreamId(STREAM1)
+                                .setObjectId(2L)
+                                .setObjectSize(999)
+                                .setStartOffset(200L)
+                                .setEndOffset(400L)
+                ));
+        ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), result5.response().errorCode());
     }
 
     @Test
@@ -707,7 +732,7 @@ public class StreamControlManagerTest {
                 .setEndOffset(10)));
         ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(requestData);
         replay(manager, result.records());
-        // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10) and a stream object with stream0-[20, 40)
+        // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10)
         requestData = new CommitWALObjectRequestData()
             .setBrokerId(BROKER0)
             .setObjectSize(999)
@@ -721,7 +746,15 @@ public class StreamControlManagerTest {
                 .setStreamId(STREAM1)
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
-                .setEndOffset(10)))
+                .setEndOffset(10)));
+        result = manager.commitWALObject(requestData);
+        replay(manager, result.records());
+        // 4. commit with a stream object with stream0-[20, 40)
+        requestData = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
+            .setObjectId(ObjectUtils.NOOP_OBJECT_ID)
             .setStreamObjects(List.of(new StreamObject()
                 .setStreamId(STREAM0)
                 .setObjectSize(999)
@@ -730,10 +763,10 @@ public class StreamControlManagerTest {
                 .setEndOffset(40)));
         result = manager.commitWALObject(requestData);
         replay(manager, result.records());
-        // 4. broker0 close stream0 and broker1 open stream1
+        // 5. broker0 close stream0 and broker1 open stream0
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
-        // 5. commit wal object with stream0-[40, 70)
+        // 6. commit wal object with stream0-[40, 70)
         requestData = new CommitWALObjectRequestData()
             .setBrokerId(BROKER1)
             .setObjectSize(999)
@@ -747,7 +780,7 @@ public class StreamControlManagerTest {
         result = manager.commitWALObject(requestData);
         replay(manager, result.records());
 
-        // 6. trim stream0 to [60, ..)
+        // 7. trim stream0 to [60, ..)
         TrimStreamRequestData trimRequest = new TrimStreamRequestData()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -757,7 +790,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
 
-        // 7. verify
+        // 8. verify
         S3StreamMetadata streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(60, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
@@ -781,7 +814,7 @@ public class StreamControlManagerTest {
         assertEquals(40, range.getStartOffset());
         assertEquals(70, range.getEndOffset());
 
-        // 7. trim stream0 to [100, ..)
+        // 9. trim stream0 to [100, ..)
         trimRequest = new TrimStreamRequestData()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -791,23 +824,42 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
 
-        // 8. verify
+        // 10. verify
         streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(100, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
-        assertEquals(100, rangeMetadata.startOffset());
-        assertEquals(100, rangeMetadata.endOffset());
+        assertEquals(70, rangeMetadata.startOffset());
+        assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
         broker0Metadata = manager.brokersMetadata().get(BROKER0);
         assertEquals(1, broker0Metadata.walObjects().size());
         broker1Metadata = manager.brokersMetadata().get(BROKER1);
         assertEquals(0, broker1Metadata.walObjects().size());
-    }
 
-    private void mockTrimStreamMetadata() {
+        // 11. commit wal object with stream0-[70, 100)
+        requestData = new CommitWALObjectRequestData()
+            .setBrokerId(BROKER0)
+            .setObjectSize(999)
+            .setObjectId(4)
+            .setOrderId(4)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(70)
+                .setEndOffset(100)));
+        result = manager.commitWALObject(requestData);
+        replay(manager, result.records());
 
+        // 12. verify
+        streamMetadata = manager.streamsMetadata().get(STREAM0);
+        assertEquals(100, streamMetadata.startOffset());
+        assertEquals(1, streamMetadata.ranges().size());
+        rangeMetadata = streamMetadata.currentRangeMetadata();
+        assertEquals(1, rangeMetadata.rangeIndex());
+        assertEquals(70, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.endOffset());
     }
 
     private void commitFirstLevelWalObject(long objectId, long orderId, long streamId, long startOffset, long endOffset, long epoch, int brokerId) {

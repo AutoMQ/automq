@@ -110,24 +110,24 @@ public class CompactionManager {
     }
 
     public CompletableFuture<CompactResult> compact() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects();
-        logger.info("Get {} WAL objects from metadata", s3ObjectMetadata.size());
+        return this.objectManager.getServerObjects().thenCompose(s3ObjectMetadata -> {
+            logger.info("Get {} WAL objects from metadata", s3ObjectMetadata.size());
 
-        long start = System.currentTimeMillis();
-        CommitWALObjectRequest request = buildCompactRequest(s3ObjectMetadata);
+            long start = System.currentTimeMillis();
+            CommitWALObjectRequest request = buildCompactRequest(s3ObjectMetadata);
 
-        if (request.getCompactedObjectIds().isEmpty()) {
-            logger.info("No need to compact");
-            return CompletableFuture.completedFuture(CompactResult.SKIPPED);
-        }
+            if (request.getCompactedObjectIds().isEmpty()) {
+                logger.info("No need to compact");
+                return CompletableFuture.completedFuture(CompactResult.SKIPPED);
+            }
 
-        logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - start);
-        return objectManager.commitWALObject(request).thenApply(resp -> {
-            logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
-                    request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
-            return CompactResult.SUCCESS;
+            logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - start);
+            return objectManager.commitWALObject(request).thenApply(resp -> {
+                logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
+                        request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
+                return CompactResult.SUCCESS;
+            });
         });
-
     }
 
     private void logCompactionPlans(List<CompactionPlan> compactionPlans) {
@@ -153,8 +153,8 @@ public class CompactionManager {
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
-        this.scheduledExecutorService.execute(() -> {
-            List<CompletableFuture<StreamObject>> cfList = splitWALObjects(this.objectManager.getServerObjects());
+        this.scheduledExecutorService.execute(() -> this.objectManager.getServerObjects().thenAccept(objects -> {
+            List<CompletableFuture<StreamObject>> cfList = splitWALObjects(objects);
             long successCnt = cfList.stream().map(e -> {
                 try {
                     return e.join();
@@ -164,9 +164,11 @@ public class CompactionManager {
                 return null;
             }).filter(Objects::nonNull).count();
             logger.info("Force split all WAL objects, {}/{} success", successCnt, cfList.size());
-        });
+        }));
+
         return cf;
     }
+
 
     List<CompletableFuture<StreamObject>> splitWALObjects(List<S3ObjectMetadata> objectMetadataList) {
         if (objectMetadataList.isEmpty()) {

@@ -35,6 +35,7 @@ import org.mockito.Mockito;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class CompactionTestBase {
@@ -117,7 +118,7 @@ public class CompactionTestBase {
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_2);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
         }).join();
-        Mockito.doReturn(S3_WAL_OBJECT_METADATA_LIST).when(objectManager).getServerObjects();
+        Mockito.doReturn(CompletableFuture.completedFuture(S3_WAL_OBJECT_METADATA_LIST)).when(objectManager).getServerObjects();
     }
 
     public void tearDown() {

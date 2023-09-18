@@ -20,6 +20,8 @@ package kafka.log.es;
 import org.slf4j.Logger;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
 public class FutureUtil {
@@ -72,5 +74,22 @@ public class FutureUtil {
             logger.error("{} run with unexpected exception", name, ex);
             cf.completeExceptionally(ex);
         }
+    }
+
+    public static Throwable cause(Throwable ex) {
+        if (ex instanceof ExecutionException) {
+            if (ex.getCause() != null) {
+                return cause(ex.getCause());
+            } else {
+                return ex;
+            }
+        } else if (ex instanceof CompletionException) {
+            if (ex.getCause() != null) {
+                return cause(ex.getCause());
+            } else {
+                return ex;
+            }
+        }
+        return ex;
     }
 }

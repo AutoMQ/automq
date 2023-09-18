@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.Stack;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import kafka.log.s3.objects.CommitStreamObjectRequest;
@@ -261,7 +262,7 @@ public class StreamObjectsCompactionTask {
         }
     }
 
-    public void prepare() {
+    public void prepare() throws ExecutionException, InterruptedException {
         this.compactionResults = new ArrayList<>();
         this.compactGroups = prepareCompactGroups(this.nextStartSearchingOffset);
         if (!this.compactGroups.isEmpty()) {
@@ -276,10 +277,10 @@ public class StreamObjectsCompactionTask {
      * @param startSearchingOffset start searching offset.
      * @return compact groups.
      */
-    public Queue<List<S3StreamObjectMetadataSplitWrapper>> prepareCompactGroups(long startSearchingOffset) {
+    public Queue<List<S3StreamObjectMetadataSplitWrapper>> prepareCompactGroups(long startSearchingOffset) throws ExecutionException, InterruptedException {
         long startOffset = Utils.max(startSearchingOffset, stream.startOffset());
         List<S3ObjectMetadata> rawFetchedStreamObjects = objectManager
-            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE);
+            .getStreamObjects(stream.streamId(), startOffset, stream.nextOffset(), Integer.MAX_VALUE).get();
 
         this.nextStartSearchingOffset = calculateNextStartSearchingOffset(rawFetchedStreamObjects, startOffset);
 
