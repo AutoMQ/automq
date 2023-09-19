@@ -18,6 +18,9 @@
 package org.apache.kafka.controller.stream;
 
 import java.util.Arrays;
+
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.operator.S3Operator;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -28,7 +31,6 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
-import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
@@ -51,7 +53,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
+
 
 /**
  * The S3ObjectControlManager manages all S3Object's lifecycle, such as apply, create, destroy, etc.

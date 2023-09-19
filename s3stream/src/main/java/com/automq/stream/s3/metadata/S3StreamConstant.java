@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.metadata.stream;
+package com.automq.stream.s3.metadata;
 
 public class S3StreamConstant {
 

@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface S3Operator {
@@ -58,4 +59,11 @@ public interface S3Operator {
     Writer writer(String path);
 
     CompletableFuture<Void> delete(String path);
+
+    /**
+     * Delete a list of objects.
+     * @param objectKeys object keys to delete.
+     * @return deleted object keys.
+     */
+    CompletableFuture<List<String>> delete(List<String> objectKeys);
 }

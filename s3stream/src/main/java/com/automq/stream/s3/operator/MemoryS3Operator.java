@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -85,6 +86,12 @@ public class MemoryS3Operator implements S3Operator {
     @Override
     public CompletableFuture<Void> delete(String path) {
         storage.remove(path);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
+        objectKeys.forEach(storage::remove);
         return CompletableFuture.completedFuture(null);
     }
 }

@@ -20,6 +20,10 @@ package org.apache.kafka.metadata.stream;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -73,7 +77,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
                 streamOffsetRanges
                     .values()
                     .stream()
-                    .map(StreamOffsetRange::toRecordStreamIndex)
+                    .map(Convertor::to)
                     .collect(Collectors.toList())), (short) 0);
     }
 

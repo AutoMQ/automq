@@ -28,10 +28,10 @@ import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,7 +50,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher {
 

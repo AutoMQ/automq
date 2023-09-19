@@ -18,6 +18,9 @@
 package org.apache.kafka.metadata.stream;
 
 import java.util.Objects;
+
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 

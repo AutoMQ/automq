@@ -15,18 +15,29 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream;
+package com.automq.stream.s3.metadata;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-
-public interface S3Operator {
-    void close();
+public enum S3ObjectType {
+    /**
+     * WAL object
+     */
+    WAL,
 
     /**
-     * Delete a list of objects.
-     * @param objectKeys object keys to delete.
-     * @return deleted object keys.
+     * STREAM object
      */
-    CompletableFuture<List<String>> delete(List<String> objectKeys);
+    STREAM,
+
+    /**
+     * UNKNOWN object type
+     */
+    UNKNOWN;
+
+    public static S3ObjectType fromByte(Byte b) {
+        int ordinal = b.intValue();
+        if (ordinal < 0 || ordinal >= values().length) {
+            return UNKNOWN;
+        }
+        return values()[ordinal];
+    }
 }

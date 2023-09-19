@@ -20,14 +20,15 @@ package org.apache.kafka.image;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.StreamState;
+import com.automq.stream.s3.metadata.StreamState;
 
 public class S3StreamMetadataImage {
 
