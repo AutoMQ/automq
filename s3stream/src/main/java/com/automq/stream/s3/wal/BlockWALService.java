@@ -50,12 +50,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>
  * 2. Call {@link BlockWALService#recover} to recover all untrimmed records if any.
  * <p>
- * 3. Call {@link BlockWALService#append} to append records. As records are written in a circular way similar to
+ * 3. Call {@link BlockWALService#reset} to reset the service. This will clear all records, so make sure
+ * all recovered records are processed before calling this method.
+ * 4. Call {@link BlockWALService#append} to append records. As records are written in a circular way similar to
  * RingBuffer, if the caller does not call {@link BlockWALService#trim} in time, an {@link OverCapacityException}
- * will be thrown when calling
- * {@link BlockWALService#append}.
+ * will be thrown when calling {@link BlockWALService#append}.
  * <p>
- * 4. Call {@link BlockWALService#shutdownGracefully} to shut down the service gracefully, which will wait for
+ * 5. Call {@link BlockWALService#shutdownGracefully} to shut down the service gracefully, which will wait for
  * all pending writes to complete.
  * <p>
  * Implementation:
@@ -104,17 +105,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>
  * Layout:
  * <p>
- * 0 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#magicCode0} Magic code of the record header,
+ * 0 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getMagicCode} Magic code of the record header,
  * used to verify the start of the record header
  * <p>
- * 1 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyLength1} The length of the record body
+ * 1 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyLength} The length of the record body
  * <p>
- * 2 - [8B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyOffset2} The logical start offset of the record body
+ * 2 - [8B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyOffset} The logical start offset of the record body
  * <p>
- * 3 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyCRC3} CRC of the record body, used to verify
+ * 3 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyCRC} CRC of the record body, used to verify
  * the correctness of the record body
  * <p>
- * 4 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordHeaderCRC4} CRC of the rest of the record header,
+ * 4 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordHeaderCRC} CRC of the rest of the record header,
  * used to verify the correctness of the record header
  */
 public class BlockWALService implements WriteAheadLog {
@@ -457,6 +458,16 @@ public class BlockWALService implements WriteAheadLog {
             }
         }
         return iterator;
+    }
+
+    @Override
+    public CompletableFuture<Void> reset() {
+        checkReadyToServe();
+
+        long previousNextWriteOffset = slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get();
+        slidingWindowService.getWindowCoreData().getWindowStartOffset().set(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
+        slidingWindowService.getWindowCoreData().getWindowStartOffset().set(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
+        return trim(previousNextWriteOffset);
     }
 
     @Override
