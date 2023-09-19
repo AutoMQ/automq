@@ -42,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
@@ -53,7 +54,6 @@ import java.util.concurrent.TimeoutException;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -81,7 +81,7 @@ public class StreamMetadataManagerTest {
         Mockito.doAnswer(invocation -> {
             this.streamMetadataListener = invocation.getArgument(0);
             return null;
-        }).when(this.mockBrokerMetadataListener).registerStreamMetadataListener(any());
+        }).when(this.mockBrokerMetadataListener).registerStreamMetadataListener(ArgumentMatchers.any());
         Mockito.when(this.mockMetadataCache.currentImage()).thenReturn(MetadataImage.EMPTY);
         KafkaConfig config = Mockito.mock(KafkaConfig.class);
         Mockito.when(config.brokerId()).thenReturn(BROKER0);
@@ -113,7 +113,7 @@ public class StreamMetadataManagerTest {
                         STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-            Map.of(BROKER0, walMetadataImage0));
+                Map.of(BROKER0, walMetadataImage0));
         image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
 
         ranges = new HashMap<>(ranges);

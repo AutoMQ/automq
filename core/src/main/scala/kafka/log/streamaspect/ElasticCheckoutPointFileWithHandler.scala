@@ -17,7 +17,7 @@
 
 package kafka.log.streamaspect
 
-import kafka.log.stream.utils.ExceptionUtil
+import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 

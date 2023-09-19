@@ -17,14 +17,14 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.AppendResult;
-import kafka.log.stream.api.CreateStreamOptions;
-import kafka.log.stream.api.FetchResult;
-import kafka.log.stream.api.OpenStreamOptions;
-import kafka.log.stream.api.RecordBatch;
-import kafka.log.stream.api.Stream;
-import kafka.log.stream.api.StreamClient;
-import kafka.log.stream.utils.FutureUtil;
+import com.automq.stream.api.AppendResult;
+import com.automq.stream.api.CreateStreamOptions;
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.RecordBatch;
+import com.automq.stream.api.Stream;
+import com.automq.stream.api.StreamClient;
+import com.automq.stream.utils.FutureUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -17,17 +17,8 @@
 
 package kafka.log.stream.s3;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
-import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.ControllerRequestSender.RetryPolicyContext;
 import kafka.server.BrokerServer;
 import kafka.server.BrokerToControllerChannelManager;
@@ -39,12 +30,23 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamResponse;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+import static kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -99,11 +101,11 @@ public class ControllerRequestSenderTest {
             }
         });
         this.requestSender.send(task);
-        assertDoesNotThrow(() -> {
+        Assertions.assertDoesNotThrow(() -> {
             Long streamId = future.get(1, TimeUnit.SECONDS);
-            assertEquals(13L, streamId);
+            Assertions.assertEquals(13L, streamId);
         });
-        Mockito.verify(channelManager, Mockito.times(2))
+        verify(channelManager, times(2))
             .sendRequest(any(AbstractRequest.Builder.class), any(ControllerRequestCompletionHandler.class));
     }
 
@@ -147,7 +149,7 @@ public class ControllerRequestSenderTest {
         assertThrows(ExecutionException.class, () -> {
             future.get(1, TimeUnit.SECONDS);
         });
-        Mockito.verify(channelManager, Mockito.times(3))
+        verify(channelManager, times(3))
             .sendRequest(any(AbstractRequest.Builder.class), any(ControllerRequestCompletionHandler.class));
     }
 }

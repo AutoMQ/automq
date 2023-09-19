@@ -127,7 +127,6 @@ versions += [
   zinc: "1.7.2",
   zookeeper: "3.6.3",
   zstd: "1.5.2-1",
-  elasticstream: "1.0-SNAPSHOT",
   s3Client: "2.20.127",
   commonLang: "3.12.0",
   kdio: "1.0.0",
@@ -224,6 +223,6 @@ libs += [
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
   s3Client: "software.amazon.awssdk:s3:$versions.s3Client",
   commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
-  nettyAll: "io.netty:netty-all:$versions.netty",
+  nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   kdioCore: "moe.cnkirito.kdio:kdio-core:$versions.kdio",
 ]

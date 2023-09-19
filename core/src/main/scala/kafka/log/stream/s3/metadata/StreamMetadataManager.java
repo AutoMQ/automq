@@ -17,8 +17,8 @@
 
 package kafka.log.stream.s3.metadata;
 
+import com.automq.stream.utils.FutureUtil;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import kafka.log.stream.utils.FutureUtil;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.image.MetadataDelta;
@@ -50,7 +50,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
-import static kafka.log.stream.utils.FutureUtil.exec;
 import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher {
@@ -184,7 +183,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             return pendingFetch(streamId, startOffset, endOffset, limit);
         }
         long finalEndOffset = endOffset;
-        return exec(() -> fetch0(streamId, startOffset, finalEndOffset, limit), LOGGER, "fetch");
+        return FutureUtil.exec(() -> fetch0(streamId, startOffset, finalEndOffset, limit), LOGGER, "fetch");
     }
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {

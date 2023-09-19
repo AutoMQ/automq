@@ -17,10 +17,10 @@
 
 package kafka.log.streamaspect
 
+import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import com.automq.stream.metrics.Timer
 import io.netty.buffer.Unpooled
 import kafka.log._
-import kafka.log.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
-import kafka.log.stream.metrics.Timer
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
