@@ -18,7 +18,7 @@
 package kafka.log
 
 import kafka.log.LogConfig.MessageFormatVersion
-import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
 
 import java.io._
 import java.nio.file.Files

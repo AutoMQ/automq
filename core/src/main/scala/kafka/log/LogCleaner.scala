@@ -22,7 +22,7 @@ import java.nio._
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import kafka.common._
-import kafka.log.es.ElasticLogSegment
+import kafka.log.streamaspect.ElasticLogSegment
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.{BrokerReconfigurable, KafkaConfig, LogDirFailureChannel}
 import kafka.utils._

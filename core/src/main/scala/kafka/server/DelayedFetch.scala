@@ -17,8 +17,7 @@
 
 package kafka.server
 
-import kafka.log.es.ReadManualReleaseHint
-
+import kafka.log.streamaspect.ReadManualReleaseHint
 import java.util.concurrent.TimeUnit
 import kafka.metrics.KafkaMetricsGroup
 import org.apache.kafka.common.TopicIdPartition

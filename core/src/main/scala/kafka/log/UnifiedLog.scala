@@ -25,7 +25,7 @@ import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
-import kafka.log.es.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
+import kafka.log.streamaspect.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
 import kafka.message.{BrokerCompressionCodec, CompressionCodec, NoCompressionCodec}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.LeaderEpochCheckpointFile

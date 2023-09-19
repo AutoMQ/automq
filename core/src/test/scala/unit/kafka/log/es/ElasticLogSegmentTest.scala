@@ -18,6 +18,7 @@
 package kafka.log.es
 
 import kafka.log._
+import kafka.log.streamaspect.{ElasticLogManager, ElasticLogSegment}
 import kafka.server.checkpoints.LeaderEpochCheckpoint
 import kafka.server.epoch.{EpochEntry, LeaderEpochFileCache}
 import kafka.server.{KafkaConfig, LogDirFailureChannel}

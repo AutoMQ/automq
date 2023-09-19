@@ -18,6 +18,7 @@
 package kafka.log.es
 
 import kafka.log._
+import kafka.log.streamaspect.{ElasticLog, ElasticLogManager, MemoryClient}
 import kafka.server.{FetchDataInfo, KafkaConfig, LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{MockTime, Scheduler, TestUtils}
 import org.apache.kafka.common.errors.KafkaStorageException

@@ -22,7 +22,7 @@ import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.common.RecordValidationException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint}
+import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
