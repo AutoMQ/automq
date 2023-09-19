@@ -22,8 +22,12 @@ import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.async.ResponsePublisher;
+import software.amazon.awssdk.core.async.SdkPublisher;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CopyPartResult;
@@ -38,6 +42,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -161,8 +166,9 @@ class DefaultWriterTest {
             long end = Long.parseLong(startEnd[1]);
 
             GetObjectResponse.Builder responseBuilder = GetObjectResponse.builder();
-            software.amazon.awssdk.core.ResponseBytes<software.amazon.awssdk.services.s3.model.GetObjectResponse> responseBytes = software.amazon.awssdk.core.ResponseBytes.fromByteArray(responseBuilder.build(), TestUtils.random((int) (end - start + 1)).array());
-            return CompletableFuture.completedFuture(responseBytes);
+            software.amazon.awssdk.core.async.ResponsePublisher<software.amazon.awssdk.services.s3.model.GetObjectResponse> responsePublisher
+                    = new ResponsePublisher<>(responseBuilder.build(), AsyncRequestBody.fromByteBuffer(TestUtils.random((int) (end - start + 1)).nioBuffer()));
+            return CompletableFuture.completedFuture(responsePublisher);
         });
 
         // case 2

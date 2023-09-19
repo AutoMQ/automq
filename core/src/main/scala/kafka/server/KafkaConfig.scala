@@ -312,7 +312,7 @@ object Defaults {
 
   /** ********* Kafka on S3 Configuration *********/
   val S3ObjectCompactionInterval: Int = 20 // 20min
-  val S3ObjectCompactionCacheSize: Long = 200 * 1024 * 1024 // 2GB
+  val S3ObjectCompactionCacheSize: Long = 200 * 1024 * 1024 // 200MB
   val S3ObjectCompactionNWInBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionNWOutBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionUploadConcurrency: Int = 8
