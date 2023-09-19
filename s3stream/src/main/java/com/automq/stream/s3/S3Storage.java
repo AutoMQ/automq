@@ -118,6 +118,7 @@ public class S3Storage implements Storage {
             uploadWALObject(cacheBlock).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
+        log.reset().get();
         for (StreamMetadata stream : streams) {
             long newEndOffset = streamEndOffsets.getOrDefault(stream.getStreamId(), stream.getEndOffset());
             LOGGER.info("recover try close stream {} with new end offset {}", stream, newEndOffset);

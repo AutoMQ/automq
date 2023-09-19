@@ -30,6 +30,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -255,6 +256,50 @@ class BlockWALServiceTest {
                 recovered.add(next.recordOffset());
             }
             assertEquals(appended, recovered);
+            wal.reset().join();
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    @Test
+    void testAppendAfterRecover() throws IOException, OverCapacityException {
+        final int recordSize = 4096 + 1;
+        final String tempFilePath = TestUtils.tempFilePath();
+
+        final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath, 1 << 20)
+                .flushHeaderIntervalSeconds(1 << 20)
+                .build()
+                .start();
+        // Append 2 records
+        long appended0 = append(previousWAL, recordSize);
+        assertEquals(0, appended0);
+        long appended1 = append(previousWAL, recordSize);
+        assertEquals(WALUtil.alignLargeByBlockSize(recordSize), appended1);
+
+        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, 1 << 20)
+                .flushHeaderIntervalSeconds(1 << 20)
+                .build()
+                .start();
+        try {
+            // Recover records
+            Iterator<RecoverResult> recover = wal.recover();
+            Assertions.assertNotNull(recover);
+
+            List<Long> recovered = new ArrayList<>();
+            while (recover.hasNext()) {
+                RecoverResult next = recover.next();
+                recovered.add(next.recordOffset());
+            }
+            assertEquals(Arrays.asList(appended0, appended1), recovered);
+
+            // Reset after recover
+            wal.reset().join();
+
+            // Append another 2 records
+            long appended2 = append(wal, recordSize);
+            long appended3 = append(wal, recordSize);
+            assertEquals(WALUtil.alignLargeByBlockSize(recordSize) + appended2, appended3);
         } finally {
             wal.shutdownGracefully();
         }
