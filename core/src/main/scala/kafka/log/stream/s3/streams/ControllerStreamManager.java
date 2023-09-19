@@ -26,6 +26,8 @@ import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
@@ -35,6 +37,7 @@ import org.apache.kafka.common.message.TrimStreamResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
+import org.apache.kafka.common.requests.s3.DeleteStreamRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamRequest;
@@ -217,7 +220,33 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
-        // TODO: implement
-        return CompletableFuture.completedFuture(null);
+        DeleteStreamRequest.Builder request = new DeleteStreamRequest.Builder(
+            new DeleteStreamRequestData()
+                .setBrokerId(brokerId)
+                .setBrokerEpoch(brokerEpoch)
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch)
+        );
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        RequestTask<DeleteStreamResponseData, Void> task = new RequestTask<>(future, request, DeleteStreamResponseData.class, resp -> {
+            switch (Errors.forCode(resp.errorCode())) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_NOT_EXIST:
+                case STREAM_FENCED:
+                case STREAM_INNER_ERROR:
+                    LOGGER.error("Unexpected error while deleting stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+                default:
+                    LOGGER.warn("Error while deleting stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
     }
 }

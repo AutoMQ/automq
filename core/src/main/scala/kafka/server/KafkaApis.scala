@@ -125,6 +125,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   // These two executors separate the handling of `produce` and `fetch` requests in case of throttling.
   val appendingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
   val fetchingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
+  val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
 
   def close(): Unit = {
     aclApis.close()
@@ -193,8 +194,12 @@ class KafkaApis(val requestChannel: RequestChannel,
           requestHelper.sendForwardedResponse(request, response)
           response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
             if (result.errorCode() == Errors.NONE.code()) {
-              topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
-                ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
+              asyncHandleExecutor.submit(new Runnable {
+                override def run(): Unit = {
+                  topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
+                    ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
+                  })
+                }
               })
             }
           })

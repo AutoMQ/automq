@@ -27,6 +27,8 @@ import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamRequestData;
 import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.DeleteStreamRequestData;
+import org.apache.kafka.common.message.DeleteStreamResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamRequestData;
@@ -73,6 +75,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 
@@ -724,12 +727,12 @@ public class StreamControlManagerTest {
         assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());
     }
 
-    @Test
-    public void testTrim() {
+    private void mockData0() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
         registerAlwaysSuccessEpoch(BROKER1);
+
         // 1. create and open stream0 and stream1 for broker0
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
@@ -793,8 +796,12 @@ public class StreamControlManagerTest {
                 .setEndOffset(70)));
         result = manager.commitWALObject(requestData);
         replay(manager, result.records());
+    }
+    @Test
+    public void testTrim() {
+        mockData0();
 
-        // 7. trim stream0 to [60, ..)
+        // 1. trim stream0 to [60, ..)
         TrimStreamRequestData trimRequest = new TrimStreamRequestData()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -804,7 +811,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
 
-        // 8. verify
+        // 2. verify
         S3StreamMetadata streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(60, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
@@ -828,7 +835,7 @@ public class StreamControlManagerTest {
         assertEquals(40, range.getStartOffset());
         assertEquals(70, range.getEndOffset());
 
-        // 9. trim stream0 to [100, ..)
+        // 3. trim stream0 to [100, ..)
         trimRequest = new TrimStreamRequestData()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -838,7 +845,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
 
-        // 10. verify
+        // 4. verify
         streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(100, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
@@ -852,8 +859,8 @@ public class StreamControlManagerTest {
         broker1Metadata = manager.brokersMetadata().get(BROKER1);
         assertEquals(0, broker1Metadata.walObjects().size());
 
-        // 11. commit wal object with stream0-[70, 100)
-        requestData = new CommitWALObjectRequestData()
+        // 5. commit wal object with stream0-[70, 100)
+        CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
             .setBrokerId(BROKER0)
             .setObjectSize(999)
             .setObjectId(4)
@@ -863,10 +870,10 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(70)
                 .setEndOffset(100)));
-        result = manager.commitWALObject(requestData);
+        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(requestData);
         replay(manager, result.records());
 
-        // 12. verify
+        // 6. verify
         streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(100, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
@@ -874,6 +881,56 @@ public class StreamControlManagerTest {
         assertEquals(1, rangeMetadata.rangeIndex());
         assertEquals(70, rangeMetadata.startOffset());
         assertEquals(100, rangeMetadata.endOffset());
+    }
+
+    @Test
+    public void testDelete() {
+        mockData0();
+
+        // 1. delete with invalid stream owner
+        DeleteStreamRequestData req = new DeleteStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setBrokerId(BROKER0);
+        ControllerResult<DeleteStreamResponseData> result = manager.deleteStream(req);
+        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
+        assertTrue(result.records().isEmpty());
+
+        // 2. delete with invalid stream epoch
+        req = new DeleteStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setBrokerId(BROKER1);
+        result = manager.deleteStream(req);
+        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        // 3. delete with valid request
+        req = new DeleteStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setBrokerId(BROKER1);
+        result = manager.deleteStream(req);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        // 4. verify
+        assertNull(manager.streamsMetadata().get(STREAM0));
+
+        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
+        S3WALObject walObject = manager.brokersMetadata().get(BROKER0).walObjects().get(1L);
+        assertEquals(1, walObject.offsetRanges().size());
+        StreamOffsetRange offsetRange = walObject.offsetRanges().get(STREAM1);
+        assertNotNull(offsetRange);
+        assertEquals(0, manager.brokersMetadata().get(BROKER1).walObjects().size());
+
+        // 5. delete again
+        req = new DeleteStreamRequestData()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setBrokerId(BROKER1);
+        result = manager.deleteStream(req);
+        assertEquals(Errors.STREAM_NOT_EXIST.code(), result.response().errorCode());
     }
 
     @Test
