@@ -149,7 +149,7 @@ public class DefaultS3Operator implements S3Operator {
         long now = System.currentTimeMillis();
         int objectSize = data.readableBytes();
         PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffer(data.nioBuffer());
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         s3.putObject(request, body).thenAccept(putObjectResponse -> {
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, System.currentTimeMillis() - now);
             cf.complete(null);
@@ -276,7 +276,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
-            AsyncRequestBody body = AsyncRequestBody.fromByteBuffer(part.nioBuffer());
+            AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
             UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
                     .partNumber(partNumber).build();
             CompletableFuture<UploadPartResponse> uploadPartCf = s3.uploadPart(request, body);
@@ -429,7 +429,8 @@ public class DefaultS3Operator implements S3Operator {
 
             private void upload0() {
                 long start = System.nanoTime();
-                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf)).whenComplete((nil, ex) -> {
+                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf));
+                partCf.whenComplete((nil, ex) -> {
                     PART_UPLOAD_COST.update(System.nanoTime() - start);
                     partBuf.release();
                 });
