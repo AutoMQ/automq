@@ -111,8 +111,10 @@ public class SlidingWindowService {
 
             // 如果 trim 不及时，会导致写 RingBuffer 覆盖有效数据，抛异常
             if (expectedWriteOffset + totalWriteSize - trimOffset > recordSectionCapacity) {
-                throw new OverCapacityException(String.format("RingBuffer is full, please trim wal. expectedWriteOffset [%d] trimOffset [%d] totalWriteSize [%d] recordSectionCapacity [%d]",
-                        expectedWriteOffset, trimOffset, totalWriteSize, recordSectionCapacity));
+                LOGGER.error("failed to allocate write offset as the ring buffer is full: expectedWriteOffset: {}, totalWriteSize: {}, trimOffset: {}, recordSectionCapacity: {}",
+                        expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity);
+                throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: expectedWriteOffset: %d, totalWriteSize: %d, trimOffset: %d, recordSectionCapacity: %d",
+                        expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity));
             }
 
         } while (!windowCoreData.getWindowNextWriteOffset().compareAndSet(lastWriteOffset, expectedWriteOffset + totalWriteSize));
@@ -142,25 +144,26 @@ public class SlidingWindowService {
 
     public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
         long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
-        long newWindowSize = newWindowEndOffset - windowCoreData.getWindowStartOffset().get();
-
-        if (newWindowSize > windowCoreData.getWindowMaxLength().get()) {
-            long newSlidingWindowMaxLength = newWindowSize + scaleUnit;
-            if (newSlidingWindowMaxLength > upperLimit) {
-                // 回调 IO TASK Future，通知用户发生了灾难性故障，可能是磁盘损坏
-                String exceptionMessage = String.format("new sliding window size [%d] is too large, upper limit [%d]", newSlidingWindowMaxLength, upperLimit);
-                writeRecordTask.future().completeExceptionally(new OverCapacityException(exceptionMessage));
-                return false;
+        long windowStartOffset = windowCoreData.getWindowStartOffset().get();
+        long windowMaxLength = windowCoreData.getWindowMaxLength().get();
+        if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
+            long newWindowMaxLength = newWindowEndOffset - windowStartOffset + scaleUnit;
+            if (newWindowMaxLength > upperLimit) {
+                // exceed upper limit
+                if (newWindowEndOffset - windowStartOffset >= upperLimit) {
+                    // however, the new window length is still larger than upper limit, so we just set it to upper limit
+                    newWindowMaxLength = upperLimit;
+                } else {
+                    // the new window length is bigger than upper limit, reject this write request
+                    LOGGER.error("new windows size {} exceeds upper limit {}, reject this write request, window start offset: {}, new window end offset: {}",
+                            newWindowMaxLength, upperLimit, windowStartOffset, newWindowEndOffset);
+                    writeRecordTask.future().completeExceptionally(
+                            new OverCapacityException(String.format("new windows size exceeds upper limit %d", upperLimit))
+                    );
+                    return false;
+                }
             }
-
-            final long recordSectionTotalLength = walChannel.capacity() - BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-            if (newSlidingWindowMaxLength > recordSectionTotalLength) {
-                LOGGER.warn("[KEY_EVENT_003] new sliding window length[{}] is too large than record section total length[{}], reset to default",
-                        newSlidingWindowMaxLength, recordSectionTotalLength);
-                newSlidingWindowMaxLength = recordSectionTotalLength;
-            }
-
-            windowCoreData.scaleOutWindow(writeRecordTask, newWindowEndOffset, newSlidingWindowMaxLength);
+            windowCoreData.scaleOutWindow(writeRecordTask, newWindowMaxLength);
         }
         return true;
     }
@@ -301,33 +304,24 @@ public class SlidingWindowService {
             }
         }
 
-        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowEndOffset, long newWindowMaxLength) throws IOException {
-            boolean scaleWindowHappend = false;
+        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowMaxLength) throws IOException {
+            boolean scaleWindowHappened = false;
             treeMapIOTaskRequestLock.lock();
             try {
                 // 多线程同时扩容，只需要一个线程操作，其他线程快速返回
-                if ((newWindowEndOffset - windowStartOffset.get()) < windowMaxLength.get()) {
-                    return;
-                }
-
-                // 滑动窗口大小不能超过 RecordSection 的总大小
-                if (newWindowMaxLength > upperLimit) {
+                if (newWindowMaxLength < windowMaxLength.get()) {
                     return;
                 }
 
                 writeRecordTask.flushWALHeader(newWindowMaxLength);
                 windowMaxLength.set(newWindowMaxLength);
-                scaleWindowHappend = true;
+                scaleWindowHappened = true;
             } finally {
                 treeMapIOTaskRequestLock.unlock();
-                if (scaleWindowHappend) {
-                    LOGGER.info("[KEY_EVENT_001] Sliding window is too small to start the scale process, windowStartOffset [{}] newWindowEndOffset  [{}] new window size [{}]",
-                            windowStartOffset.get(),
-                            newWindowEndOffset,
-                            newWindowMaxLength
-                    );
+                if (scaleWindowHappened) {
+                    LOGGER.info("window scale out to {}", newWindowMaxLength);
                 } else {
-                    LOGGER.info("[KEY_EVENT_002] Sliding window is too small to start the scale process, fast end because other threads have already done scaling");
+                    LOGGER.debug("window already scale out, ignore");
                 }
             }
         }
@@ -367,7 +361,7 @@ public class SlidingWindowService {
 
             } catch (IOException e) {
                 writeRecordTask.future().completeExceptionally(e);
-                LOGGER.error(String.format("write task has exception. write offset: [%d]", writeRecordTask.startOffset()), e);
+                LOGGER.error(String.format("failed to write record, offset: %s", writeRecordTask.startOffset()), e);
             }
         }
     }
