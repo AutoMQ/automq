@@ -23,7 +23,7 @@ import java.nio.file.{Files, NoSuchFileException, Path}
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 import kafka.common.LogSegmentOffsetOverflowException
-import kafka.log.es.ElasticLogManager
+import kafka.log.streamaspect.ElasticLogManager
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}

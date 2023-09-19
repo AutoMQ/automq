@@ -24,8 +24,8 @@ import kafka.cluster.Partition.{LAST_RECORD_TIMESTAMP, TRY_COMPLETE_TIMER, UPDAT
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.es.{ElasticLogManager, ElasticUnifiedLog}
-import kafka.log.es.metrics.Timer
+import kafka.log.stream.metrics.Timer
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints

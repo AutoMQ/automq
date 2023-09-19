@@ -17,7 +17,7 @@
 package kafka.server.checkpoints
 
 import kafka.log.LogManager.{LogStartOffsetCheckpointFile, RecoveryPointCheckpointFile}
-import kafka.log.es.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, ElasticLogManager, LogStartOffsetCheckpoint, RawKafkaMeta, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
+import kafka.log.streamaspect.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, ElasticLogManager, LogStartOffsetCheckpoint, RawKafkaMeta, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
 import kafka.server.LogDirFailureChannel
 import kafka.server.ReplicaManager.HighWatermarkFilename
 import kafka.server.epoch.EpochEntry

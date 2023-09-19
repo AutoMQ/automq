@@ -24,7 +24,8 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.es.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
+import kafka.log.stream.metrics.Timer
+import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel
 import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIMER, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
@@ -3652,9 +3653,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
 object KafkaApis {
   val LAST_RECORD_TIMESTAMP = new AtomicLong()
-  val PRODUCE_TIMER = new kafka.log.es.metrics.Timer()
-  val PRODUCE_CALLBACK_TIMER = new kafka.log.es.metrics.Timer()
-  val PRODUCE_ACK_TIMER = new kafka.log.es.metrics.Timer()
+  val PRODUCE_TIMER = new Timer()
+  val PRODUCE_CALLBACK_TIMER = new Timer()
+  val PRODUCE_ACK_TIMER = new Timer()
 
   // Traffic from both in-sync and out of sync replicas are accounted for in replication quota to ensure total replication
   // traffic doesn't exceed quota.

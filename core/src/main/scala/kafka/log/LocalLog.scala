@@ -30,8 +30,8 @@ import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeEx
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{Time, Utils}
-import kafka.log.es.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
-import kafka.log.es.ElasticLogManager
+import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
 
 import java.util.concurrent.{CompletableFuture, ExecutionException}
 import scala.jdk.CollectionConverters._
