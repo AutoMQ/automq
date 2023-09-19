@@ -553,6 +553,9 @@ public class StreamControlManager {
                 records.addAll(markDestroyResult.records());
             }
         });
+        if (resp.errorCode() != Errors.NONE.code()) {
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
         // remove wal object or remove stream range in wal object
         // TODO: optimize
         this.brokersMetadata.values()
@@ -588,12 +591,89 @@ public class StreamControlManager {
                     .setDataTimeInMs(walObj.dataTimeInMs())
                     .setOrderId(walObj.orderId()), (short) 0));
             });
+        if (resp.errorCode() != Errors.NONE.code()) {
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
         log.info("[TrimStream]: broker: {} trim stream: {} to new start offset: {} with epoch: {} success", brokerId, streamId, newStartOffset, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
     public ControllerResult<DeleteStreamResponseData> deleteStream(DeleteStreamRequestData data) {
-        throw new UnsupportedOperationException();
+        long epoch = data.streamEpoch();
+        long streamId = data.streamId();
+        int brokerId = data.brokerId();
+        long brokerEpoch = data.brokerEpoch();
+        DeleteStreamResponseData resp = new DeleteStreamResponseData();
+
+        // verify broker epoch
+        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
+        if (brokerEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(brokerEpochCheckResult.code());
+            log.warn("[DeleteStream]: broker: {}'s epoch: {} check failed, code: {}",
+                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
+        // verify ownership
+        Errors authResult = streamOwnershipCheck(streamId, epoch, brokerId, "DeleteStream");
+        if (authResult != Errors.NONE) {
+            resp.setErrorCode(authResult.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
+        S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+
+        // generate remove stream record
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        records.add(new ApiMessageAndVersion(new RemoveS3StreamRecord()
+                .setStreamId(streamId), (short) 0));
+        // generate stream objects destroy records
+        List<Long> streamObjectIds = streamMetadata.streamObjects.keySet().stream().collect(Collectors.toList());
+        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
+        if (!markDestroyResult.response()) {
+            log.error("[DeleteStream]: Mark destroy stream objects: {} failed", streamObjectIds);
+            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        records.addAll(markDestroyResult.records());
+        // remove wal object or remove stream-offset-range in wal object
+        this.brokersMetadata.values()
+            .stream()
+            .flatMap(entry -> entry.walObjects.values().stream())
+            .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
+            .forEach(walObj -> {
+                if (walObj.offsetRanges().size() == 1) {
+                    // only this range, but we will remove this range, so now we can remove this wal object
+                    records.add(new ApiMessageAndVersion(
+                        new RemoveWALObjectRecord()
+                            .setBrokerId(walObj.brokerId())
+                            .setObjectId(walObj.objectId()), (short) 0
+                    ));
+                    ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
+                        List.of(walObj.objectId()));
+                    if (!result.response()) {
+                        log.error("[DeleteStream]: Mark destroy wal object: {} failed", walObj.objectId());
+                        resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                        return;
+                    }
+                    records.addAll(result.records());
+                    return;
+                }
+                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
+                // remove offset range
+                newOffsetRange.remove(streamId);
+                records.add(new ApiMessageAndVersion(new WALObjectRecord()
+                    .setObjectId(walObj.objectId())
+                    .setBrokerId(walObj.brokerId())
+                    .setStreamsIndex(newOffsetRange.values().stream().map(StreamOffsetRange::toRecordStreamIndex).collect(Collectors.toList()))
+                    .setDataTimeInMs(walObj.dataTimeInMs())
+                    .setOrderId(walObj.orderId()), (short) 0));
+            });
+        if (resp.errorCode() != Errors.NONE.code()) {
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        log.info("[DeleteStream]: broker: {} delete stream: {} with epoch: {} success", brokerId, streamId, epoch);
+        return ControllerResult.atomicOf(records, resp);
     }
 
     /**

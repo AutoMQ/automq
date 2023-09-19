@@ -579,6 +579,7 @@ class Partition(val topicPartition: TopicPartition,
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }
+    val needCloseLog = log
     // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
@@ -590,8 +591,8 @@ class Partition(val topicPartition: TopicPartition,
       leaderEpochStartOffsetOpt = None
       Partition.removeMetrics(topicPartition)
     }
-    if (log.isDefined) {
-      log.get.close()
+    if (needCloseLog.isDefined) {
+      needCloseLog.get.close()
     } else {
       CompletableFuture.completedFuture(null)
     }
