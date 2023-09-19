@@ -72,13 +72,13 @@ public interface WriteAheadLog {
     }
 
     interface AppendResult {
-        // Record 预分配的存储起始位置
+        // The pre-allocated starting offset of the record
         long recordOffset();
 
         CompletableFuture<CallbackResult> future();
 
         interface CallbackResult {
-            // 这个 Offset 之前的数据已经落盘
+            // The record before this offset has been flushed to disk
             long flushedOffset();
         }
     }

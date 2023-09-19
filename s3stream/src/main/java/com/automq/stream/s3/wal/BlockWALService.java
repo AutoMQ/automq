@@ -39,34 +39,84 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * BlockWALService 提供一个无限长的 WAL，基于块设备实现，块设备的容量由应用配置，可能比系统分配的小。
- * 实际块设备大约 10G，采用循环写方式，类似于 RingBuffer，如果调用方没有及时调用 trim，则 append 会抛异常。
- * BlockWALService 不提供运行过程中读操作，仅在异常宕机重启后，调用 start 方法后，可以调用 recover 方法迭代所有未 trim 的数据。
- * --------------------------------------------------------------------------------------------------
- * 块设备上的数据结构描述
- * --------------------------------------------------------------------------------------------------
- * WAL Header 1 [4K] 10s 写一次。
- * 0 - MagicCode [4B] 表示 HeaderMeta 的魔数
- * 1 - Capacity [8B] 表示 BlockDevice 的容量（由应用配置，可能比系统分配的小）
- * 2 - TrimOffset [8B] 表示 WAL 的逻辑位置，小于此位置的数据已经被删除（实际上传到了 S3）
- * 3 - LastWriteTimestamp [8B] 表示上一次写入 WALHeader 的时间戳
- * 4 - SlidingWindowNextWriteOffset [8B] 滑动窗口下一个要写的 Record 对应的 Offset
- * 5 - SlidingWindowStartOffset [8B] 滑动窗口的起始 Offset，此 Offset 之前的数据已经全部成功写入存储设备
- * 6 - SlidingWindowMaxLength [8B] 表示滑动窗口的最大大小
- * 7 - ShutdownType [4B]
- * 8 - crc [4B] 表示 WALHeader 的 CRC
- * WAL Header 1 [4K] 10s 写一次。
- * - Header 2 同 Header 1 数据结构一样，Recover 时，以 LastWriteTimestamp 更大为准。
- * Record Header，每次写都以块大小对齐
- * 0 - MagicCode [4B] 表示 RecordHeader 的魔数
- * 1 - RecordBodyLength [4B] 表示 Record 的长度
- * 2 - RecordBodyOffset [8B] 表示 Record 的逻辑位置
- * 3 - RecordBodyCRC [4B] 表示 Record body 的 CRC
- * 4 - RecordHeaderCRC [4B] 表示 Record Header 的 CRC
- * Record Body，紧接着 Record Header，长度为 RecordBodyLength
- * --------------------------------------------------------------------------------------------------
+ * /**
+ * BlockWALService provides an infinite WAL, which is implemented based on block devices.
+ * The capacity of the block device is configured by the application and may be smaller than the system allocation.
+ * <p>
+ * Usage:
+ * <p>
+ * 1. Call {@link BlockWALService#start} to start the service. Any other methods will throw an
+ * {@link IllegalStateException} if called before {@link BlockWALService#start}.
+ * <p>
+ * 2. Call {@link BlockWALService#recover} to recover all untrimmed records if any.
+ * <p>
+ * 3. Call {@link BlockWALService#append} to append records. As records are written in a circular way similar to
+ * RingBuffer, if the caller does not call {@link BlockWALService#trim} in time, an {@link OverCapacityException}
+ * will be thrown when calling
+ * {@link BlockWALService#append}.
+ * <p>
+ * 4. Call {@link BlockWALService#shutdownGracefully} to shut down the service gracefully, which will wait for
+ * all pending writes to complete.
+ * <p>
+ * Implementation:
+ * <p>
+ * WAL Header
+ * <p>
+ * There are {@link BlockWALService#WAL_HEADER_COUNT} WAL headers, each of which is {@link WALUtil#BLOCK_SIZE} bytes.
+ * Every {@link BlockWALService#walHeaderFlushIntervalSeconds}, the service will flush the WAL header to the block
+ * device. The WAL header is used to record the meta information of the WAL, and is used to recover the WAL when
+ * the service is restarted.
+ * <p>
+ * Layout:
+ * <p>
+ * 0 - [4B] {@link WALHeaderCoreData#magicCode0} Magic code of the WAL header, used to verify the start of the WAL header
+ * <p>
+ * 1 - [8B] {@link WALHeaderCoreData#capacity1} Capacity of the block device, which is configured by the application
+ * and should not be modified after the first start of the service
+ * <p>
+ * 2 - [8B] {@link WALHeaderCoreData#trimOffset2} The logical start offset of the WAL, records before which are
+ * considered useless and have been deleted
+ * <p>
+ * 3 - [8B] {@link WALHeaderCoreData#lastWriteTimestamp3} The timestamp of the last write to the WAL header, used to
+ * determine which WAL header is the latest when recovering
+ * <p>
+ * 4 - [8B] {@link WALHeaderCoreData#slidingWindowNextWriteOffset4} The offset of the next record to be written
+ * in the sliding window
+ * <p>
+ * 5 - [8B] {@link WALHeaderCoreData#slidingWindowStartOffset5} The start offset of the sliding window, all records
+ * before this offset have been successfully written to the block device
+ * <p>
+ * 6 - [8B] {@link WALHeaderCoreData#slidingWindowMaxLength6} The maximum size of the sliding window, which can be
+ * scaled up when needed, and is used to determine when to stop recovering
+ * <p>
+ * 7 - [4B] {@link WALHeaderCoreData#shutdownType7} The shutdown type of the service, {@link ShutdownType#GRACEFULLY} or
+ * {@link ShutdownType#UNGRACEFULLY}
+ * <p>
+ * 8 - [4B] {@link WALHeaderCoreData#crc8} CRC of the rest of the WAL header, used to verify the correctness of the
+ * WAL header
+ * <p>
+ * Sliding Window
+ * <p>
+ * The sliding window contains all records that have not been successfully written to the block device.
+ * So when recovering, we only need to try to recover the records in the sliding window.
+ * <p>
+ * Record Header
+ * <p>
+ * Layout:
+ * <p>
+ * 0 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#magicCode0} Magic code of the record header,
+ * used to verify the start of the record header
+ * <p>
+ * 1 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyLength1} The length of the record body
+ * <p>
+ * 2 - [8B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyOffset2} The logical start offset of the record body
+ * <p>
+ * 3 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordBodyCRC3} CRC of the record body, used to verify
+ * the correctness of the record body
+ * <p>
+ * 4 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#recordHeaderCRC4} CRC of the rest of the record header,
+ * used to verify the correctness of the record header
  */
-
 public class BlockWALService implements WriteAheadLog {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
     public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
@@ -134,7 +184,6 @@ public class BlockWALService implements WriteAheadLog {
         final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY);
         try {
             int read = walChannel.read(recordHeader, position);
-            // 检查点：无法读取 RecordHeader
             if (read != RECORD_HEADER_SIZE) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset),
@@ -150,7 +199,6 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         SlidingWindowService.RecordHeaderCoreData readRecordHeader = SlidingWindowService.RecordHeaderCoreData.unmarshal(recordHeader.position(0).limit(RECORD_HEADER_SIZE));
-        // 检查点：RecordHeaderMagicCode 不匹配，可能遇到了损坏的数据
         if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
             throw new ReadRecordException(
                     WALUtil.alignNextBlock(recoverStartOffset),
@@ -163,7 +211,6 @@ public class BlockWALService implements WriteAheadLog {
         int recordBodyCRC = readRecordHeader.getRecordBodyCRC();
         int recordHeaderCRC = readRecordHeader.getRecordHeaderCRC();
 
-        // 检查点：RecordHeaderCRC 不匹配，可能遇到了损坏的数据
         int calculatedRecordHeaderCRC = WALUtil.crc32(recordHeader, RECORD_HEADER_WITHOUT_CRC_SIZE);
         if (recordHeaderCRC != calculatedRecordHeaderCRC) {
             throw new ReadRecordException(
@@ -172,7 +219,6 @@ public class BlockWALService implements WriteAheadLog {
             );
         }
 
-        // 检查点：RecordBodyLength <= 0，可能遇到了损坏的数据
         if (recordBodyLength <= 0) {
             throw new ReadRecordException(
                     WALUtil.alignNextBlock(recoverStartOffset),
@@ -180,7 +226,6 @@ public class BlockWALService implements WriteAheadLog {
             );
         }
 
-        // 检查点：recordBodyOffset 不匹配，可能遇到了RingBuffer轮转的旧数据
         if (recordBodyOffset != recoverStartOffset + RECORD_HEADER_SIZE) {
             throw new ReadRecordException(
                     WALUtil.alignNextBlock(recoverStartOffset),
@@ -191,7 +236,6 @@ public class BlockWALService implements WriteAheadLog {
         ByteBuffer recordBody = ByteBuffer.allocate(recordBodyLength);
         try {
             int read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY));
-            // 检查点：无法读取 RecordBody
             if (read != recordBodyLength) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
@@ -208,7 +252,6 @@ public class BlockWALService implements WriteAheadLog {
 
         recordBody.position(0).limit(recordBodyLength);
 
-        // 检查点：RecordBodyCRC 不匹配，可能遇到了损坏的数据
         int calculatedRecordBodyCRC = WALUtil.crc32(recordBody);
         if (recordBodyCRC != calculatedRecordBodyCRC) {
             throw new ReadRecordException(
@@ -224,19 +267,17 @@ public class BlockWALService implements WriteAheadLog {
         // initialize flushTrimOffset
         paramWALHeader.setFlushedTrimOffset(paramWALHeader.getTrimOffset());
 
-        // 优雅关闭，不需要纠正 Header
+        // graceful shutdown, no need to correct the header
         if (paramWALHeader.getShutdownType().equals(ShutdownType.GRACEFULLY)) {
             LOGGER.info("recovered from graceful shutdown, WALHeader: {}", paramWALHeader);
             return paramWALHeader;
         }
 
-        // 暴力关闭，纠正 Header
+        // ungraceful shutdown, need to correct the header
         long recoverStartOffset = WALUtil.alignLargeByBlockSize(paramWALHeader.getSlidingWindowStartOffset());
         long recoverRemainingBytes = paramWALHeader.recordSectionCapacity();
 
-        // 总共遇到了几次非法数据
         long meetIllegalRecordTimes = 0;
-
         LOGGER.info("start to recover from ungraceful shutdown, recoverStartOffset: {}, recoverRemainingBytes: {}", recoverStartOffset, recoverRemainingBytes);
         do {
             long nextRecoverStartOffset;
@@ -268,7 +309,7 @@ public class BlockWALService implements WriteAheadLog {
                 final ByteBuffer byteBuffer = ByteBuffer.allocate(WAL_HEADER_SIZE);
                 walChannel.read(byteBuffer, i * WAL_HEADER_CAPACITY);
                 WALHeaderCoreData walHeaderCoreData = WALHeaderCoreData.unmarshal(byteBuffer.position(0).limit(WAL_HEADER_SIZE));
-                if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestampPos3 < walHeaderCoreData.lastWriteTimestampPos3) {
+                if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestamp3 < walHeaderCoreData.lastWriteTimestamp3) {
                     walHeaderCoreDataAvailable = walHeaderCoreData;
                 }
             } catch (IOException | UnmarshalException ignored) {
@@ -344,18 +385,12 @@ public class BlockWALService implements WriteAheadLog {
 
         ByteBuffer record = buf.nioBuffer();
 
-        // 生成 crc
         final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record) : crc;
-
-        // 计算写入 wal offset
         final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-
-        // AppendResult
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
 
-        // 生成写 IO 请求，入队执行异步 IO
+        // submit write task
         slidingWindowService.submitWriteRecordTask(new WriteRecordTask() {
             @Override
             public long startOffset() {
@@ -453,77 +488,77 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     static class WALHeaderCoreData {
-        private final AtomicLong trimOffsetPos2 = new AtomicLong(0);
+        private final AtomicLong trimOffset2 = new AtomicLong(0);
         private final AtomicLong flushedTrimOffset = new AtomicLong(0);
-        private final AtomicLong slidingWindowStartOffsetPos5 = new AtomicLong(0);
-        private final AtomicLong slidingWindowNextWriteOffsetPos4 = new AtomicLong(0);
-        private final AtomicLong slidingWindowMaxLengthPos6 = new AtomicLong(0);
-        private int magicCodePos0 = WAL_HEADER_MAGIC_CODE;
-        private long capacityPos1;
-        private long lastWriteTimestampPos3 = System.nanoTime();
-        private ShutdownType shutdownTypePos7 = ShutdownType.UNGRACEFULLY;
-        private int crcPos8;
+        private final AtomicLong slidingWindowStartOffset5 = new AtomicLong(0);
+        private final AtomicLong slidingWindowNextWriteOffset4 = new AtomicLong(0);
+        private final AtomicLong slidingWindowMaxLength6 = new AtomicLong(0);
+        private int magicCode0 = WAL_HEADER_MAGIC_CODE;
+        private long capacity1;
+        private long lastWriteTimestamp3 = System.nanoTime();
+        private ShutdownType shutdownType7 = ShutdownType.UNGRACEFULLY;
+        private int crc8;
 
         public static WALHeaderCoreData unmarshal(ByteBuffer byteBuffer) throws UnmarshalException {
             WALHeaderCoreData walHeaderCoreData = new WALHeaderCoreData();
-            walHeaderCoreData.magicCodePos0 = byteBuffer.getInt();
-            walHeaderCoreData.capacityPos1 = byteBuffer.getLong();
-            walHeaderCoreData.trimOffsetPos2.set(byteBuffer.getLong());
-            walHeaderCoreData.lastWriteTimestampPos3 = byteBuffer.getLong();
-            walHeaderCoreData.slidingWindowNextWriteOffsetPos4.set(byteBuffer.getLong());
-            walHeaderCoreData.slidingWindowStartOffsetPos5.set(byteBuffer.getLong());
-            walHeaderCoreData.slidingWindowMaxLengthPos6.set(byteBuffer.getLong());
-            walHeaderCoreData.shutdownTypePos7 = ShutdownType.fromCode(byteBuffer.getInt());
-            walHeaderCoreData.crcPos8 = byteBuffer.getInt();
+            walHeaderCoreData.magicCode0 = byteBuffer.getInt();
+            walHeaderCoreData.capacity1 = byteBuffer.getLong();
+            walHeaderCoreData.trimOffset2.set(byteBuffer.getLong());
+            walHeaderCoreData.lastWriteTimestamp3 = byteBuffer.getLong();
+            walHeaderCoreData.slidingWindowNextWriteOffset4.set(byteBuffer.getLong());
+            walHeaderCoreData.slidingWindowStartOffset5.set(byteBuffer.getLong());
+            walHeaderCoreData.slidingWindowMaxLength6.set(byteBuffer.getLong());
+            walHeaderCoreData.shutdownType7 = ShutdownType.fromCode(byteBuffer.getInt());
+            walHeaderCoreData.crc8 = byteBuffer.getInt();
 
-            if (walHeaderCoreData.magicCodePos0 != WAL_HEADER_MAGIC_CODE) {
-                throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.magicCodePos0, WAL_HEADER_MAGIC_CODE));
+            if (walHeaderCoreData.magicCode0 != WAL_HEADER_MAGIC_CODE) {
+                throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.magicCode0, WAL_HEADER_MAGIC_CODE));
             }
 
             ByteBuffer headerExceptCRC = walHeaderCoreData.marshalHeaderExceptCRC();
             int crc = WALUtil.crc32(headerExceptCRC, WAL_HEADER_WITHOUT_CRC_SIZE);
-            if (crc != walHeaderCoreData.crcPos8) {
-                throw new UnmarshalException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crcPos8, crc));
+            if (crc != walHeaderCoreData.crc8) {
+                throw new UnmarshalException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeaderCoreData.crc8, crc));
             }
 
             return walHeaderCoreData;
         }
 
         public long recordSectionCapacity() {
-            return capacityPos1 - WAL_HEADER_TOTAL_CAPACITY;
+            return capacity1 - WAL_HEADER_TOTAL_CAPACITY;
         }
 
         public long getCapacity() {
-            return capacityPos1;
+            return capacity1;
         }
 
         public WALHeaderCoreData setCapacity(long capacity) {
-            this.capacityPos1 = capacity;
+            this.capacity1 = capacity;
             return this;
         }
 
         public long getSlidingWindowStartOffset() {
-            return slidingWindowStartOffsetPos5.get();
+            return slidingWindowStartOffset5.get();
         }
 
         public WALHeaderCoreData setSlidingWindowStartOffset(long slidingWindowStartOffset) {
-            this.slidingWindowStartOffsetPos5.set(slidingWindowStartOffset);
+            this.slidingWindowStartOffset5.set(slidingWindowStartOffset);
             return this;
         }
 
         public long getTrimOffset() {
-            return trimOffsetPos2.get();
+            return trimOffset2.get();
         }
 
         // Update the trim offset if the given trim offset is larger than the current one.
         public WALHeaderCoreData updateTrimOffset(long trimOffset) {
             long currentTrimOffset;
             do {
-                currentTrimOffset = trimOffsetPos2.get();
+                currentTrimOffset = trimOffset2.get();
                 if (trimOffset <= currentTrimOffset) {
                     return this;
                 }
-            } while (!trimOffsetPos2.compareAndSet(currentTrimOffset, trimOffset));
+            } while (!trimOffset2.compareAndSet(currentTrimOffset, trimOffset));
             return this;
         }
 
@@ -536,74 +571,74 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         public long getLastWriteTimestamp() {
-            return lastWriteTimestampPos3;
+            return lastWriteTimestamp3;
         }
 
         public WALHeaderCoreData setLastWriteTimestamp(long lastWriteTimestamp) {
-            this.lastWriteTimestampPos3 = lastWriteTimestamp;
+            this.lastWriteTimestamp3 = lastWriteTimestamp;
             return this;
         }
 
         public long getSlidingWindowNextWriteOffset() {
-            return slidingWindowNextWriteOffsetPos4.get();
+            return slidingWindowNextWriteOffset4.get();
         }
 
         public WALHeaderCoreData setSlidingWindowNextWriteOffset(long slidingWindowNextWriteOffset) {
-            this.slidingWindowNextWriteOffsetPos4.set(slidingWindowNextWriteOffset);
+            this.slidingWindowNextWriteOffset4.set(slidingWindowNextWriteOffset);
             return this;
         }
 
         public long getSlidingWindowMaxLength() {
-            return slidingWindowMaxLengthPos6.get();
+            return slidingWindowMaxLength6.get();
         }
 
         public WALHeaderCoreData setSlidingWindowMaxLength(long slidingWindowMaxLength) {
-            this.slidingWindowMaxLengthPos6.set(slidingWindowMaxLength);
+            this.slidingWindowMaxLength6.set(slidingWindowMaxLength);
             return this;
         }
 
         public ShutdownType getShutdownType() {
-            return shutdownTypePos7;
+            return shutdownType7;
         }
 
         public WALHeaderCoreData setShutdownType(ShutdownType shutdownType) {
-            this.shutdownTypePos7 = shutdownType;
+            this.shutdownType7 = shutdownType;
             return this;
         }
 
         @Override
         public String toString() {
             return "WALHeader{"
-                    + "magicCode=" + magicCodePos0
-                    + ", capacity=" + capacityPos1
-                    + ", trimOffset=" + trimOffsetPos2
-                    + ", lastWriteTimestamp=" + lastWriteTimestampPos3
-                    + ", nextWriteOffset=" + slidingWindowNextWriteOffsetPos4
-                    + ", slidingWindowStartOffset=" + slidingWindowStartOffsetPos5
-                    + ", slidingWindowMaxLength=" + slidingWindowMaxLengthPos6
-                    + ", shutdownType=" + shutdownTypePos7
-                    + ", crc=" + crcPos8
+                    + "magicCode=" + magicCode0
+                    + ", capacity=" + capacity1
+                    + ", trimOffset=" + trimOffset2
+                    + ", lastWriteTimestamp=" + lastWriteTimestamp3
+                    + ", nextWriteOffset=" + slidingWindowNextWriteOffset4
+                    + ", slidingWindowStartOffset=" + slidingWindowStartOffset5
+                    + ", slidingWindowMaxLength=" + slidingWindowMaxLength6
+                    + ", shutdownType=" + shutdownType7
+                    + ", crc=" + crc8
                     + '}';
         }
 
         private ByteBuffer marshalHeaderExceptCRC() {
             ByteBuffer byteBuffer = ByteBuffer.allocate(WAL_HEADER_SIZE);
-            byteBuffer.putInt(magicCodePos0);
-            byteBuffer.putLong(capacityPos1);
-            byteBuffer.putLong(trimOffsetPos2.get());
-            byteBuffer.putLong(lastWriteTimestampPos3);
-            byteBuffer.putLong(slidingWindowNextWriteOffsetPos4.get());
-            byteBuffer.putLong(slidingWindowStartOffsetPos5.get());
-            byteBuffer.putLong(slidingWindowMaxLengthPos6.get());
-            byteBuffer.putInt(shutdownTypePos7.getCode());
+            byteBuffer.putInt(magicCode0);
+            byteBuffer.putLong(capacity1);
+            byteBuffer.putLong(trimOffset2.get());
+            byteBuffer.putLong(lastWriteTimestamp3);
+            byteBuffer.putLong(slidingWindowNextWriteOffset4.get());
+            byteBuffer.putLong(slidingWindowStartOffset5.get());
+            byteBuffer.putLong(slidingWindowMaxLength6.get());
+            byteBuffer.putInt(shutdownType7.getCode());
 
             return byteBuffer;
         }
 
         ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            this.crcPos8 = WALUtil.crc32(byteBuffer, WAL_HEADER_WITHOUT_CRC_SIZE);
-            byteBuffer.putInt(crcPos8);
+            this.crc8 = WALUtil.crc32(byteBuffer, WAL_HEADER_WITHOUT_CRC_SIZE);
+            byteBuffer.putInt(crc8);
             return byteBuffer.position(0);
         }
     }

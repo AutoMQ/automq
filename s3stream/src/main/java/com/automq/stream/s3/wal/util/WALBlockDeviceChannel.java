@@ -117,7 +117,7 @@ public class WALBlockDeviceChannel implements WALChannel {
             if (write == -1) {
                 throw new IOException("write -1");
             } else if (write % BLOCK_SIZE != 0) {
-                // 理论上不会发生。如果发生，说明系统不支持direct io
+                // Should not happen. If it happens, it means that the system does not support direct IO
                 write -= write % BLOCK_SIZE;
             }
             writen += write;

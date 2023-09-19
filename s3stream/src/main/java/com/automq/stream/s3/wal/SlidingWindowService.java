@@ -35,14 +35,18 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
+import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_WITHOUT_CRC_SIZE;
+import static com.automq.stream.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
 import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
 
-
 /**
- * 维护滑动窗口，AIO 线程池异步写入并通知调用方。
- * 滑动窗口容量不足时，单线程停止当前操作，执行同步扩容操作。
- * AIO 线程池返回时，同步更新滑动窗口的起始 Offset。
+ * The sliding window contains all records that have not been flushed to the disk yet.
+ * All records are written to the disk asynchronously by the AIO thread pool.
+ * When the sliding window is full, the current thread will be blocked until the sliding window is expanded.
+ * When the asynchronous write is completed, the start offset of the sliding window will be updated.
  */
 public class SlidingWindowService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
@@ -93,10 +97,8 @@ public class SlidingWindowService {
     }
 
     public long allocateWriteOffset(final int recordBodyLength, final long trimOffset, final long recordSectionCapacity) throws OverCapacityException {
-        // 计算要写入的总大小
-        int totalWriteSize = BlockWALService.RECORD_HEADER_SIZE + recordBodyLength;
+        int totalWriteSize = RECORD_HEADER_SIZE + recordBodyLength;
 
-        // 计算写入 wal offset
         long lastWriteOffset;
         long newWriteOffset;
         long expectedWriteOffset;
@@ -105,13 +107,13 @@ public class SlidingWindowService {
 
             expectedWriteOffset = WALUtil.alignLargeByBlockSize(lastWriteOffset);
 
-            // 如果物理设备末尾不足这次写入，则跳转到物理设备起始位置
+            // If the end of the physical device is insufficient for this write, jump to the start of the physical device
             if ((recordSectionCapacity - expectedWriteOffset % recordSectionCapacity) < totalWriteSize) {
                 expectedWriteOffset = expectedWriteOffset + recordSectionCapacity - expectedWriteOffset % recordSectionCapacity;
             }
 
-            // 如果 trim 不及时，会导致写 RingBuffer 覆盖有效数据，抛异常
             if (expectedWriteOffset + totalWriteSize - trimOffset > recordSectionCapacity) {
+                // Not enough space for this write
                 LOGGER.error("failed to allocate write offset as the ring buffer is full: expectedWriteOffset: {}, totalWriteSize: {}, trimOffset: {}, recordSectionCapacity: {}",
                         expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity);
                 throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: expectedWriteOffset: %d, totalWriteSize: %d, trimOffset: %d, recordSectionCapacity: %d",
@@ -139,7 +141,7 @@ public class SlidingWindowService {
         totalRecord.position(0);
 
         // TODO: make this beautiful
-        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - BlockWALService.WAL_HEADER_TOTAL_CAPACITY, BlockWALService.WAL_HEADER_TOTAL_CAPACITY);
+        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
 
         walChannel.write(totalRecord, position);
     }
@@ -173,90 +175,90 @@ public class SlidingWindowService {
     }
 
     public static class RecordHeaderCoreData {
-        private int magicCodePos0 = BlockWALService.RECORD_HEADER_MAGIC_CODE;
-        private int recordBodyLengthPos1;
-        private long recordBodyOffsetPos2;
-        private int recordBodyCRCPos3;
-        private int recordHeaderCRCPos4;
+        private int magicCode0 = RECORD_HEADER_MAGIC_CODE;
+        private int recordBodyLength1;
+        private long recordBodyOffset2;
+        private int recordBodyCRC3;
+        private int recordHeaderCRC4;
 
         public static RecordHeaderCoreData unmarshal(ByteBuffer byteBuffer) {
             RecordHeaderCoreData recordHeaderCoreData = new RecordHeaderCoreData();
-            recordHeaderCoreData.magicCodePos0 = byteBuffer.getInt();
-            recordHeaderCoreData.recordBodyLengthPos1 = byteBuffer.getInt();
-            recordHeaderCoreData.recordBodyOffsetPos2 = byteBuffer.getLong();
-            recordHeaderCoreData.recordBodyCRCPos3 = byteBuffer.getInt();
-            recordHeaderCoreData.recordHeaderCRCPos4 = byteBuffer.getInt();
+            recordHeaderCoreData.magicCode0 = byteBuffer.getInt();
+            recordHeaderCoreData.recordBodyLength1 = byteBuffer.getInt();
+            recordHeaderCoreData.recordBodyOffset2 = byteBuffer.getLong();
+            recordHeaderCoreData.recordBodyCRC3 = byteBuffer.getInt();
+            recordHeaderCoreData.recordHeaderCRC4 = byteBuffer.getInt();
             return recordHeaderCoreData;
         }
 
         public int getMagicCode() {
-            return magicCodePos0;
+            return magicCode0;
         }
 
         public RecordHeaderCoreData setMagicCode(int magicCode) {
-            this.magicCodePos0 = magicCode;
+            this.magicCode0 = magicCode;
             return this;
         }
 
         public int getRecordBodyLength() {
-            return recordBodyLengthPos1;
+            return recordBodyLength1;
         }
 
         public RecordHeaderCoreData setRecordBodyLength(int recordBodyLength) {
-            this.recordBodyLengthPos1 = recordBodyLength;
+            this.recordBodyLength1 = recordBodyLength;
             return this;
         }
 
         public long getRecordBodyOffset() {
-            return recordBodyOffsetPos2;
+            return recordBodyOffset2;
         }
 
         public RecordHeaderCoreData setRecordBodyOffset(long recordBodyOffset) {
-            this.recordBodyOffsetPos2 = recordBodyOffset;
+            this.recordBodyOffset2 = recordBodyOffset;
             return this;
         }
 
         public int getRecordBodyCRC() {
-            return recordBodyCRCPos3;
+            return recordBodyCRC3;
         }
 
         public RecordHeaderCoreData setRecordBodyCRC(int recordBodyCRC) {
-            this.recordBodyCRCPos3 = recordBodyCRC;
+            this.recordBodyCRC3 = recordBodyCRC;
             return this;
         }
 
         public int getRecordHeaderCRC() {
-            return recordHeaderCRCPos4;
+            return recordHeaderCRC4;
         }
 
         public RecordHeaderCoreData setRecordHeaderCRC(int recordHeaderCRC) {
-            this.recordHeaderCRCPos4 = recordHeaderCRC;
+            this.recordHeaderCRC4 = recordHeaderCRC;
             return this;
         }
 
         @Override
         public String toString() {
             return "RecordHeaderCoreData{" +
-                    "magicCode=" + magicCodePos0 +
-                    ", recordBodyLength=" + recordBodyLengthPos1 +
-                    ", recordBodyOffset=" + recordBodyOffsetPos2 +
-                    ", recordBodyCRC=" + recordBodyCRCPos3 +
-                    ", recordHeaderCRC=" + recordHeaderCRCPos4 +
+                    "magicCode=" + magicCode0 +
+                    ", recordBodyLength=" + recordBodyLength1 +
+                    ", recordBodyOffset=" + recordBodyOffset2 +
+                    ", recordBodyCRC=" + recordBodyCRC3 +
+                    ", recordHeaderCRC=" + recordHeaderCRC4 +
                     '}';
         }
 
         private ByteBuffer marshalHeaderExceptCRC() {
-            ByteBuffer byteBuffer = ByteBuffer.allocate(BlockWALService.RECORD_HEADER_SIZE);
-            byteBuffer.putInt(magicCodePos0);
-            byteBuffer.putInt(recordBodyLengthPos1);
-            byteBuffer.putLong(recordBodyOffsetPos2);
-            byteBuffer.putInt(recordBodyCRCPos3);
+            ByteBuffer byteBuffer = ByteBuffer.allocate(RECORD_HEADER_SIZE);
+            byteBuffer.putInt(magicCode0);
+            byteBuffer.putInt(recordBodyLength1);
+            byteBuffer.putLong(recordBodyOffset2);
+            byteBuffer.putInt(recordBodyCRC3);
             return byteBuffer;
         }
 
         public ByteBuffer marshal() {
             ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            byteBuffer.putInt(WALUtil.crc32(byteBuffer, BlockWALService.RECORD_HEADER_WITHOUT_CRC_SIZE));
+            byteBuffer.putInt(WALUtil.crc32(byteBuffer, RECORD_HEADER_WITHOUT_CRC_SIZE));
             return byteBuffer.position(0);
         }
     }
@@ -315,8 +317,8 @@ public class SlidingWindowService {
             boolean scaleWindowHappened = false;
             treeMapIOTaskRequestLock.lock();
             try {
-                // 多线程同时扩容，只需要一个线程操作，其他线程快速返回
                 if (newWindowMaxLength < windowMaxLength.get()) {
+                    // Another thread has already scaled out the window.
                     return;
                 }
 
@@ -350,7 +352,7 @@ public class SlidingWindowService {
 
                     writeRecord(writeRecordTask);
 
-                    // 更新滑动窗口的最小 Offset
+                    // Update the start offset of the sliding window after finishing writing the record.
                     windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
 
                     writeRecordTask.future().complete(new AppendResult.CallbackResult() {
