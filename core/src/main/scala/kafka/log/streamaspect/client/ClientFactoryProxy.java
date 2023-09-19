@@ -17,7 +17,7 @@
 
 package kafka.log.streamaspect.client;
 
-import kafka.log.stream.api.Client;
+import com.automq.stream.api.Client;
 
 import java.lang.reflect.Method;
 

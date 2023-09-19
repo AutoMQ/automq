@@ -14,34 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package kafka.log.streamaspect.utils;
 
-package kafka.log.stream.s3;
+import org.slf4j.Logger;
 
-import kafka.log.stream.s3.cache.ReadDataBlock;
-import kafka.log.stream.s3.model.StreamRecordBatch;
+public final class ExceptionUtil {
+    public static void maybeRecordThrowableAndRethrow(Runnable runnable, String message, Logger logger) {
+        try {
+            runnable.run();
+        } catch (Throwable t) {
+            logger.error("{} ", message, t);
+            throw t;
+        }
+    }
 
-import java.util.concurrent.CompletableFuture;
-
-/**
- * Write ahead log for server.
- */
-public interface Storage {
-
-    void startup();
-
-    void shutdown();
-
-    /**
-     * Append stream record.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
-
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
-
-    /**
-     * Force stream record in WAL upload to s3
-     */
-    CompletableFuture<Void> forceUpload(long streamId);
+    public static void maybeRecordThrowableAndRethrow(Runnable runnable, String message, kafka.utils.Logging logger) {
+        try {
+            runnable.run();
+        } catch (Throwable t) {
+            logger.error(() -> message, () -> t);
+            throw t;
+        }
+    }
 }

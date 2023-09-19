@@ -18,7 +18,7 @@
 package kafka.log.streamaspect.client.redis;
 
 import kafka.log.streamaspect.ElasticRedisClient;
-import kafka.log.stream.api.Client;
+import com.automq.stream.api.Client;
 import kafka.log.streamaspect.client.Context;
 
 public class ClientFactory {

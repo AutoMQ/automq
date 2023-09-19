@@ -17,27 +17,31 @@
 
 package kafka.log.stream.s3;
 
-import kafka.log.stream.api.Client;
-import kafka.log.stream.api.KVClient;
-import kafka.log.stream.api.StreamClient;
-import kafka.log.stream.s3.cache.DefaultS3BlockCache;
-import kafka.log.stream.s3.cache.S3BlockCache;
-import kafka.log.stream.s3.compact.CompactionManager;
+import com.automq.stream.api.Client;
+import com.automq.stream.api.KVClient;
+import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.S3Storage;
+import com.automq.stream.s3.S3StreamClient;
+import com.automq.stream.s3.Storage;
+import com.automq.stream.s3.cache.DefaultS3BlockCache;
+import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.compact.CompactionManager;
+import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.BlockWALService;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
-import kafka.log.stream.s3.objects.ObjectManager;
-import kafka.log.stream.s3.operator.S3Operator;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
-import kafka.log.stream.s3.streams.StreamManager;
-import kafka.log.stream.s3.wal.BlockWALService;
-import kafka.log.stream.s3.wal.WriteAheadLog;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 
 public class DefaultS3Client implements Client {
 
-    private final KafkaConfig config;
+    private final Config config;
     private final StreamMetadataManager metadataManager;
 
     private final ControllerRequestSender requestSender;
@@ -59,20 +63,20 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig config, S3Operator operator) {
-        this.config = config;
-        this.metadataManager = new StreamMetadataManager(brokerServer, config);
+    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, S3Operator operator) {
+        this.config = ConfigUtils.to(kafkaConfig);
+        this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
         this.operator = operator;
-        ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.s3ControllerRequestRetryMaxCount(),
-                config.s3ControllerRequestRetryBaseDelayMs());
+        ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
+                kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = new ControllerStreamManager(this.requestSender, config);
-        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, this.config);
-        this.blockCache = new DefaultS3BlockCache(config.s3CacheSize(), objectManager, operator);
+        this.streamManager = new ControllerStreamManager(this.requestSender, kafkaConfig);
+        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
+        this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.operator);
         this.compactionManager.start();
-        this.writeAheadLog = BlockWALService.builder(config.s3WALPath()).config(config).build();
-        this.storage = new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, operator);
+        this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath()).config(this.config).build();
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, operator);
         this.storage.startup();
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);

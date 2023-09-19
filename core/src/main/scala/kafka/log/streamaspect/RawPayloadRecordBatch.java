@@ -17,7 +17,7 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.RecordBatch;
+import com.automq.stream.api.RecordBatch;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;

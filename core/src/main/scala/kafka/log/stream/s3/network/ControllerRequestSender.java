@@ -18,10 +18,6 @@
 package kafka.log.stream.s3.network;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import kafka.server.BrokerServer;
 import kafka.server.BrokerToControllerChannelManager;
 import kafka.server.ControllerRequestCompletionHandler;
@@ -34,6 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public class ControllerRequestSender {
 

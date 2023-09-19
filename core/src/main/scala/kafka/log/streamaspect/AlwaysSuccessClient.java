@@ -17,18 +17,18 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.AppendResult;
-import kafka.log.stream.api.Client;
-import kafka.log.stream.api.CreateStreamOptions;
-import kafka.log.stream.api.ElasticStreamClientException;
-import kafka.log.stream.api.ErrorCode;
-import kafka.log.stream.api.FetchResult;
-import kafka.log.stream.api.KVClient;
-import kafka.log.stream.api.OpenStreamOptions;
-import kafka.log.stream.api.RecordBatch;
-import kafka.log.stream.api.Stream;
-import kafka.log.stream.api.StreamClient;
-import kafka.log.stream.utils.FutureUtil;
+import com.automq.stream.api.AppendResult;
+import com.automq.stream.api.Client;
+import com.automq.stream.api.CreateStreamOptions;
+import com.automq.stream.api.StreamClientException;
+import com.automq.stream.api.ErrorCode;
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.KVClient;
+import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.RecordBatch;
+import com.automq.stream.api.Stream;
+import com.automq.stream.api.StreamClient;
+import com.automq.stream.utils.FutureUtil;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -127,10 +127,10 @@ public class AlwaysSuccessClient implements Client {
      * @return true if the exception is a ElasticStreamClientException with a halt error code, otherwise false
      */
     private static boolean shouldHalt(Throwable t) {
-        if (!(t instanceof ElasticStreamClientException)) {
+        if (!(t instanceof StreamClientException)) {
             return false;
         }
-        ElasticStreamClientException e = (ElasticStreamClientException) t;
+        StreamClientException e = (StreamClientException) t;
         return HALT_ERROR_CODES.contains((short) e.getCode());
     }
 

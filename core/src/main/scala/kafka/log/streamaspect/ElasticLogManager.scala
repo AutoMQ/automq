@@ -18,9 +18,9 @@
 package kafka.log.streamaspect
 
 import ElasticLogManager.NAMESPACE
-import kafka.log.stream.api.Client
-import kafka.log.stream.utils.ExceptionUtil
+import com.automq.stream.api.Client
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
+import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}

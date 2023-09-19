@@ -18,11 +18,11 @@
 package kafka.log.streamaspect;
 
 import io.netty.buffer.Unpooled;
-import kafka.log.stream.api.AppendResult;
-import kafka.log.stream.api.FetchResult;
-import kafka.log.stream.api.RecordBatch;
-import kafka.log.stream.api.RecordBatchWithContext;
-import kafka.log.stream.api.Stream;
+import com.automq.stream.api.AppendResult;
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.RecordBatch;
+import com.automq.stream.api.RecordBatchWithContext;
+import com.automq.stream.api.Stream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
