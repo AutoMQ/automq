@@ -16,6 +16,7 @@
  */
 package kafka.cluster
 
+import com.automq.stream.metrics.Timer
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
@@ -24,7 +25,6 @@ import kafka.cluster.Partition.{LAST_RECORD_TIMESTAMP, TRY_COMPLETE_TIMER, UPDAT
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.stream.metrics.Timer
 import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server._

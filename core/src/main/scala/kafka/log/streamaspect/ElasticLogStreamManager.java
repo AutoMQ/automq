@@ -17,8 +17,8 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.Stream;
-import kafka.log.stream.api.StreamClient;
+import com.automq.stream.api.Stream;
+import com.automq.stream.api.StreamClient;
 
 import java.io.IOException;
 import java.util.Collections;

@@ -17,8 +17,8 @@
 
 package kafka.log.stream.s3;
 
-import kafka.log.stream.api.KVClient;
-import kafka.log.stream.api.KeyValue;
+import com.automq.stream.api.KVClient;
+import com.automq.stream.api.KeyValue;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;

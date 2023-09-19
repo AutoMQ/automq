@@ -18,11 +18,11 @@
 package kafka.log.streamaspect.client.s3;
 
 import kafka.log.streamaspect.AlwaysSuccessClient;
-import kafka.log.stream.api.Client;
+import com.automq.stream.api.Client;
 import kafka.log.streamaspect.client.Context;
 import kafka.log.stream.s3.DefaultS3Client;
-import kafka.log.stream.s3.operator.DefaultS3Operator;
-import kafka.log.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.DefaultS3Operator;
+import com.automq.stream.s3.operator.S3Operator;
 
 public class ClientFactory {
     public static Client get(Context context) {

@@ -312,7 +312,7 @@ object Defaults {
 
   /** ********* Kafka on S3 Configuration *********/
   val S3ObjectCompactionInterval: Int = 20 // 20min
-  val S3ObjectCompactionCacheSize: Long = 2 * 1024 * 1024 * 1024 // 2GB
+  val S3ObjectCompactionCacheSize: Long = 200 * 1024 * 1024 // 2GB
   val S3ObjectCompactionNWInBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionNWOutBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionUploadConcurrency: Int = 8
@@ -1553,8 +1553,8 @@ object KafkaConfig {
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
-      .define(S3WALCacheSizeProp, LONG, 1073741824L, MEDIUM, S3WALCacheSizeDoc)
-      .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
+      .define(S3WALCacheSizeProp, LONG, 209715200L, MEDIUM, S3WALCacheSizeDoc)
+      .define(S3WALCapacityProp, LONG, 1073741824L, MEDIUM, S3WALCapacityDoc)
       .define(S3WALHeaderFlushIntervalSecondsProp, INT, 10, MEDIUM, S3WALHeaderFlushIntervalSecondsDoc)
       .define(S3WALThreadProp, INT, 8, MEDIUM, S3WALThreadDoc)
       .define(S3WALQueueProp, INT, 10000, MEDIUM, S3WALQueueDoc)
@@ -1565,7 +1565,7 @@ object KafkaConfig {
       .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
-      .define(S3CacheSizeProp, LONG, 1073741824L, MEDIUM, S3CacheSizeDoc)
+      .define(S3CacheSizeProp, LONG, 104857600L, MEDIUM, S3CacheSizeDoc)
       .define(S3StreamObjectCompactionTaskIntervalMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionTaskIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 10737418240L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3StreamObjectCompactionLivingTimeMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionLivingTimeMinutesDoc)

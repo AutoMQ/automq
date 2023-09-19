@@ -18,6 +18,10 @@
 package kafka.log.stream.s3.objects;
 
 
+import com.automq.stream.s3.objects.CommitStreamObjectRequest;
+import com.automq.stream.s3.objects.CommitWALObjectRequest;
+import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.ObjectManager;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
@@ -92,10 +96,10 @@ public class ControllerObjectManager implements ObjectManager {
                 .setObjectSize(request.getObjectSize())
                 .setObjectStreamRanges(request.getStreamRanges()
                     .stream()
-                    .map(ObjectStreamRange::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+                    .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
                 .setStreamObjects(request.getStreamObjects()
                     .stream()
-                    .map(StreamObject::toStreamObjectInRequest).collect(Collectors.toList()))
+                    .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
                 .setCompactedObjectIds(request.getCompactedObjectIds()));
         CompletableFuture<CommitWALObjectResponse> future = new CompletableFuture<>();
         RequestTask<CommitWALObjectResponseData, CommitWALObjectResponse> task = new RequestTask<>(future, wrapRequestBuilder,
