@@ -29,7 +29,7 @@ import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.StreamState;
+import com.automq.stream.s3.metadata.StreamState;
 
 public class S3StreamMetadataDelta {
 

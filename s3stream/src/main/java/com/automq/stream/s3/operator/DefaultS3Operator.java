@@ -41,18 +41,24 @@ import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
+import software.amazon.awssdk.services.s3.model.DeletedObject;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
@@ -184,6 +190,27 @@ public class DefaultS3Operator implements S3Operator {
             return null;
         });
     }
+
+    @Override
+    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
+        ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
+                ObjectIdentifier.builder()
+                        .key(key)
+                        .build()
+        ).toArray(ObjectIdentifier[]::new);
+        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder().objects(toDeleteKeys).build())
+                .build();
+        long start = System.currentTimeMillis();
+        // TODO: handle not exist object, should we regard it as deleted or ignore it.
+        return this.s3.deleteObjects(request).thenApply(resp -> {
+            LOGGER.info("[ControllerS3Operator]: Delete objects: {}, cost: {}", Arrays.toString(resp.deleted().toArray()), System.currentTimeMillis() - start);
+            return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
+        }).exceptionally(ex -> {
+            LOGGER.error("[ControllerS3Operator]:Delete objects: {} failed", Arrays.toString(objectKeys.toArray()), ex);
+            return Collections.emptyList();
+        });    }
 
     private String range(long start, long end) {
         if (end == -1L) {

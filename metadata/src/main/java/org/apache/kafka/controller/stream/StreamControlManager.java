@@ -19,6 +19,9 @@ package org.apache.kafka.controller.stream;
 
 import java.util.HashMap;
 import java.util.stream.Stream;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -53,12 +56,11 @@ import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.metadata.stream.Convertor;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.StreamState;
+import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -75,7 +77,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 /**
  * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
@@ -588,7 +590,7 @@ public class StreamControlManager {
                 records.add(new ApiMessageAndVersion(new WALObjectRecord()
                     .setObjectId(walObj.objectId())
                     .setBrokerId(walObj.brokerId())
-                    .setStreamsIndex(newOffsetRange.values().stream().map(StreamOffsetRange::toRecordStreamIndex).collect(Collectors.toList()))
+                    .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
                     .setDataTimeInMs(walObj.dataTimeInMs())
                     .setOrderId(walObj.orderId()), (short) 0));
             });
@@ -666,7 +668,7 @@ public class StreamControlManager {
                 records.add(new ApiMessageAndVersion(new WALObjectRecord()
                     .setObjectId(walObj.objectId())
                     .setBrokerId(walObj.brokerId())
-                    .setStreamsIndex(newOffsetRange.values().stream().map(StreamOffsetRange::toRecordStreamIndex).collect(Collectors.toList()))
+                    .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
                     .setDataTimeInMs(walObj.dataTimeInMs())
                     .setOrderId(walObj.orderId()), (short) 0));
             });
@@ -781,7 +783,7 @@ public class StreamControlManager {
         if (objectId != NOOP_OBJECT_ID) {
             // generate broker's wal object record
             List<StreamIndex> streamIndexes = indexes.stream()
-                    .map(StreamOffsetRange::toRecordStreamIndex)
+                    .map(Convertor::to)
                     .collect(Collectors.toList());
             WALObjectRecord walObjectRecord = new WALObjectRecord()
                     .setObjectId(objectId)
@@ -1137,7 +1139,7 @@ public class StreamControlManager {
         // create wal object
         Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
-                .collect(Collectors.toMap(StreamIndex::streamId, StreamOffsetRange::of));
+                .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
         brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId, dataTs));
 
         // update range

@@ -17,6 +17,9 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.stream.s3.operator.DefaultS3Operator;
+import com.automq.stream.s3.operator.MemoryS3Operator;
+import com.automq.stream.s3.operator.S3Operator;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
 import org.apache.kafka.common.Uuid;
@@ -113,11 +116,8 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.controller.stream.DefaultS3Operator;
 import org.apache.kafka.controller.stream.KVControlManager;
-import org.apache.kafka.controller.stream.MockS3Operator;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
-import org.apache.kafka.controller.stream.S3Operator;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
@@ -1891,9 +1891,9 @@ public final class QuorumController implements Controller {
         S3Operator s3Operator;
         if (s3Config.mock()) {
             // only use for test
-            s3Operator = new MockS3Operator();
+            s3Operator = new MemoryS3Operator();
         } else {
-            s3Operator = new DefaultS3Operator(s3Config);
+            s3Operator = new DefaultS3Operator(s3Config.endpoint(), s3Config.region(), s3Config.bucket());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);

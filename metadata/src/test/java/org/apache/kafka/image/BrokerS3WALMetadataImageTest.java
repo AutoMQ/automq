@@ -23,14 +23,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.junit.jupiter.api.Tag;

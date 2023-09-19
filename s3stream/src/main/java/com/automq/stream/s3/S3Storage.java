@@ -20,6 +20,7 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -30,7 +31,6 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.apache.kafka.metadata.stream.StreamMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -355,6 +355,7 @@ public class S3Storage implements Storage {
             // 1. poll out current task
             walObjectCommitQueue.poll();
             if (context.cache.confirmOffset() != 0) {
+                LOGGER.info("try trim WAL to {}", context.cache.confirmOffset());
                 log.trim(context.cache.confirmOffset());
             }
             // transfer records ownership to block cache.

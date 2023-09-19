@@ -17,6 +17,9 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.message.CloseStreamRequestData;
 import org.apache.kafka.common.message.CloseStreamResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -53,11 +56,8 @@ import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager.BrokerS3WALMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
-import org.apache.kafka.metadata.stream.ObjectUtils;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;

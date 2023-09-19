@@ -17,15 +17,15 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.ArrayList;
@@ -152,6 +152,9 @@ public final class S3StreamsMetadataImage {
             }
             long searchEndOffset = Math.min(range.endOffset(), endOffset);
             long searchStartOffset = Math.max(range.startOffset(), startOffset);
+            if (searchStartOffset == searchEndOffset) {
+                continue;
+            }
             rangeSearchers.add(new RangeSearcher(searchStartOffset, searchEndOffset, streamId, range.brokerId()));
         }
         return rangeSearchers;

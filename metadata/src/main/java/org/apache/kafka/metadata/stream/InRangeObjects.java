@@ -17,6 +17,8 @@
 
 package org.apache.kafka.metadata.stream;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+
 import java.util.List;
 import java.util.Objects;
 

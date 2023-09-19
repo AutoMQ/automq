@@ -26,8 +26,9 @@ import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;

@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.cluster.Broker.ServerInfo
@@ -41,7 +42,7 @@ import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
-import org.apache.kafka.metadata.stream.{ObjectUtils, S3Config}
+import org.apache.kafka.metadata.stream.S3Config
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.ApiMessageAndVersion

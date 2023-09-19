@@ -17,27 +17,18 @@
 
 package org.apache.kafka.metadata.stream;
 
-public enum S3ObjectType {
-    /**
-     * WAL object
-     */
-    WAL,
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+import org.apache.kafka.common.metadata.WALObjectRecord;
 
-    /**
-     * STREAM object
-     */
-    STREAM,
+public class Convertor {
+    public static WALObjectRecord.StreamIndex to(StreamOffsetRange s) {
+        return new WALObjectRecord.StreamIndex()
+                .setStreamId(s.getStreamId())
+                .setStartOffset(s.getStartOffset())
+                .setEndOffset(s.getEndOffset());
+    }
 
-    /**
-     * UNKNOWN object type
-     */
-    UNKNOWN;
-
-    public static S3ObjectType fromByte(Byte b) {
-        int ordinal = b.intValue();
-        if (ordinal < 0 || ordinal >= values().length) {
-            return UNKNOWN;
-        }
-        return values()[ordinal];
+    public static StreamOffsetRange to(WALObjectRecord.StreamIndex s) {
+        return new StreamOffsetRange(s.streamId(), s.startOffset(), s.endOffset());
     }
 }

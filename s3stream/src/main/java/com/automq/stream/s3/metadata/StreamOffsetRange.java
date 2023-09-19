@@ -15,10 +15,9 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.metadata.stream;
+package com.automq.stream.s3.metadata;
 
 import java.util.Objects;
-import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
 
 /**
  * StreamOffsetRange represents <code>[startOffset, endOffset)</code> in the stream.
@@ -85,16 +84,5 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
     @Override
     public String toString() {
         return "StreamOffsetRange(streamId=" + streamId + ", startOffset=" + startOffset + ", endOffset=" + endOffset + ")";
-    }
-
-    public StreamIndex toRecordStreamIndex() {
-        return new StreamIndex()
-            .setStreamId(streamId)
-            .setStartOffset(startOffset)
-            .setEndOffset(endOffset);
-    }
-
-    public static StreamOffsetRange of(StreamIndex index) {
-        return new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset());
     }
 }

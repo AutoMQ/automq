@@ -42,8 +42,8 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamRequest.Builder;
-import org.apache.kafka.metadata.stream.StreamMetadata;
-import org.apache.kafka.metadata.stream.StreamState;
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

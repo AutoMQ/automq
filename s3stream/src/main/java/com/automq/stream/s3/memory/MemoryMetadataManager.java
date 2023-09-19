@@ -17,298 +17,63 @@
 
 package com.automq.stream.s3.memory;
 
-import com.automq.stream.api.ErrorCode;
-import com.automq.stream.api.StreamClientException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
 import com.automq.stream.s3.objects.CommitWALObjectRequest;
 import com.automq.stream.s3.objects.CommitWALObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.streams.StreamManager;
-import org.apache.kafka.metadata.stream.ObjectUtils;
-import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3StreamConstant;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
-import org.apache.kafka.metadata.stream.StreamMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
-import org.apache.kafka.metadata.stream.StreamState;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
 
 
 // TODO: deprecate or fix it.
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
-
-    private static final int MOCK_BROKER_ID = 0;
-    private static final Logger LOGGER = LoggerFactory.getLogger(MemoryMetadataManager.class);
-    private final EventDriver eventDriver;
-    private final AtomicLong nextAssignedObjectId = new AtomicLong(0L);
-    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
-    private final AtomicLong nextAssignedStreamId = new AtomicLong(0L);
-    private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
-    private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
-
-    private static class MemoryStreamMetadata {
-
-        private final long streamId;
-        private StreamState state;
-        private long epoch = S3StreamConstant.INIT_EPOCH;
-        private long startOffset = S3StreamConstant.INIT_START_OFFSET;
-        private long endOffset = S3StreamConstant.INIT_END_OFFSET;
-        private List<S3StreamObject> streamObjects;
-
-        public MemoryStreamMetadata(long streamId) {
-            this.streamId = streamId;
-            this.state = StreamState.CLOSED;
-        }
-
-        public void addStreamObject(S3StreamObject object) {
-            if (streamObjects == null) {
-                streamObjects = new LinkedList<>();
-            }
-            streamObjects.add(object);
-        }
-
-        public StreamState state() {
-            return state;
-        }
-
-        public void setState(StreamState state) {
-            this.state = state;
-        }
-    }
-
-    private static class MemoryBrokerWALMetadata {
-
-        private final int brokerId;
-        private final List<S3WALObject> walObjects;
-
-        public MemoryBrokerWALMetadata(int brokerId) {
-            this.brokerId = brokerId;
-            this.walObjects = new ArrayList<>();
-        }
-    }
-
-    public MemoryMetadataManager() {
-        this.eventDriver = new EventDriver();
-        this.objectsMetadata = new HashMap<>();
-        this.streamsMetadata = new HashMap<>();
-        this.brokerWALMetadata = new HashMap<>();
-    }
-
-    public <T> CompletableFuture<T> submitEvent(Supplier<T> eventHandler) {
-        CompletableFuture<T> cb = new CompletableFuture<>();
-        MemoryMetadataEvent<T> event = new MemoryMetadataEvent<>(cb, eventHandler);
-        if (!eventDriver.submit(event)) {
-            throw new RuntimeException("Offer event failed");
-        }
-        return cb;
-    }
-
-    public void shutdown() {
-        this.eventDriver.stop();
-    }
-
-    public void start() {
-        this.eventDriver.start();
-    }
-
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
-        return this.submitEvent(() -> {
-            List<Long> objectIds = new ArrayList<>();
-            for (int i = 0; i < count; i++) {
-                long objectId = this.nextAssignedObjectId.getAndIncrement();
-                objectIds.add(objectId);
-                S3Object object = prepareObject(objectId, ttl);
-                this.objectsMetadata.put(objectId, object);
-            }
-            return objectIds.get(0);
-        });
+        return null;
     }
 
     @Override
     public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
-        return this.submitEvent(() -> {
-            CommitWALObjectResponse resp = new CommitWALObjectResponse();
-            long objectId = request.getObjectId();
-            long objectSize = request.getObjectSize();
-            List<ObjectStreamRange> streamRanges = request.getStreamRanges();
-            S3Object object = this.objectsMetadata.get(objectId);
-            if (object == null) {
-                throw new RuntimeException("Object " + objectId + " does not exist");
-            }
-            if (object.getS3ObjectState() != S3ObjectState.PREPARED) {
-                throw new RuntimeException("Object " + objectId + " is not in prepared state");
-            }
-            // commit object
-            S3Object s3Object = new S3Object(
-                    objectId, objectSize, object.getObjectKey(),
-                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
-                    S3ObjectState.COMMITTED);
-            this.objectsMetadata.put(objectId, s3Object
-            );
-            // build metadata
-            MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
-                    k -> new MemoryBrokerWALMetadata(k));
-            Map<Long, StreamOffsetRange> index = new HashMap<>();
-            streamRanges.forEach(range -> {
-                long streamId = range.getStreamId();
-                long startOffset = range.getStartOffset();
-                long endOffset = range.getEndOffset();
-                index.put(streamId, new StreamOffsetRange(streamId, startOffset, endOffset));
-                // update range endOffset
-                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-                streamMetadata.endOffset = endOffset;
-            });
-            request.getStreamObjects().forEach(streamObject -> {
-                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamObject.getStreamId());
-                S3StreamObject s3StreamObject = new S3StreamObject(streamObject.getObjectId(), streamObject.getObjectSize(),
-                        streamObject.getStreamId(), streamObject.getStartOffset(), streamObject.getEndOffset());
-                streamMetadata.addStreamObject(s3StreamObject);
-                streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
-            });
-            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
-            walMetadata.walObjects.add(walObject);
-            return resp;
-        });
-    }
-
-    private boolean verifyWalStreamRanges(ObjectStreamRange range) {
-        long streamId = range.getStreamId();
-        long epoch = range.getEpoch();
-        // verify
-        MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-        if (streamMetadata == null) {
-            return false;
-        }
-        // compare epoch
-        if (streamMetadata.epoch > epoch) {
-            return false;
-        }
-        if (streamMetadata.epoch < epoch) {
-            return false;
-        }
-        return true;
+        return null;
     }
 
     @Override
     public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
-        //TODO: SUPPORT
-        return CompletableFuture.completedFuture(null);
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
+        return null;
     }
 
     @Override
     public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
-        return this.submitEvent(() -> this.brokerWALMetadata.get(MOCK_BROKER_ID).walObjects.stream().map(obj -> {
-            S3Object s3Object = this.objectsMetadata.get(obj.objectId());
-            return new S3ObjectMetadata(obj.objectId(), s3Object.getObjectSize(), obj.objectType());
-        }).collect(Collectors.toList()));
-    }
-
-
-    @Override
-    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
-        // TODO: support search not only in wal objects
-        endOffset = endOffset == NOOP_OFFSET ? Long.MAX_VALUE : endOffset;
-        long finalEndOffset = endOffset;
-        return this.submitEvent(() -> {
-            int need = limit;
-            List<S3ObjectMetadata> objs = new ArrayList<>();
-            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            if (finalEndOffset <= streamMetadata.startOffset) {
-                return objs;
-            }
-            MemoryBrokerWALMetadata metadata = this.brokerWALMetadata.get(MOCK_BROKER_ID);
-            if (metadata == null) {
-                return objs;
-            }
-            for (S3WALObject walObject : metadata.walObjects) {
-                if (need <= 0) {
-                    break;
-                }
-                if (!walObject.intersect(streamId, startOffset, finalEndOffset)) {
-                    continue;
-                }
-                // find stream index, get object
-                S3Object object = this.objectsMetadata.get(walObject.objectId());
-                S3ObjectMetadata obj = new S3ObjectMetadata(walObject.objectId(), object.getObjectSize(), walObject.objectType());
-                objs.add(obj);
-                need--;
-            }
-            return objs;
-        });
+        return null;
     }
 
     @Override
     public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        throw new UnsupportedOperationException("Not support");
+        return null;
     }
 
     @Override
     public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
-        return CompletableFuture.completedFuture(Collections.emptyList());
+        return null;
     }
 
     @Override
     public CompletableFuture<Long> createStream() {
-        return this.submitEvent(() -> {
-            long streamId = this.nextAssignedStreamId.getAndIncrement();
-            this.streamsMetadata.put(streamId,
-                    new MemoryStreamMetadata(streamId));
-            return streamId;
-        });
+        return null;
     }
 
     @Override
     public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
-        return this.submitEvent(() -> {
-            // TODO: all task should wrapped with try catch to avoid future is forgot to complete
-            // verify stream exist
-            if (!this.streamsMetadata.containsKey(streamId)) {
-                throw new StreamClientException(ErrorCode.STREAM_NOT_EXIST, "Stream " + streamId + " does not exist");
-            }
-            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            // verify epoch match
-            if (streamMetadata.epoch > epoch) {
-                throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH, "Stream " + streamId + " is fenced");
-            }
-            if (streamMetadata.epoch == epoch) {
-                if (streamMetadata.state == StreamState.OPENED) {
-                    // duplicate open
-                    return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
-                }
-            }
-            if (streamMetadata.state == StreamState.OPENED) {
-                // stream still opened, can't open again until it's closed
-                throw new StreamClientException(ErrorCode.STREAM_NOT_CLOSED, "Stream " + streamId + " is not closed");
-            }
-            // update epoch
-            streamMetadata.epoch = epoch;
-            streamMetadata.state = StreamState.OPENED;
-            return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
-        });
+        return null;
     }
 
     @Override
@@ -318,31 +83,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
-        return this.submitEvent(() -> {
-            // verify stream exist
-            if (!this.streamsMetadata.containsKey(streamId)) {
-                throw new StreamClientException(ErrorCode.STREAM_NOT_EXIST, "Stream " + streamId + " does not exist");
-            }
-            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            // verify epoch match
-            if (streamMetadata.epoch > epoch) {
-                LOGGER.warn("Stream {} is fenced, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
-                throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH, "Stream " + streamId + " is fenced");
-            }
-            if (streamMetadata.epoch < epoch) {
-                // this should not happen
-                LOGGER.error("Stream {} epoch is not match, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
-                throw new RuntimeException("Stream " + streamId + " epoch is not match");
-            }
-            if (streamMetadata.state == StreamState.CLOSED) {
-                LOGGER.warn("Stream {} is already closed at epoch: {}", streamId, epoch);
-                // duplicate close
-                return null;
-            }
-            // update epoch
-            streamMetadata.state = StreamState.CLOSED;
-            return null;
-        });
+        return null;
     }
 
     @Override
@@ -350,77 +91,367 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         return null;
     }
 
-    private S3Object prepareObject(long objectId, long ttl) {
-        long preparedTs = System.currentTimeMillis();
-        String objectKey = ObjectUtils.genKey(0, objectId);
-        return new S3Object(
-                objectId, -1, objectKey,
-                preparedTs, preparedTs + ttl, -1, -1,
-                S3ObjectState.PREPARED);
-    }
-
-
-    static class EventDriver implements Runnable {
-
-        private final ExecutorService service;
-
-        private final BlockingQueue<MemoryMetadataEvent> eventQueue;
-
-        public EventDriver() {
-            this.service = Executors.newSingleThreadExecutor();
-            this.eventQueue = new LinkedBlockingQueue<>(1024);
-        }
-
-        public void start() {
-            this.service.submit(this);
-        }
-
-        public void stop() {
-            this.service.shutdownNow();
-        }
-
-        public boolean submit(MemoryMetadataEvent event) {
-            return eventQueue.offer(event);
-        }
-
-        @Override
-        public void run() {
-            while (true) {
-                try {
-                    run0();
-                } catch (Exception e) {
-                    LOGGER.error("Error in memory manager event driver", e);
-                }
-            }
-        }
-
-        private void run0() throws InterruptedException {
-            MemoryMetadataEvent event = eventQueue.poll(5, TimeUnit.SECONDS);
-            if (event != null) {
-                event.done();
-            }
-        }
-
-    }
-
-    static class MemoryMetadataEvent<T> {
-
-        CompletableFuture<T> cb;
-        Supplier<T> eventHandler;
-
-        public MemoryMetadataEvent(CompletableFuture<T> cb, Supplier<T> eventHandler) {
-            this.cb = cb;
-            this.eventHandler = eventHandler;
-        }
-
-        public void done() {
-            try {
-                T value = eventHandler.get();
-                cb.complete(value);
-            } catch (Exception e) {
-                LOGGER.error("Failed to execute event", e);
-                cb.completeExceptionally(e);
-            }
-        }
-    }
+//    private static final int MOCK_BROKER_ID = 0;
+//    private static final Logger LOGGER = LoggerFactory.getLogger(MemoryMetadataManager.class);
+//    private final EventDriver eventDriver;
+//    private final AtomicLong nextAssignedObjectId = new AtomicLong(0L);
+//    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
+//    private final AtomicLong nextAssignedStreamId = new AtomicLong(0L);
+//    private final Map<Long/*streamId*/, MemoryStreamMetadata> streamsMetadata;
+//    private final Map<Integer/*brokerId*/, MemoryBrokerWALMetadata> brokerWALMetadata;
+//
+//    private static class MemoryStreamMetadata {
+//
+//        private final long streamId;
+//        private StreamState state;
+//        private long epoch = S3StreamConstant.INIT_EPOCH;
+//        private long startOffset = S3StreamConstant.INIT_START_OFFSET;
+//        private long endOffset = S3StreamConstant.INIT_END_OFFSET;
+//        private List<S3StreamObject> streamObjects;
+//
+//        public MemoryStreamMetadata(long streamId) {
+//            this.streamId = streamId;
+//            this.state = StreamState.CLOSED;
+//        }
+//
+//        public void addStreamObject(S3StreamObject object) {
+//            if (streamObjects == null) {
+//                streamObjects = new LinkedList<>();
+//            }
+//            streamObjects.add(object);
+//        }
+//
+//        public StreamState state() {
+//            return state;
+//        }
+//
+//        public void setState(StreamState state) {
+//            this.state = state;
+//        }
+//    }
+//
+//    private static class MemoryBrokerWALMetadata {
+//
+//        private final int brokerId;
+//        private final List<S3WALObject> walObjects;
+//
+//        public MemoryBrokerWALMetadata(int brokerId) {
+//            this.brokerId = brokerId;
+//            this.walObjects = new ArrayList<>();
+//        }
+//    }
+//
+//    public MemoryMetadataManager() {
+//        this.eventDriver = new EventDriver();
+//        this.objectsMetadata = new HashMap<>();
+//        this.streamsMetadata = new HashMap<>();
+//        this.brokerWALMetadata = new HashMap<>();
+//    }
+//
+//    public <T> CompletableFuture<T> submitEvent(Supplier<T> eventHandler) {
+//        CompletableFuture<T> cb = new CompletableFuture<>();
+//        MemoryMetadataEvent<T> event = new MemoryMetadataEvent<>(cb, eventHandler);
+//        if (!eventDriver.submit(event)) {
+//            throw new RuntimeException("Offer event failed");
+//        }
+//        return cb;
+//    }
+//
+//    public void shutdown() {
+//        this.eventDriver.stop();
+//    }
+//
+//    public void start() {
+//        this.eventDriver.start();
+//    }
+//
+//    @Override
+//    public CompletableFuture<Long> prepareObject(int count, long ttl) {
+//        return this.submitEvent(() -> {
+//            List<Long> objectIds = new ArrayList<>();
+//            for (int i = 0; i < count; i++) {
+//                long objectId = this.nextAssignedObjectId.getAndIncrement();
+//                objectIds.add(objectId);
+//                S3Object object = prepareObject(objectId, ttl);
+//                this.objectsMetadata.put(objectId, object);
+//            }
+//            return objectIds.get(0);
+//        });
+//    }
+//
+//    @Override
+//    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
+//        return this.submitEvent(() -> {
+//            CommitWALObjectResponse resp = new CommitWALObjectResponse();
+//            long objectId = request.getObjectId();
+//            long objectSize = request.getObjectSize();
+//            List<ObjectStreamRange> streamRanges = request.getStreamRanges();
+//            S3Object object = this.objectsMetadata.get(objectId);
+//            if (object == null) {
+//                throw new RuntimeException("Object " + objectId + " does not exist");
+//            }
+//            if (object.getS3ObjectState() != S3ObjectState.PREPARED) {
+//                throw new RuntimeException("Object " + objectId + " is not in prepared state");
+//            }
+//            // commit object
+//            S3Object s3Object = new S3Object(
+//                    objectId, objectSize, object.getObjectKey(),
+//                    object.getPreparedTimeInMs(), object.getExpiredTimeInMs(), System.currentTimeMillis(), -1,
+//                    S3ObjectState.COMMITTED);
+//            this.objectsMetadata.put(objectId, s3Object
+//            );
+//            // build metadata
+//            MemoryBrokerWALMetadata walMetadata = this.brokerWALMetadata.computeIfAbsent(MOCK_BROKER_ID,
+//                    k -> new MemoryBrokerWALMetadata(k));
+//            Map<Long, StreamOffsetRange> index = new HashMap<>();
+//            streamRanges.forEach(range -> {
+//                long streamId = range.getStreamId();
+//                long startOffset = range.getStartOffset();
+//                long endOffset = range.getEndOffset();
+//                index.put(streamId, new StreamOffsetRange(streamId, startOffset, endOffset));
+//                // update range endOffset
+//                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+//                streamMetadata.endOffset = endOffset;
+//            });
+//            request.getStreamObjects().forEach(streamObject -> {
+//                MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamObject.getStreamId());
+//                S3StreamObject s3StreamObject = new S3StreamObject(streamObject.getObjectId(), streamObject.getObjectSize(),
+//                        streamObject.getStreamId(), streamObject.getStartOffset(), streamObject.getEndOffset());
+//                streamMetadata.addStreamObject(s3StreamObject);
+//                streamMetadata.endOffset = Math.max(streamMetadata.endOffset, streamObject.getEndOffset());
+//            });
+//            S3WALObject walObject = new S3WALObject(objectId, MOCK_BROKER_ID, index, request.getOrderId(), s3Object.getCommittedTimeInMs());
+//            walMetadata.walObjects.add(walObject);
+//            return resp;
+//        });
+//    }
+//
+//    private boolean verifyWalStreamRanges(ObjectStreamRange range) {
+//        long streamId = range.getStreamId();
+//        long epoch = range.getEpoch();
+//        // verify
+//        MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+//        if (streamMetadata == null) {
+//            return false;
+//        }
+//        // compare epoch
+//        if (streamMetadata.epoch > epoch) {
+//            return false;
+//        }
+//        if (streamMetadata.epoch < epoch) {
+//            return false;
+//        }
+//        return true;
+//    }
+//
+//    @Override
+//    public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
+//        //TODO: SUPPORT
+//        return CompletableFuture.completedFuture(null);
+//    }
+//
+//    @Override
+//    public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
+//        return this.submitEvent(() -> this.brokerWALMetadata.get(MOCK_BROKER_ID).walObjects.stream().map(obj -> {
+//            S3Object s3Object = this.objectsMetadata.get(obj.objectId());
+//            return new S3ObjectMetadata(obj.objectId(), s3Object.getObjectSize(), obj.objectType());
+//        }).collect(Collectors.toList()));
+//    }
+//
+//
+//    @Override
+//    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
+//        // TODO: support search not only in wal objects
+//        endOffset = endOffset == NOOP_OFFSET ? Long.MAX_VALUE : endOffset;
+//        long finalEndOffset = endOffset;
+//        return this.submitEvent(() -> {
+//            int need = limit;
+//            List<S3ObjectMetadata> objs = new ArrayList<>();
+//            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+//            if (finalEndOffset <= streamMetadata.startOffset) {
+//                return objs;
+//            }
+//            MemoryBrokerWALMetadata metadata = this.brokerWALMetadata.get(MOCK_BROKER_ID);
+//            if (metadata == null) {
+//                return objs;
+//            }
+//            for (S3WALObject walObject : metadata.walObjects) {
+//                if (need <= 0) {
+//                    break;
+//                }
+//                if (!walObject.intersect(streamId, startOffset, finalEndOffset)) {
+//                    continue;
+//                }
+//                // find stream index, get object
+//                S3Object object = this.objectsMetadata.get(walObject.objectId());
+//                S3ObjectMetadata obj = new S3ObjectMetadata(walObject.objectId(), object.getObjectSize(), walObject.objectType());
+//                objs.add(obj);
+//                need--;
+//            }
+//            return objs;
+//        });
+//    }
+//
+//    @Override
+//    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+//        throw new UnsupportedOperationException("Not support");
+//    }
+//
+//    @Override
+//    public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
+//        return CompletableFuture.completedFuture(Collections.emptyList());
+//    }
+//
+//    @Override
+//    public CompletableFuture<Long> createStream() {
+//        return this.submitEvent(() -> {
+//            long streamId = this.nextAssignedStreamId.getAndIncrement();
+//            this.streamsMetadata.put(streamId,
+//                    new MemoryStreamMetadata(streamId));
+//            return streamId;
+//        });
+//    }
+//
+//    @Override
+//    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
+//        return this.submitEvent(() -> {
+//            // TODO: all task should wrapped with try catch to avoid future is forgot to complete
+//            // verify stream exist
+//            if (!this.streamsMetadata.containsKey(streamId)) {
+//                throw new StreamClientException(ErrorCode.STREAM_NOT_EXIST, "Stream " + streamId + " does not exist");
+//            }
+//            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+//            // verify epoch match
+//            if (streamMetadata.epoch > epoch) {
+//                throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH, "Stream " + streamId + " is fenced");
+//            }
+//            if (streamMetadata.epoch == epoch) {
+//                if (streamMetadata.state == StreamState.OPENED) {
+//                    // duplicate open
+//                    return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
+//                }
+//            }
+//            if (streamMetadata.state == StreamState.OPENED) {
+//                // stream still opened, can't open again until it's closed
+//                throw new StreamClientException(ErrorCode.STREAM_NOT_CLOSED, "Stream " + streamId + " is not closed");
+//            }
+//            // update epoch
+//            streamMetadata.epoch = epoch;
+//            streamMetadata.state = StreamState.OPENED;
+//            return new StreamMetadata(streamId, epoch, streamMetadata.startOffset, streamMetadata.endOffset, StreamState.OPENED);
+//        });
+//    }
+//
+//    @Override
+//    public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
+//        return null;
+//    }
+//
+//    @Override
+//    public CompletableFuture<Void> closeStream(long streamId, long epoch) {
+//        return this.submitEvent(() -> {
+//            // verify stream exist
+//            if (!this.streamsMetadata.containsKey(streamId)) {
+//                throw new StreamClientException(ErrorCode.STREAM_NOT_EXIST, "Stream " + streamId + " does not exist");
+//            }
+//            MemoryStreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+//            // verify epoch match
+//            if (streamMetadata.epoch > epoch) {
+//                LOGGER.warn("Stream {} is fenced, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
+//                throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH, "Stream " + streamId + " is fenced");
+//            }
+//            if (streamMetadata.epoch < epoch) {
+//                // this should not happen
+//                LOGGER.error("Stream {} epoch is not match, request: {}, current: {}", streamId, epoch, streamMetadata.epoch);
+//                throw new RuntimeException("Stream " + streamId + " epoch is not match");
+//            }
+//            if (streamMetadata.state == StreamState.CLOSED) {
+//                LOGGER.warn("Stream {} is already closed at epoch: {}", streamId, epoch);
+//                // duplicate close
+//                return null;
+//            }
+//            // update epoch
+//            streamMetadata.state = StreamState.CLOSED;
+//            return null;
+//        });
+//    }
+//
+//    @Override
+//    public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
+//        return null;
+//    }
+//
+//    private S3Object prepareObject(long objectId, long ttl) {
+//        long preparedTs = System.currentTimeMillis();
+//        String objectKey = ObjectUtils.genKey(0, objectId);
+//        return new S3Object(
+//                objectId, -1, objectKey,
+//                preparedTs, preparedTs + ttl, -1, -1,
+//                S3ObjectState.PREPARED);
+//    }
+//
+//
+//    static class EventDriver implements Runnable {
+//
+//        private final ExecutorService service;
+//
+//        private final BlockingQueue<MemoryMetadataEvent> eventQueue;
+//
+//        public EventDriver() {
+//            this.service = Executors.newSingleThreadExecutor();
+//            this.eventQueue = new LinkedBlockingQueue<>(1024);
+//        }
+//
+//        public void start() {
+//            this.service.submit(this);
+//        }
+//
+//        public void stop() {
+//            this.service.shutdownNow();
+//        }
+//
+//        public boolean submit(MemoryMetadataEvent event) {
+//            return eventQueue.offer(event);
+//        }
+//
+//        @Override
+//        public void run() {
+//            while (true) {
+//                try {
+//                    run0();
+//                } catch (Exception e) {
+//                    LOGGER.error("Error in memory manager event driver", e);
+//                }
+//            }
+//        }
+//
+//        private void run0() throws InterruptedException {
+//            MemoryMetadataEvent event = eventQueue.poll(5, TimeUnit.SECONDS);
+//            if (event != null) {
+//                event.done();
+//            }
+//        }
+//
+//    }
+//
+//    static class MemoryMetadataEvent<T> {
+//
+//        CompletableFuture<T> cb;
+//        Supplier<T> eventHandler;
+//
+//        public MemoryMetadataEvent(CompletableFuture<T> cb, Supplier<T> eventHandler) {
+//            this.cb = cb;
+//            this.eventHandler = eventHandler;
+//        }
+//
+//        public void done() {
+//            try {
+//                T value = eventHandler.get();
+//                cb.complete(value);
+//            } catch (Exception e) {
+//                LOGGER.error("Failed to execute event", e);
+//                cb.completeExceptionally(e);
+//            }
+//        }
+//    }
 }

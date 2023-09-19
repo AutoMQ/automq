@@ -19,6 +19,7 @@ package kafka.log.streamaspect
 
 import ElasticLogManager.NAMESPACE
 import com.automq.stream.api.Client
+import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
 import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
@@ -26,7 +27,6 @@ import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
-import org.apache.kafka.metadata.stream.ObjectUtils
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}

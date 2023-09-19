@@ -15,28 +15,17 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.controller.stream;
+package com.automq.stream.s3.metadata;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import org.apache.kafka.metadata.stream.S3Object;
+public enum StreamState {
+    CLOSED,
+    OPENED;
 
-public class MockS3Operator implements S3Operator {
-
-    private final Map<String/*objectKey*/, S3Object> objects = new HashMap<>();
-
-    @Override
-    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
-        for (String objectKey : objectKeys) {
-            objects.remove(objectKey);
-        }
-        return CompletableFuture.completedFuture(objectKeys);
+    public byte toByte() {
+        return (byte) ordinal();
     }
 
-    @Override
-    public void close() {
-
+    public static StreamState fromByte(byte b) {
+        return values()[b];
     }
 }
