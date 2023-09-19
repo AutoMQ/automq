@@ -26,8 +26,8 @@ import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.memory.MemoryMetadataManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectType;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -53,16 +53,10 @@ public class CompactionUploaderTest extends CompactionTestBase {
     public void setUp() throws Exception {
         s3Operator = new MemoryS3Operator();
         objectManager = new MemoryMetadataManager();
-        objectManager.start();
         config = mock(Config.class);
         when(config.s3ObjectCompactionNWOutBandwidth()).thenReturn(500L);
         when(config.s3ObjectCompactionUploadConcurrency()).thenReturn(3);
         when(config.s3ObjectPartSize()).thenReturn(100);
-    }
-
-    @AfterEach
-    public void tearDown() {
-        objectManager.shutdown();
     }
 
     @Test

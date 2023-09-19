@@ -21,9 +21,9 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import org.apache.kafka.metadata.stream.ObjectUtils;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectType;
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 
 import java.util.LinkedList;
 import java.util.List;

@@ -26,9 +26,9 @@ import com.automq.stream.s3.memory.MemoryMetadataManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.S3ObjectType;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -60,7 +60,6 @@ public class CompactionTestBase {
 
     public void setUp() throws Exception {
         objectManager = Mockito.spy(MemoryMetadataManager.class);
-        objectManager.start();
         s3Operator = new MemoryS3Operator();
         // stream data for object 0
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
@@ -126,7 +125,6 @@ public class CompactionTestBase {
 
     public void tearDown() {
         S3_WAL_OBJECT_METADATA_LIST.clear();
-        objectManager.shutdown();
     }
 
     protected boolean compare(StreamDataBlock block1, StreamDataBlock block2) {
