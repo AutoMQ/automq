@@ -123,20 +123,19 @@ public class DefaultS3Operator implements S3Operator {
 
     private void rangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
-        // TODO: self defined transformer to avoid bytes copy.
-        s3.getObject(request, AsyncResponseTransformer.toBytes()).thenAccept(responseBytes -> {
-            buf.writeBytes(responseBytes.asByteArrayUnsafe());
-            cf.complete(buf);
-        }).exceptionally(ex -> {
-            if (isUnrecoverable(ex)) {
-                LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
-                cf.completeExceptionally(ex);
-            } else {
-                LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
-                scheduler.schedule(() -> rangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
-            }
-            return null;
-        });
+        s3.getObject(request, AsyncResponseTransformer.toPublisher())
+                .thenAccept(responsePublisher ->
+                        responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf)))
+                .exceptionally(ex -> {
+                    if (isUnrecoverable(ex)) {
+                        LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
+                        cf.completeExceptionally(ex);
+                    } else {
+                        LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
+                        scheduler.schedule(() -> rangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
+                    }
+                    return null;
+                });
     }
 
     @Override
@@ -150,7 +149,7 @@ public class DefaultS3Operator implements S3Operator {
         long now = System.currentTimeMillis();
         int objectSize = data.readableBytes();
         PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffer(data.nioBuffer());
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         s3.putObject(request, body).thenAccept(putObjectResponse -> {
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, System.currentTimeMillis() - now);
             cf.complete(null);
@@ -277,7 +276,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
-            AsyncRequestBody body = AsyncRequestBody.fromByteBuffer(part.nioBuffer());
+            AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
             UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
                     .partNumber(partNumber).build();
             CompletableFuture<UploadPartResponse> uploadPartCf = s3.uploadPart(request, body);
@@ -430,7 +429,8 @@ public class DefaultS3Operator implements S3Operator {
 
             private void upload0() {
                 long start = System.nanoTime();
-                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf)).whenComplete((nil, ex) -> {
+                uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf));
+                partCf.whenComplete((nil, ex) -> {
                     PART_UPLOAD_COST.update(System.nanoTime() - start);
                     partBuf.release();
                 });
