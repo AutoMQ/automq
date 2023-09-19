@@ -80,6 +80,7 @@ import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
 /**
  * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
  */
+@SuppressWarnings("all")
 public class StreamControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
 
