@@ -237,6 +237,7 @@ public class BlockWALService implements WriteAheadLog {
         // 总共遇到了几次非法数据
         long meetIllegalRecordTimes = 0;
 
+        LOGGER.info("start to recover from ungraceful shutdown, recoverStartOffset: {}, recoverRemainingBytes: {}", recoverStartOffset, recoverRemainingBytes);
         do {
             long nextRecoverStartOffset;
 

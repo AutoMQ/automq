@@ -98,6 +98,7 @@ public class SlidingWindowService {
 
         // 计算写入 wal offset
         long lastWriteOffset;
+        long newWriteOffset;
         long expectedWriteOffset;
         do {
             lastWriteOffset = windowCoreData.getWindowNextWriteOffset().get();
@@ -117,7 +118,8 @@ public class SlidingWindowService {
                         expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity));
             }
 
-        } while (!windowCoreData.getWindowNextWriteOffset().compareAndSet(lastWriteOffset, expectedWriteOffset + totalWriteSize));
+            newWriteOffset = WALUtil.alignLargeByBlockSize(expectedWriteOffset + totalWriteSize);
+        } while (!windowCoreData.getWindowNextWriteOffset().compareAndSet(lastWriteOffset, newWriteOffset));
 
         return expectedWriteOffset;
     }
@@ -144,6 +146,8 @@ public class SlidingWindowService {
 
     public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
         long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
+        // align to block size
+        newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getWindowStartOffset().get();
         long windowMaxLength = windowCoreData.getWindowMaxLength().get();
         if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
@@ -261,6 +265,9 @@ public class SlidingWindowService {
         private final Lock treeMapIOTaskRequestLock = new ReentrantLock();
         private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<>();
         private final AtomicLong windowMaxLength = new AtomicLong(0);
+        /**
+         * Next write offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
+         */
         private final AtomicLong windowNextWriteOffset = new AtomicLong(0);
         /**
          * Start offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
@@ -295,7 +302,7 @@ public class SlidingWindowService {
                 treeMapWriteRecordTask.remove(wroteOffset);
 
                 if (treeMapWriteRecordTask.isEmpty()) {
-                    windowStartOffset.set(WALUtil.alignLargeByBlockSize(windowNextWriteOffset.get()));
+                    windowStartOffset.set(windowNextWriteOffset.get());
                 } else {
                     windowStartOffset.set(treeMapWriteRecordTask.firstKey());
                 }
