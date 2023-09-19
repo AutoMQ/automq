@@ -256,6 +256,7 @@ class BlockWALServiceTest {
                 recovered.add(next.recordOffset());
             }
             assertEquals(appended, recovered);
+            wal.reset().join();
         } finally {
             wal.shutdownGracefully();
         }
@@ -292,11 +293,13 @@ class BlockWALServiceTest {
             }
             assertEquals(Arrays.asList(appended0, appended1), recovered);
 
+            // Reset after recover
+            wal.reset().join();
+
             // Append another 2 records
             long appended2 = append(wal, recordSize);
-            assertEquals(WALUtil.alignLargeByBlockSize(recordSize) * 2, appended2);
             long appended3 = append(wal, recordSize);
-            assertEquals(WALUtil.alignLargeByBlockSize(recordSize) * 3, appended3);
+            assertEquals(WALUtil.alignLargeByBlockSize(recordSize) + appended2, appended3);
         } finally {
             wal.shutdownGracefully();
         }

@@ -46,30 +46,20 @@ public interface WriteAheadLog {
     Iterator<RecoverResult> recover();
 
     /**
+     * Reset all data in log.
+     * Equivalent to trim to the end of the log.
+     *
+     * @return future complete when reset done.
+     */
+    CompletableFuture<Void> reset();
+
+    /**
      * Trim data <= offset in log.
      *
      * @param offset inclusive trim offset.
      * @return future complete when trim done.
      */
     CompletableFuture<Void> trim(long offset);
-
-    class WalRecord {
-        private final long offset;
-        private final ByteBuf data;
-
-        public WalRecord(long offset, ByteBuf data) {
-            this.offset = offset;
-            this.data = data;
-        }
-
-        public long offset() {
-            return offset;
-        }
-
-        public ByteBuf data() {
-            return data;
-        }
-    }
 
     interface AppendResult {
         // The pre-allocated starting offset of the record
