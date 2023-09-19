@@ -123,20 +123,19 @@ public class DefaultS3Operator implements S3Operator {
 
     private void rangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
-        // TODO: self defined transformer to avoid bytes copy.
-        s3.getObject(request, AsyncResponseTransformer.toBytes()).thenAccept(responseBytes -> {
-            buf.writeBytes(responseBytes.asByteArrayUnsafe());
-            cf.complete(buf);
-        }).exceptionally(ex -> {
-            if (isUnrecoverable(ex)) {
-                LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
-                cf.completeExceptionally(ex);
-            } else {
-                LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
-                scheduler.schedule(() -> rangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
-            }
-            return null;
-        });
+        s3.getObject(request, AsyncResponseTransformer.toPublisher())
+                .thenAccept(responsePublisher ->
+                        responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf)))
+                .exceptionally(ex -> {
+                    if (isUnrecoverable(ex)) {
+                        LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
+                        cf.completeExceptionally(ex);
+                    } else {
+                        LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
+                        scheduler.schedule(() -> rangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
+                    }
+                    return null;
+                });
     }
 
     @Override
