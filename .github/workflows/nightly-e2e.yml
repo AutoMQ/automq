@@ -2,7 +2,7 @@ name: Nightly E2E tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 19 * * *'
 
 jobs:
   run_e2e:

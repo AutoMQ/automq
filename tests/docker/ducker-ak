@@ -607,7 +607,6 @@ ducker_down() {
     # Kafka on S3 inject start
     # remove s3
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
-    must_do -v rm -rf ${ducker_dir}/s3/volume
     # Kafka on S3 inject end
 }
 
