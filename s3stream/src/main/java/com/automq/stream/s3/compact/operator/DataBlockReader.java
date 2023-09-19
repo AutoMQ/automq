@@ -24,7 +24,7 @@ import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

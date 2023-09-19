@@ -24,7 +24,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.ByteBufferInputStream;
 import io.netty.buffer.ByteBuf;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +37,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OFFSET;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
 public class ObjectReader implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
