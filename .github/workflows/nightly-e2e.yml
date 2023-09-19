@@ -25,6 +25,7 @@ jobs:
         run: python3 tests/report_e2e_results.py
         env:
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
+          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
       - name: Bring down docker containers
         run: bash ./tests/docker/ducker-ak down
         if: ${{ always() }}
