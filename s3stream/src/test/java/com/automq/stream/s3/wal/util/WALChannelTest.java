@@ -65,7 +65,6 @@ class WALChannelTest {
             }
         }
 
-        // 随机位置写一段文本，看是否能读出来
         final String content = "Hello World";
         walChannel.write(ByteBuffer.wrap(content.getBytes()), 100);
 
@@ -73,7 +72,6 @@ class WALChannelTest {
         int read = walChannel.read(readBuffer, 100);
 
         String readString = new String(readBuffer.array());
-        // 打印出来看看
         System.out.println(new String(readBuffer.array()));
         System.out.println(read);
 

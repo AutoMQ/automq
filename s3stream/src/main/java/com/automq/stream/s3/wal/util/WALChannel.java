@@ -21,8 +21,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
- * 对访问 WAL 读写进行抽象，如果底层是块设备，则实现为对块设备以 O_DIRECT 方式读写。
- * 如果底层是文件系统，则实现为对文件系统的读写，每次写同步调用 fsync，保证数据落盘。
+ * There are two implementations of WALChannel:
+ * 1. WALFileChannel based on file system, which calls fsync after each write to ensure data is flushed to disk.
+ * 2. WALBlockDeviceChannel based on block device, which uses O_DIRECT to bypass page cache.
  */
 public interface WALChannel {
     void open() throws IOException;
@@ -32,7 +33,8 @@ public interface WALChannel {
     long capacity();
 
     /**
-     * 将 src 中的数据写入到 position 位置，只有全部写入完成，才返回成功。否则抛异常
+     * Write the remaining bytes in the given buffer to the given position.
+     * It only returns when all bytes are written successfully.
      */
     void write(ByteBuffer src, long position) throws IOException;
 
