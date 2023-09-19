@@ -17,7 +17,8 @@
 
 package com.automq.stream.s3.streams;
 
-import org.apache.kafka.metadata.stream.StreamMetadata;
+
+import com.automq.stream.s3.metadata.StreamMetadata;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

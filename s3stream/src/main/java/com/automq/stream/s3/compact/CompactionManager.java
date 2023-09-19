@@ -29,8 +29,8 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
-import org.apache.kafka.metadata.stream.StreamOffsetRange;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;

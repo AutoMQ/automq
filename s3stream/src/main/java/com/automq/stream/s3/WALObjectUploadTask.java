@@ -36,7 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.kafka.metadata.stream.ObjectUtils.NOOP_OBJECT_ID;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);

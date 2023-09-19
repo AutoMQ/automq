@@ -22,7 +22,7 @@ import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
-import org.apache.kafka.metadata.stream.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
