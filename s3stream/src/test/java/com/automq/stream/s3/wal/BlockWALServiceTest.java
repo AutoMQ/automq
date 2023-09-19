@@ -63,8 +63,7 @@ class BlockWALServiceTest {
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_TOTAL_CAPACITY;
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(blockDeviceCapacity)
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
                 .slidingWindowInitialSize(0)
                 .slidingWindowScaleUnit(4096)
                 .build()
@@ -95,8 +94,7 @@ class BlockWALServiceTest {
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(blockDeviceCapacity)
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
                 .slidingWindowInitialSize(0)
                 .slidingWindowScaleUnit(4096)
                 .build()
@@ -152,8 +150,7 @@ class BlockWALServiceTest {
         final int nThreadNums = 8;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums * nThreadNums + WAL_HEADER_TOTAL_CAPACITY;
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(blockDeviceCapacity)
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
                 .build()
                 .start();
         ExecutorService executorService = Executors.newFixedThreadPool(nThreadNums);
@@ -235,8 +232,7 @@ class BlockWALServiceTest {
         final String tempFilePath = TestUtils.tempFilePath();
 
         // Append records
-        final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath)
-                .capacity(blockDeviceCapacity)
+        final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
                 .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
@@ -246,8 +242,7 @@ class BlockWALServiceTest {
         }
 
         // Recover records
-        final WriteAheadLog wal = BlockWALService.builder(tempFilePath)
-                .capacity(blockDeviceCapacity)
+        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
                 .build()
                 .start();
         try {
@@ -267,8 +262,7 @@ class BlockWALServiceTest {
 
     @Test
     void testTrimInvalidOffset() throws IOException, OverCapacityException {
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(16384)
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), 16384)
                 .build()
                 .start();
         try {
@@ -281,8 +275,7 @@ class BlockWALServiceTest {
 
     @Test
     void testWindowGreaterThanCapacity() throws IOException, OverCapacityException {
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath())
-                .capacity(WALUtil.BLOCK_SIZE * 3L)
+        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), WALUtil.BLOCK_SIZE * 3L)
                 .slidingWindowUpperLimit(WALUtil.BLOCK_SIZE * 4L)
                 .build()
                 .start();
