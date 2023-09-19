@@ -214,7 +214,7 @@ public class S3Storage implements Storage {
                 break;
             } else {
                 // TODO: log limit
-                LOGGER.warn("log cache size {} is larger than {}, wait 100ms", maxWALCacheSize, logCache.size());
+                LOGGER.warn("log cache size {} is larger than {}, wait 100ms", logCache.size(), maxWALCacheSize);
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);

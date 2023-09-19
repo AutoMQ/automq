@@ -1561,7 +1561,7 @@ object KafkaConfig {
       .define(S3WALWindowInitialProp, LONG, 1048576L, MEDIUM, S3WALWindowInitialDoc)
       .define(S3WALWindowIncrementProp, LONG, 4194304L, MEDIUM, S3WALWindowIncrementDoc)
       .define(S3WALWindowMaxProp, LONG, 536870912L, MEDIUM, S3WALWindowMaxDoc)
-      .define(S3WALObjectSizeProp, LONG, 524288000L, MEDIUM, S3WALObjectSizeDoc)
+      .define(S3WALObjectSizeProp, LONG, 104857600L, MEDIUM, S3WALObjectSizeDoc)
       .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 8388608, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
