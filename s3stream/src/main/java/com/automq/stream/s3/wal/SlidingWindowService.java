@@ -263,7 +263,7 @@ public class SlidingWindowService {
         }
     }
 
-    public class WindowCoreData {
+    public static class WindowCoreData {
         private final Lock treeMapIOTaskRequestLock = new ReentrantLock();
         private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<>();
         private final AtomicLong windowMaxLength = new AtomicLong(0);
