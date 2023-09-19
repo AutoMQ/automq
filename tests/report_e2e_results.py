@@ -22,6 +22,7 @@ from pathlib import Path
 
 if __name__ == '__main__':
     web_hook_url = os.getenv('WEB_HOOK_URL')
+    show_results_url = os.getenv('SHOW_RESULTS_URL')
 
     # Path object for the current file
     current_file = Path(__file__)
@@ -38,7 +39,20 @@ if __name__ == '__main__':
             {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
             {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
             {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
-            {"is_short": True, "text": {"content": "", "tag": "lark_md"}}], "tag": "div"}
+            {"is_short": True, "text": {"content": "", "tag": "lark_md"}}], "tag": "div"},
+            {
+                "actions": [{
+                    "tag": "button",
+                    "text": {
+                        "content": "See more details",
+                        "tag": "lark_md"
+                    },
+                    "url": "http://%s/kafka/" % show_results_url,
+                    "type": "default",
+                    "value": {}
+                }],
+                "tag": "action"
+            }
         ]}}
     with open(os.path.join(base_path, latest_tests_folder, "report.json")) as f:
         data = json.load(f)
@@ -48,6 +62,7 @@ if __name__ == '__main__':
             'run_time_seconds']
         post_data['card']['elements'][0]['fields'][2]['text']['content'] = "** ✅ Passed：**\n %d \n" % data['num_passed']
         post_data['card']['elements'][0]['fields'][3]['text']['content'] = "** ❎ Failed：**\n %d \n" % data['num_failed']
+        post_data['card']['elements'][1]['actions'][0]['url'] += latest_tests_folder
     headers = {'Content-Type': 'application/json'}
     r = requests.post(url=web_hook_url, json=post_data, headers=headers)
     print(r.text)
