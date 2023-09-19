@@ -20,8 +20,16 @@ package com.automq.stream.s3.wal;
 import java.util.Objects;
 
 public enum ShutdownType {
-    GRACEFULLY(0), // 优雅关闭
-    UNGRACEFULLY(1);  // 暴力关闭
+    /**
+     * shutdown gracefully
+     */
+    GRACEFULLY(0),
+
+    /**
+     * shutdown ungracefully
+     */
+    UNGRACEFULLY(1);
+
     private final Integer code;
 
     ShutdownType(Integer code) {

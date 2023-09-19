@@ -25,7 +25,7 @@ import java.util.concurrent.CompletableFuture;
 import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
 
 public interface WriteRecordTask {
-    // startOffset 包含了 Record header 的大小
+    // Align to {@link WALUtil#BLOCK_SIZE}
     long startOffset();
 
     CompletableFuture<AppendResult.CallbackResult> future();

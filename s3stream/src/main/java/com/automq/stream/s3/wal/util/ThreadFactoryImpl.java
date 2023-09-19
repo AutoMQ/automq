@@ -47,7 +47,7 @@ public class ThreadFactoryImpl implements ThreadFactory {
         thread.setDaemon(daemon);
 
         // Log all uncaught exception
-        thread.setUncaughtExceptionHandler((t, e) -> LOGGER.error("[BUG] Thread has an uncaught exception, threadId={}, threadName={}", t.getId(), t.getName(), e));
+        thread.setUncaughtExceptionHandler((t, e) -> LOGGER.error("Uncaught exception in thread '{}':", t.getName(), e));
 
         return thread;
     }
