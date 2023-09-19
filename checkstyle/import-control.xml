@@ -39,6 +39,7 @@
   <allow pkg="net.jqwik.api" />
   <allow pkg="io.netty" />
   <allow pkg="software.amazon.awssdk" />
+  <allow pkg="com.automq.stream" />
 
   <!-- no one depends on the server -->
   <disallow pkg="kafka" />

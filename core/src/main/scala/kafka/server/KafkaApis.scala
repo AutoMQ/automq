@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.metrics.Timer
 import kafka.admin.AdminUtils
 import kafka.api.ElectLeadersRequestOps
 import kafka.common.OffsetAndMetadata
@@ -24,7 +25,6 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.stream.metrics.Timer
 import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.network.RequestChannel

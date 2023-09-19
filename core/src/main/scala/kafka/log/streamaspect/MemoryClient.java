@@ -17,17 +17,18 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.AppendResult;
-import kafka.log.stream.api.Client;
-import kafka.log.stream.api.CreateStreamOptions;
-import kafka.log.stream.api.FetchResult;
-import kafka.log.stream.api.KVClient;
-import kafka.log.stream.api.KeyValue;
-import kafka.log.stream.api.OpenStreamOptions;
-import kafka.log.stream.api.RecordBatch;
-import kafka.log.stream.api.RecordBatchWithContext;
-import kafka.log.stream.api.Stream;
-import kafka.log.stream.api.StreamClient;
+import com.automq.stream.RecordBatchWithContextWrapper;
+import com.automq.stream.api.AppendResult;
+import com.automq.stream.api.Client;
+import com.automq.stream.api.CreateStreamOptions;
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.KVClient;
+import com.automq.stream.api.KeyValue;
+import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.RecordBatch;
+import com.automq.stream.api.RecordBatchWithContext;
+import com.automq.stream.api.Stream;
+import com.automq.stream.api.StreamClient;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

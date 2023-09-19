@@ -17,6 +17,7 @@
 
 package kafka.log.stream.s3.streams;
 
+import com.automq.stream.s3.streams.StreamManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
@@ -36,10 +37,10 @@ import org.apache.kafka.common.requests.s3.CloseStreamRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamRequest;
-import org.apache.kafka.metadata.stream.StreamMetadata;
-import org.apache.kafka.metadata.stream.StreamState;
 import org.apache.kafka.common.requests.s3.TrimStreamRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamRequest.Builder;
+import org.apache.kafka.metadata.stream.StreamMetadata;
+import org.apache.kafka.metadata.stream.StreamState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

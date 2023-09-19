@@ -17,15 +17,16 @@
 
 package kafka.log.streamaspect;
 
-import kafka.log.stream.api.AppendResult;
-import kafka.log.stream.api.CreateStreamOptions;
-import kafka.log.stream.api.ElasticStreamClientException;
-import kafka.log.stream.api.FetchResult;
-import kafka.log.stream.api.OpenStreamOptions;
-import kafka.log.stream.api.RecordBatch;
-import kafka.log.stream.api.RecordBatchWithContext;
-import kafka.log.stream.api.Stream;
-import kafka.log.stream.api.StreamClient;
+import com.automq.stream.RecordBatchWithContextWrapper;
+import com.automq.stream.api.AppendResult;
+import com.automq.stream.api.CreateStreamOptions;
+import com.automq.stream.api.StreamClientException;
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.RecordBatch;
+import com.automq.stream.api.RecordBatchWithContext;
+import com.automq.stream.api.Stream;
+import com.automq.stream.api.StreamClient;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -317,7 +318,7 @@ class AlwaysSuccessClientTest {
             @Override
             public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
                 if (haltOpeningStream) {
-                    return CompletableFuture.failedFuture(new ElasticStreamClientException(HALT_ERROR_CODES.iterator().next(), "halt opening stream"));
+                    return CompletableFuture.failedFuture(new StreamClientException(HALT_ERROR_CODES.iterator().next(), "halt opening stream"));
                 }
                 return CompletableFuture.completedFuture(new TestStreamImpl(streamId, delayMillis, exceptionHint));
             }
@@ -433,13 +434,13 @@ class AlwaysSuccessClientTest {
         private static final List<Exception> OTHER_EXCEPTION_LIST = List.of(
                 new IOException("io exception"),
                 new RuntimeException("runtime exception"),
-                new ElasticStreamClientException(-1, "other exception")
+                new StreamClientException(-1, "other exception")
         );
 
         public Exception generateException() {
             switch (this) {
                 case HALT_EXCEPTION:
-                    return new ElasticStreamClientException(HALT_ERROR_CODES.iterator().next(), "halt operation");
+                    return new StreamClientException(HALT_ERROR_CODES.iterator().next(), "halt operation");
                 case OTHER_EXCEPTION:
                     return OTHER_EXCEPTION_LIST.get(new Random().nextInt(OTHER_EXCEPTION_LIST.size()));
                 case OK:
