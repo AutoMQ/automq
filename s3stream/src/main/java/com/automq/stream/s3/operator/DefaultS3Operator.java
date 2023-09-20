@@ -44,6 +44,7 @@ import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -53,7 +54,6 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
-import software.amazon.awssdk.services.s3.model.DeletedObject;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -227,9 +227,21 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void checkAvailable() {
-        String content = new Date().toString();
+        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+        String path = String.format("/check_available/%d", System.currentTimeMillis());
+        String multipartPath = String.format("/check_available_multipart/%d", System.currentTimeMillis());
         try {
-            this.write("/check_available", Unpooled.wrappedBuffer(content.getBytes(StandardCharsets.UTF_8))).get(30, TimeUnit.SECONDS);
+            // Simple write/read/delete
+            this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
+            this.rangeRead(path, 0, content.length).get(30, TimeUnit.SECONDS);
+            this.delete(path).get(30, TimeUnit.SECONDS);
+
+            // Multipart write/read/delete
+            Writer writer = this.writer(multipartPath);
+            writer.write(Unpooled.wrappedBuffer(content));
+            writer.close().get(30, TimeUnit.SECONDS);
+            this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
+            this.delete(multipartPath).get(30, TimeUnit.SECONDS);
         } catch (Throwable e) {
             LOGGER.error("Try connect s3 fail, please re-check the server configs", e);
             throw new IllegalArgumentException("Try connect s3 fail, please re-check the server configs", e);
