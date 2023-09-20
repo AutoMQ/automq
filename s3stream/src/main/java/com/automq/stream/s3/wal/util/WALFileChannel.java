@@ -96,6 +96,14 @@ public class WALFileChannel implements WALChannel {
 
     @Override
     public int read(ByteBuffer dst, long position) throws IOException {
-        return fileChannel.read(dst, position);
+        int bytesRead = 0;
+        while (dst.hasRemaining()) {
+            int read = fileChannel.read(dst, position + bytesRead);
+            if (read == -1) {
+                break;
+            }
+            bytesRead += read;
+        }
+        return bytesRead;
     }
 }

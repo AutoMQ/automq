@@ -113,6 +113,7 @@ public class WALBlockDeviceChannel implements WALChannel {
         int writen = 0;
         do {
             ByteBuffer slice = byteBufferWrite.slice().position(writen).limit(remaining);
+            // FIXME: make sure the position is aligned
             int write = randomAccessFile.write(slice, position + writen);
             if (write == -1) {
                 throw new IOException("write -1");
@@ -127,20 +128,28 @@ public class WALBlockDeviceChannel implements WALChannel {
 
     @Override
     public int read(ByteBuffer dst, long position) throws IOException {
+        // FIXME: a small dst will lead to a zero size read
         int bufferDirectIOAlignedSize = (int) WALUtil.alignSmallByBlockSize(dst.capacity());
 
         makeThreadLocalBytebufferMatchDirectIO(bufferDirectIOAlignedSize);
 
         ByteBuffer tlDirectBuffer = threadLocalByteBuffer.get();
         tlDirectBuffer.position(0).limit(bufferDirectIOAlignedSize);
-        int count = randomAccessFile.read(tlDirectBuffer, position);
-        if (count == -1) {
-            throw new IOException("read -1");
+
+        int bytesRead = 0;
+        while (tlDirectBuffer.hasRemaining()) {
+            // FIXME: make sure the position is aligned
+            int read = randomAccessFile.read(tlDirectBuffer, position + bytesRead);
+            if (read == -1) {
+                break;
+            }
+            bytesRead += read;
         }
 
-        tlDirectBuffer.position(0).limit(count);
+        tlDirectBuffer.position(0).limit(bytesRead);
+        // FIXME: newPosition is wrong
         dst.position(0).put(tlDirectBuffer);
-        dst.position(0).limit(count);
-        return count;
+        dst.position(0).limit(bytesRead);
+        return bytesRead;
     }
 }
