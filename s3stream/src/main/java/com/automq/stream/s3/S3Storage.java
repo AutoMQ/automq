@@ -234,22 +234,28 @@ public class S3Storage implements Storage {
     }
 
     private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
-        List<StreamRecordBatch> records = logCache.get(streamId, startOffset, endOffset, maxBytes);
-        if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {
-            return CompletableFuture.completedFuture(new ReadDataBlock(records));
+        List<StreamRecordBatch> logCacheRecords = logCache.get(streamId, startOffset, endOffset, maxBytes);
+        if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
+            return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords));
         }
-        if (!records.isEmpty()) {
-            endOffset = records.get(0).getBaseOffset();
+        if (!logCacheRecords.isEmpty()) {
+            endOffset = logCacheRecords.get(0).getBaseOffset();
         }
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApplyAsync(readDataBlock -> {
             List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
-            for (int i = 0; i < records.size() && remainingBytesSize > 0; i++) {
-                StreamRecordBatch record = records.get(i);
+            int readIndex = -1;
+            for (int i = 0; i < logCacheRecords.size() && remainingBytesSize > 0; i++) {
+                readIndex = i;
+                StreamRecordBatch record = logCacheRecords.get(i);
                 rst.add(record);
                 remainingBytesSize -= record.size();
             }
-            continuousCheck(records);
+            if (readIndex < logCacheRecords.size()) {
+                // release unnecessary record
+                logCacheRecords.subList(readIndex + 1, logCacheRecords.size()).forEach(StreamRecordBatch::release);
+            }
+            continuousCheck(rst);
             return new ReadDataBlock(rst);
         }, mainExecutor);
     }
