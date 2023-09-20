@@ -43,12 +43,24 @@ public interface WALChannel {
      */
     int read(ByteBuffer dst, long position) throws IOException;
 
+    static WALChannelBuilder builder(String path, long capacity) {
+        return new WALChannelBuilder(path, capacity);
+    }
+
     class WALChannelBuilder {
-        public static WALChannel build(String path, long maxCapacity) {
+        private final String path;
+        private final long capacity;
+
+        private WALChannelBuilder(String path, long capacity) {
+            this.path = path;
+            this.capacity = capacity;
+        }
+
+        public WALChannel build() {
             if (path.startsWith("/dev/")) {
-                return new WALBlockDeviceChannel(path, maxCapacity);
+                return new WALBlockDeviceChannel(path, capacity);
             } else {
-                return new WALFileChannel(path, maxCapacity);
+                return new WALFileChannel(path, capacity);
             }
         }
     }
