@@ -1911,6 +1911,10 @@ project(':tools') {
     implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
     implementation libs.jacksonJaxrsJsonProvider
 
+    implementation('software.amazon.awssdk:s3:2.20.127') {
+      exclude group: 'io.netty', module: '*'
+    }
+
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
     testImplementation project(':core')

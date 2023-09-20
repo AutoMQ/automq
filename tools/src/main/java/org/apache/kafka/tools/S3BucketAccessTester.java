@@ -24,6 +24,11 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.internal.HelpScreenException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+
+import java.net.URI;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
@@ -31,8 +36,26 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 /**
  * S3BucketAccessTester is a tool for testing access to S3 buckets.
  */
-public class S3BucketAccessTester {
+public class S3BucketAccessTester implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3BucketAccessTester.class);
+
+    public static void main(String[] args) throws Exception {
+        Namespace namespace = null;
+        ArgumentParser parser = TestConfig.parser();
+        try {
+            namespace = parser.parseArgs(args);
+        } catch (HelpScreenException e) {
+            System.exit(0);
+        } catch (ArgumentParserException e) {
+            parser.handleError(e);
+            System.exit(1);
+        }
+        TestConfig config = new TestConfig(namespace);
+
+        try (S3BucketAccessTester tester = new S3BucketAccessTester(config)) {
+            tester.run();
+        }
+    }
 
     static class TestConfig {
         final String endpoint;
@@ -52,7 +75,7 @@ public class S3BucketAccessTester {
                     .description("Test access to S3 buckets");
             parser.addArgument("-e", "--endpoint")
                     .action(store())
-                    .setDefault("s3.amazonaws.com")
+                    .setDefault((String) null)
                     .type(String.class)
                     .dest("endpoint")
                     .metavar("ENDPOINT")
@@ -75,19 +98,27 @@ public class S3BucketAccessTester {
         }
     }
 
-    public static void main(String[] args) throws Exception {
-        Namespace namespace = null;
-        ArgumentParser parser = TestConfig.parser();
-        try {
-            namespace = parser.parseArgs(args);
-        } catch (HelpScreenException e) {
-            System.exit(0);
-        } catch (ArgumentParserException e) {
-            parser.handleError(e);
-            System.exit(1);
+    private final S3AsyncClient s3Client;
+
+    private final String bucket;
+
+    S3BucketAccessTester(TestConfig config) {
+        S3AsyncClientBuilder builder = S3AsyncClient.builder()
+                .region(Region.of(config.region));
+        if (config.endpoint != null) {
+            builder.endpointOverride(URI.create(config.endpoint));
         }
-        TestConfig config = new TestConfig(namespace);
-        LOGGER.info("Testing access to S3 bucket {} at endpoint {} in region {}",
-                config.bucket, config.endpoint, config.region);
+        this.s3Client = builder.build();
+
+        this.bucket = config.bucket;
+    }
+
+    private void run() throws Exception {
+        s3Client.close();
+    }
+
+    @Override
+    public void close() throws Exception {
+        s3Client.close();
     }
 }
