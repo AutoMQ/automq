@@ -148,7 +148,7 @@ public class BlockCache {
         LinkedList<StreamRecordBatch> records = new LinkedList<>();
         for (Map.Entry<Long, CacheBlock> entry : streamCacheBlocks.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
-            if (cacheBlock.lastOffset < nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
+            if (cacheBlock.lastOffset <= nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
                 break;
             }
             if (readahead == null && cacheBlock.readahead != null) {
