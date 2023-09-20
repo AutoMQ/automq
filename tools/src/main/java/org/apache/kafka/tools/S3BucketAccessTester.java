@@ -22,6 +22,7 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.internal.HelpScreenException;
+import org.apache.kafka.common.utils.Exit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.regions.Region;
@@ -45,10 +46,10 @@ public class S3BucketAccessTester implements AutoCloseable {
         try {
             namespace = parser.parseArgs(args);
         } catch (HelpScreenException e) {
-            System.exit(0);
+            Exit.exit(0);
         } catch (ArgumentParserException e) {
             parser.handleError(e);
-            System.exit(1);
+            Exit.exit(1);
         }
         TestConfig config = new TestConfig(namespace);
 
@@ -82,7 +83,7 @@ public class S3BucketAccessTester implements AutoCloseable {
                     .help("S3 endpoint");
             parser.addArgument("-r", "--region")
                     .action(store())
-                    .required(true)
+                    .setDefault((String) null)
                     .type(String.class)
                     .dest("region")
                     .metavar("REGION")
@@ -103,18 +104,32 @@ public class S3BucketAccessTester implements AutoCloseable {
     private final String bucket;
 
     S3BucketAccessTester(TestConfig config) {
-        S3AsyncClientBuilder builder = S3AsyncClient.builder()
-                .region(Region.of(config.region));
+        S3AsyncClientBuilder builder = S3AsyncClient.builder();
         if (config.endpoint != null) {
             builder.endpointOverride(URI.create(config.endpoint));
+        }
+        if (config.region != null) {
+            builder.region(Region.of(config.region));
         }
         this.s3Client = builder.build();
 
         this.bucket = config.bucket;
     }
 
-    private void run() throws Exception {
-        s3Client.close();
+    private void run() {
+        LOGGER.info("Testing access to bucket {}", bucket);
+        testBucket();
+        // TODO
+        LOGGER.info("Access to bucket {} is OK", bucket);
+    }
+
+    private void testBucket() {
+        try {
+            s3Client.headBucket(builder -> builder.bucket(bucket)).get();
+            LOGGER.info("Bucket {} exists", bucket);
+        } catch (Exception e) {
+            throw new RuntimeException(String.format("Bucket %s does not exist", bucket), e);
+        }
     }
 
     @Override
