@@ -35,6 +35,7 @@ jobs:
               - '.github/workflows/**'
               - 'core/**'
               - 'metadata/**'
+              - 's3stream/**'
   build-kos:
     needs: [ paths-filter ]
     if: ${{ needs.paths-filter.outputs.build-kos == 'true' || github.event_name == 'push' }}
