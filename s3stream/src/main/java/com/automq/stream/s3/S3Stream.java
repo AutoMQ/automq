@@ -212,22 +212,16 @@ public class S3Stream implements Stream {
 
 
     static class DefaultFetchResult implements FetchResult {
-        private final List<StreamRecordBatch> records;
+        private final List<RecordBatchWithContext> records;
 
-        public DefaultFetchResult(List<StreamRecordBatch> records) {
-            this.records = records;
+        public DefaultFetchResult(List<StreamRecordBatch> streamRecords) {
+            this.records =  streamRecords.stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+            streamRecords.forEach(StreamRecordBatch::release);
         }
 
         @Override
         public List<RecordBatchWithContext> recordBatchList() {
-            return records.stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
-        }
-
-        @Override
-        public void free() {
-            for (StreamRecordBatch record : records) {
-                record.release();
-            }
+            return records;
         }
     }
 

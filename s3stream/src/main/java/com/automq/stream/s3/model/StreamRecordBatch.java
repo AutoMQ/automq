@@ -72,6 +72,9 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
     }
 
     public RecordBatch getRecordBatch() {
+        ByteBuffer buf = ByteBuffer.allocate(payload.readableBytes());
+        payload.duplicate().readBytes(buf);
+        buf.flip();
         return new RecordBatch() {
             @Override
             public int count() {
@@ -90,7 +93,7 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
 
             @Override
             public ByteBuffer rawPayload() {
-                return payload.nioBuffer();
+                return buf;
             }
         };
     }
