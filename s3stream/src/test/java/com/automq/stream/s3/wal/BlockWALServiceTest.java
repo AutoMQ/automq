@@ -306,6 +306,12 @@ class BlockWALServiceTest {
     }
 
     @Test
+    void testRecoverFromDisaster() {
+        final String tempFilePath = TestUtils.tempFilePath();
+        // TODO
+    }
+
+    @Test
     void testTrimInvalidOffset() throws IOException, OverCapacityException {
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), 16384)
                 .build()

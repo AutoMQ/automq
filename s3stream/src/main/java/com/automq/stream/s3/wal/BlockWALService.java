@@ -729,7 +729,7 @@ public class BlockWALService implements WriteAheadLog {
             blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
             blockWALService.initialWindowSize = slidingWindowInitialSize;
 
-            blockWALService.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
+            blockWALService.walChannel = WALChannel.builder(blockDevicePath, blockDeviceCapacityWant).build();
 
             blockWALService.slidingWindowService = new SlidingWindowService(
                     blockWALService.walChannel,
