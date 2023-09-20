@@ -29,7 +29,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.SortedMap;
@@ -103,7 +102,7 @@ public class BlockCache {
         List<StreamRecordBatch> part = new ArrayList<>(records.size() / 2);
         int partSize = 0;
         for (StreamRecordBatch record : records) {
-            if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset || partSize >= BLOCK_SIZE) {
+            if ((expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) && partSize < BLOCK_SIZE) {
                 part.add(record);
                 partSize += record.size();
             } else {
