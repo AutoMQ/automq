@@ -307,7 +307,7 @@ class BlockWALServiceTest {
                 .marshal();
     }
 
-    private void append(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
+    private void write(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
         ByteBuffer recordBody = TestUtils.random(recordSize).nioBuffer();
         ByteBuffer recordHeader = recordHeader(recordBody, logicOffset);
 
@@ -333,10 +333,36 @@ class BlockWALServiceTest {
     }
 
     @Test
-    public void testRecoverFromDisaster() {
+    public void testRecoverFromDisaster() throws IOException {
         final String tempFilePath = TestUtils.tempFilePath();
         final WALChannel walChannel = WALChannel.builder(tempFilePath, 1 << 20).build();
-        // TODO
+
+        // Simulate disaster
+        walChannel.open();
+        writeWALHeader(walChannel, 0, 0, 0, 1 << 15);
+        write(walChannel, 0, WALUtil.BLOCK_SIZE + 1);
+        write(walChannel, WALUtil.BLOCK_SIZE * 3L, WALUtil.BLOCK_SIZE + 1);
+        walChannel.close();
+
+        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, 1 << 20)
+                .flushHeaderIntervalSeconds(1 << 20)
+                .build()
+                .start();
+        try {
+            // Recover records
+            Iterator<RecoverResult> recover = wal.recover();
+            Assertions.assertNotNull(recover);
+
+            List<Long> recovered = new ArrayList<>();
+            while (recover.hasNext()) {
+                RecoverResult next = recover.next();
+                recovered.add(next.recordOffset());
+            }
+            assertEquals(Arrays.asList(0L, WALUtil.BLOCK_SIZE * 3L), recovered);
+            wal.reset().join();
+        } finally {
+            wal.shutdownGracefully();
+        }
     }
 
     @Test
