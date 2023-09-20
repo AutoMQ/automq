@@ -31,7 +31,7 @@ class WALChannelTest {
 
     @BeforeEach
     void setUp() {
-        walChannel = WALChannel.WALChannelBuilder.build(String.format("%s/WALChannelUnitTest.data", System.getenv("HOME")), 1024 * 1024 * 20);
+        walChannel = WALChannel.builder(String.format("%s/WALChannelUnitTest.data", System.getenv("HOME")), 1024 * 1024 * 20).build();
         try {
             walChannel.open();
         } catch (IOException e) {
