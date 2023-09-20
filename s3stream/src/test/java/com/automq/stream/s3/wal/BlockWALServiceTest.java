@@ -18,17 +18,17 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -50,16 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 class BlockWALServiceTest {
 
-    @BeforeEach
-    void setUp() {
-    }
-
-    @AfterEach
-    void tearDown() {
-    }
-
     @Test
-    void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
+    public void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums + WAL_HEADER_TOTAL_CAPACITY;
@@ -90,7 +82,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void testSingleThreadAppendWhenOverCapacity() throws IOException, InterruptedException {
+    public void testSingleThreadAppendWhenOverCapacity() throws IOException, InterruptedException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordNums / 3 + WAL_HEADER_TOTAL_CAPACITY;
@@ -145,7 +137,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void testMultiThreadAppend() throws InterruptedException, IOException {
+    public void testMultiThreadAppend() throws InterruptedException, IOException {
         final int recordSize = 4096 + 1;
         final int recordNums = 10;
         final int nThreadNums = 8;
@@ -179,7 +171,7 @@ class BlockWALServiceTest {
         }
     }
 
-    long append(WriteAheadLog wal, int recordSize) throws OverCapacityException {
+    private long append(WriteAheadLog wal, int recordSize) throws OverCapacityException {
         final AppendResult appendResult = wal.append(TestUtils.random(recordSize));
         final long recordOffset = appendResult.recordOffset();
         assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
@@ -191,7 +183,7 @@ class BlockWALServiceTest {
         return recordOffset;
     }
 
-    List<Long> append(WriteAheadLog wal, int recordSize, int recordNums) {
+    private List<Long> append(WriteAheadLog wal, int recordSize, int recordNums) {
         List<Long> recordOffsets = new ArrayList<>(recordNums);
         long offset = 0;
         for (int i = 0; i < recordNums; i++) {
@@ -222,7 +214,7 @@ class BlockWALServiceTest {
             "false, true, 10",
             "false, true, 11",
     })
-    void testSingleThreadRecover(boolean shutdown, boolean overCapacity, int recordNums) throws IOException {
+    public void testSingleThreadRecover(boolean shutdown, boolean overCapacity, int recordNums) throws IOException {
         final int recordSize = 4096 + 1;
         long blockDeviceCapacity;
         if (overCapacity) {
@@ -263,7 +255,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void testAppendAfterRecover() throws IOException, OverCapacityException {
+    public void testAppendAfterRecover() throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
         final String tempFilePath = TestUtils.tempFilePath();
 
@@ -305,14 +297,50 @@ class BlockWALServiceTest {
         }
     }
 
+
+    private ByteBuffer recordHeader(ByteBuffer body, long offset) {
+        return new SlidingWindowService.RecordHeaderCoreData()
+                .setMagicCode(BlockWALService.RECORD_HEADER_MAGIC_CODE)
+                .setRecordBodyLength(body.limit())
+                .setRecordBodyOffset(offset + BlockWALService.RECORD_HEADER_SIZE)
+                .setRecordBodyCRC(WALUtil.crc32(body))
+                .marshal();
+    }
+
+    private void append(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
+        ByteBuffer recordBody = TestUtils.random(recordSize).nioBuffer();
+        ByteBuffer recordHeader = recordHeader(recordBody, logicOffset);
+
+        ByteBuffer record = ByteBuffer.allocate(recordHeader.limit() + recordBody.limit());
+        record.put(recordHeader);
+        record.put(recordBody);
+        record.position(0);
+
+        // TODO: make this beautiful
+        long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
+        walChannel.write(record, position);
+    }
+
+    private void writeWALHeader(WALChannel walChannel, long trimOffset, long startOffset, long nextOffset, long maxLength) throws IOException {
+        ByteBuffer header = new BlockWALService.WALHeaderCoreData()
+                .setCapacity(walChannel.capacity())
+                .updateTrimOffset(trimOffset)
+                .setSlidingWindowStartOffset(startOffset)
+                .setSlidingWindowNextWriteOffset(nextOffset)
+                .setSlidingWindowMaxLength(maxLength)
+                .marshal();
+        walChannel.write(header, 0);
+    }
+
     @Test
-    void testRecoverFromDisaster() {
+    public void testRecoverFromDisaster() {
         final String tempFilePath = TestUtils.tempFilePath();
+        final WALChannel walChannel = WALChannel.builder(tempFilePath, 1 << 20).build();
         // TODO
     }
 
     @Test
-    void testTrimInvalidOffset() throws IOException, OverCapacityException {
+    public void testTrimInvalidOffset() throws IOException, OverCapacityException {
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), 16384)
                 .build()
                 .start();
@@ -325,7 +353,7 @@ class BlockWALServiceTest {
     }
 
     @Test
-    void testWindowGreaterThanCapacity() throws IOException, OverCapacityException {
+    public void testWindowGreaterThanCapacity() throws IOException, OverCapacityException {
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), WALUtil.BLOCK_SIZE * 3L)
                 .slidingWindowUpperLimit(WALUtil.BLOCK_SIZE * 4L)
                 .build()
