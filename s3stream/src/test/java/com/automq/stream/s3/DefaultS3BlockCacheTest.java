@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -40,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -99,7 +101,7 @@ public class DefaultS3BlockCacheTest {
         ObjectWriter objectWriter = ObjectWriter.writer(0, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(
                 newRecord(233, 10, 5, 512),
-                newRecord(233, 15, 5, 512)
+                newRecord(233, 15, 5, 4096)
         ));
         objectWriter.close();
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL);
@@ -113,12 +115,19 @@ public class DefaultS3BlockCacheTest {
 
         s3BlockCache.read(233L, 10L, 11L, 10000).get();
         // range read index and range read data
-        Mockito.verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
-        Mockito.verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
         // trigger readahead
         when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata2)));
+        when(objectManager.getObjects(eq(233L), eq(30L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
         s3BlockCache.read(233L, 15L, 16L, 10000).get();
-        Mockito.verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(objectManager, timeout(1000).times(1)).getObjects(eq(233L), eq(30L), eq(-1L), eq(2));
+
+        // expect readahead already cached the records
+        List<StreamRecordBatch> records = s3BlockCache.read(233L, 20L, 30L, 10000).get().getRecords();
+        assertEquals(1, records.size());
+        assertEquals(20L, records.get(0).getBaseOffset());
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
