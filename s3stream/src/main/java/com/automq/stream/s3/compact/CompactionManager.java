@@ -269,7 +269,7 @@ public class CompactionManager {
         request.getStreamObjects().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
         Map<Long, List<StreamOffsetRange>> sortedStreamOffsetRanges = compactedStreamOffsetRanges.stream()
                 .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
-        sortedStreamOffsetRanges.values().forEach(Collections::sort);
+        sortedStreamOffsetRanges.replaceAll((k, v) -> sortAndMerge(v));
         for (long objectId : request.getCompactedObjectIds()) {
             S3ObjectMetadata metadata = objectMetadataMap.get(objectId);
             for (StreamOffsetRange streamOffsetRange : metadata.getOffsetRanges()) {
@@ -293,6 +293,33 @@ public class CompactionManager {
         }
 
         return true;
+    }
+
+    private List<StreamOffsetRange> sortAndMerge(List<StreamOffsetRange> streamOffsetRangeList) {
+        if (streamOffsetRangeList.size() < 2) {
+            return streamOffsetRangeList;
+        }
+        long streamId = streamOffsetRangeList.get(0).getStreamId();
+        Collections.sort(streamOffsetRangeList);
+        List<StreamOffsetRange> mergedList = new ArrayList<>();
+        long start  = -1L;
+        long end = -1L;
+        for (int i = 0; i < streamOffsetRangeList.size() - 1; i++) {
+            StreamOffsetRange curr = streamOffsetRangeList.get(i);
+            StreamOffsetRange next = streamOffsetRangeList.get(i + 1);
+            if (start == -1) {
+                start = curr.getStartOffset();
+                end = curr.getEndOffset();
+            }
+            if (curr.getEndOffset() < next.getStartOffset()) {
+                mergedList.add(new StreamOffsetRange(curr.getStreamId(), start, end));
+                start = next.getStartOffset();
+            }
+            end = next.getEndOffset();
+        }
+        mergedList.add(new StreamOffsetRange(streamId, start, end));
+
+        return mergedList;
     }
 
     Map<Boolean, List<S3ObjectMetadata>> filterS3Objects(List<S3ObjectMetadata> s3WALObjectMetadata) {
