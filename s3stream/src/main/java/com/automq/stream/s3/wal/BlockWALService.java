@@ -441,24 +441,19 @@ public class BlockWALService implements WriteAheadLog {
         checkReadyToServe();
 
         long trimmedOffset = walHeaderCoreData.getTrimOffset();
-        if (trimmedOffset != 0) {
-            // As the offset in {@link this#trim(long)} is an inclusive offset, we need to skip the first record.
-            return recover(trimmedOffset, true);
-        } else {
-            return recover(trimmedOffset, false);
-        }
+        return recover(trimmedOffset);
     }
 
     /**
      * Recover from the given offset.
      */
-    private Iterator<RecoverResult> recover(long startOffset, boolean skipFirstRecord) {
+    private Iterator<RecoverResult> recover(long startOffset) {
         long recoverStartOffset = WALUtil.alignSmallByBlockSize(startOffset);
-        RecoverIterator iterator = new RecoverIterator(recoverStartOffset);
-        if (skipFirstRecord) {
-            if (iterator.hasNext()) {
-                iterator.next();
-            }
+        RecoverIterator iterator;
+        if (startOffset == 0) {
+            iterator = new RecoverIterator(recoverStartOffset);
+        } else {
+            iterator = new RecoverIterator(recoverStartOffset, startOffset);
         }
         return iterator;
     }
@@ -729,7 +724,7 @@ public class BlockWALService implements WriteAheadLog {
             blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
             blockWALService.initialWindowSize = slidingWindowInitialSize;
 
-            blockWALService.walChannel = WALChannel.WALChannelBuilder.build(blockDevicePath, blockDeviceCapacityWant);
+            blockWALService.walChannel = WALChannel.builder(blockDevicePath, blockDeviceCapacityWant).build();
 
             blockWALService.slidingWindowService = new SlidingWindowService(
                     blockWALService.walChannel,
@@ -814,10 +809,16 @@ public class BlockWALService implements WriteAheadLog {
 
     class RecoverIterator implements Iterator<RecoverResult> {
         private long nextRecoverOffset;
+        private long skipRecordAtOffset = -1;
         private RecoverResult next;
 
         public RecoverIterator(long nextRecoverOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
+        }
+
+        public RecoverIterator(long nextRecoverOffset, long skipRecordAtOffset) {
+            this.nextRecoverOffset = nextRecoverOffset;
+            this.skipRecordAtOffset = skipRecordAtOffset;
         }
 
         @Override
@@ -847,9 +848,14 @@ public class BlockWALService implements WriteAheadLog {
             }
             do {
                 try {
+                    boolean skip = nextRecoverOffset == skipRecordAtOffset;
                     ByteBuffer nextRecordBody = readRecord(walHeaderCoreData, nextRecoverOffset);
-                    next = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
+                    RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
                     nextRecoverOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset + RECORD_HEADER_SIZE + nextRecordBody.limit());
+                    if (skip) {
+                        continue;
+                    }
+                    next = recoverResult;
                     return true;
                 } catch (ReadRecordException e) {
                     nextRecoverOffset = e.getJumpNextRecoverOffset();
