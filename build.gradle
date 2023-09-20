@@ -1884,6 +1884,7 @@ project(':s3stream') {
 
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore
+    testImplementation libs.slf4jlog4j
   }
 
   javadoc {

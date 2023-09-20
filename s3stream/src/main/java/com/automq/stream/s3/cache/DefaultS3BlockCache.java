@@ -17,15 +17,15 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,6 +70,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
         mainExecutor.execute(() -> FutureUtil.exec(() ->
                 FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, true), readCf), readCf, LOGGER, "read")
         );
+        readCf.exceptionally(ex -> {
+            LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
+            return null;
+        });
         return readCf;
     }
 
@@ -122,37 +126,53 @@ public class DefaultS3BlockCache implements S3BlockCache {
     }
 
     private CompletableFuture<ReadDataBlock> readFromS3(long streamId, long endOffset, ReadContext context) {
-        CompletableFuture<Void> getObjectsCf = CompletableFuture.completedFuture(null);
+        CompletableFuture<Boolean /* empty objects */> getObjectsCf = CompletableFuture.completedFuture(false);
         if (context.objectIndex >= context.objects.size()) {
             getObjectsCf = objectManager
                     .getObjects(streamId, context.nextStartOffset, endOffset, 2)
                     .orTimeout(1, TimeUnit.MINUTES)
-                    .thenAccept(objects -> {
+                    .thenApply(objects -> {
                         context.objects = objects;
                         context.objectIndex = 0;
                         if (context.objects.isEmpty()) {
-                            LOGGER.error("[BUG] fail to read, expect objects not empty, streamId={}, startOffset={}, endOffset={}",
-                                    streamId, context.nextStartOffset, endOffset);
-                            throw new IllegalStateException("fail to read, expect objects not empty");
+                            if (endOffset == -1L) { // background readahead
+                                return true;
+                            } else {
+                                LOGGER.error("[BUG] fail to read, expect objects not empty, streamId={}, startOffset={}, endOffset={}",
+                                        streamId, context.nextStartOffset, endOffset);
+                                throw new IllegalStateException("fail to read, expect objects not empty");
+                            }
                         }
+                        return false;
                     });
         }
-        CompletableFuture<List<ObjectReader.DataBlockIndex>> findIndexCf = getObjectsCf.thenCompose(nil -> {
+        CompletableFuture<List<ObjectReader.DataBlockIndex>> findIndexCf = getObjectsCf.thenCompose(emptyObjects -> {
+            if (emptyObjects) {
+                return CompletableFuture.completedFuture(Collections.emptyList());
+            }
             ObjectReader reader = getObjectReader(context.objects.get(context.objectIndex));
             context.objectIndex++;
             context.reader = reader;
             return reader.find(streamId, context.nextStartOffset, endOffset, context.nextMaxBytes);
         });
         CompletableFuture<List<CompletableFuture<ObjectReader.DataBlock>>> getDataCf = findIndexCf.thenCompose(blockIndexes -> {
+            if (blockIndexes.isEmpty()) {
+                return CompletableFuture.completedFuture(Collections.emptyList());
+            }
             List<CompletableFuture<ObjectReader.DataBlock>> blockCfList = blockIndexes.stream().map(context.reader::read).collect(Collectors.toList());
             CompletableFuture<Void> allBlockCf = CompletableFuture.allOf(blockCfList.toArray(new CompletableFuture[0]));
             return allBlockCf.thenApply(nil -> blockCfList);
         });
         getDataCf.whenComplete((rst, ex) -> {
-            context.reader.release();
-            context.reader = null;
+            if (context.reader != null) {
+                context.reader.release();
+                context.reader = null;
+            }
         });
         return getDataCf.thenComposeAsync(blockCfList -> {
+            if (blockCfList.isEmpty()) {
+                return CompletableFuture.completedFuture(new ReadDataBlock(context.records));
+            }
             try {
                 long nextStartOffset = context.nextStartOffset;
                 int nextMaxBytes = context.nextMaxBytes;
@@ -210,7 +230,12 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 readaheadTasks.put(readingTaskKey, readaheadCf);
                 readaheadCf
                         .thenAccept(readDataBlock -> cache.put(streamId, readDataBlock.getRecords()))
-                        .whenComplete((nil, ex) -> readaheadTasks.remove(readingTaskKey, readaheadCf));
+                        .whenComplete((nil, ex) -> {
+                            if (ex != null) {
+                                LOGGER.error("background readahead {} fail", readahead, ex);
+                            }
+                            readaheadTasks.remove(readingTaskKey, readaheadCf);
+                        });
             });
         });
     }
