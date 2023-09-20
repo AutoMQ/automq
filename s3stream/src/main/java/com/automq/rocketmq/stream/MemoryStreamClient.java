@@ -116,7 +116,7 @@ public class MemoryStreamClient implements StreamClient {
         }
     }
 
-    static class RecordBatchWithContextWrapper implements RecordBatchWithContext {
+    public static class RecordBatchWithContextWrapper implements RecordBatchWithContext {
         private final RecordBatch recordBatch;
         private final long baseOffset;
 
