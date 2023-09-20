@@ -33,6 +33,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -140,7 +141,7 @@ public class S3BucketAccessTester implements AutoCloseable {
 
         byte[] content1 = new byte[5 << 20];
         Arrays.fill(content1, (byte) 0x42);
-        byte[] content2 = new byte[5 << 20];
+        byte[] content2 = new byte[1 << 20];
         Arrays.fill(content2, (byte) 0x84);
 
         // Simple test for put/get/delete object
@@ -155,6 +156,7 @@ public class S3BucketAccessTester implements AutoCloseable {
         List<CompletedPart> parts = testUploadPart(uploadId, multipartPath, content1, content2);
         testCompleteMultiPartUpload(uploadId, multipartPath, parts);
         testGetObject(multipartPath, content1, content2);
+        testDeleteObject(multipartPath);
 
         LOGGER.info("Access to bucket {} is OK", bucket);
     }
@@ -180,7 +182,7 @@ public class S3BucketAccessTester implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to put object to bucket %s", bucket), e);
         }
-        LOGGER.info("Put object to bucket, bucket: {}, path: {}", bucket, path);
+        LOGGER.info("Put object to bucket, bucket: {}, path: {}, size: {}", bucket, path, content.length);
     }
 
     private void testGetObject(String path, byte[]... expectedContents) throws IOException {
@@ -220,7 +222,12 @@ public class S3BucketAccessTester implements AutoCloseable {
     private String testCreateMultiPartUpload(String path) {
         CreateMultipartUploadResponse response;
         try {
-            response = s3Client.createMultipartUpload(builder -> builder.bucket(bucket).key(path)).get();
+            CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder()
+                    .bucket(bucket)
+                    .key(path)
+                    .expires(Instant.now().plusSeconds(120))
+                    .build();
+            response = s3Client.createMultipartUpload(request).get();
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to create multipart upload from bucket %s", bucket), e);
         }
@@ -245,7 +252,8 @@ public class S3BucketAccessTester implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to upload part to bucket %s", bucket), e);
         }
-        LOGGER.info("Upload parts, bucket: {}, path: {}, count: {}", bucket, path, contents.length);
+        LOGGER.info("Upload parts, bucket: {}, path: {}, count: {}, size: {}",
+                bucket, path, parts.size(), Arrays.stream(contents).mapToInt(b -> b.length).sum());
         return parts;
     }
 
