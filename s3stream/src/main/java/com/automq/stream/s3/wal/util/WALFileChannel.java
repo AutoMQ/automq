@@ -24,33 +24,33 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
 public class WALFileChannel implements WALChannel {
-    final String blockDevicePath;
-    final long blockDeviceCapacityWant;
-    long blockDeviceCapacityFact = 0;
+    final String filePath;
+    final long fileCapacityWant;
+    long fileCapacityFact = 0;
     RandomAccessFile randomAccessFile;
     FileChannel fileChannel;
 
-    public WALFileChannel(String blockDevicePath, long blockDeviceCapacityWant) {
-        this.blockDevicePath = blockDevicePath;
-        this.blockDeviceCapacityWant = blockDeviceCapacityWant;
+    public WALFileChannel(String filePath, long fileCapacityWant) {
+        this.filePath = filePath;
+        this.fileCapacityWant = fileCapacityWant;
     }
 
     @Override
     public void open() throws IOException {
-        File file = new File(blockDevicePath);
+        File file = new File(filePath);
         if (file.exists()) {
             randomAccessFile = new RandomAccessFile(file, "rw");
-            blockDeviceCapacityFact = randomAccessFile.length();
+            fileCapacityFact = randomAccessFile.length();
         } else {
             if (!file.createNewFile()) {
-                throw new IOException("create " + blockDevicePath + " fail, file already exists");
+                throw new IOException("create " + filePath + " fail, file already exists");
             }
             if (!file.setWritable(true)) {
-                throw new IOException("set " + blockDevicePath + " writable fail");
+                throw new IOException("set " + filePath + " writable fail");
             }
             randomAccessFile = new RandomAccessFile(file, "rw");
-            randomAccessFile.setLength(blockDeviceCapacityWant);
-            blockDeviceCapacityFact = blockDeviceCapacityWant;
+            randomAccessFile.setLength(fileCapacityWant);
+            fileCapacityFact = fileCapacityWant;
         }
 
         fileChannel = randomAccessFile.getChannel();
@@ -76,7 +76,7 @@ public class WALFileChannel implements WALChannel {
 
     @Override
     public long capacity() {
-        return blockDeviceCapacityFact;
+        return fileCapacityFact;
     }
 
     @Override
