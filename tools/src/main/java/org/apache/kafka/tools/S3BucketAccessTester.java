@@ -164,7 +164,7 @@ public class S3BucketAccessTester implements AutoCloseable {
             s3Client.headBucket(builder -> builder.bucket(bucket)).get();
             LOGGER.info("Bucket exists, bucket: {}", bucket);
         } catch (Exception e) {
-            throw new RuntimeException(String.format("bucket %s does not exist", bucket), e);
+            throw new RuntimeException(String.format("cannot access bucket %s", bucket), e);
         }
     }
 
@@ -224,7 +224,7 @@ public class S3BucketAccessTester implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to create multipart upload from bucket %s", bucket), e);
         }
-        LOGGER.info("Create multipart upload, bucket: {}, path: {}, uploadId: {}", bucket, path, response.uploadId());
+        LOGGER.info("Create multipart upload, bucket: {}, path: {}", bucket, path);
         return response.uploadId();
     }
 
@@ -245,7 +245,7 @@ public class S3BucketAccessTester implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to upload part to bucket %s", bucket), e);
         }
-        LOGGER.info("Upload parts, bucket: {}, path: {}, uploadId: {}, count: {}", bucket, path, uploadId, contents.length);
+        LOGGER.info("Upload parts, bucket: {}, path: {}, count: {}", bucket, path, contents.length);
         return parts;
     }
 
@@ -261,7 +261,7 @@ public class S3BucketAccessTester implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to complete multipart upload to bucket %s", bucket), e);
         }
-        LOGGER.info("Complete multipart upload, bucket: {}, path: {}, uploadId: {}", bucket, path, uploadId);
+        LOGGER.info("Complete multipart upload, bucket: {}, path: {}", bucket, path);
     }
 
     @Override
