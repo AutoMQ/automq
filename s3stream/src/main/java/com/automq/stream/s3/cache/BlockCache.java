@@ -29,6 +29,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.SortedMap;
@@ -127,6 +128,9 @@ public class BlockCache {
      * Note: the records is retained, the caller should release it.
      */
     public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        if (startOffset >= endOffset || maxBytes <= 0) {
+            return GetCacheResult.empty();
+        }
         try {
             readLock.lock();
             return get0(streamId, startOffset, endOffset, maxBytes);
