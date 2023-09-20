@@ -38,6 +38,9 @@ public interface WALChannel {
      */
     void write(ByteBuffer src, long position) throws IOException;
 
+    /**
+     * Read bytes into the given buffer from the given position until the buffer is full or the end of the file.
+     */
     int read(ByteBuffer dst, long position) throws IOException;
 
     class WALChannelBuilder {

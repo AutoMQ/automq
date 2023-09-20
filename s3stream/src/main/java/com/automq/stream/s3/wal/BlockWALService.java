@@ -308,7 +308,10 @@ public class BlockWALService implements WriteAheadLog {
         for (int i = 0; i < WAL_HEADER_COUNT; i++) {
             try {
                 final ByteBuffer byteBuffer = ByteBuffer.allocate(WAL_HEADER_SIZE);
-                walChannel.read(byteBuffer, i * WAL_HEADER_CAPACITY);
+                int read = walChannel.read(byteBuffer, i * WAL_HEADER_CAPACITY);
+                if (read != WAL_HEADER_SIZE) {
+                    continue;
+                }
                 WALHeaderCoreData walHeaderCoreData = WALHeaderCoreData.unmarshal(byteBuffer.position(0).limit(WAL_HEADER_SIZE));
                 if (walHeaderCoreDataAvailable == null || walHeaderCoreDataAvailable.lastWriteTimestamp3 < walHeaderCoreData.lastWriteTimestamp3) {
                     walHeaderCoreDataAvailable = walHeaderCoreData;
