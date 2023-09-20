@@ -42,8 +42,10 @@ public class WALFileChannel implements WALChannel {
             randomAccessFile = new RandomAccessFile(file, "rw");
             fileCapacityFact = randomAccessFile.length();
         } else {
-            if (!file.getParentFile().mkdirs()) {
-                throw new IOException("mkdirs for " + filePath + " fail");
+            if (!file.getParentFile().exists()) {
+                if (!file.getParentFile().mkdirs()) {
+                    throw new IOException("mkdirs " + file.getParentFile() + " fail");
+                }
             }
             if (!file.createNewFile()) {
                 throw new IOException("create " + filePath + " fail");
