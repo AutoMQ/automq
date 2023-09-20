@@ -25,11 +25,17 @@ import net.sourceforge.argparse4j.internal.HelpScreenException;
 import org.apache.kafka.common.utils.Exit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
@@ -118,8 +124,15 @@ public class S3BucketAccessTester implements AutoCloseable {
 
     private void run() {
         LOGGER.info("Testing access to bucket {}", bucket);
+
         testBucket();
-        // TODO
+
+        String path = String.format("test-%d", System.currentTimeMillis());
+        String content = String.format("test-%d", System.currentTimeMillis());
+        testPutObject(path, content);
+        testGetObject(path, content);
+        testDeleteObject(path);
+
         LOGGER.info("Access to bucket {} is OK", bucket);
     }
 
@@ -128,8 +141,52 @@ public class S3BucketAccessTester implements AutoCloseable {
             s3Client.headBucket(builder -> builder.bucket(bucket)).get();
             LOGGER.info("Bucket {} exists", bucket);
         } catch (Exception e) {
-            throw new RuntimeException(String.format("Bucket %s does not exist", bucket), e);
+            throw new RuntimeException(String.format("bucket %s does not exist", bucket), e);
         }
+    }
+
+    private void testPutObject(String path, String content) {
+        try {
+            PutObjectRequest request = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(path)
+                    .expires(Instant.now().plusSeconds(120))
+                    .build();
+            AsyncRequestBody body = AsyncRequestBody.fromString(content, StandardCharsets.UTF_8);
+            s3Client.putObject(request, body).get();
+        } catch (Exception e) {
+            throw new RuntimeException(String.format("failed to put object to bucket %s", bucket), e);
+        }
+        LOGGER.info("Put object {} to bucket {} successfully", path, bucket);
+    }
+
+    private void testGetObject(String path, String expectedContent) {
+        String content;
+        try {
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(path)
+                    .build();
+            content = s3Client.getObject(request, AsyncResponseTransformer.toBytes())
+                    .get()
+                    .asString(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException(String.format("failed to get object from bucket %s", bucket), e);
+        }
+        if (!expectedContent.equals(content)) {
+            throw new RuntimeException(String.format("content of object %s in bucket %s is not expected, expected: %s, actual: %s",
+                    path, bucket, expectedContent, content));
+        }
+        LOGGER.info("Get object {} from bucket {} successfully", path, bucket);
+    }
+
+    private void testDeleteObject(String path) {
+        try {
+            s3Client.deleteObject(builder -> builder.bucket(bucket).key(path)).get();
+        } catch (Exception e) {
+            throw new RuntimeException(String.format("failed to delete object from bucket %s", bucket), e);
+        }
+        LOGGER.info("Delete object {} from bucket {} successfully", path, bucket);
     }
 
     @Override
