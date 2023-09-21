@@ -232,6 +232,9 @@ import org.apache.kafka.common.requests.UnregisterBrokerRequest;
 import org.apache.kafka.common.requests.UnregisterBrokerResponse;
 import org.apache.kafka.common.requests.UpdateFeaturesRequest;
 import org.apache.kafka.common.requests.UpdateFeaturesResponse;
+import org.apache.kafka.common.requests.s3.ListAllControllerBrokerIdsRequest;
+import org.apache.kafka.common.requests.s3.ListAllControllerBrokerIdsResponse;
+import org.apache.kafka.common.message.ListAllControllerBrokerIdsRequestData;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.scram.internals.ScramFormatter;
 import org.apache.kafka.common.security.token.delegation.DelegationToken;
@@ -2075,6 +2078,39 @@ public class KafkaAdminClient extends AdminClient {
         }
         return new HashMap<>(topicFutures);
     }
+
+    // Kafka on S3 inject start
+    @Override
+    public DescribeNodeIdsResult describeNodeIds(DescribeNodeIdsOptions options) {
+        KafkaFutureImpl<List<Integer>> controllerIdsFuture = new KafkaFutureImpl<>();
+        KafkaFutureImpl<List<Integer>> brokerIdsFuture = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        runnable.call(new Call("describeNodeIds", calcDeadlineMs(now, options.timeoutMs()),
+                new LeastLoadedNodeProvider()) {
+
+            @Override
+            ListAllControllerBrokerIdsRequest.Builder createRequest(int timeoutMs) {
+                return new ListAllControllerBrokerIdsRequest.Builder(new ListAllControllerBrokerIdsRequestData()
+                        .setOnlyAlive(options.onlyAliveNodes()));
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                ListAllControllerBrokerIdsResponse response = (ListAllControllerBrokerIdsResponse) abstractResponse;
+                controllerIdsFuture.complete(response.data.controllerIds());
+                brokerIdsFuture.complete(response.data.brokerIds());
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                controllerIdsFuture.completeExceptionally(throwable);
+                brokerIdsFuture.completeExceptionally(throwable);
+            }
+        }, now);
+        return new DescribeNodeIdsResult(controllerIdsFuture, brokerIdsFuture);
+    }
+    // Kafka on S3 inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
                                                             Integer authorizedOperations) {

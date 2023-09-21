@@ -257,6 +257,12 @@ class ZkMetadataCache(
     metadataSnapshot.aliveBrokers.values.map(b => new BrokerMetadata(b.id, b.rack))
   }
 
+  // Kafka on S3 inject start
+  override def getAllBrokers(): Iterable[BrokerMetadata] = {
+    throw new UnsupportedOperationException("getAllBrokers() is not supported in ZkMetadataCache")
+  }
+  // Kafka on S3 inject end
+
   override def getAliveBrokerNode(brokerId: Int, listenerName: ListenerName): Option[Node] = {
     val snapshot = metadataSnapshot
     brokerId match {

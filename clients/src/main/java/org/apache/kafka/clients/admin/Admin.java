@@ -352,6 +352,16 @@ public interface Admin extends AutoCloseable {
      */
     DescribeClusterResult describeCluster(DescribeClusterOptions options);
 
+    // Kafka on S3 inject start
+    /**
+     * Get Ids of nodes for brokers and controllers in the cluster.
+     *
+     * @param options The options to use when getting node ids.
+     * @return The DescribeNodeIdsResult.
+     */
+    DescribeNodeIdsResult describeNodeIds(DescribeNodeIdsOptions options);
+    // Kafka on S3 inject end
+
     /**
      * This is a convenience method for {@link #describeAcls(AclBindingFilter, DescribeAclsOptions)} with
      * default options. See the overload for more details.

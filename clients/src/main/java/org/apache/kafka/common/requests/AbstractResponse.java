@@ -37,6 +37,7 @@ import org.apache.kafka.common.requests.s3.DeleteKVResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamResponse;
 import org.apache.kafka.common.requests.s3.GetKVResponse;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
+import org.apache.kafka.common.requests.s3.ListAllControllerBrokerIdsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVResponse;
@@ -286,6 +287,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return PutKVResponse.parse(responseBuffer, version);
             case DELETE_KV:
                 return DeleteKVResponse.parse(responseBuffer, version);
+            case LIST_ALL_CONTROLLER_BROKER_IDS:
+                return ListAllControllerBrokerIdsResponse.parse(responseBuffer, version);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +

@@ -71,6 +71,10 @@ trait MetadataCache {
 
   def getAliveBrokers(): Iterable[BrokerMetadata]
 
+  // Kafka on S3 inject start
+  def getAllBrokers(): Iterable[BrokerMetadata]
+  // Kafka on S3 inject end
+
   def getTopicId(topicName: String): Uuid
 
   def getTopicName(topicId: Uuid): Option[String]

@@ -66,6 +66,7 @@ import org.apache.kafka.common.requests.FindCoordinatorRequest.CoordinatorType
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.s3.{ListAllControllerBrokerIdsRequest, ListAllControllerBrokerIdsResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType._
 import org.apache.kafka.common.resource.{Resource, ResourceType}
@@ -73,6 +74,7 @@ import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.common.security.token.delegation.{DelegationToken, TokenInformation}
 import org.apache.kafka.common.utils.{ProducerIdAndEpoch, ThreadUtils, Time}
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
+import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.server.authorizer._
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion.{IBP_0_11_0_IV0, IBP_2_3_IV0}
@@ -310,6 +312,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LIST_TRANSACTIONS => handleListTransactionsRequest(request)
         case ApiKeys.ALLOCATE_PRODUCER_IDS => handleAllocateProducerIdsRequest(request)
         case ApiKeys.DESCRIBE_QUORUM => forwardToControllerOrFail(request)
+        // Kafka on S3 inject start
+        case ApiKeys.LIST_ALL_CONTROLLER_BROKER_IDS => handleListAllControllerBrokerIdsRequest(request)
+        // Kafka on S3 inject end
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -326,6 +331,28 @@ class KafkaApis(val requestChannel: RequestChannel,
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
   }
+
+  // Kafka on S3 inject start
+  def handleListAllControllerBrokerIdsRequest(request: RequestChannel.Request): Unit = {
+    val requestData = request.body[ListAllControllerBrokerIdsRequest].data
+
+    val brokers = if (requestData.onlyAlive()) {
+      metadataCache.getAliveBrokers()
+    } else {
+      metadataCache.getAllBrokers()
+    }
+
+    val controllerIdsToAddressSpec = RaftConfig.parseVoterConnections(config.quorumVoters)
+
+    requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+      val data = new ListAllControllerBrokerIdsResponseData()
+        .setThrottleTimeMs(requestThrottleMs)
+        .setControllerIds(new util.ArrayList(controllerIdsToAddressSpec.keySet))
+        .setBrokerIds(brokers.map(b => Integer.valueOf(b.id)).toList.asJava)
+      new ListAllControllerBrokerIdsResponse(data)
+    })
+  }
+  // Kafka on S3 inject end
 
   def handleLeaderAndIsrRequest(request: RequestChannel.Request): Unit = {
     val zkSupport = metadataSupport.requireZkOrThrow(KafkaApis.shouldNeverReceive(request))

@@ -326,6 +326,25 @@ public class MockAdminClient extends AdminClient {
         return new DescribeClusterResult(nodesFuture, controllerFuture, brokerIdFuture, authorizedOperationsFuture);
     }
 
+    // Kafka on S3 inject start
+    @Override
+    synchronized public DescribeNodeIdsResult describeNodeIds(DescribeNodeIdsOptions options) {
+        KafkaFutureImpl<List<Integer>> controllerIdsFuture = new KafkaFutureImpl<>();
+        KafkaFutureImpl<List<Integer>> brokerIdsFuture = new KafkaFutureImpl<>();
+        if (timeoutNextRequests > 0) {
+            controllerIdsFuture.completeExceptionally(new TimeoutException());
+            brokerIdsFuture.completeExceptionally(new TimeoutException());
+
+            --timeoutNextRequests;
+            return new DescribeNodeIdsResult(controllerIdsFuture, brokerIdsFuture);
+        }
+
+        controllerIdsFuture.complete(Collections.singletonList(controller.id()));
+        brokerIdsFuture.complete(brokers.stream().map(Node::id).collect(Collectors.toList()));
+        return new DescribeNodeIdsResult(controllerIdsFuture, brokerIdsFuture);
+    }
+    // Kafka on S3 inject end
+
     @Override
     synchronized public CreateTopicsResult createTopics(Collection<NewTopic> newTopics, CreateTopicsOptions options) {
         Map<String, KafkaFuture<CreateTopicsResult.TopicMetadataAndConfig>> createTopicResult = new HashMap<>();

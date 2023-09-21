@@ -210,6 +210,14 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
     Option(_currentImage.cluster.broker(brokerId)).count(_.inControlledShutdown) == 1
   }
 
+  // Kafka on S3 inject start
+  override def getAllBrokers(): Iterable[BrokerMetadata] = {
+    _currentImage.cluster().brokers().values().asScala.map { broker =>
+      BrokerMetadata(broker.id(), broker.rack().asScala)
+    }
+  }
+  // Kafka on S3 inject end
+
   override def getAliveBrokers(): Iterable[BrokerMetadata] = getAliveBrokers(_currentImage)
 
   private def getAliveBrokers(image: MetadataImage): Iterable[BrokerMetadata] = {
