@@ -1544,7 +1544,7 @@ object KafkaConfig {
     // elastic stream inject start
       /** ********* Elastic stream Configuration ******** */
       .define(ElasticStreamEnableProp, BOOLEAN, false, HIGH, ElasticStreamEnableDoc)
-      .define(ElasticStreamEndpointProp, STRING, null, HIGH, ElasticStreamEndpointDoc)
+      .define(ElasticStreamEndpointProp, STRING, "s3://", HIGH, ElasticStreamEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
       // elastic stream inject end
 
@@ -1569,7 +1569,7 @@ object KafkaConfig {
       .define(S3StreamObjectCompactionTaskIntervalMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionTaskIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 10737418240L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3StreamObjectCompactionLivingTimeMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionLivingTimeMinutesDoc)
-      .define(S3ControllerRequestRetryMaxCountProp, INT, 5, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
+      .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
       .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
       .define(S3ObjectCompactionIntervalProp, INT, Defaults.S3ObjectCompactionInterval, MEDIUM, S3ObjectCompactionIntervalDoc)
       .define(S3ObjectCompactionCacheSizeProp, LONG, Defaults.S3ObjectCompactionCacheSize, MEDIUM, S3ObjectCompactionCacheSizeDoc)

@@ -578,18 +578,19 @@ class BrokerServer(
       if (alterPartitionManager != null)
         CoreUtils.swallow(alterPartitionManager.shutdown(), this)
 
+
+      // elastic stream inject start
+      // Note that logs are closed in logManager.shutdown().
+      // Make sure these thread pools are shutdown after the log manager's shutdown.
+      // shutdown log and underling stream
       if (logManager != null)
         CoreUtils.swallow(logManager.shutdown(), this)
 
-      // elastic stream inject start
+      CoreUtils.swallow(ElasticLogManager.shutdownNow(), this)
+
       // log manager need clientToControllerChannelManager to send request to controller.
       if (clientToControllerChannelManager != null)
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
-
-      // Note that logs are closed in logManager.shutdown().
-      // Make sure these thread pools are shutdown after the log manager's shutdown.
-      CoreUtils.swallow(replicaManager.shutdownAdditionalThreadPools(), this)
-      CoreUtils.swallow(ElasticLogManager.shutdownNow(), this)
       // elastic stream inject end
 
       if (quotaManagers != null)
