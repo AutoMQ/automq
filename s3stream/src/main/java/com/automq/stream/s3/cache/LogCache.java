@@ -62,12 +62,26 @@ public class LogCache {
 
     /**
      * Get streamId [startOffset, endOffset) range records with maxBytes limit.
-     * - If the cache can fully fulfill the request, then returns the cached records.
-     * - Else the cache will search from last continuous stream records range and return the matched records.
-     * ex. cache data <code>[0, 10) [100, 200)</code>
-     * - query <code>[0,10)</code> will return <code>[0,10)</code>
-     * - query <code>[0, 11)</code> will return empty
-     * - query <code>[90, 110)</code> will return <code>[100, 110)</code>
+     * <p>
+     * - If the requested range can be fully satisfied, then return the corresponding cached records.
+     * - Otherwise, return the latest continuous records and leave the remaining range to block cache.
+     * <p>
+     * e.g. Cached block: [0, 10], [100, 200]
+     * <p>
+     * - query [0,10] returns [0,10] (fully satisfied)
+     * </p>
+     * <p>
+     * - query [0, 11] returns empty list (left intersect, leave all data to block cache for simplification)
+     * </p>
+     * <p>
+     * - query [5, 20] returns empty list (left intersect, leave all data to block cache for simplification)
+     * </p>
+     * <p>
+     * - query [90, 110) returns [100, 110] (right intersect, leave[90, 100) to block cache)
+     * </p>
+     * <p>
+     * - query [40, 50] returns empty list (miss match)
+     * </p>
      * Note: the records is retained, the caller should release it.
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -110,10 +124,12 @@ public class LogCache {
                     break;
                 }
             }
-            if (lastBlockStreamStartOffset == NOOP_OFFSET || lastBlockStreamStartOffset >= endOffset) {
+            if (lastBlockStreamStartOffset == NOOP_OFFSET /* Mismatch */
+                    || lastBlockStreamStartOffset >= endOffset /* non-right intersect */
+                    || lastBlockStreamStartOffset <= startOffset /* left intersect */) {
                 return Collections.emptyList();
             }
-            return get0(streamId, Math.max(lastBlockStreamStartOffset, startOffset), endOffset, maxBytes);
+            return get0(streamId, lastBlockStreamStartOffset, endOffset, maxBytes);
         }
     }
 
