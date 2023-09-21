@@ -287,6 +287,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
             lock.unlock();
         }
         if (this.consumer == null && !bootstrapServer.isEmpty()) {
+            checkAndCreateTopic();
             //TODO: fetch metadata from controller
             this.consumer = createConsumer(bootstrapServer);
             this.consumer.subscribe(Collections.singleton(metricReporterTopic));
