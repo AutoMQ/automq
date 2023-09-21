@@ -18,24 +18,30 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
-import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
+import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CloseStreamResponse extends AbstractResponse {
+public class CreateStreamsResponse extends AbstractBatchResponse<CreateStreamResponse> {
 
-    private final CloseStreamResponseData data;
+    private final CreateStreamsResponseData data;
 
-    public CloseStreamResponse(CloseStreamResponseData data) {
-        super(ApiKeys.CLOSE_STREAM);
+    public CreateStreamsResponse(CreateStreamsResponseData data) {
+        super(ApiKeys.CREATE_STREAMS);
         this.data = data;
     }
 
     @Override
-    public CloseStreamResponseData data() {
+    public List<CreateStreamResponse> subResponses() {
+        return data.createStreamResponses();
+    }
+
+    @Override
+    public CreateStreamsResponseData data() {
         return data;
     }
 
@@ -54,8 +60,8 @@ public class CloseStreamResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static CloseStreamResponse parse(ByteBuffer buffer, short version) {
-        return new CloseStreamResponse(new CloseStreamResponseData(
+    public static CreateStreamsResponse parse(ByteBuffer buffer, short version) {
+        return new CreateStreamsResponse(new CreateStreamsResponseData(
             new ByteBufferAccessor(buffer), version));
     }
 }

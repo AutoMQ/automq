@@ -50,7 +50,7 @@ public class CommitStreamObjectRequest extends AbstractRequest {
     private final CommitStreamObjectRequestData data;
 
     public CommitStreamObjectRequest(CommitStreamObjectRequestData data, short version) {
-        super(ApiKeys.DELETE_STREAM, version);
+        super(ApiKeys.COMMIT_STREAM_OBJECT, version);
         this.data = data;
     }
 

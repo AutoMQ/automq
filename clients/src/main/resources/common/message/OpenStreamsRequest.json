@@ -14,23 +14,49 @@
 // limitations under the License.
 
 {
-  "apiKey": 512,
-  "type": "response",
-  "name": "TrimStreamResponse",
+  "apiKey": 502,
+  "type": "request",
+  "listeners": [
+    "controller",
+    "broker"
+  ],
+  "name": "OpenStreamsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ErrorCode",
-      "type": "int16",
-      "versions": "0+",
-      "about": "The top level response error code"
-    },
-    {
-      "name": "ThrottleTimeMs",
+      "name": "BrokerId",
       "type": "int32",
       "versions": "0+",
-      "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+      "about": "The broker id."
+    },
+    {
+      "name": "BrokerEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The broker epoch."
+    },
+    {
+      "name": "OpenStreamRequests",
+      "type": "[]OpenStreamRequest",
+      "versions": "0+",
+      "about": "a batch of open stream requests",
+      "fields": [
+        {
+          "name": "StreamId",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamId",
+          "about": "The id of the requesting stream"
+        },
+        {
+          "name": "StreamEpoch",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamEpoch",
+          "about": "The epoch of the requesting stream in the requesting broker"
+        }
+      ]
     }
   ]
 }

@@ -18,8 +18,8 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.DeleteKVRequestData;
+import org.apache.kafka.common.message.DeleteKVResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -53,12 +53,12 @@ public class DeleteKVRequest extends AbstractRequest {
     }
 
     @Override
-    public CreateStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public DeleteKVResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CreateStreamResponseData response = new CreateStreamResponseData()
+        DeleteKVResponseData response = new DeleteKVResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CreateStreamResponse(response);
+        return new DeleteKVResponse(response);
     }
 
     @Override

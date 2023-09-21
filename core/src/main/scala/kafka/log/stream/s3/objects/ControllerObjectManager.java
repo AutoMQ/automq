@@ -26,15 +26,20 @@ import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
+import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.KafkaConfig;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractRequest.Builder;
+import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
-import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest.Builder;
+import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
@@ -65,14 +70,24 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
-        PrepareS3ObjectRequest.Builder request = new Builder(
-            new PrepareS3ObjectRequestData()
-                .setBrokerId(brokerId)
-                .setPreparedCount(count)
-                .setTimeToLiveInMs(ttl)
-        );
+        PrepareS3ObjectRequestData request = new PrepareS3ObjectRequestData()
+            .setBrokerId(brokerId)
+            .setPreparedCount(count)
+            .setTimeToLiveInMs(ttl);
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.PREPARE_S3_OBJECT;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new PrepareS3ObjectRequest.Builder(request);
+            }
+        };
         CompletableFuture<Long> future = new CompletableFuture<>();
-        RequestTask<PrepareS3ObjectResponseData, Long> task = new RequestTask<>(future, request, PrepareS3ObjectResponseData.class, resp -> {
+        RequestTask<PrepareS3ObjectResponse, Long> task = new RequestTask<>(req, future, response -> {
+            PrepareS3ObjectResponseData resp = response.data();
             switch (Errors.forCode(resp.errorCode())) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(resp.firstS3ObjectId());
@@ -86,24 +101,34 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
-        org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder wrapRequestBuilder = new org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder(
-            new CommitWALObjectRequestData()
-                .setBrokerId(brokerId)
-                .setBrokerEpoch(brokerEpoch)
-                .setOrderId(request.getOrderId())
-                .setObjectId(request.getObjectId())
-                .setObjectSize(request.getObjectSize())
-                .setObjectStreamRanges(request.getStreamRanges()
-                    .stream()
-                    .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
-                .setStreamObjects(request.getStreamObjects()
-                    .stream()
-                    .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
-                .setCompactedObjectIds(request.getCompactedObjectIds()));
+    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest commitWALObjectRequest) {
+        CommitWALObjectRequestData request = new CommitWALObjectRequestData()
+            .setBrokerId(brokerId)
+            .setBrokerEpoch(brokerEpoch)
+            .setOrderId(commitWALObjectRequest.getOrderId())
+            .setObjectId(commitWALObjectRequest.getObjectId())
+            .setObjectSize(commitWALObjectRequest.getObjectSize())
+            .setObjectStreamRanges(commitWALObjectRequest.getStreamRanges()
+                .stream()
+                .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+            .setStreamObjects(commitWALObjectRequest.getStreamObjects()
+                .stream()
+                .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
+            .setCompactedObjectIds(commitWALObjectRequest.getCompactedObjectIds());
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.COMMIT_WALOBJECT;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder(request);
+            }
+        };
         CompletableFuture<CommitWALObjectResponse> future = new CompletableFuture<>();
-        RequestTask<CommitWALObjectResponseData, CommitWALObjectResponse> task = new RequestTask<>(future, wrapRequestBuilder,
-            CommitWALObjectResponseData.class, resp -> {
+        RequestTask<org.apache.kafka.common.requests.s3.CommitWALObjectResponse, CommitWALObjectResponse> task = new RequestTask<>(req, future, response -> {
+            CommitWALObjectResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
@@ -125,36 +150,46 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
-        org.apache.kafka.common.requests.s3.CommitStreamObjectRequest.Builder wrapRequestBuilder = new org.apache.kafka.common.requests.s3.CommitStreamObjectRequest.Builder(
-            new org.apache.kafka.common.message.CommitStreamObjectRequestData()
-                .setBrokerId(brokerId)
-                .setBrokerEpoch(brokerEpoch)
-                .setObjectId(request.getObjectId())
-                .setObjectSize(request.getObjectSize())
-                .setStreamId(request.getStreamId())
-                .setStartOffset(request.getStartOffset())
-                .setEndOffset(request.getEndOffset())
-                .setSourceObjectIds(request.getSourceObjectIds()));
+    public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest commitStreamObjectRequest) {
+        CommitStreamObjectRequestData request = new CommitStreamObjectRequestData()
+            .setBrokerId(brokerId)
+            .setBrokerEpoch(brokerEpoch)
+            .setObjectId(commitStreamObjectRequest.getObjectId())
+            .setObjectSize(commitStreamObjectRequest.getObjectSize())
+            .setStreamId(commitStreamObjectRequest.getStreamId())
+            .setStartOffset(commitStreamObjectRequest.getStartOffset())
+            .setEndOffset(commitStreamObjectRequest.getEndOffset())
+            .setSourceObjectIds(commitStreamObjectRequest.getSourceObjectIds());
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.COMMIT_STREAM_OBJECT;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new org.apache.kafka.common.requests.s3.CommitStreamObjectRequest.Builder(request);
+            }
+        };
         CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<CommitStreamObjectResponseData, Void> task = new RequestTask<>(future, wrapRequestBuilder, CommitStreamObjectResponseData.class,
-            resp -> {
-                Errors code = Errors.forCode(resp.errorCode());
-                switch (code) {
-                    case NONE:
-                        return ResponseHandleResult.withSuccess(null);
-                    case BROKER_EPOCH_EXPIRED:
-                    case BROKER_EPOCH_NOT_EXIST:
-                        LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
-                        throw Errors.forCode(resp.errorCode()).exception();
-                    case OBJECT_NOT_EXIST:
-                    case COMPACTED_OBJECTS_NOT_FOUND:
-                        throw code.exception();
-                    default:
-                        LOGGER.error("Error while committing stream object: {}, code: {}, retry later", request, code);
-                        return ResponseHandleResult.withRetry();
-                }
-            });
+        RequestTask<CommitStreamObjectResponse, Void> task = new RequestTask<>(req, future, response -> {
+            CommitStreamObjectResponseData resp = response.data();
+            Errors code = Errors.forCode(resp.errorCode());
+            switch (code) {
+                case NONE:
+                    return ResponseHandleResult.withSuccess(null);
+                case BROKER_EPOCH_EXPIRED:
+                case BROKER_EPOCH_NOT_EXIST:
+                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
+                case OBJECT_NOT_EXIST:
+                case COMPACTED_OBJECTS_NOT_FOUND:
+                    throw code.exception();
+                default:
+                    LOGGER.error("Error while committing stream object: {}, code: {}, retry later", request, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
         this.requestSender.send(task);
         return future;
     }

@@ -28,22 +28,22 @@ import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
-import org.apache.kafka.common.message.CloseStreamRequestData;
-import org.apache.kafka.common.message.CloseStreamResponseData;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
-import org.apache.kafka.common.message.CreateStreamRequestData;
-import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.DeleteKVRequestData;
 import org.apache.kafka.common.message.DeleteKVResponseData;
-import org.apache.kafka.common.message.DeleteStreamRequestData;
-import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
@@ -52,14 +52,14 @@ import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
-import org.apache.kafka.common.message.OpenStreamRequestData;
-import org.apache.kafka.common.message.OpenStreamResponseData;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
 import org.apache.kafka.common.message.PutKVResponseData;
-import org.apache.kafka.common.message.TrimStreamRequestData;
-import org.apache.kafka.common.message.TrimStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamsRequestData;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -398,41 +398,41 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Create a stream
      */
-    CompletableFuture<CreateStreamResponseData> createStream(
+    CompletableFuture<CreateStreamsResponseData> createStream(
         ControllerRequestContext context,
-        CreateStreamRequestData request
+        CreateStreamsRequestData request
     );
 
     /**
      * Broker trys to open a stream with its epoch
      */
-    CompletableFuture<OpenStreamResponseData> openStream(
+    CompletableFuture<OpenStreamsResponseData> openStream(
         ControllerRequestContext context,
-        OpenStreamRequestData request
+        OpenStreamsRequestData request
     );
 
     /**
      * Broker trys to close a stream.
      */
-    CompletableFuture<CloseStreamResponseData> closeStream(
+    CompletableFuture<CloseStreamsResponseData> closeStream(
         ControllerRequestContext context,
-        CloseStreamRequestData request
+        CloseStreamsRequestData request
     );
 
     /**
      * Broker trys to trim a stream.
      */
-    CompletableFuture<TrimStreamResponseData> trimStream(
+    CompletableFuture<TrimStreamsResponseData> trimStream(
         ControllerRequestContext context,
-        TrimStreamRequestData request
+        TrimStreamsRequestData request
     );
 
     /**
      * Delete a stream.
      */
-    CompletableFuture<DeleteStreamResponseData> deleteStream(
+    CompletableFuture<DeleteStreamsResponseData> deleteStream(
         ControllerRequestContext context,
-        DeleteStreamRequestData request
+        DeleteStreamsRequestData request
     );
 
     /**

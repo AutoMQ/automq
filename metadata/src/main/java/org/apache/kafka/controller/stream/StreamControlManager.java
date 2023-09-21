@@ -17,30 +17,39 @@
 
 package org.apache.kafka.controller.stream;
 
-import java.util.HashMap;
-import java.util.stream.Stream;
-
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import org.apache.kafka.common.message.CloseStreamRequestData;
-import org.apache.kafka.common.message.CloseStreamResponseData;
+import java.util.HashMap;
+import java.util.stream.Stream;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
+import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
-import org.apache.kafka.common.message.CreateStreamRequestData;
-import org.apache.kafka.common.message.CreateStreamResponseData;
-import org.apache.kafka.common.message.DeleteStreamRequestData;
-import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
+import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
+import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamMetadata;
-import org.apache.kafka.common.message.OpenStreamRequestData;
-import org.apache.kafka.common.message.OpenStreamResponseData;
-import org.apache.kafka.common.message.TrimStreamRequestData;
-import org.apache.kafka.common.message.TrimStreamResponseData;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
+import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
+import org.apache.kafka.common.message.TrimStreamsRequestData;
+import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
+import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
@@ -216,33 +225,59 @@ public class StreamControlManager {
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
-    public ControllerResult<CreateStreamResponseData> createStream(CreateStreamRequestData data) {
+    public ControllerResult<CreateStreamsResponseData> createStream(CreateStreamsRequestData data) {
+        CreateStreamsResponseData resp = new CreateStreamsResponseData();
         int brokerId = data.brokerId();
         long brokerEpoch = data.brokerEpoch();
-        CreateStreamResponseData resp = new CreateStreamResponseData();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        List<CreateStreamResponse> resps = data.createStreamRequests().stream().map(req -> {
+            ControllerResult<CreateStreamResponse> result = createStream(brokerId, brokerEpoch, req);
+            records.addAll(result.records());
+            return result.response();
+        }).collect(Collectors.toList());
+        resp.setCreateStreamResponses(resps);
+        return ControllerResult.atomicOf(records, resp);
+    }
+
+    public ControllerResult<CreateStreamResponse> createStream(int brokerId, long brokerEpoch, CreateStreamRequest request) {
+        CreateStreamResponse resp = new CreateStreamResponse();
 
         // verify broker epoch
         Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
         if (brokerEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(brokerEpochCheckResult.code());
             log.warn("[CreateStream]: broker: {}'s epoch: {} check failed, code: {}",
-                    brokerId, brokerEpoch, brokerEpochCheckResult.code());
+                brokerId, brokerEpoch, brokerEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // TODO: pre assigned a batch of stream id in controller
         long streamId = nextAssignedStreamId.get();
         // update assigned id
         ApiMessageAndVersion record0 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
-                .setAssignedStreamId(streamId), (short) 0);
+            .setAssignedStreamId(streamId), (short) 0);
         // create stream
         ApiMessageAndVersion record = new ApiMessageAndVersion(new S3StreamRecord()
-                .setStreamId(streamId)
-                .setEpoch(S3StreamConstant.INIT_EPOCH)
-                .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
-                .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
+            .setStreamId(streamId)
+            .setEpoch(S3StreamConstant.INIT_EPOCH)
+            .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
+            .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
         resp.setStreamId(streamId);
         log.info("[CreateStream]: create stream {} success", streamId);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
+    }
+
+    public ControllerResult<OpenStreamsResponseData> openStream(OpenStreamsRequestData data) {
+        OpenStreamsResponseData resp = new OpenStreamsResponseData();
+        int brokerId = data.brokerId();
+        long brokerEpoch = data.brokerEpoch();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        List<OpenStreamResponse> resps = data.openStreamRequests().stream().map(req -> {
+            ControllerResult<OpenStreamResponse> result = openStream(brokerId, brokerEpoch, req);
+            records.addAll(result.records());
+            return result.response();
+        }).collect(Collectors.toList());
+        resp.setOpenStreamResponses(resps);
+        return ControllerResult.atomicOf(records, resp);
     }
 
     /**
@@ -278,12 +313,10 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
-    public ControllerResult<OpenStreamResponseData> openStream(OpenStreamRequestData data) {
-        OpenStreamResponseData resp = new OpenStreamResponseData();
-        long streamId = data.streamId();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        long epoch = data.streamEpoch();
+    public ControllerResult<OpenStreamResponse> openStream(int brokerId, long brokerEpoch, OpenStreamRequest request) {
+        OpenStreamResponse resp = new OpenStreamResponse();
+        long streamId = request.streamId();
+        long epoch = request.streamEpoch();
 
         // verify broker epoch
         Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
@@ -305,7 +338,7 @@ public class StreamControlManager {
         if (streamMetadata.currentEpoch.get() > epoch) {
             resp.setErrorCode(Errors.STREAM_FENCED.code());
             log.warn("[OpenStream]: stream {}'s epoch {} is larger than request epoch {}", streamId,
-                    streamMetadata.currentEpoch.get(), epoch);
+                streamMetadata.currentEpoch.get(), epoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.currentEpoch.get() == epoch) {
@@ -315,13 +348,13 @@ public class StreamControlManager {
             if (rangeMetadata == null) {
                 // should not happen
                 log.error("[OpenStream]: stream {}'s current range {} not exist when open stream with epoch: {}", streamId,
-                        streamMetadata.currentRangeIndex(), epoch);
+                    streamMetadata.currentRangeIndex(), epoch);
                 resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             if (rangeMetadata.brokerId() != brokerId) {
                 log.warn("[OpenStream]: stream {}'s current range {}'s broker {} is not equal to request broker {}",
-                        streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
+                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
                 resp.setErrorCode(Errors.STREAM_FENCED.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -331,11 +364,11 @@ public class StreamControlManager {
             List<ApiMessageAndVersion> records = new ArrayList<>();
             if (streamMetadata.currentState() == StreamState.CLOSED) {
                 records.add(new ApiMessageAndVersion(new S3StreamRecord()
-                        .setStreamId(streamId)
-                        .setEpoch(epoch)
-                        .setRangeIndex(streamMetadata.currentRangeIndex())
-                        .setStartOffset(streamMetadata.startOffset())
-                        .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+                    .setStreamId(streamId)
+                    .setEpoch(epoch)
+                    .setRangeIndex(streamMetadata.currentRangeIndex())
+                    .setStartOffset(streamMetadata.startOffset())
+                    .setStreamState(StreamState.OPENED.toByte()), (short) 0));
             }
             return ControllerResult.of(records, resp);
         }
@@ -350,11 +383,11 @@ public class StreamControlManager {
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
-                .setStreamId(streamId)
-                .setEpoch(epoch)
-                .setRangeIndex(newRangeIndex)
-                .setStartOffset(streamMetadata.startOffset())
-                .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+            .setStreamId(streamId)
+            .setEpoch(epoch)
+            .setRangeIndex(newRangeIndex)
+            .setStartOffset(streamMetadata.startOffset())
+            .setStreamState(StreamState.OPENED.toByte()), (short) 0));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
         long startOffset = 0;
@@ -365,12 +398,12 @@ public class StreamControlManager {
         }
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
-                .setStreamId(streamId)
-                .setBrokerId(brokerId)
-                .setStartOffset(startOffset)
-                .setEndOffset(startOffset)
-                .setEpoch(epoch)
-                .setRangeIndex(newRangeIndex), (short) 0));
+            .setStreamId(streamId)
+            .setBrokerId(brokerId)
+            .setStartOffset(startOffset)
+            .setEndOffset(startOffset)
+            .setEpoch(epoch)
+            .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
         log.info("[OpenStream]: broker: {} open stream: {} with epoch: {} success", brokerId, streamId, epoch);
@@ -404,12 +437,24 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
-    public ControllerResult<CloseStreamResponseData> closeStream(CloseStreamRequestData data) {
-        CloseStreamResponseData resp = new CloseStreamResponseData();
-        long streamId = data.streamId();
+    public ControllerResult<CloseStreamsResponseData> closeStream(CloseStreamsRequestData data) {
+        CloseStreamsResponseData resp = new CloseStreamsResponseData();
         int brokerId = data.brokerId();
         long brokerEpoch = data.brokerEpoch();
-        long epoch = data.streamEpoch();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        List<CloseStreamResponse> resps = data.closeStreamRequests().stream().map(req -> {
+            ControllerResult<CloseStreamResponse> result = closeStream(brokerId, brokerEpoch, req);
+            records.addAll(result.records());
+            return result.response();
+        }).collect(Collectors.toList());
+        resp.setCloseStreamResponses(resps);
+        return ControllerResult.atomicOf(records, resp);
+    }
+
+    public ControllerResult<CloseStreamResponse> closeStream(int brokerId, long brokerEpoch, CloseStreamRequest request) {
+        CloseStreamResponse resp = new CloseStreamResponse();
+        long streamId = request.streamId();
+        long epoch = request.streamEpoch();
 
         // verify broker epoch
         Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
@@ -434,24 +479,36 @@ public class StreamControlManager {
         // now the request in valid, update the stream's state
         // stream update record
         List<ApiMessageAndVersion> records = List.of(
-                new ApiMessageAndVersion(new S3StreamRecord()
-                        .setStreamId(streamId)
-                        .setEpoch(epoch)
-                        .setRangeIndex(streamMetadata.currentRangeIndex())
-                        .setStartOffset(streamMetadata.startOffset())
-                        .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
+            new ApiMessageAndVersion(new S3StreamRecord()
+                .setStreamId(streamId)
+                .setEpoch(epoch)
+                .setRangeIndex(streamMetadata.currentRangeIndex())
+                .setStartOffset(streamMetadata.startOffset())
+                .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
         log.info("[CloseStream]: broker: {} close stream: {} with epoch: {} success", brokerId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<TrimStreamResponseData> trimStream(TrimStreamRequestData data) {
-        // TODO: speed up offset updating
-        long epoch = data.streamEpoch();
-        long streamId = data.streamId();
-        long newStartOffset = data.newStartOffset();
+    public ControllerResult<TrimStreamsResponseData> trimStream(TrimStreamsRequestData data) {
+        TrimStreamsResponseData resp = new TrimStreamsResponseData();
         int brokerId = data.brokerId();
         long brokerEpoch = data.brokerEpoch();
-        TrimStreamResponseData resp = new TrimStreamResponseData();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        List<TrimStreamResponse> resps = data.trimStreamRequests().stream().map(req -> {
+            ControllerResult<TrimStreamResponse> result = trimStream(brokerId, brokerEpoch, req);
+            records.addAll(result.records());
+            return result.response();
+        }).collect(Collectors.toList());
+        resp.setTrimStreamResponses(resps);
+        return ControllerResult.atomicOf(records, resp);
+    }
+
+    public ControllerResult<TrimStreamResponse> trimStream(int brokerId, long brokerEpoch, TrimStreamRequest request) {
+        // TODO: speed up offset updating
+        long epoch = request.streamEpoch();
+        long streamId = request.streamId();
+        long newStartOffset = request.newStartOffset();
+        TrimStreamResponse resp = new TrimStreamResponse();
 
         // verify broker epoch
         Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
@@ -476,7 +533,7 @@ public class StreamControlManager {
         }
         if (streamMetadata.startOffset() > newStartOffset) {
             log.warn("[TrimStream]: stream {}'s start offset {} is larger than request new start offset {}",
-                    streamId, streamMetadata.startOffset(), newStartOffset);
+                streamId, streamMetadata.startOffset(), newStartOffset);
             resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -488,11 +545,11 @@ public class StreamControlManager {
         // update the stream metadata start offset
         List<ApiMessageAndVersion> records = new ArrayList<>();
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
-                .setStreamId(streamId)
-                .setEpoch(epoch)
-                .setRangeIndex(streamMetadata.currentRangeIndex())
-                .setStartOffset(newStartOffset)
-                .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
+            .setStreamId(streamId)
+            .setEpoch(epoch)
+            .setRangeIndex(streamMetadata.currentRangeIndex())
+            .setStartOffset(newStartOffset)
+            .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
         // remove range or update range's start offset
         streamMetadata.ranges.entrySet().stream().forEach(it -> {
             Integer rangeIndex = it.getKey();
@@ -519,18 +576,18 @@ public class StreamControlManager {
             if (newStartOffset >= range.endOffset()) {
                 // remove range
                 records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
-                        .setStreamId(streamId)
-                        .setRangeIndex(rangeIndex), (short) 0));
+                    .setStreamId(streamId)
+                    .setRangeIndex(rangeIndex), (short) 0));
                 return;
             }
             // update range's start offset
             records.add(new ApiMessageAndVersion(new RangeRecord()
-                    .setStreamId(streamId)
-                    .setBrokerId(range.brokerId())
-                    .setStartOffset(newStartOffset)
-                    .setEndOffset(range.endOffset())
-                    .setEpoch(range.epoch())
-                    .setRangeIndex(rangeIndex), (short) 0));
+                .setStreamId(streamId)
+                .setBrokerId(range.brokerId())
+                .setStartOffset(newStartOffset)
+                .setEndOffset(range.endOffset())
+                .setEpoch(range.epoch())
+                .setRangeIndex(rangeIndex), (short) 0));
         });
         // remove stream object
         streamMetadata.streamObjects.entrySet().stream().forEach(it -> {
@@ -544,8 +601,8 @@ public class StreamControlManager {
             if (newStartOffset >= streamEndOffset) {
                 // remove stream object
                 records.add(new ApiMessageAndVersion(new RemoveS3StreamObjectRecord()
-                        .setStreamId(streamId)
-                        .setObjectId(objectId), (short) 0));
+                    .setStreamId(streamId)
+                    .setObjectId(objectId), (short) 0));
                 ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
                     Collections.singletonList(objectId));
                 if (!markDestroyResult.response()) {
@@ -601,12 +658,24 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<DeleteStreamResponseData> deleteStream(DeleteStreamRequestData data) {
-        long epoch = data.streamEpoch();
-        long streamId = data.streamId();
+    public ControllerResult<DeleteStreamsResponseData> deleteStream(DeleteStreamsRequestData data) {
+        DeleteStreamsResponseData resp = new DeleteStreamsResponseData();
         int brokerId = data.brokerId();
         long brokerEpoch = data.brokerEpoch();
-        DeleteStreamResponseData resp = new DeleteStreamResponseData();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        List<DeleteStreamResponse> resps = data.deleteStreamRequests().stream().map(req -> {
+            ControllerResult<DeleteStreamResponse> result = deleteStream(brokerId, brokerEpoch, req);
+            records.addAll(result.records());
+            return result.response();
+        }).collect(Collectors.toList());
+        resp.setDeleteStreamResponses(resps);
+        return ControllerResult.atomicOf(records, resp);
+    }
+
+    public ControllerResult<DeleteStreamResponse> deleteStream(int brokerId, long brokerEpoch, DeleteStreamRequest request) {
+        long epoch = request.streamEpoch();
+        long streamId = request.streamId();
+        DeleteStreamResponse resp = new DeleteStreamResponse();
 
         // verify broker epoch
         Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
@@ -629,7 +698,7 @@ public class StreamControlManager {
         // generate remove stream record
         List<ApiMessageAndVersion> records = new ArrayList<>();
         records.add(new ApiMessageAndVersion(new RemoveS3StreamRecord()
-                .setStreamId(streamId), (short) 0));
+            .setStreamId(streamId), (short) 0));
         // generate stream objects destroy records
         List<Long> streamObjectIds = streamMetadata.streamObjects.keySet().stream().collect(Collectors.toList());
         ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
