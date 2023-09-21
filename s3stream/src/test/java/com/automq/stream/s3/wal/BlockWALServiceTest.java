@@ -504,7 +504,7 @@ class BlockWALServiceTest {
     public void testRecoverAfterReset() throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
         final int recordCount = 10;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount + WAL_HEADER_TOTAL_CAPACITY;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount * 2 + WAL_HEADER_TOTAL_CAPACITY;
         final String tempFilePath = TestUtils.tempFilePath();
 
         // 1. append and force shutdown
