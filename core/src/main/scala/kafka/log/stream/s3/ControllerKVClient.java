@@ -22,17 +22,22 @@ import com.automq.stream.api.KeyValue;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
+import kafka.log.stream.s3.network.request.WrapRequest;
 import org.apache.kafka.common.message.DeleteKVRequestData;
 import org.apache.kafka.common.message.DeleteKVResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
 import org.apache.kafka.common.message.GetKVResponseData;
 import org.apache.kafka.common.message.PutKVRequestData;
 import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.AbstractRequest.Builder;
 import org.apache.kafka.common.requests.s3.DeleteKVRequest;
+import org.apache.kafka.common.requests.s3.DeleteKVResponse;
 import org.apache.kafka.common.requests.s3.GetKVRequest;
+import org.apache.kafka.common.requests.s3.GetKVResponse;
 import org.apache.kafka.common.requests.s3.PutKVRequest;
-import org.apache.kafka.common.requests.s3.PutKVRequest.Builder;
+import org.apache.kafka.common.requests.s3.PutKVResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,15 +58,25 @@ public class ControllerKVClient implements KVClient {
     @Override
     public CompletableFuture<Void> putKV(List<KeyValue> list) {
         LOGGER.trace("[ControllerKVClient]: Put KV: {}", list);
-        PutKVRequest.Builder requestBuilder = new Builder(
-                new PutKVRequestData()
-                        .setKeyValues(list.stream().map(kv -> new PutKVRequestData.KeyValue()
-                                .setKey(kv.key())
-                                .setValue(kv.value().array())
-                        ).collect(Collectors.toList()))
-        );
+        PutKVRequestData request = new PutKVRequestData()
+            .setKeyValues(list.stream().map(kv -> new PutKVRequestData.KeyValue()
+                .setKey(kv.key())
+                .setValue(kv.value().array())
+            ).collect(Collectors.toList()));
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.PUT_KV;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new PutKVRequest.Builder(request);
+            }
+        };
         CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<PutKVResponseData, Void> task = new RequestTask<>(future, requestBuilder, PutKVResponseData.class, resp -> {
+        RequestTask<PutKVResponse, Void> task = new RequestTask<PutKVResponse, Void>(req, future, response -> {
+            PutKVResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
@@ -79,19 +94,29 @@ public class ControllerKVClient implements KVClient {
     @Override
     public CompletableFuture<List<KeyValue>> getKV(List<String> list) {
         LOGGER.trace("[ControllerKVClient]: Get KV: {}", list);
-        GetKVRequest.Builder requestBuilder = new GetKVRequest.Builder(
-                new GetKVRequestData()
-                        .setKeys(list)
-        );
+        GetKVRequestData request = new GetKVRequestData()
+            .setKeys(list);
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.GET_KV;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new GetKVRequest.Builder(request);
+            }
+        };
         CompletableFuture<List<KeyValue>> future = new CompletableFuture<>();
-        RequestTask<GetKVResponseData, List<KeyValue>> task = new RequestTask<>(future, requestBuilder, GetKVResponseData.class, resp -> {
+        RequestTask<GetKVResponse, List<KeyValue>> task = new RequestTask<>(req, future, response -> {
+            GetKVResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
                     List<KeyValue> keyValues = resp.keyValues()
-                            .stream()
-                            .map(kv -> KeyValue.of(kv.key(), kv.value() != null ? ByteBuffer.wrap(kv.value()) : null))
-                            .collect(Collectors.toList());
+                        .stream()
+                        .map(kv -> KeyValue.of(kv.key(), kv.value() != null ? ByteBuffer.wrap(kv.value()) : null))
+                        .collect(Collectors.toList());
                     LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", list, keyValues);
                     return ResponseHandleResult.withSuccess(keyValues);
                 default:
@@ -106,12 +131,22 @@ public class ControllerKVClient implements KVClient {
     @Override
     public CompletableFuture<Void> delKV(List<String> list) {
         LOGGER.trace("[ControllerKVClient]: Delete KV: {}", String.join(",", list));
-        DeleteKVRequest.Builder requestBuilder = new DeleteKVRequest.Builder(
-                new DeleteKVRequestData()
-                        .setKeys(list)
-        );
+        DeleteKVRequestData request = new DeleteKVRequestData()
+            .setKeys(list);
+        WrapRequest req = new WrapRequest() {
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.DELETE_KV;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new DeleteKVRequest.Builder(request);
+            }
+        };
         CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<DeleteKVResponseData, Void> task = new RequestTask<>(future, requestBuilder, DeleteKVResponseData.class, resp -> {
+        RequestTask<DeleteKVResponse, Void> task = new RequestTask<>(req, future, response -> {
+            DeleteKVResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
