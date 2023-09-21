@@ -137,12 +137,12 @@ public class S3ObjectMetadata {
         return offsetRanges.get(offsetRanges.size() - 1).getEndOffset();
     }
 
-    public boolean intersect(long streamId, long startOffset) {
+    public boolean intersect(long streamId, long startOffset, long endOffset) {
         if (offsetRanges == null || offsetRanges.isEmpty()) {
             return false;
         }
         for (StreamOffsetRange offsetRange : offsetRanges) {
-            if (offsetRange.getStreamId() == streamId && offsetRange.intersect(startOffset)) {
+            if (offsetRange.getStreamId() == streamId && offsetRange.intersect(startOffset, endOffset)) {
                 return true;
             }
         }
