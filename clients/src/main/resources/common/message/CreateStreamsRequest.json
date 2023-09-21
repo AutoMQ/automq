@@ -14,35 +14,41 @@
 // limitations under the License.
 
 {
-  "apiKey": 502,
-  "type": "response",
-  "name": "OpenStreamResponse",
+  "apiKey": 501,
+  "type": "request",
+  "listeners": [
+    "controller",
+    "broker"
+  ],
+  "name": "CreateStreamsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ErrorCode",
-      "type": "int16",
-      "versions": "0+",
-      "about": "The top level response error code"
-    },
-    {
-      "name": "ThrottleTimeMs",
+      "name": "BrokerId",
       "type": "int32",
       "versions": "0+",
-      "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+      "about": "The broker id."
     },
     {
-      "name": "StartOffset",
+      "name": "BrokerEpoch",
       "type": "int64",
       "versions": "0+",
-      "about": "The start offset of the opened stream"
+      "about": "The broker epoch."
     },
     {
-      "name": "NextOffset",
-      "type": "int64",
+      "name": "CreateStreamRequests",
+      "type": "[]CreateStreamRequest",
       "versions": "0+",
-      "about": "The next offset of the opened stream"
+      "about": "The create stream requests.",
+      "fields": [
+        {
+          "name": "BrokerId",
+          "type": "int32",
+          "versions": "0+",
+          "about": "The broker id.(meaningless, only for placeholder)"
+        }
+      ]
     }
   ]
 }

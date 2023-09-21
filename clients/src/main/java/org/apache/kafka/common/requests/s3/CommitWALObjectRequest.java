@@ -48,7 +48,7 @@ public class CommitWALObjectRequest extends AbstractRequest {
     private final CommitWALObjectRequestData data;
 
     public CommitWALObjectRequest(CommitWALObjectRequestData data, short version) {
-        super(ApiKeys.DELETE_STREAM, version);
+        super(ApiKeys.COMMIT_WALOBJECT, version);
         this.data = data;
     }
 

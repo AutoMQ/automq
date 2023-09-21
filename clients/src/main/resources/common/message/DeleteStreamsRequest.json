@@ -14,13 +14,13 @@
 // limitations under the License.
 
 {
-  "apiKey": 501,
+  "apiKey": 504,
   "type": "request",
   "listeners": [
     "controller",
     "broker"
   ],
-  "name": "CreateStreamRequest",
+  "name": "DeleteStreamsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -35,6 +35,28 @@
       "type": "int64",
       "versions": "0+",
       "about": "The broker epoch."
+    },
+    {
+      "name": "DeleteStreamRequests",
+      "type": "[]DeleteStreamRequest",
+      "versions": "0+",
+      "about": "a batch of delete stream requests",
+      "fields": [
+        {
+          "name": "StreamId",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamId",
+          "about": "The id of the requesting stream"
+        },
+        {
+          "name": "StreamEpoch",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamEpoch",
+          "about": "The epoch of the requesting stream in the requesting broker"
+        }
+      ]
     }
   ]
 }

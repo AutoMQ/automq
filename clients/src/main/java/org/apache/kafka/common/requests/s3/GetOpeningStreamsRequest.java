@@ -19,7 +19,7 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
-import org.apache.kafka.common.message.CreateStreamResponseData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -54,12 +54,12 @@ public class GetOpeningStreamsRequest extends AbstractRequest {
     }
 
     @Override
-    public CreateStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public GetOpeningStreamsResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CreateStreamResponseData response = new CreateStreamResponseData()
+        GetOpeningStreamsResponseData response = new GetOpeningStreamsResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CreateStreamResponse(response);
+        return new GetOpeningStreamsResponse(response);
     }
 
     @Override

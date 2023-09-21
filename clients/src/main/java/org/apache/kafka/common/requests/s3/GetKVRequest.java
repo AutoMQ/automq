@@ -18,8 +18,8 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.CreateStreamResponseData;
 import org.apache.kafka.common.message.GetKVRequestData;
+import org.apache.kafka.common.message.GetKVResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -54,12 +54,12 @@ public class GetKVRequest extends AbstractRequest {
     }
 
     @Override
-    public CreateStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public GetKVResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CreateStreamResponseData response = new CreateStreamResponseData()
+        GetKVResponseData response = new GetKVResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CreateStreamResponse(response);
+        return new GetKVResponse(response);
     }
 
     @Override

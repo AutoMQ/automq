@@ -18,14 +18,23 @@
 package kafka.log.stream.s3.network;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import kafka.log.stream.s3.network.request.BatchRequest;
+import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
 import kafka.server.BrokerToControllerChannelManager;
 import kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.protocol.ApiMessage;
-import org.apache.kafka.common.requests.AbstractRequest;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,46 +53,44 @@ public class ControllerRequestSender {
 
     private final ScheduledExecutorService retryService;
 
+    private final ConcurrentHashMap<ApiKeys, RequestAccumulator> requestAccumulatorMap;
+
+    private final int brokerId;
+
+    private final long brokerEpoch;
+
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
         this.brokerServer = brokerServer;
         this.channelManager = brokerServer.clientToControllerChannelManager();
         this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
+        this.requestAccumulatorMap = new ConcurrentHashMap<>();
+        this.brokerId = brokerServer.config().brokerId();
+        this.brokerEpoch = brokerServer.config().brokerEpoch();
     }
 
     public void send(RequestTask task) {
-        Builder requestBuilder = task.requestBuilder;
-        Class responseDataType = task.responseDataType;
         task.sendHit();
-        LOGGER.trace("Sending task: {}", task);
-        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
-            @Override
-            public void onTimeout() {
-                // TODO: add timeout retry policy
-                LOGGER.error("Timeout while creating stream");
-                task.completeExceptionally(new TimeoutException("Timeout while creating stream"));
-            }
+        if (task.request instanceof BatchRequest) {
+            batchSend(task);
+            return;
+        }
+        singleSend(task);
+    }
 
+    private void batchSend(RequestTask task) {
+        requestAccumulatorMap.computeIfAbsent(task.request.apiKey(),
+            this::createRequestAccumulator).send(task);
+    }
+
+    private void singleSend(RequestTask task) {
+        Builder builder = task.request.toRequestBuilder();
+        RequestCtx requestCtx = new RequestCtx() {
             @Override
-            public void onComplete(ClientResponse response) {
-                if (response.authenticationException() != null) {
-                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
-                    task.completeExceptionally(response.authenticationException());
-                    return;
-                }
-                if (response.versionMismatch() != null) {
-                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
-                    task.completeExceptionally(response.versionMismatch());
-                    return;
-                }
-                if (!responseDataType.isInstance(response.responseBody().data())) {
-                    LOGGER.error("Unexpected response type: {} while sending request: {}",
-                        response.responseBody().data().getClass().getSimpleName(), requestBuilder);
-                    task.completeExceptionally(new RuntimeException("Unexpected response type while sending request"));
-                }
-                ApiMessage data = response.responseBody().data();
+            void onSuccess(AbstractResponse response) {
                 try {
-                    ResponseHandleResult result = (ResponseHandleResult) task.responseHandler.apply(data);
+
+                    ResponseHandleResult result = (ResponseHandleResult) task.responseHandler.apply(response);
                     if (result.retry()) {
                         retryTask(task);
                         return;
@@ -92,6 +99,39 @@ public class ControllerRequestSender {
                 } catch (Exception e) {
                     task.completeExceptionally(e);
                 }
+            }
+
+            @Override
+            void onError(Throwable e) {
+                task.completeExceptionally(e);
+            }
+        };
+        sendRequest(builder, requestCtx);
+    }
+
+    private void sendRequest(Builder requestBuilder, RequestCtx ctx) {
+        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
+            @Override
+            public void onTimeout() {
+                // TODO: add timeout retry policy
+                LOGGER.error("Timeout while creating stream");
+                ctx.onError(new TimeoutException("Timeout while creating stream"));
+            }
+
+            @Override
+            public void onComplete(ClientResponse response) {
+                if (response.authenticationException() != null) {
+                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
+                    ctx.onError(response.authenticationException());
+                    return;
+                }
+                if (response.versionMismatch() != null) {
+                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
+                    ctx.onError(response.versionMismatch());
+                    return;
+                }
+                AbstractResponse resp = response.responseBody();
+                ctx.onSuccess(resp);
             }
         });
     }
@@ -107,31 +147,105 @@ public class ControllerRequestSender {
         retryService.schedule(() -> send(task), delay, TimeUnit.MILLISECONDS);
     }
 
-    public static class RequestTask<T/*controller response data type*/, Z/*upper response data type*/> {
+    public abstract class RequestCtx {
 
-        private final CompletableFuture<Z> cf;
+        abstract void onSuccess(AbstractResponse response);
 
-        private final AbstractRequest.Builder requestBuilder;
+        abstract void onError(Throwable ex);
+    }
 
-        private final Class<T> responseDataType;
+    public class RequestAccumulator {
+        AtomicBoolean inflight = new AtomicBoolean(false);
+        BlockingQueue<RequestTask> requestQueue = new LinkedBlockingQueue<>();
 
-        /**
-         * The response handler is used to determine whether the response is valid or retryable.
-         */
-        private final Function<T, ResponseHandleResult<Z>> responseHandler;
+        public RequestAccumulator() {
+        }
 
+        void send(RequestTask task) {
+            if (task != null) {
+                requestQueue.add(task);
+            }
+            if (!requestQueue.isEmpty() && inflight.compareAndSet(false, true)) {
+                send0();
+            }
+        }
+
+        void send0() {
+            if (requestQueue.isEmpty()) {
+                return;
+            }
+            List<RequestTask> inflight = new ArrayList<>();
+            requestQueue.drainTo(inflight);
+            Builder builder = inflight.get(0).request.toRequestBuilder();
+            inflight.stream().map(task -> (BatchRequest) task.request).skip(1).forEach(req -> req.addSubRequest(builder));
+            RequestCtx requestCtx = new RequestCtx() {
+                @Override
+                void onSuccess(AbstractResponse response) {
+                    if (!(response instanceof AbstractBatchResponse)) {
+                        LOGGER.error("Unexpected response type: {} while sending request: {}",
+                            response.getClass().getSimpleName(), builder);
+                        onError(new RuntimeException("Unexpected response type while sending request"));
+                        return;
+                    }
+                    AbstractBatchResponse resp = (AbstractBatchResponse) response;
+                    List subResponses = resp.subResponses();
+                    if (subResponses.size() != inflight.size()) {
+                        LOGGER.error("Response size: {} not match request size: {}", subResponses.size(), inflight.size());
+                        onError(new RuntimeException("Response size not match request size"));
+                        return;
+                    }
+                    for (int index = 0; index < subResponses.size(); index++) {
+                        RequestTask task = inflight.get(index);
+                        try {
+                            ResponseHandleResult result = (ResponseHandleResult) task.responseHandler.apply(subResponses.get(index));
+                            if (result.retry()) {
+                                retryTask(task);
+                                continue;
+                            }
+                            task.complete(result.getResponse());
+                        } catch (Exception e) {
+                            task.completeExceptionally(e);
+                        }
+                    }
+                    if (RequestAccumulator.this.inflight.compareAndSet(true, false)) {
+                        send(null);
+                    }
+                }
+
+                @Override
+                void onError(Throwable e) {
+                    inflight.forEach(t -> t.future.completeExceptionally(e));
+                    if (RequestAccumulator.this.inflight.compareAndSet(true, false)) {
+                        send(null);
+                    }
+                }
+
+            };
+            ControllerRequestSender.this.sendRequest(builder, requestCtx);
+        }
+
+    }
+
+    private RequestAccumulator createRequestAccumulator(ApiKeys type) {
+        return new RequestAccumulator();
+    }
+
+    public static class RequestTask<T, R> {
+
+        private final WrapRequest request;
+        private final CompletableFuture<R> future;
+        private final Function<T, ResponseHandleResult<R>> responseHandler;
         private int sendCount;
 
-        public RequestTask(CompletableFuture<Z> future, AbstractRequest.Builder requestBuilder, Class<T> responseDataType,
-            Function<T, ResponseHandleResult<Z>> responseHandler) {
-            this.cf = future;
-            this.requestBuilder = requestBuilder;
-            this.responseDataType = responseDataType;
+        public RequestTask(WrapRequest request, CompletableFuture<R> future,
+            Function<T, ResponseHandleResult<R>> responseHandler) {
+            this.request = request;
+            this.future = future;
             this.responseHandler = responseHandler;
         }
 
-        public CompletableFuture<Z> cf() {
-            return cf;
+        public WrapRequest request() {
+            return request;
         }
 
         public void sendHit() {
@@ -142,22 +256,14 @@ public class ControllerRequestSender {
             return sendCount;
         }
 
-        public void complete(Z result) {
-            cf.complete(result);
+        public void complete(R result) {
+            future.complete(result);
         }
 
         public void completeExceptionally(Throwable throwable) {
-            cf.completeExceptionally(throwable);
+            future.completeExceptionally(throwable);
         }
 
-        @Override
-        public String toString() {
-            return "RequestTask{" +
-                "requestBuilder=" + requestBuilder +
-                ", responseDataType=" + responseDataType +
-                ", sendCount=" + sendCount +
-                '}';
-        }
     }
 
     public static class ResponseHandleResult<R> {
@@ -188,6 +294,7 @@ public class ControllerRequestSender {
     }
 
     public static class RetryPolicyContext {
+
         private int maxRetryCount;
         private long retryBaseDelayMs;
 

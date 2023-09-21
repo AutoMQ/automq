@@ -38,11 +38,11 @@ import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartit
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult
 import org.apache.kafka.common.message.DeleteTopicsResponseData.{DeletableTopicResult, DeletableTopicResultCollection}
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData.AlterConfigsResourceResponse
-import org.apache.kafka.common.message.{CreateTopicsRequestData, _}
+import org.apache.kafka.common.message._
 import org.apache.kafka.common.protocol.Errors._
 import org.apache.kafka.common.protocol.{ApiKeys, ApiMessage, Errors}
 import org.apache.kafka.common.requests._
-import org.apache.kafka.common.requests.s3.{CloseStreamRequest, CloseStreamResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamRequest, CreateStreamResponse, DeleteKVRequest, DeleteKVResponse, DeleteStreamRequest, DeleteStreamResponse, GetKVRequest, GetKVResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamRequest, OpenStreamResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVRequest, PutKVResponse, TrimStreamRequest, TrimStreamResponse}
+import org.apache.kafka.common.requests.s3.{CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVRequest, DeleteKVResponse, DeleteStreamsRequest, DeleteStreamsResponse, GetKVRequest, GetKVResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVRequest, PutKVResponse, TrimStreamsRequest, TrimStreamsResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC}
 import org.apache.kafka.common.utils.Time
@@ -111,11 +111,11 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.ELECT_LEADERS => handleElectLeaders(request)
         case ApiKeys.UPDATE_FEATURES => handleUpdateFeatures(request)
         // Kafka on S3 inject start
-        case ApiKeys.CREATE_STREAM => handleCreateStream(request)
-        case ApiKeys.OPEN_STREAM => handleOpenStream(request)
-        case ApiKeys.CLOSE_STREAM => handleCloseStream(request)
-        case ApiKeys.DELETE_STREAM => handleDeleteStream(request)
-        case ApiKeys.TRIM_STREAM => handleTrimStream(request)
+        case ApiKeys.CREATE_STREAMS => handleCreateStream(request)
+        case ApiKeys.OPEN_STREAMS => handleOpenStream(request)
+        case ApiKeys.CLOSE_STREAMS => handleCloseStream(request)
+        case ApiKeys.DELETE_STREAMS => handleDeleteStream(request)
+        case ApiKeys.TRIM_STREAMS => handleTrimStream(request)
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
         case ApiKeys.COMMIT_WALOBJECT => handleCommitWALObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
@@ -882,7 +882,7 @@ class ControllerApis(val requestChannel: RequestChannel,
   // TODO: add acl auth for stream related operations
 
   def handleCreateStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val createStreamRequest = request.body[CreateStreamRequest]
+    val createStreamRequest = request.body[CreateStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.createStream(context, createStreamRequest.data)
@@ -891,14 +891,14 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new CreateStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new CreateStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
   }
 
   def handleOpenStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val openStreamRequest = request.body[OpenStreamRequest]
+    val openStreamRequest = request.body[OpenStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.openStream(context, openStreamRequest.data)
@@ -907,14 +907,14 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new OpenStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new OpenStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
   }
 
   def handleCloseStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val closeStreamRequest = request.body[CloseStreamRequest]
+    val closeStreamRequest = request.body[CloseStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.closeStream(context, closeStreamRequest.data)
@@ -923,14 +923,14 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new CloseStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new CloseStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
   }
 
   def handleDeleteStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val deleteStreamRequest = request.body[DeleteStreamRequest]
+    val deleteStreamRequest = request.body[DeleteStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.deleteStream(context, deleteStreamRequest.data)
@@ -939,14 +939,14 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new DeleteStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new DeleteStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
   }
 
   def handleTrimStream(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val trimStreamRequest = request.body[TrimStreamRequest]
+    val trimStreamRequest = request.body[TrimStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.trimStream(context, trimStreamRequest.data)
@@ -955,7 +955,7 @@ class ControllerApis(val requestChannel: RequestChannel,
           requestHelper.handleError(request, exception)
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new TrimStreamResponse(result.setThrottleTimeMs(requestThrottleMs))
+            new TrimStreamsResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

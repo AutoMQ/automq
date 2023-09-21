@@ -16,7 +16,7 @@
 {
   "apiKey": 504,
   "type": "response",
-  "name": "DeleteStreamResponse",
+  "name": "DeleteStreamsResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -31,6 +31,20 @@
       "type": "int32",
       "versions": "0+",
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+    },
+    {
+      "name": "DeleteStreamResponses",
+      "type": "[]DeleteStreamResponse",
+      "versions": "0+",
+      "about": "a batch of delete stream response",
+      "fields": [
+        {
+          "name": "ErrorCode",
+          "type": "int16",
+          "versions": "0+",
+          "about": "Response error code"
+        }
+      ]
     }
   ]
 }

@@ -112,11 +112,11 @@ public enum ApiKeys {
 
     // Kafka on S3 inject start
 
-    CREATE_STREAM(ApiMessageType.CREATE_STREAM, false, true),
-    DELETE_STREAM(ApiMessageType.DELETE_STREAM, false, true),
-    OPEN_STREAM(ApiMessageType.OPEN_STREAM, false, true),
-    CLOSE_STREAM(ApiMessageType.CLOSE_STREAM, false, true),
-    TRIM_STREAM(ApiMessageType.TRIM_STREAM, false, true),
+    CREATE_STREAMS(ApiMessageType.CREATE_STREAMS, false, true),
+    DELETE_STREAMS(ApiMessageType.DELETE_STREAMS, false, true),
+    OPEN_STREAMS(ApiMessageType.OPEN_STREAMS, false, true),
+    CLOSE_STREAMS(ApiMessageType.CLOSE_STREAMS, false, true),
+    TRIM_STREAMS(ApiMessageType.TRIM_STREAMS, false, true),
     PREPARE_S3_OBJECT(ApiMessageType.PREPARE_S3_OBJECT, false, true),
     COMMIT_WALOBJECT(ApiMessageType.COMMIT_WALOBJECT, false, true),
     COMMIT_STREAM_OBJECT(ApiMessageType.COMMIT_STREAM_OBJECT, false, true),

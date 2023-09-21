@@ -14,27 +14,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
-import org.apache.kafka.common.message.DeleteStreamResponseData;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
+import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractResponse;
 
-public class DeleteStreamResponse extends AbstractResponse {
+public class TrimStreamsResponse extends AbstractBatchResponse<TrimStreamResponse> {
 
-    private final DeleteStreamResponseData data;
+    private final TrimStreamsResponseData data;
 
-    public DeleteStreamResponse(DeleteStreamResponseData data) {
-        super(ApiKeys.DELETE_STREAM);
+    public TrimStreamsResponse(TrimStreamsResponseData data) {
+        super(ApiKeys.TRIM_STREAMS);
         this.data = data;
     }
 
     @Override
-    public DeleteStreamResponseData data() {
+    public List<TrimStreamResponse> subResponses() {
+        return data.trimStreamResponses();
+    }
+
+    @Override
+    public TrimStreamsResponseData data() {
         return data;
     }
 
@@ -53,8 +60,9 @@ public class DeleteStreamResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static DeleteStreamResponse parse(ByteBuffer buffer, short version) {
-        return new DeleteStreamResponse(new DeleteStreamResponseData(
+    public static TrimStreamsResponse parse(ByteBuffer buffer, short version) {
+        return new TrimStreamsResponse(new TrimStreamsResponseData(
             new ByteBufferAccessor(buffer), version));
     }
+    
 }

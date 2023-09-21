@@ -29,18 +29,18 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.kafka.common.requests.s3.CloseStreamResponse;
+import org.apache.kafka.common.requests.s3.CloseStreamsResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.CommitWALObjectResponse;
-import org.apache.kafka.common.requests.s3.CreateStreamResponse;
+import org.apache.kafka.common.requests.s3.CreateStreamsResponse;
 import org.apache.kafka.common.requests.s3.DeleteKVResponse;
-import org.apache.kafka.common.requests.s3.DeleteStreamResponse;
+import org.apache.kafka.common.requests.s3.DeleteStreamsResponse;
 import org.apache.kafka.common.requests.s3.GetKVResponse;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
-import org.apache.kafka.common.requests.s3.OpenStreamResponse;
+import org.apache.kafka.common.requests.s3.OpenStreamsResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVResponse;
-import org.apache.kafka.common.requests.s3.TrimStreamResponse;
+import org.apache.kafka.common.requests.s3.TrimStreamsResponse;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
     public static final int DEFAULT_THROTTLE_TIME = 0;
@@ -262,16 +262,16 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return AllocateProducerIdsResponse.parse(responseBuffer, version);
 
             // Kafka on S3 inject start
-            case CREATE_STREAM:
-                return CreateStreamResponse.parse(responseBuffer, version);
-            case OPEN_STREAM:
-                return OpenStreamResponse.parse(responseBuffer, version);
-            case DELETE_STREAM:
-                return DeleteStreamResponse.parse(responseBuffer, version);
-            case CLOSE_STREAM:
-                return CloseStreamResponse.parse(responseBuffer, version);
-            case TRIM_STREAM:
-                return TrimStreamResponse.parse(responseBuffer, version);
+            case CREATE_STREAMS:
+                return CreateStreamsResponse.parse(responseBuffer, version);
+            case OPEN_STREAMS:
+                return OpenStreamsResponse.parse(responseBuffer, version);
+            case DELETE_STREAMS:
+                return DeleteStreamsResponse.parse(responseBuffer, version);
+            case CLOSE_STREAMS:
+                return CloseStreamsResponse.parse(responseBuffer, version);
+            case TRIM_STREAMS:
+                return TrimStreamsResponse.parse(responseBuffer, version);
             case PREPARE_S3_OBJECT:
                 return PrepareS3ObjectResponse.parse(responseBuffer, version);
             case COMMIT_STREAM_OBJECT:

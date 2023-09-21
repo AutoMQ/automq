@@ -14,13 +14,13 @@
 // limitations under the License.
 
 {
-  "apiKey": 502,
+  "apiKey": 512,
   "type": "request",
   "listeners": [
     "controller",
     "broker"
   ],
-  "name": "OpenStreamRequest",
+  "name": "TrimStreamsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -37,18 +37,32 @@
       "about": "The broker epoch."
     },
     {
-      "name": "StreamId",
-      "type": "int64",
+      "name": "TrimStreamRequests",
+      "type": "[]TrimStreamRequest",
       "versions": "0+",
-      "entityType": "streamId",
-      "about": "The id of the requesting stream"
-    },
-    {
-      "name": "StreamEpoch",
-      "type": "int64",
-      "versions": "0+",
-      "entityType": "streamEpoch",
-      "about": "The epoch of the requesting stream in the requesting broker"
+      "about": "a batch of trim stream request",
+      "fields": [
+        {
+          "name": "StreamId",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamId",
+          "about": "The id of the requesting stream"
+        },
+        {
+          "name": "StreamEpoch",
+          "type": "int64",
+          "versions": "0+",
+          "entityType": "streamEpoch",
+          "about": "The epoch of the requesting stream in the requesting broker"
+        },
+        {
+          "name": "NewStartOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The new start offset of the stream"
+        }
+      ]
     }
   ]
 }

@@ -18,25 +18,39 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.TrimStreamRequestData;
-import org.apache.kafka.common.message.TrimStreamResponseData;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class TrimStreamRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<TrimStreamRequest> {
+public class OpenStreamsRequest extends AbstractRequest {
 
-        private final TrimStreamRequestData data;
-        public Builder(TrimStreamRequestData data) {
-            super(ApiKeys.TRIM_STREAM);
+    public static class Builder extends AbstractRequest.Builder<OpenStreamsRequest> {
+
+        private final OpenStreamsRequestData data;
+        public Builder(OpenStreamsRequestData data) {
+            super(ApiKeys.OPEN_STREAMS);
             this.data = data;
         }
 
+        public Builder addSubRequest(OpenStreamRequest request) {
+            List<OpenStreamRequest> requests = data.openStreamRequests();
+            if (requests == null) {
+                requests = new ArrayList<>();
+                data.setOpenStreamRequests(requests);
+            }
+            requests.add(request);
+            return this;
+        }
+
         @Override
-        public TrimStreamRequest build(short version) {
-            return new TrimStreamRequest(data, version);
+        public OpenStreamsRequest build(short version) {
+            return new OpenStreamsRequest(data, version);
         }
 
         @Override
@@ -45,28 +59,28 @@ public class TrimStreamRequest extends AbstractRequest {
         }
     }
 
-    private final TrimStreamRequestData data;
-    public TrimStreamRequest(TrimStreamRequestData data, short version) {
-        super(ApiKeys.TRIM_STREAM, version);
+    private final OpenStreamsRequestData data;
+    public OpenStreamsRequest(OpenStreamsRequestData data, short version) {
+        super(ApiKeys.OPEN_STREAMS, version);
         this.data = data;
     }
 
     @Override
-    public TrimStreamResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public OpenStreamsResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        TrimStreamResponseData response = new TrimStreamResponseData()
+        OpenStreamsResponseData response = new OpenStreamsResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new TrimStreamResponse(response);
+        return new OpenStreamsResponse(response);
     }
 
     @Override
-    public TrimStreamRequestData data() {
+    public OpenStreamsRequestData data() {
         return data;
     }
 
-    public static TrimStreamRequest parse(ByteBuffer buffer, short version) {
-        return new TrimStreamRequest(new TrimStreamRequestData(
+    public static OpenStreamsRequest parse(ByteBuffer buffer, short version) {
+        return new OpenStreamsRequest(new OpenStreamsRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
 }

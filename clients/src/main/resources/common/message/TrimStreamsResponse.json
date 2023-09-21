@@ -14,41 +14,37 @@
 // limitations under the License.
 
 {
-  "apiKey": 504,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "DeleteStreamRequest",
+  "apiKey": 512,
+  "type": "response",
+  "name": "TrimStreamsResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "BrokerId",
+      "name": "ErrorCode",
+      "type": "int16",
+      "versions": "0+",
+      "about": "The top level response error code"
+    },
+    {
+      "name": "ThrottleTimeMs",
       "type": "int32",
       "versions": "0+",
-      "about": "The broker id."
+      "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
     },
     {
-      "name": "BrokerEpoch",
-      "type": "int64",
+      "name": "TrimStreamResponses",
+      "type": "[]TrimStreamResponse",
       "versions": "0+",
-      "about": "The broker epoch."
-    },
-    {
-      "name": "StreamId",
-      "type": "int64",
-      "versions": "0+",
-      "entityType": "streamId",
-      "about": "The id of the requesting stream"
-    },
-    {
-      "name": "StreamEpoch",
-      "type": "int64",
-      "versions": "0+",
-      "entityType": "streamEpoch",
-      "about": "The epoch of the requesting stream in the requesting broker"
+      "about": "a batch of trim stream response",
+      "fields": [
+        {
+          "name": "ErrorCode",
+          "type": "int16",
+          "versions": "0+",
+          "about": "The response error code"
+        }
+      ]
     }
   ]
 }

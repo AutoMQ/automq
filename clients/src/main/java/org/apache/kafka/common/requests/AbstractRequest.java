@@ -26,18 +26,18 @@ import org.apache.kafka.common.protocol.SendBuilder;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.requests.s3.CloseStreamRequest;
+import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
 import org.apache.kafka.common.requests.s3.CommitWALObjectRequest;
-import org.apache.kafka.common.requests.s3.CreateStreamRequest;
+import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVRequest;
-import org.apache.kafka.common.requests.s3.DeleteStreamRequest;
+import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetKVRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
-import org.apache.kafka.common.requests.s3.OpenStreamRequest;
+import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVRequest;
-import org.apache.kafka.common.requests.s3.TrimStreamRequest;
+import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
@@ -318,16 +318,16 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return AllocateProducerIdsRequest.parse(buffer, apiVersion);
 
             // Kafka on S3 inject start
-            case CREATE_STREAM:
-                return CreateStreamRequest.parse(buffer, apiVersion);
-            case OPEN_STREAM:
-                return OpenStreamRequest.parse(buffer, apiVersion);
-            case CLOSE_STREAM:
-                return CloseStreamRequest.parse(buffer, apiVersion);
-            case DELETE_STREAM:
-                return DeleteStreamRequest.parse(buffer, apiVersion);
-            case TRIM_STREAM:
-                return TrimStreamRequest.parse(buffer, apiVersion);
+            case CREATE_STREAMS:
+                return CreateStreamsRequest.parse(buffer, apiVersion);
+            case OPEN_STREAMS:
+                return OpenStreamsRequest.parse(buffer, apiVersion);
+            case CLOSE_STREAMS:
+                return CloseStreamsRequest.parse(buffer, apiVersion);
+            case DELETE_STREAMS:
+                return DeleteStreamsRequest.parse(buffer, apiVersion);
+            case TRIM_STREAMS:
+                return TrimStreamsRequest.parse(buffer, apiVersion);
             case PREPARE_S3_OBJECT:
                 return PrepareS3ObjectRequest.parse(buffer, apiVersion);
             case COMMIT_WALOBJECT:

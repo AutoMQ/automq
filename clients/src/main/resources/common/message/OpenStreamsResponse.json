@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 501,
+  "apiKey": 502,
   "type": "response",
-  "name": "CreateStreamResponse",
+  "name": "OpenStreamsResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -33,11 +33,30 @@
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
     },
     {
-      "name": "StreamId",
-      "type": "int64",
+      "name": "OpenStreamResponses",
+      "type": "[]OpenStreamResponse",
       "versions": "0+",
-      "entityType": "streamId",
-      "about": "The id of the created stream"
+      "about": "a batch of open stream response",
+      "fields": [
+        {
+          "name": "ErrorCode",
+          "type": "int16",
+          "versions": "0+",
+          "about": "Response error code"
+        },
+        {
+          "name": "StartOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The start offset of the opened stream"
+        },
+        {
+          "name": "NextOffset",
+          "type": "int64",
+          "versions": "0+",
+          "about": "The next offset of the opened stream"
+        }
+      ]
     }
   ]
 }
