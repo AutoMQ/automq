@@ -17,6 +17,8 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import java.util.HashMap;
 import java.util.stream.Stream;
 import org.apache.kafka.common.message.CloseStreamsRequestData;

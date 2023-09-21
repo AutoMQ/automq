@@ -17,6 +17,9 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
