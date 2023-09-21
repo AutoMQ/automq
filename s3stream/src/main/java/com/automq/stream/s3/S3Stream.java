@@ -164,11 +164,10 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> trim0(long newStartOffset) {
         if (newStartOffset < this.startOffset) {
-            throw new IllegalArgumentException("newStartOffset[" + newStartOffset + "] cannot be less than current start offset["
-                    + this.startOffset + "]");
+            LOGGER.warn("stream trim newStartOffset[{}] less than current start offset[{}]", newStartOffset, startOffset);
+            return CompletableFuture.completedFuture(null);
         }
-        this.startOffset = newStartOffset;
-        return streamManager.trimStream(streamId, epoch, newStartOffset);
+        return streamManager.trimStream(streamId, epoch, newStartOffset).thenAccept(nil -> this.startOffset = newStartOffset);
     }
 
 
@@ -181,7 +180,10 @@ public class S3Stream implements Stream {
         status.markClosed();
         streamObjectsCompactionTask.close();
         closeHook.apply(streamId);
-        return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
+        return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch))
+                .whenComplete((nil, ex) -> {
+                    LOGGER.info("close stream {}", streamId, ex);
+                });
     }
 
     @Override

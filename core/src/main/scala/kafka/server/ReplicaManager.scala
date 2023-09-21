@@ -64,8 +64,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{CompletableFuture, Executors, ThreadPoolExecutor, TimeUnit}
-import scala.collection.mutable.ArrayBuffer
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, ThreadPoolExecutor, TimeUnit}
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
@@ -226,7 +225,6 @@ class ReplicaManager(val config: KafkaConfig,
   // This threadPool is used to handle partition open/close in case of throttling metadata replay.
   val partitionOpenCloseExecutors = new ThreadPoolExecutor(4, 32, 30, TimeUnit.SECONDS, new util.concurrent.LinkedBlockingQueue[Runnable](32),
     ThreadUtils.createThreadFactory("partition-open-close-executor-%d", true))
-  var partitionWaitingClosingFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null);
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
@@ -234,6 +232,8 @@ class ReplicaManager(val config: KafkaConfig,
   protected val allPartitions = new Pool[TopicPartition, HostedPartition](
     valueFactory = Some(tp => HostedPartition.Online(Partition(tp, time, this)))
   )
+  protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
+
   protected val replicaStateChangeLock = new Object
   val replicaFetcherManager = createReplicaFetcherManager(metrics, time, threadNamePrefix, quotaManagers.follower)
   private[server] val replicaAlterLogDirsManager = createReplicaAlterLogDirsManager(quotaManagers.alterLogDirs, brokerTopicStats)
@@ -468,9 +468,6 @@ class ReplicaManager(val config: KafkaConfig,
     // Second remove deleted partitions from the partition map. Fetchers rely on the
     // ReplicaManager to get Partition's information so they must be stopped first.
     val partitionsToDelete = mutable.Set.empty[TopicPartition]
-    // Kafka on S3 inject start
-    val partitionClosingFutures = ArrayBuffer.empty[CompletableFuture[Void]]
-    // Kafka on S3 inject end
     partitionsToStop.forKeyValue { (topicPartition, shouldDelete) =>
       if (shouldDelete) {
         getPartition(topicPartition) match {
@@ -486,12 +483,17 @@ class ReplicaManager(val config: KafkaConfig,
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
                 val closingFuture = hostedPartition.partition.close()
-                    .thenRun(() => {
+                closingPartitions.putIfAbsent(topicPartition, closingFuture)
+                closingFuture.thenRun(() => {
                   // trigger leader election for this partition
                   info(s"partition $topicPartition is closed, trigger leader election")
                   alterPartitionManager.tryElectLeader(topicPartition)
-                })
-                partitionClosingFutures.append(closingFuture)
+                }).whenComplete((_, ex) => {
+                  if (ex != null) {
+                    error(s"partition $topicPartition close fail", ex)
+                  }
+                  closingPartitions.remove(topicPartition)
+                });
               } else {
                 hostedPartition.partition.delete()
               }
@@ -506,19 +508,6 @@ class ReplicaManager(val config: KafkaConfig,
       // We force completion to prevent them from timing out.
       completeDelayedFetchOrProduceRequests(topicPartition)
     }
-
-    // Kafka on S3 inject start
-    if (partitionClosingFutures.nonEmpty) {
-      partitionWaitingClosingFuture = partitionWaitingClosingFuture.thenRun(() => {
-        val closeStartTime = System.currentTimeMillis()
-        // Wait for all logs to be closed.
-        CoreUtils.swallow(CompletableFuture.allOf(partitionClosingFutures.toArray: _*).get(), this)
-        val closeTimeCost = System.currentTimeMillis() - closeStartTime
-        debug(s"closing ${partitionClosingFutures.size} partitions with time cost $closeTimeCost ms")
-      })
-    }
-    // Kafka on S3 inject end
-
 
     // Third delete the logs and checkpoint.
     val errorMap = new mutable.HashMap[TopicPartition, Throwable]()
@@ -2045,6 +2034,12 @@ class ReplicaManager(val config: KafkaConfig,
       checkpointHighWatermarks()
     replicaSelectorOpt.foreach(_.close)
     removeAllTopicMetrics()
+
+    slowFetchExecutors.shutdown()
+    partitionOpenCloseExecutors.shutdown()
+
+    awaitAllPartitionShutdown()
+
     info("Shut down completely")
   }
 
@@ -2418,9 +2413,36 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
-  def shutdownAdditionalThreadPools(): Unit = {
-    slowFetchExecutors.shutdownNow()
-    CoreUtils.swallow(partitionWaitingClosingFuture.get(), this)
-    partitionOpenCloseExecutors.shutdownNow()
+  def awaitAllPartitionShutdown(): Unit = {
+    var start = System.currentTimeMillis()
+    // await 5s partitions transfer to other alive brokers.
+    // when there are no alive brokers, it will still await 5s.
+    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 5000) {
+      info("still has opening partition, retry check later")
+      Thread.sleep(1000)
+    }
+    if (allPartitions.nonEmpty) {
+      val partitionsToClose = mutable.Map[TopicPartition, Boolean]()
+      allPartitions.foreachEntry((topicPartition, _) => {
+        partitionsToClose.put(topicPartition, true)
+      })
+      info(s"try force stop partitions ${partitionsToClose.keys}")
+      stopPartitions(partitionsToClose)
+    }
+    start = System.currentTimeMillis()
+    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
+      Thread.sleep(5000)
+    }
+    if (!closingPartitions.isEmpty) {
+      warn(s"await partition close timeout, still has partitions ${closingPartitions.keys}")
+    }
+  }
+
+  def checkAllPartitionClosed(): Boolean = {
+    val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty
+    if (!allClosed) {
+      info(s"online partition ${allPartitions.keys}, closing partition ${closingPartitions.keys}")
+    }
+    allClosed
   }
 }

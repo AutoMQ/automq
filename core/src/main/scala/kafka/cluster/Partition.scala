@@ -574,6 +574,7 @@ class Partition(val topicPartition: TopicPartition,
    * 2) The next leader will then open the partition and the related streams.
    */
   def close(): CompletableFuture[Void] = {
+    info("Closing partition")
     logManager.removeFromCurrentLogs(topicPartition)
     ElasticLogManager.removeLog(topicPartition)
     inWriteLock(leaderIsrUpdateLock) {
