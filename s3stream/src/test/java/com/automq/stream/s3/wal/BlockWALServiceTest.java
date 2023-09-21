@@ -206,6 +206,15 @@ class BlockWALServiceTest {
         return recordOffsets;
     }
 
+    private List<Long> appendWithoutTrim(WriteAheadLog wal, int recordSize, int recordCount) throws OverCapacityException {
+        List<Long> recordOffsets = new ArrayList<>(recordCount);
+        for (int i = 0; i < recordCount; i++) {
+            long offset = append(wal, recordSize);
+            recordOffsets.add(offset);
+        }
+        return recordOffsets;
+    }
+
     @ParameterizedTest(name = "Test {index}: shutdown={0}, overCapacity={1}, recordCount={2}")
     @CsvSource({
             "true, false, 10",
@@ -492,9 +501,50 @@ class BlockWALServiceTest {
     }
 
     @Test
-    public void testRecoverAfterReset() {
+    public void testRecoverAfterReset() throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
-        final int recordNum = 10;
+        final int recordCount = 10;
+        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount + WAL_HEADER_TOTAL_CAPACITY;
+        final String tempFilePath = TestUtils.tempFilePath();
+
+        // 1. append and force shutdown
+        final WriteAheadLog wal1 = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
+                .flushHeaderIntervalSeconds(1 << 30)
+                .build()
+                .start();
+        List<Long> appended1 = appendWithoutTrim(wal1, recordSize, recordCount);
+
+        // 2. recover and reset
+        final WriteAheadLog wal2 = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
+                .flushHeaderIntervalSeconds(1 << 30)
+                .build()
+                .start();
+        Iterator<RecoverResult> recover = wal2.recover();
+        assertNotNull(recover);
+        List<Long> recovered1 = new ArrayList<>(recordCount);
+        while (recover.hasNext()) {
+            RecoverResult next = recover.next();
+            recovered1.add(next.recordOffset());
+        }
+        assertEquals(appended1, recovered1);
+        wal2.reset().join();
+
+        // 3. append and force shutdown again
+        List<Long> appended2 = appendWithoutTrim(wal2, recordSize, recordCount);
+
+        // 4. recover again
+        final WriteAheadLog wal3 = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
+                .flushHeaderIntervalSeconds(1 << 30)
+                .build()
+                .start();
+        recover = wal3.recover();
+        assertNotNull(recover);
+        List<Long> recovered2 = new ArrayList<>(recordCount);
+        while (recover.hasNext()) {
+            RecoverResult next = recover.next();
+            recovered2.add(next.recordOffset());
+        }
+        assertEquals(appended2, recovered2);
     }
 
     @Test
