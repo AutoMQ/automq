@@ -464,7 +464,7 @@ public class BlockWALService implements WriteAheadLog {
 
         long previousNextWriteOffset = slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().get();
         slidingWindowService.getWindowCoreData().getWindowStartOffset().set(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
-        slidingWindowService.getWindowCoreData().getWindowStartOffset().set(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
+        slidingWindowService.getWindowCoreData().getWindowNextWriteOffset().set(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
         return trim(previousNextWriteOffset);
     }
 
