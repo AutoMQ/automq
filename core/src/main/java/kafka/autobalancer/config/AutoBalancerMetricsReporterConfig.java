@@ -67,10 +67,10 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
     private static final String AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_DOC = "The interval in milliseconds the "
             + "metrics reporter should report the metrics.";
     public static final String AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID_DOC = CommonClientConfigs.CLIENT_ID_DOC;
-    private static final String AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_DOC = "The linger.ms configuration of KafkaProducer used in Cruise "
-            + "Control metrics reporter. Set this config and autobalancer.metrics.reporter.batch.size to a large number to have better batching.";
-    private static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_DOC = "The batch.size configuration of KafkaProducer used in Cruise "
-            + "Control metrics reporter. Set this config and autobalancer.metrics.reporter.linger.ms to a large number to have better batching.";
+    private static final String AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_DOC = "The linger.ms configuration of KafkaProducer used in AutoBalancer "
+            + " metrics reporter. Set this config and autobalancer.metrics.reporter.batch.size to a large number to have better batching.";
+    private static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_DOC = "The batch.size configuration of KafkaProducer used in AutoBalancer "
+            + " metrics reporter. Set this config and autobalancer.metrics.reporter.linger.ms to a large number to have better batching.";
     public static final String AUTO_BALANCER_METRICS_REPORTER_KUBERNETES_MODE_DOC = "Auto balancer metrics reporter will report "
             + "metrics using methods that are aware of container boundaries.";
 
