@@ -56,11 +56,39 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
                 OBJECT_0, List.of(
-                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
-                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
-                        new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                        new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 OBJECT_1, List.of(
-                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                OBJECT_2, List.of(
+                        new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));
+        assertTrue(compare(streamDataBlocksMap, expectedBlocksMap));
+    }
+
+    @Test
+    public void testReadObjectIndicesWithTrimmedData() {
+        List<S3ObjectMetadata> objectMetadataList = new ArrayList<>();
+        for (int i = 0; i < S3_WAL_OBJECT_METADATA_LIST.size(); i++) {
+            S3ObjectMetadata s3ObjectMetadata = S3_WAL_OBJECT_METADATA_LIST.get(i);
+            if (i == 0) {
+                s3ObjectMetadata = new S3ObjectMetadata(s3ObjectMetadata.objectId(), s3ObjectMetadata.getType()
+                        , new ArrayList<>(s3ObjectMetadata.getOffsetRanges().subList(1, s3ObjectMetadata.getOffsetRanges().size())),
+                        s3ObjectMetadata.dataTimeInMs(), s3ObjectMetadata.committedTimestamp(), s3ObjectMetadata.objectSize(), s3ObjectMetadata.getOrderId());
+            }
+            objectMetadataList.add(s3ObjectMetadata);
+        }
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, s3Operator);
+        Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
+                OBJECT_0, List.of(
+                        new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
+                OBJECT_1, List.of(
+                        new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1),
                         new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
                 OBJECT_2, List.of(
                         new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
@@ -107,12 +135,13 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
-                new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
-                new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1),
+                new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1),
                 new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1),
                 new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
-                new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1),
+                new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1),
                 new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1));
         for (int i = 0; i < sortedStreamDataBlocks.size(); i++) {
             assertTrue(compare(sortedStreamDataBlocks.get(i), expectedBlocks.get(i)));
@@ -127,18 +156,19 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1))
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));
@@ -155,18 +185,19 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1))
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));
@@ -184,7 +215,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         List<CompactedObject> expectCompactedObjects = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1))
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1))
                         .build(),
                 new CompactedObjectBuilder()
@@ -193,21 +225,22 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                         .build(),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1))
                         .build(),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1))
                         .addStreamDataBlock(new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1))
                         .build());
         Map<Long, List<StreamDataBlock>> expectObjectStreamDataBlocks = Map.of(
                 OBJECT_0, List.of(
-                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
-                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1),
-                        new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                        new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 OBJECT_1, List.of(
-                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1),
                         new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
                 OBJECT_2, List.of(
                         new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
@@ -228,20 +261,22 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         List<CompactedObject> expectCompactedObjects = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1))
                         .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1))
                         .build(),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1))
                         .build());
         Map<Long, List<StreamDataBlock>> expectObjectStreamDataBlocks = Map.of(
                 OBJECT_0, List.of(
-                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
-                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1)),
+                        new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1)),
                 OBJECT_1, List.of(
-                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1),
+                        new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1),
                         new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)));
         CompactionPlan compactionPlan = compactionPlans.get(0);
         for (int i = 0; i < compactionPlan.compactedObjects().size(); i++) {
@@ -259,7 +294,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                         .build(),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
-                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1))
                         .build(),
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
@@ -267,7 +302,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                         .build());
         expectObjectStreamDataBlocks = Map.of(
                 OBJECT_0, List.of(
-                        new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, -1, 1)),
+                        new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 OBJECT_2, List.of(
                         new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, -1, 1),
                         new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));

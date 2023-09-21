@@ -306,7 +306,13 @@ public class ObjectReader implements AutoCloseable {
             ByteBuf buf = this.buf.duplicate();
             AtomicInteger remainingRecordCount = new AtomicInteger(recordCount);
             // skip magic and flag
-            buf.skipBytes(2);
+            byte magicCode = buf.readByte();
+            buf.readByte();
+
+            if (magicCode != ObjectWriter.DATA_BLOCK_MAGIC) {
+                LOGGER.error("magic code mismatch, expected {}, actual {}", ObjectWriter.DATA_BLOCK_MAGIC, magicCode);
+                throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted");
+            }
             // TODO: check flag, use uncompressed stream or compressed stream.
 //            DataInputStream in = new DataInputStream(ZstdFactory.wrapForInput(buf.nioBuffer(), (byte) 0, BufferSupplier.NO_CACHING));
             DataInputStream in = new DataInputStream(new ByteBufferInputStream(buf.nioBuffer()));
