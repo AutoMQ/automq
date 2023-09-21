@@ -2259,11 +2259,8 @@ class ReplicaManager(val config: KafkaConfig,
         }
 
         if (ElasticLogManager.enabled()) {
-          partitionOpenCloseExecutors.submit(new Runnable {
-            override def run(): Unit = {
-              doPartitionLeadingOrFollowing(true)
-            }
-          })
+          // applyDelta must sync operate, cause of BrokerMetadataPublisher#updateCoordinator will rely on log created.
+          doPartitionLeadingOrFollowing(true)
         } else {
           doPartitionLeadingOrFollowing(false)
         }
