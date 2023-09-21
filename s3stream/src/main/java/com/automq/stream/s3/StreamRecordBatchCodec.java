@@ -53,7 +53,10 @@ public class StreamRecordBatchCodec {
      */
     public static StreamRecordBatch decode(DataInputStream in) {
         try {
-            in.readByte(); // magic
+            byte magic = in.readByte(); // magic
+            if (magic != MAGIC_V0) {
+                throw new RuntimeException("Invalid magic byte " + magic);
+            }
             long streamId = in.readLong();
             long epoch = in.readLong();
             long baseOffset = in.readLong();
