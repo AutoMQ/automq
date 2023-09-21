@@ -72,7 +72,7 @@ public class CompactionUtils {
                         S3ObjectMetadata objectMetadata = objectMetadataMap.get(streamDataBlocks.get(0).getObjectId());
                         // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
                         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                            if (objectMetadata.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset())) {
+                            if (objectMetadata.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
                                 validStreamDataBlocks.add(streamDataBlock);
                             }
                         }

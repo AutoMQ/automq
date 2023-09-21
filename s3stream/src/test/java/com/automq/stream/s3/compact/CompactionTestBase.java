@@ -65,15 +65,18 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(30));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_2, 0, 30, 30, TestUtils.random(30));
+            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 15, TestUtils.random(10));
+            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 25, 5, TestUtils.random(10));
+            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(30));
+            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_2, 0, 30, 30, TestUtils.random(30));
             objectWriter.write(STREAM_0, List.of(r1));
             objectWriter.write(STREAM_1, List.of(r2));
-            objectWriter.write(STREAM_2, List.of(r3));
+            objectWriter.write(STREAM_1, List.of(r3));
+            objectWriter.write(STREAM_2, List.of(r4));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
-                    new StreamOffsetRange(STREAM_0, 0, 20),
+                    new StreamOffsetRange(STREAM_0, 0, 15),
+                    new StreamOffsetRange(STREAM_1, 25, 30),
                     new StreamOffsetRange(STREAM_1, 30, 60),
                     new StreamOffsetRange(STREAM_2, 30, 60)
             );
@@ -86,13 +89,13 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
-            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_0, 0, 20, 5, TestUtils.random(5));
+            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(5));
             StreamRecordBatch r5 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(60));
             objectWriter.write(STREAM_0, List.of(r4));
             objectWriter.write(STREAM_1, List.of(r5));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
-                    new StreamOffsetRange(STREAM_0, 20, 25),
+                    new StreamOffsetRange(STREAM_0, 15, 20),
                     new StreamOffsetRange(STREAM_1, 60, 120)
             );
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),

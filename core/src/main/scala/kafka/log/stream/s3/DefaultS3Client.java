@@ -74,7 +74,7 @@ public class DefaultS3Client implements Client {
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
         this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.operator);
-//        this.compactionManager.start();
+        this.compactionManager.start();
         this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath(), this.config.s3WALCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, operator);
         this.storage.startup();

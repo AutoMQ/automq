@@ -78,9 +78,30 @@ public class DataBlockReader {
     }
 
     public void readBlocks(List<StreamDataBlock> streamDataBlocks, TokenBucketThrottle networkThrottle) {
+        if (streamDataBlocks.isEmpty()) {
+            return;
+        }
+        int start = 0;
+        int end = 0;
+        long offset = -1;
+        // split streamDataBlocks to blocks with continuous offset
+        while (end < streamDataBlocks.size()) {
+            if (offset != -1 && streamDataBlocks.get(end).getBlockStartPosition() != offset) {
+                readContinuousBlocks(streamDataBlocks.subList(start, end), networkThrottle);
+                start = end;
+            }
+            offset = streamDataBlocks.get(end).getBlockEndPosition();
+            end++;
+        }
+        if (end > start) {
+            readContinuousBlocks(streamDataBlocks.subList(start, end), networkThrottle);
+        }
+    }
+
+    public void readContinuousBlocks(List<StreamDataBlock> streamDataBlocks, TokenBucketThrottle networkThrottle) {
         long objectId = metadata.objectId();
         if (networkThrottle == null) {
-            readBlocks0(streamDataBlocks);
+            readContinuousBlocks0(streamDataBlocks);
             return;
         }
 
@@ -132,7 +153,7 @@ public class DataBlockReader {
                     // read before current block
                     currentReadSize -= streamDataBlocks.get(end).getBlockSize();
                     networkThrottle.throttle(currentReadSize);
-                    readBlocks0(streamDataBlocks.subList(start, end));
+                    readContinuousBlocks0(streamDataBlocks.subList(start, end));
                 }
                 start = end;
                 currentReadSize = 0;
@@ -142,11 +163,11 @@ public class DataBlockReader {
         }
         if (start < end) {
             networkThrottle.throttle(currentReadSize);
-            readBlocks0(streamDataBlocks.subList(start, end));
+            readContinuousBlocks0(streamDataBlocks.subList(start, end));
         }
     }
 
-    private void readBlocks0(List<StreamDataBlock> streamDataBlocks) {
+    private void readContinuousBlocks0(List<StreamDataBlock> streamDataBlocks) {
         s3Operator.rangeRead(objectKey,
                         streamDataBlocks.get(0).getBlockStartPosition(),
                         streamDataBlocks.get(streamDataBlocks.size() - 1).getBlockEndPosition())

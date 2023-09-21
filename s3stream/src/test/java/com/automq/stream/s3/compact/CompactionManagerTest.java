@@ -150,6 +150,35 @@ public class CompactionManagerTest extends CompactionTestBase {
         request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_2));
         assertEquals(3, request.getStreamObjects().size());
         assertEquals(2, request.getStreamRanges().size());
+
+        Assertions.assertTrue(checkDataIntegrity(s3ObjectMetadata, request));
+    }
+
+    @Test
+    public void testCompactWithDataTrimmed() {
+        List<S3ObjectMetadata> objectMetadataList = new ArrayList<>();
+        for (int i = 0; i < S3_WAL_OBJECT_METADATA_LIST.size(); i++) {
+            S3ObjectMetadata s3ObjectMetadata = S3_WAL_OBJECT_METADATA_LIST.get(i);
+            if (i == 0) {
+                List<StreamOffsetRange> streamOffsetRangeList = new ArrayList<>();
+                streamOffsetRangeList.addAll(s3ObjectMetadata.getOffsetRanges().subList(0, 1));
+                streamOffsetRangeList.addAll(s3ObjectMetadata.getOffsetRanges().subList(2, s3ObjectMetadata.getOffsetRanges().size()));
+                s3ObjectMetadata = new S3ObjectMetadata(s3ObjectMetadata.objectId(), s3ObjectMetadata.getType(), streamOffsetRangeList,
+                        s3ObjectMetadata.dataTimeInMs(), s3ObjectMetadata.committedTimestamp(), s3ObjectMetadata.objectSize(), s3ObjectMetadata.getOrderId());
+            }
+            objectMetadataList.add(s3ObjectMetadata);
+        }
+        compactionManager = new CompactionManager(config, objectManager, s3Operator);
+        CommitWALObjectRequest request = compactionManager.buildCompactRequest(objectMetadataList);
+
+        assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
+        assertEquals(OBJECT_0, request.getOrderId());
+        assertTrue(request.getObjectId() > OBJECT_2);
+        request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_2));
+        assertEquals(3, request.getStreamObjects().size());
+        assertEquals(2, request.getStreamRanges().size());
+
+        Assertions.assertTrue(checkDataIntegrity(objectMetadataList, request));
     }
 
     @Test
@@ -185,7 +214,10 @@ public class CompactionManagerTest extends CompactionTestBase {
         assertEquals(3, request.getStreamObjects().size());
         assertEquals(2, request.getStreamRanges().size());
 
-        // check data integrity
+        Assertions.assertTrue(checkDataIntegrity(s3ObjectMetadata, request));
+    }
+
+    private boolean checkDataIntegrity(List<S3ObjectMetadata> s3ObjectMetadata, CommitWALObjectRequest request) {
         Map<Long, S3ObjectMetadata> s3WALObjectMetadataMap = s3ObjectMetadata.stream()
                 .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
         Map<Long, List<StreamDataBlock>> streamDataBlocks = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator);
@@ -220,11 +252,15 @@ public class CompactionManagerTest extends CompactionTestBase {
         }
         List<StreamDataBlock> expectedStreamDataBlocks = streamDataBlocks.values().stream().flatMap(Collection::stream).collect(Collectors.toList());
         List<StreamDataBlock> compactedStreamDataBlocks = compactedStreamDataBlocksMap.values().stream().flatMap(Collection::stream).collect(Collectors.toList());
-        assertEquals(expectedStreamDataBlocks.size(), compactedStreamDataBlocks.size());
-        for (StreamDataBlock compactedStreamDataBlock : compactedStreamDataBlocks) {
-            assertTrue(expectedStreamDataBlocks.stream().anyMatch(s -> compare(compactedStreamDataBlock, s)),
-                    "broken block: " + compactedStreamDataBlock);
+        if (expectedStreamDataBlocks.size() != compactedStreamDataBlocks.size()) {
+            return false;
         }
+        for (StreamDataBlock compactedStreamDataBlock : compactedStreamDataBlocks) {
+            if (expectedStreamDataBlocks.stream().noneMatch(s -> compare(compactedStreamDataBlock, s))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Test
