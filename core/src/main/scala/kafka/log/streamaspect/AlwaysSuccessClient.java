@@ -20,7 +20,6 @@ package kafka.log.streamaspect;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.CreateStreamOptions;
-import com.automq.stream.api.StreamClientException;
 import com.automq.stream.api.ErrorCode;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.KVClient;
@@ -28,6 +27,7 @@ import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.api.StreamClientException;
 import com.automq.stream.utils.FutureUtil;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -46,10 +46,16 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
+import static com.automq.stream.utils.FutureUtil.cause;
+
 public class AlwaysSuccessClient implements Client {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
-    public static final Set<Short> HALT_ERROR_CODES = Set.of(ErrorCode.EXPIRED_STREAM_EPOCH, ErrorCode.STREAM_ALREADY_CLOSED);
+    public static final Set<Short> HALT_ERROR_CODES = Set.of(
+            ErrorCode.EXPIRED_STREAM_EPOCH,
+            ErrorCode.STREAM_ALREADY_CLOSED,
+            ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS
+    );
     public static final long DEFAULT_SLOW_FETCH_TIMEOUT_MILLIS = 10;
     private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
@@ -142,10 +148,11 @@ public class AlwaysSuccessClient implements Client {
      * @return true if the waiting future is completed, otherwise false
      */
     private static boolean maybeHaltAndCompleteWaitingFuture(Throwable t, CompletableFuture<?> waitingFuture) {
+        t = cause(t);
         if (!shouldHalt(t)) {
             return false;
         }
-        waitingFuture.completeExceptionally(new IOException("No operations allowed on stream"));
+        waitingFuture.completeExceptionally(new IOException("No operations allowed on stream", t));
         return true;
     }
 
