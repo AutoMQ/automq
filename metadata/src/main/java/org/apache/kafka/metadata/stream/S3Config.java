@@ -21,8 +21,11 @@ package org.apache.kafka.metadata.stream;
  * S3Config contains the configuration of S3, such as the bucket name, the region, etc.
  */
 public class S3Config {
+
     // Only for test, if true, use mocked S3 related classes
     private final boolean mock;
+
+    private final long objectRetentionTimeInSecond;
 
     private final String endpoint;
 
@@ -32,17 +35,19 @@ public class S3Config {
 
     // Only for test
     public S3Config(final boolean mock) {
-        this(null, null, null, mock);
+        this(null, null, null, -1, mock);
     }
 
-    public S3Config(final String endpoint, final String region, final String bucket) {
-        this(endpoint, region, bucket, false);
+    public S3Config(final String endpoint, final String region, final String bucket, final long objectRetentionTimeInSecond) {
+        this(endpoint, region, bucket, objectRetentionTimeInSecond, false);
     }
 
-    public S3Config(final String endpoint, final String region, final String bucket, final boolean mock) {
+    public S3Config(final String endpoint, final String region, final String bucket, final long objectRetentionTimeInSecond,
+        final boolean mock) {
         this.endpoint = endpoint;
         this.region = region;
         this.bucket = bucket;
+        this.objectRetentionTimeInSecond = objectRetentionTimeInSecond;
         this.mock = mock;
     }
 
@@ -60,5 +65,9 @@ public class S3Config {
 
     public boolean mock() {
         return mock;
+    }
+
+    public long objectRetentionTimeInSecond() {
+        return objectRetentionTimeInSecond;
     }
 }
