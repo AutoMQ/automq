@@ -339,12 +339,12 @@ object ElasticLog extends Logging {
     val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
     val key = formatStreamKey(namespace, topicPartition)
-    val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
+    val value = client.kvClient().getKV(KeyValue.Key.of(key)).get()
 
     var partitionMeta: ElasticPartitionMeta = null
 
     // open meta stream
-    val metaNotExists = kvList.get(0).value() == null
+    val metaNotExists = value.isNull
 
     var metaStream: MetaStream = null
     var logStreamManager: ElasticLogStreamManager = null
@@ -355,8 +355,7 @@ object ElasticLog extends Logging {
         info(s"${logIdent}created a new meta stream: stream_id=${stream.streamId()}")
         stream
       } else {
-        val keyValue = kvList.get(0)
-        val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
+        val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
         // open partition meta stream
         val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.newBuilder().epoch(leaderEpoch).build())
           .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
@@ -472,7 +471,7 @@ object ElasticLog extends Logging {
           if (logStreamManager != null) {
             logStreamManager.close().get()
           }
-          client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+          client.kvClient().delKV(KeyValue.Key.of(key)).get()
         }, this)
         error(s"${logIdent}failed to open elastic log, trying to close streams and delete key. Error msg: ${e.getMessage}")
         throw e
@@ -496,9 +495,8 @@ object ElasticLog extends Logging {
     val key = formatStreamKey(namespace, topicPartition)
 
     try {
-      val kvList = client.kvClient().getKV(java.util.Arrays.asList(key)).get()
-      val keyValue = kvList.get(0)
-      val metaStreamId = Unpooled.wrappedBuffer(keyValue.value()).readLong()
+      val value = client.kvClient().getKV(KeyValue.Key.of(key)).get()
+      val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
       // First, open partition meta stream with higher epoch.
       val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
       info(s"$logIdent opened meta stream: stream_id=$metaStreamId, epoch=${currentEpoch + 1}")
@@ -518,7 +516,7 @@ object ElasticLog extends Logging {
       metaStream.destroy()
     } finally {
       // remove kv info
-      client.kvClient().delKV(java.util.Arrays.asList(key)).get()
+      client.kvClient().delKV(KeyValue.Key.of(key)).get()
     }
 
     info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
@@ -545,7 +543,7 @@ object ElasticLog extends Logging {
     val valueBuf = ByteBuffer.allocate(8)
     valueBuf.putLong(streamId)
     valueBuf.flip()
-    client.kvClient().putKVIfAbsent(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
+    client.kvClient().putKVIfAbsent(KeyValue.of(key, valueBuf)).get()
     metaStream
   }
 

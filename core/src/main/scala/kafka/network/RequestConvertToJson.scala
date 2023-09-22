@@ -100,13 +100,13 @@ object RequestConvertToJson {
       case req: CommitStreamObjectRequest => CommitStreamObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: CommitWALObjectRequest => CommitWALObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: CreateStreamsRequest => CreateStreamsRequestDataJsonConverter.write(req.data, request.version)
-      case req: DeleteKVsRequest => DeleteKVRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteKVsRequest => DeleteKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteStreamsRequest => DeleteStreamsRequestDataJsonConverter.write(req.data, request.version)
-      case req: GetKVsRequest => GetKVRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetKVsRequest => GetKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: GetOpeningStreamsRequest => GetOpeningStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: OpenStreamsRequest => OpenStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: PrepareS3ObjectRequest => PrepareS3ObjectRequestDataJsonConverter.write(req.data, request.version)
-      case req: PutKVsRequest => PutKVRequestDataJsonConverter.write(req.data, request.version)
+      case req: PutKVsRequest => PutKVsRequestDataJsonConverter.write(req.data, request.version)
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.");
     }
@@ -186,13 +186,13 @@ object RequestConvertToJson {
       case res: CommitStreamObjectResponse => CommitStreamObjectResponseDataJsonConverter.write(res.data, version)
       case res: CommitWALObjectResponse => CommitWALObjectResponseDataJsonConverter.write(res.data, version)
       case res: CreateStreamsResponse => CreateStreamsResponseDataJsonConverter.write(res.data, version)
-      case res: DeleteKVsResponse => DeleteKVResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteKVsResponse => DeleteKVsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteStreamsResponse => DeleteStreamsResponseDataJsonConverter.write(res.data, version)
-      case res: GetKVsResponse => GetKVResponseDataJsonConverter.write(res.data, version)
+      case res: GetKVsResponse => GetKVsResponseDataJsonConverter.write(res.data, version)
       case res: GetOpeningStreamsResponse => GetOpeningStreamsResponseDataJsonConverter.write(res.data, version)
       case res: OpenStreamsResponse => OpenStreamsResponseDataJsonConverter.write(res.data, version)
       case res: PrepareS3ObjectResponse => PrepareS3ObjectResponseDataJsonConverter.write(res.data, version)
-      case res: PutKVsResponse => PutKVResponseDataJsonConverter.write(res.data, version)
+      case res: PutKVsResponse => PutKVsResponseDataJsonConverter.write(res.data, version)
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.");
     }

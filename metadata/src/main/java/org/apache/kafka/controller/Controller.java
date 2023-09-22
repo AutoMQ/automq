@@ -398,7 +398,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Create a stream
      */
-    CompletableFuture<CreateStreamsResponseData> createStream(
+    CompletableFuture<CreateStreamsResponseData> createStreams(
         ControllerRequestContext context,
         CreateStreamsRequestData request
     );
@@ -406,7 +406,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to open a stream with its epoch
      */
-    CompletableFuture<OpenStreamsResponseData> openStream(
+    CompletableFuture<OpenStreamsResponseData> openStreams(
         ControllerRequestContext context,
         OpenStreamsRequestData request
     );
@@ -414,7 +414,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to close a stream.
      */
-    CompletableFuture<CloseStreamsResponseData> closeStream(
+    CompletableFuture<CloseStreamsResponseData> closeStreams(
         ControllerRequestContext context,
         CloseStreamsRequestData request
     );
@@ -422,7 +422,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to trim a stream.
      */
-    CompletableFuture<TrimStreamsResponseData> trimStream(
+    CompletableFuture<TrimStreamsResponseData> trimStreams(
         ControllerRequestContext context,
         TrimStreamsRequestData request
     );
@@ -430,7 +430,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Delete a stream.
      */
-    CompletableFuture<DeleteStreamsResponseData> deleteStream(
+    CompletableFuture<DeleteStreamsResponseData> deleteStreams(
         ControllerRequestContext context,
         DeleteStreamsRequestData request
     );

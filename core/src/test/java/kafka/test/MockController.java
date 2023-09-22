@@ -491,27 +491,27 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CreateStreamsResponseData> createStream(ControllerRequestContext context, CreateStreamsRequestData request) {
+    public CompletableFuture<CreateStreamsResponseData> createStreams(ControllerRequestContext context, CreateStreamsRequestData request) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<OpenStreamsResponseData> openStream(ControllerRequestContext context, OpenStreamsRequestData request) {
+    public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<CloseStreamsResponseData> closeStream(ControllerRequestContext context, CloseStreamsRequestData response) {
+    public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData response) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<TrimStreamsResponseData> trimStream(ControllerRequestContext context, TrimStreamsRequestData request) {
+    public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<DeleteStreamsResponseData> deleteStream(ControllerRequestContext context, DeleteStreamsRequestData request) {
+    public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
         throw new UnsupportedOperationException();
     }
 

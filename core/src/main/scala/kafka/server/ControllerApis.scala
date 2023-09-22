@@ -885,7 +885,7 @@ class ControllerApis(val requestChannel: RequestChannel,
     val createStreamRequest = request.body[CreateStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.createStream(context, createStreamRequest.data)
+    controller.createStreams(context, createStreamRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -901,7 +901,7 @@ class ControllerApis(val requestChannel: RequestChannel,
     val openStreamRequest = request.body[OpenStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.openStream(context, openStreamRequest.data)
+    controller.openStreams(context, openStreamRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -917,7 +917,7 @@ class ControllerApis(val requestChannel: RequestChannel,
     val closeStreamRequest = request.body[CloseStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.closeStream(context, closeStreamRequest.data)
+    controller.closeStreams(context, closeStreamRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -933,7 +933,7 @@ class ControllerApis(val requestChannel: RequestChannel,
     val deleteStreamRequest = request.body[DeleteStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.deleteStream(context, deleteStreamRequest.data)
+    controller.deleteStreams(context, deleteStreamRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -949,7 +949,7 @@ class ControllerApis(val requestChannel: RequestChannel,
     val trimStreamRequest = request.body[TrimStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.trimStream(context, trimStreamRequest.data)
+    controller.trimStreams(context, trimStreamRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
@@ -1029,13 +1029,13 @@ class ControllerApis(val requestChannel: RequestChannel,
     val getKVRequest = request.body[GetKVsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.getKV(context, getKVRequest.data)
+    controller.getKVs(context, getKVRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else if (result == null) {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new GetKVsResponse(new GetKVResponseData().
+            new GetKVsResponse(new GetKVsResponseData().
               setThrottleTimeMs(requestThrottleMs).
               setErrorCode(UNKNOWN_SERVER_ERROR.code))
           })
@@ -1051,13 +1051,13 @@ class ControllerApis(val requestChannel: RequestChannel,
     val putKVRequest = request.body[PutKVsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.putKV(context, putKVRequest.data)
+    controller.putKVs(context, putKVRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else if (result == null) {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new PutKVsResponse(new PutKVResponseData().
+            new PutKVsResponse(new PutKVsResponseData().
               setThrottleTimeMs(requestThrottleMs).
               setErrorCode(UNKNOWN_SERVER_ERROR.code))
           })
@@ -1073,13 +1073,13 @@ class ControllerApis(val requestChannel: RequestChannel,
     val deleteKVRequest = request.body[DeleteKVsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.deleteKV(context, deleteKVRequest.data)
+    controller.deleteKVs(context, deleteKVRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
         } else if (result == null) {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            new DeleteKVsResponse(new DeleteKVResponseData().
+            new DeleteKVsResponse(new DeleteKVsResponseData().
               setThrottleTimeMs(requestThrottleMs).
               setErrorCode(UNKNOWN_SERVER_ERROR.code))
           })

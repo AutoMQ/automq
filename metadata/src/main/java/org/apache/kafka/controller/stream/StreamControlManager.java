@@ -21,9 +21,7 @@ import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import java.util.HashMap;
 import java.util.stream.Stream;
-import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
-import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
@@ -31,24 +29,16 @@ import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
-import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
-import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
-import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
-import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamMetadata;
-import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
-import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
-import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
-import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
@@ -225,20 +215,6 @@ public class StreamControlManager {
         this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
-    public ControllerResult<CreateStreamsResponseData> createStream(CreateStreamsRequestData data) {
-        CreateStreamsResponseData resp = new CreateStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<CreateStreamResponse> resps = data.createStreamRequests().stream().map(req -> {
-            ControllerResult<CreateStreamResponse> result = createStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setCreateStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
     public ControllerResult<CreateStreamResponse> createStream(int brokerId, long brokerEpoch, CreateStreamRequest request) {
         CreateStreamResponse resp = new CreateStreamResponse();
 
@@ -266,19 +242,6 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
-    public ControllerResult<OpenStreamsResponseData> openStream(OpenStreamsRequestData data) {
-        OpenStreamsResponseData resp = new OpenStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<OpenStreamResponse> resps = data.openStreamRequests().stream().map(req -> {
-            ControllerResult<OpenStreamResponse> result = openStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setOpenStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
 
     /**
      * Open stream.
@@ -437,20 +400,6 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
-    public ControllerResult<CloseStreamsResponseData> closeStream(CloseStreamsRequestData data) {
-        CloseStreamsResponseData resp = new CloseStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<CloseStreamResponse> resps = data.closeStreamRequests().stream().map(req -> {
-            ControllerResult<CloseStreamResponse> result = closeStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setCloseStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
     public ControllerResult<CloseStreamResponse> closeStream(int brokerId, long brokerEpoch, CloseStreamRequest request) {
         CloseStreamResponse resp = new CloseStreamResponse();
         long streamId = request.streamId();
@@ -486,20 +435,6 @@ public class StreamControlManager {
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
         log.info("[CloseStream]: broker: {} close stream: {} with epoch: {} success", brokerId, streamId, epoch);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<TrimStreamsResponseData> trimStream(TrimStreamsRequestData data) {
-        TrimStreamsResponseData resp = new TrimStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<TrimStreamResponse> resps = data.trimStreamRequests().stream().map(req -> {
-            ControllerResult<TrimStreamResponse> result = trimStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setTrimStreamResponses(resps);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -655,20 +590,6 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         log.info("[TrimStream]: broker: {} trim stream: {} to new start offset: {} with epoch: {} success", brokerId, streamId, newStartOffset, epoch);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<DeleteStreamsResponseData> deleteStream(DeleteStreamsRequestData data) {
-        DeleteStreamsResponseData resp = new DeleteStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<DeleteStreamResponse> resps = data.deleteStreamRequests().stream().map(req -> {
-            ControllerResult<DeleteStreamResponse> result = deleteStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setDeleteStreamResponses(resps);
         return ControllerResult.atomicOf(records, resp);
     }
 

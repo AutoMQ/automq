@@ -21,22 +21,14 @@ import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
 import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
-import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
-import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
-import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
-import org.apache.kafka.common.message.PutKVsRequestData;
 import org.apache.kafka.common.message.PutKVsRequestData.PutKVRequest;
-import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.PutKVsResponseData.PutKVResponse;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
@@ -60,30 +52,11 @@ public class KVControlManager {
         this.kv = new TimelineHashMap<>(registry, 0);
     }
 
-    public GetKVsResponseData getKVs(GetKVsRequestData request) {
-        GetKVsResponseData response = new GetKVsResponseData();
-        List<GetKVResponse> subResponses = request.getKeyRequests().stream().map(this::getKV).collect(Collectors.toList());
-        response.setGetKVResponses(subResponses);
-        return response;
-    }
-
     public GetKVResponse getKV(GetKVRequest request) {
         String key = request.key();
         byte[] value = kv.containsKey(key) ? kv.get(key).array() : null;
         return new GetKVResponse()
             .setValue(value);
-    }
-
-    public ControllerResult<PutKVsResponseData> putKVs(PutKVsRequestData request) {
-        PutKVsResponseData response = new PutKVsResponseData();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<PutKVResponse> subResponses = request.putKVRequests().stream().map(req -> {
-            ControllerResult<PutKVResponse> result = putKV(req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        response.setPutKVResponses(subResponses);
-        return ControllerResult.atomicOf(records, response);
     }
 
     public ControllerResult<PutKVResponse> putKV(PutKVRequest request) {
@@ -101,18 +74,6 @@ public class KVControlManager {
         return ControllerResult.of(Collections.emptyList(), new PutKVResponse()
             .setErrorCode(KEY_EXIST.code())
             .setValue(value.array()));
-    }
-
-    public ControllerResult<DeleteKVsResponseData> deleteKVs(DeleteKVsRequestData request) {
-        log.trace("DeleteKVRequestData: {}", request);
-        DeleteKVsResponseData resp = new DeleteKVsResponseData();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<DeleteKVResponse> subResponses = request.deleteKVRequests().stream().map(req -> {
-            ControllerResult<DeleteKVResponse> result = deleteKV(req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        return ControllerResult.of(records, resp.setDeleteKVResponses(subResponses));
     }
 
     public ControllerResult<DeleteKVResponse> deleteKV(DeleteKVRequest request) {

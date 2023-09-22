@@ -103,10 +103,6 @@ public class KeyValue {
         }
     }
 
-    public static void main(String[] args) {
-        byte[] v = null;
-        System.out.println(Value.of(v));
-    }
     public static class Value {
         private final ByteBuffer value;
 
@@ -119,6 +115,9 @@ public class KeyValue {
         }
 
         public static Value of(byte[] value) {
+            if (value == null) {
+                return new Value(null);
+            }
             return new Value(ByteBuffer.wrap(value));
         }
 
