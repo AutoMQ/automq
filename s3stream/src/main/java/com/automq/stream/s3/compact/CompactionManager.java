@@ -343,6 +343,7 @@ public class CompactionManager {
         }
         Map<Long, S3ObjectMetadata> s3ObjectMetadataMap = s3ObjectMetadata.stream()
                 .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
+        List<StreamDataBlock> sortedStreamDataBlocks = new ArrayList<>();
         for (int i = 0; i < compactionPlans.size(); i++) {
             // iterate over each compaction plan
             CompactionPlan compactionPlan = compactionPlans.get(i);
@@ -358,10 +359,9 @@ public class CompactionManager {
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
             CompletableFuture<Void> walObjectCF = null;
-            List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
             for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
                 if (compactedObject.type() == CompactionType.COMPACT) {
-                    objectStreamRanges = CompactionUtils.buildObjectStreamRange(compactedObject);
+                    sortedStreamDataBlocks.addAll(compactedObject.streamDataBlocks());
                     walObjectCF = uploader.chainWriteWALObject(walObjectCF, compactedObject);
                 } else {
                     streamObjectCFList.add(uploader.writeStreamObject(compactedObject));
@@ -373,7 +373,6 @@ public class CompactionManager {
                 if (walObjectCF != null) {
                     // wait for all writes done
                     walObjectCF.thenAccept(v -> uploader.forceUploadWAL()).join();
-                    objectStreamRanges.forEach(request::addStreamRange);
                 }
                 streamObjectCFList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
             } catch (Exception ex) {
@@ -382,6 +381,8 @@ public class CompactionManager {
                 throw new IllegalArgumentException("Error while uploading compaction objects", ex);
             }
         }
+        List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRange(sortedStreamDataBlocks);
+        objectStreamRanges.forEach(request::addStreamRange);
         request.setObjectId(uploader.getWALObjectId());
         // set wal object id to be the first object id of compacted objects
         request.setOrderId(s3ObjectMetadata.get(0).objectId());
