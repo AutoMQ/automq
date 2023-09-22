@@ -14,32 +14,41 @@
 // limitations under the License.
 
 {
-  "apiKey": 510,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "PutKVRequest",
+  "apiKey": 511,
+  "type": "response",
+  "name": "DeleteKVsResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "KeyValues",
-      "type": "[]KeyValue",
+      "name": "ErrorCode",
+      "type": "int16",
       "versions": "0+",
-      "about": "Key-values",
+      "about": "The top level response error code"
+    },
+    {
+      "name": "ThrottleTimeMs",
+      "type": "int32",
+      "versions": "0+",
+      "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+    },
+    {
+      "name": "DeleteKVResponses",
+      "type": "[]DeleteKVResponse",
+      "versions": "0+",
+      "about": "DeleteKVResponses",
       "fields": [
         {
-          "name": "Key",
-          "type": "string",
+          "name": "ErrorCode",
+          "type": "int16",
           "versions": "0+",
-          "about": "Key"
+          "about": "Response error code"
         },
         {
           "name": "Value",
           "type": "bytes",
           "versions": "0+",
+          "nullableVersions": "0+",
           "about": "Value"
         }
       ]

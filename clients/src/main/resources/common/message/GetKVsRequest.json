@@ -15,41 +15,26 @@
 
 {
   "apiKey": 509,
-  "type": "response",
-  "name": "GetKVResponse",
+  "type": "request",
+  "listeners": [
+    "controller",
+    "broker"
+  ],
+  "name": "GetKVsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ErrorCode",
-      "type": "int16",
+      "name": "GetKeyRequests",
+      "type": "[]GetKVRequest",
       "versions": "0+",
-      "about": "The top level response error code"
-    },
-    {
-      "name": "ThrottleTimeMs",
-      "type": "int32",
-      "versions": "0+",
-      "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
-    },
-    {
-      "name": "KeyValues",
-      "type": "[]KeyValue",
-      "versions": "0+",
-      "about": "The key-values",
+      "about": "GetKeyRequests is a list of GetKVRequest",
       "fields": [
         {
           "name": "Key",
           "type": "string",
           "versions": "0+",
-          "about": "Key"
-        },
-        {
-          "name": "Value",
-          "type": "bytes",
-          "versions": "0+",
-          "nullableVersions": "0+",
-          "about": "Value"
+          "about": "Key is the key to get"
         }
       ]
     }

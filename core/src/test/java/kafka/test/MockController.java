@@ -45,14 +45,14 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopic;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -61,8 +61,8 @@ import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
@@ -537,17 +537,17 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<GetKVResponseData> getKV(ControllerRequestContext context, GetKVRequestData request) {
+    public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<PutKVResponseData> putKV(ControllerRequestContext context, PutKVRequestData request) {
+    public CompletableFuture<PutKVsResponseData> putKVs(ControllerRequestContext context, PutKVsRequestData request) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CompletableFuture<DeleteKVResponseData> deleteKV(ControllerRequestContext context, DeleteKVRequestData request) {
+    public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
         throw new UnsupportedOperationException();
     }
 

@@ -545,7 +545,7 @@ object ElasticLog extends Logging {
     val valueBuf = ByteBuffer.allocate(8)
     valueBuf.putLong(streamId)
     valueBuf.flip()
-    client.kvClient().putKV(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
+    client.kvClient().putKVIfAbsent(java.util.Arrays.asList(KeyValue.of(key, valueBuf))).get()
     metaStream
   }
 

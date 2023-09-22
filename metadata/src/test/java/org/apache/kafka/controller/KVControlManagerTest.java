@@ -22,17 +22,20 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVRequestData.KeyValue;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
+import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsRequestData.PutKVRequest;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -57,43 +60,60 @@ public class KVControlManagerTest {
 
     @Test
     public void testBasicReadWrite() {
-        ControllerResult<PutKVResponseData> result0 = manager.putKV(new PutKVRequestData()
-            .setKeyValues(List.of(
-                new KeyValue()
+        ControllerResult<PutKVsResponseData> result0 = manager.putKVs(new PutKVsRequestData()
+            .setPutKVRequests(List.of(
+                new PutKVRequest()
                     .setKey("key1")
                     .setValue("value1".getBytes()),
-                new KeyValue()
-                    .setKey("key2")
-                    .setValue("value2".getBytes()))));
-        assertEquals(1, result0.records().size());
+                new PutKVRequest()
+                    .setKey("key1")
+                    .setValue("value1-1".getBytes()),
+                new PutKVRequest()
+                    .setKey("key1")
+                    .setValue("value1-2".getBytes())
+                    .setOverwrite(true))));
+        assertEquals(2, result0.records().size());
         replay(manager, result0.records());
         assertEquals(2, manager.kv().size());
+        assertEquals(3, result0.response().putKVResponses().size());
+        assertEquals(Errors.NONE.code(), result0.response().putKVResponses().get(0).errorCode());
+        assertEquals("value1", new String(result0.response().putKVResponses().get(0).value()));
+        assertEquals(Errors.KEY_EXIST.code(), result0.response().putKVResponses().get(1).errorCode());
+        assertEquals("value1", new String(result0.response().putKVResponses().get(1).value()));
+        assertEquals(Errors.NONE.code(), result0.response().putKVResponses().get(2).errorCode());
+        assertEquals("value1-2", new String(result0.response().putKVResponses().get(2).value()));
 
-        GetKVResponseData resp1 = manager.getKV(new GetKVRequestData()
-            .setKeys(List.of("key1", "key2", "key3")));
-        assertEquals(3, resp1.keyValues().size());
-        assertEquals("key1", resp1.keyValues().get(0).key());
-        assertEquals("value1", new String(resp1.keyValues().get(0).value()));
-        assertEquals("key2", resp1.keyValues().get(1).key());
-        assertEquals("value2", new String(resp1.keyValues().get(1).value()));
-        assertEquals("key3", resp1.keyValues().get(2).key());
-        assertNull(resp1.keyValues().get(2).value());
+        GetKVsResponseData resp1 = manager.getKVs(new GetKVsRequestData()
+            .setGetKeyRequests(List.of(
+                new GetKVRequest()
+                    .setKey("key1"),
+                new GetKVRequest()
+                    .setKey("key2"))));
+        assertEquals(2, resp1.getKVResponses().size());
+        assertEquals("value1-2", new String(resp1.getKVResponses().get(0).value()));
+        assertNull(resp1.getKVResponses().get(1).value());
 
-        ControllerResult<DeleteKVResponseData> result2 = manager.deleteKV(new DeleteKVRequestData()
-            .setKeys(List.of("key1", "key3")));
+        ControllerResult<DeleteKVsResponseData> result2 = manager.deleteKVs(new DeleteKVsRequestData()
+            .setDeleteKVRequests(List.of(
+                new DeleteKVRequest()
+                    .setKey("key2"),
+                new DeleteKVRequest()
+                    .setKey("key1"),
+                new DeleteKVRequest()
+                    .setKey("key1")
+            )));
         assertEquals(1, result2.records().size());
+        assertEquals(Errors.KEY_NOT_EXIST.code(), result2.response().deleteKVResponses().get(0).errorCode());
+        assertEquals(Errors.NONE.code(), result2.response().deleteKVResponses().get(1).errorCode());
+        assertEquals("value1-2", new String(result2.response().deleteKVResponses().get(1).value()));
+        assertEquals(Errors.KEY_NOT_EXIST.code(), result2.response().deleteKVResponses().get(2).errorCode());
         replay(manager, result2.records());
-        assertEquals(1, manager.kv().size());
+        assertEquals(0, manager.kv().size());
 
-        GetKVResponseData resp3 = manager.getKV(new GetKVRequestData()
-            .setKeys(List.of("key1", "key2", "key3")));
-        assertEquals(3, resp3.keyValues().size());
-        assertEquals("key1", resp3.keyValues().get(0).key());
-        assertNull(resp3.keyValues().get(0).value());
-        assertEquals("key2", resp3.keyValues().get(1).key());
-        assertEquals("value2", new String(resp3.keyValues().get(1).value()));
-        assertEquals("key3", resp3.keyValues().get(2).key());
-        assertNull(resp3.keyValues().get(2).value());
+        GetKVsResponseData resp3 = manager.getKVs(new GetKVsRequestData()
+            .setGetKeyRequests(List.of(new GetKVRequest()
+                .setKey("key1"))));
+        assertNull(resp3.getKVResponses().get(0).value());
     }
 
     private void replay(KVControlManager manager, List<ApiMessageAndVersion> records) {

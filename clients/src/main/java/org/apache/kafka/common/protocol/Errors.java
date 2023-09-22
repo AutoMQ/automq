@@ -130,6 +130,7 @@ import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.s3.BrokerEpochExpiredException;
 import org.apache.kafka.common.errors.s3.BrokerEpochNotExistException;
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
+import org.apache.kafka.common.errors.s3.KeyExistException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
 import org.apache.kafka.common.errors.s3.OffsetNotMatchedException;
 import org.apache.kafka.common.errors.s3.RedundantOperationException;
@@ -397,6 +398,8 @@ public enum Errors {
     OFFSET_NOT_MATCHED(509, "The offset is not matched.", OffsetNotMatchedException::new),
     BROKER_EPOCH_EXPIRED(510, "The broker's epoch has been expired", BrokerEpochExpiredException::new),
     BROKER_EPOCH_NOT_EXIST(511, "The broker's epoch does not exist", BrokerEpochNotExistException::new),
+    KEY_EXIST(512, "The key already exists.", KeyExistException::new),
+    KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
     // Kafka on S3 inject end
 

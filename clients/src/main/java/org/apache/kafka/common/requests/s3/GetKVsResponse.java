@@ -19,22 +19,23 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
-public class PutKVResponse extends AbstractResponse {
-    private final PutKVResponseData data;
+public class GetKVsResponse extends AbstractResponse {
 
-    public PutKVResponse(PutKVResponseData data) {
-        super(ApiKeys.PUT_KV);
+    private final GetKVsResponseData data;
+
+    public GetKVsResponse(GetKVsResponseData data) {
+        super(ApiKeys.GET_KVS);
         this.data = data;
     }
 
     @Override
-    public PutKVResponseData data() {
+    public GetKVsResponseData data() {
         return data;
     }
 
@@ -53,8 +54,9 @@ public class PutKVResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static PutKVResponse parse(ByteBuffer buffer, short version) {
-        return new PutKVResponse(new PutKVResponseData(
+    public static GetKVsResponse parse(ByteBuffer buffer, short version) {
+        return new GetKVsResponse(new GetKVsResponseData(
             new ByteBufferAccessor(buffer), version));
     }
+    
 }

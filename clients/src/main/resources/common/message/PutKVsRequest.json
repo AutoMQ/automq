@@ -14,21 +14,41 @@
 // limitations under the License.
 
 {
-  "apiKey": 509,
+  "apiKey": 510,
   "type": "request",
   "listeners": [
     "controller",
     "broker"
   ],
-  "name": "GetKVRequest",
+  "name": "PutKVsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "Keys",
-      "type": "[]string",
+      "name": "PutKVRequests",
+      "type": "[]PutKVRequest",
       "versions": "0+",
-      "about": "Keys"
+      "about": "put kv requests",
+      "fields": [
+        {
+          "name": "Key",
+          "type": "string",
+          "versions": "0+",
+          "about": "Key"
+        },
+        {
+          "name": "Value",
+          "type": "bytes",
+          "versions": "0+",
+          "about": "Value"
+        },
+        {
+          "name": "overwrite",
+          "type": "bool",
+          "versions": "0+",
+          "about": "overwrite put kv"
+        }
+      ]
     }
   ]
 }

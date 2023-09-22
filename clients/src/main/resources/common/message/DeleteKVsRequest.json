@@ -20,15 +20,23 @@
     "controller",
     "broker"
   ],
-  "name": "DeleteKVRequest",
+  "name": "DeleteKVsRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "Keys",
-      "type": "[]string",
+      "name": "DeleteKVRequests",
+      "type": "[]DeleteKVRequest",
       "versions": "0+",
-      "about": "Keys"
+      "about": "DeleteKVRequests",
+      "fields": [
+        {
+          "name": "Key",
+          "type": "string",
+          "versions": "0+",
+          "about": "Key is the key to delete"
+        }
+      ]
     }
   ]
 }

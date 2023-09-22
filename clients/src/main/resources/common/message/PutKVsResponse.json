@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 511,
+  "apiKey": 510,
   "type": "response",
-  "name": "DeleteKVResponse",
+  "name": "PutKVsResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -31,6 +31,26 @@
       "type": "int32",
       "versions": "0+",
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+    },
+    {
+      "name": "PutKVResponses",
+      "type": "[]PutKVResponse",
+      "versions": "0+",
+      "about": "The responses for each put kv request.",
+      "fields": [
+        {
+          "name": "ErrorCode",
+          "type": "int16",
+          "versions": "0+",
+          "about": "The response error code"
+        },
+        {
+          "name": "Value",
+          "type": "bytes",
+          "versions": "0+",
+          "about": "Value"
+        }
+      ]
     }
   ]
 }
