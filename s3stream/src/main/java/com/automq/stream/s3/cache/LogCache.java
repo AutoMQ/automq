@@ -32,6 +32,7 @@ import java.util.function.Consumer;
 import static com.automq.stream.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
 
 public class LogCache {
+    public static final long MATCH_ALL_STREAMS = -1L;
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> block
             .records().forEach(
                     (streamId, records) -> records.forEach(StreamRecordBatch::release)
@@ -142,11 +143,20 @@ public class LogCache {
     }
 
     public Optional<LogCacheBlock> archiveCurrentBlockIfContains(long streamId) {
-        if (activeBlock.map.containsKey(streamId)) {
-            return Optional.of(archiveCurrentBlock());
+        if (streamId == MATCH_ALL_STREAMS) {
+            if (activeBlock.size > 0) {
+                return Optional.of(archiveCurrentBlock());
+            } else {
+                return Optional.empty();
+            }
         } else {
-            return Optional.empty();
+            if (activeBlock.map.containsKey(streamId)) {
+                return Optional.of(archiveCurrentBlock());
+            } else {
+                return Optional.empty();
+            }
         }
+
     }
 
     public void markFree(LogCacheBlock block) {
