@@ -949,7 +949,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     def delete_all_topics(self, timeout_sec=60):
         """
-        do nothing
+        Delete all topics on the cluster.
+        Note that this is needed to keep E2E tests isolated from each other.
         """
         if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
             self.logger.info("skip topic deletion on KRaft controller-only cluster")
@@ -957,40 +958,27 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         if self.have_cleaned_topics:
             self.logger.info("skip topic deletion since it has already been done")
             return
-        self.have_cleaned_topics = True
 
-    # def delete_all_topics(self, timeout_sec=60):
-    #     """
-    #     Delete all topics on the cluster.
-    #     Note that this is needed to keep E2E tests isolated from each other.
-    #     """
-    #     if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
-    #         self.logger.info("skip topic deletion on KRaft controller-only cluster")
-    #         return
-    #     if self.have_cleaned_topics:
-    #         self.logger.info("skip topic deletion since it has already been done")
-    #         return
-    #
-    #     node = self.nodes[0]
-    #     force_use_zk_connection = not self.all_nodes_topic_command_supports_bootstrap_server() or \
-    #                              not self.all_nodes_topic_command_supports_if_not_exists_with_bootstrap_server()
-    #     cmd = fix_opts_for_new_jvm(node)
-    #     cmd += "%(kafka_topics_cmd)s --delete --if-exists --topic %(topic)s " % {
-    #         'kafka_topics_cmd': self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection),
-    #         'topic': "\".*\"",
-    #     }
-    #
-    #     self.logger.info("Running topic deletion command...\n%s" % cmd)
-    #     node.account.ssh(cmd)
-    #
-    #     try:
-    #         # wait until no topics exist
-    #         wait_until(lambda: sum(1 for _ in self.list_topics(node)) == 0, timeout_sec=timeout_sec,
-    #                    err_msg="Kafka node failed to delete all topics in %d seconds" % timeout_sec)
-    #     except Exception:
-    #         self.thread_dump(node)
-    #         raise
-    #     self.have_cleaned_topics = True
+        node = self.nodes[0]
+        force_use_zk_connection = not self.all_nodes_topic_command_supports_bootstrap_server() or \
+                                 not self.all_nodes_topic_command_supports_if_not_exists_with_bootstrap_server()
+        cmd = fix_opts_for_new_jvm(node)
+        cmd += "%(kafka_topics_cmd)s --delete --if-exists --topic %(topic)s " % {
+            'kafka_topics_cmd': self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection),
+            'topic': "\".*\"",
+        }
+
+        self.logger.info("Running topic deletion command...\n%s" % cmd)
+        node.account.ssh(cmd)
+
+        try:
+            # wait until no topics exist
+            wait_until(lambda: sum(1 for _ in self.list_topics(node)) == 0, timeout_sec=timeout_sec,
+                       err_msg="Kafka node failed to delete all topics in %d seconds" % timeout_sec)
+        except Exception:
+            self.thread_dump(node)
+            raise
+        self.have_cleaned_topics = True
 
     def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
         pids = self.pids(node)
