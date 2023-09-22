@@ -41,7 +41,7 @@ public class CompactionUtilTest extends CompactionTestBase {
                 new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 25, 80, 1),
                 new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 105, 30, 1));
         CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks);
-        List<ObjectStreamRange> result = CompactionUtils.buildObjectStreamRange(compactedObject);
+        List<ObjectStreamRange> result = CompactionUtils.buildObjectStreamRange(compactedObject.streamDataBlocks());
         assertEquals(2, result.size());
         assertEquals(STREAM_0, result.get(0).getStreamId());
         assertEquals(0, result.get(0).getStartOffset());
