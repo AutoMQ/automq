@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3.compact;
 
-import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.objects.ObjectStreamRange;
@@ -34,10 +33,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 public class CompactionUtils {
-    public static List<ObjectStreamRange> buildObjectStreamRange(CompactedObject compactedObject) {
+    public static List<ObjectStreamRange> buildObjectStreamRange(List<StreamDataBlock> streamDataBlocks) {
         List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
         ObjectStreamRange currObjectStreamRange = null;
-        for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
+        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
             if (currObjectStreamRange == null) {
                 currObjectStreamRange = new ObjectStreamRange(streamDataBlock.getStreamId(), -1L,
                         streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset());
