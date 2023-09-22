@@ -18,20 +18,26 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractResponse;
 
-public class GetKVsResponse extends AbstractResponse {
+public class GetKVsResponse extends AbstractBatchResponse<GetKVResponse> {
 
     private final GetKVsResponseData data;
 
     public GetKVsResponse(GetKVsResponseData data) {
         super(ApiKeys.GET_KVS);
         this.data = data;
+    }
+
+    @Override
+    public List<GetKVResponse> subResponses() {
+        return data.getKVResponses();
     }
 
     @Override

@@ -18,19 +18,25 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.AbstractResponse;
 
-public class DeleteKVsResponse extends AbstractResponse {
+public class DeleteKVsResponse extends AbstractBatchResponse<DeleteKVResponse> {
     private final DeleteKVsResponseData data;
 
     public DeleteKVsResponse(DeleteKVsResponseData data) {
         super(ApiKeys.DELETE_KVS);
         this.data = data;
+    }
+
+    @Override
+    public List<DeleteKVResponse> subResponses() {
+        return data.deleteKVResponses();
     }
 
     @Override
