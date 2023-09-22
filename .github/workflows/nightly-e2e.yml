@@ -23,6 +23,7 @@ jobs:
         run: ./tests/docker/run_tests.sh
       - name: Report results
         run: python3 tests/report_e2e_results.py
+        if: ${{ always() }}
         env:
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
           SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
