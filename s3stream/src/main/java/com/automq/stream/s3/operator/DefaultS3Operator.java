@@ -159,10 +159,12 @@ public class DefaultS3Operator implements S3Operator {
         s3.putObject(request, body).thenAccept(putObjectResponse -> {
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, System.currentTimeMillis() - now);
             cf.complete(null);
+            data.release();
         }).exceptionally(ex -> {
             if (isUnrecoverable(ex)) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
+                data.release();
             } else {
                 LOGGER.warn("PutObject for object {} fail, retry later", path, ex);
                 scheduler.schedule(() -> write0(path, data, cf), 100, TimeUnit.MILLISECONDS);
@@ -233,14 +235,16 @@ public class DefaultS3Operator implements S3Operator {
         try {
             // Simple write/read/delete
             this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
-            this.rangeRead(path, 0, content.length).get(30, TimeUnit.SECONDS);
+            ByteBuf read = this.rangeRead(path, 0, content.length).get(30, TimeUnit.SECONDS);
+            read.release();
             this.delete(path).get(30, TimeUnit.SECONDS);
 
             // Multipart write/read/delete
             Writer writer = this.writer(multipartPath);
             writer.write(Unpooled.wrappedBuffer(content));
             writer.close().get(30, TimeUnit.SECONDS);
-            this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
+            read = this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
+            read.release();
             this.delete(multipartPath).get(30, TimeUnit.SECONDS);
         } catch (Throwable e) {
             LOGGER.error("Try connect s3 fail, please re-check the server configs", e);
