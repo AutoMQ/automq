@@ -191,6 +191,8 @@ public class S3Storage implements Storage {
             // fast path
             appendResult = log.append(streamRecord.encoded());
         } catch (WriteAheadLog.OverCapacityException e) {
+            // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
+            forceUpload(LogCache.MATCH_ALL_STREAMS);
             // slow path
             for (; ; ) {
                 // TODO: check close.
