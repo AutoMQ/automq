@@ -225,9 +225,7 @@ if (file('.git').exists()) {
         'licenses/*',
         '**/generated/**',
         'clients/src/test/resources/serializedData/*',
-        '.github/**',
-        'tests/docker/es/docker-compose.yaml',
-        'tests/esk_test_suite.yml'
+        '.github/**'
     ])
   }
 } else {
