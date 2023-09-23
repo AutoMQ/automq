@@ -85,7 +85,7 @@ public class S3StreamMetadataImageTest {
             .setStreamId(STREAM0)
             .setRangeIndex(0)
             .setEpoch(1L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setStartOffset(0L), (short) 0));
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
@@ -95,7 +95,7 @@ public class S3StreamMetadataImageTest {
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
 
-        // 3. advance range 0_0, broker1 is the new leader, and create range0_1
+        // 3. advance range 0_0, node1 is the new leader, and create range0_1
         List<ApiMessageAndVersion> delta2Records = new ArrayList<>();
         S3StreamMetadataDelta delta2 = new S3StreamMetadataDelta(image2);
         delta2Records.add(new ApiMessageAndVersion(new S3StreamRecord()
@@ -111,7 +111,7 @@ public class S3StreamMetadataImageTest {
             .setStreamId(STREAM0)
             .setRangeIndex(1)
             .setEpoch(2L)
-            .setBrokerId(BROKER1)
+            .setNodeId(BROKER1)
             .setStartOffset(100L)
             .setEndOffset(100L), (short) 0));
         RecordTestUtils.replayAll(delta2, delta2Records);

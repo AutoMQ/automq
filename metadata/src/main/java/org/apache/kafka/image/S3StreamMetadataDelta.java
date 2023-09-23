@@ -105,7 +105,7 @@ public class S3StreamMetadataDelta {
         }
         // update the endOffset
         this.changedRanges.put(currentRangeIndex, new RangeMetadata(
-            streamId, metadata.epoch(), metadata.rangeIndex(), metadata.startOffset(), newEndOffset, metadata.brokerId()
+            streamId, metadata.epoch(), metadata.rangeIndex(), metadata.startOffset(), newEndOffset, metadata.nodeId()
         ));
     }
 

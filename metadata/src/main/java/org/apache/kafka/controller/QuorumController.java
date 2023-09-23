@@ -87,7 +87,6 @@ import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -95,14 +94,15 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
-import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -1526,11 +1526,11 @@ public final class QuorumController implements Controller {
             case ASSIGNED_S3_OBJECT_ID_RECORD:
                 s3ObjectControlManager.replay((AssignedS3ObjectIdRecord) message);
                 break;
-            case BROKER_WALMETADATA_RECORD:
-                streamControlManager.replay((BrokerWALMetadataRecord) message);
+            case NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((NodeWALMetadataRecord) message);
                 break;
-            case REMOVE_BROKER_WALMETADATA_RECORD:
-                streamControlManager.replay((RemoveBrokerWALMetadataRecord) message);
+            case REMOVE_NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((RemoveNodeWALMetadataRecord) message);
                 break;
             case KVRECORD:
                 kvControlManager.replay((KVRecord) message);
@@ -2290,11 +2290,11 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<CreateStreamsResponseData> createStreams(ControllerRequestContext context, CreateStreamsRequestData request) {
-        int brokerId = request.brokerId();
-        long brokerEpoch = request.brokerEpoch();
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<CreateStreamResponse>> batchCf = request.createStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(brokerId, brokerEpoch, req)))
+            .map(req -> appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(nodeId, nodeEpoch, req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new CreateStreamsResponseData().setCreateStreamResponses(
@@ -2304,11 +2304,11 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
-        int brokerId = request.brokerId();
-        long brokerEpoch = request.brokerEpoch();
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<OpenStreamResponse>> batchCf = request.openStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(brokerId, brokerEpoch, req)))
+            .map(req -> appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new OpenStreamsResponseData().setOpenStreamResponses(
@@ -2318,11 +2318,11 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData request) {
-        int brokerId = request.brokerId();
-        long brokerEpoch = request.brokerEpoch();
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<CloseStreamResponse>> batchCf = request.closeStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(brokerId, brokerEpoch, req)))
+            .map(req -> appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new CloseStreamsResponseData().setCloseStreamResponses(
@@ -2332,11 +2332,11 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
-        int brokerId = request.brokerId();
-        long brokerEpoch = request.brokerEpoch();
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<TrimStreamResponse>> batchCf = request.trimStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(brokerId, brokerEpoch, req)))
+            .map(req -> appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(nodeId, nodeEpoch, req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new TrimStreamsResponseData().setTrimStreamResponses(
@@ -2346,11 +2346,11 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
-        int brokerId = request.brokerId();
-        long brokerEpoch = request.brokerEpoch();
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<DeleteStreamResponse>> batchCf = request.deleteStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(brokerId, brokerEpoch, req)))
+            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(nodeId, nodeEpoch, req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new DeleteStreamsResponseData().setDeleteStreamResponses(

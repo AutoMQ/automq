@@ -39,6 +39,12 @@ public enum EntityType {
     BROKER_ID(FieldType.Int32FieldType.INSTANCE),
 
     // Kafka on S3 inject start
+    @JsonProperty("nodeId")
+    NODE_ID(FieldType.Int32FieldType.INSTANCE),
+
+    @JsonProperty("nodeEpoch")
+    NODE_EPOCH(FieldType.Int32FieldType.INSTANCE),
+
     @JsonProperty("streamId")
     STREAM_ID(FieldType.Int64FieldType.INSTANCE),
 

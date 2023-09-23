@@ -127,8 +127,8 @@ import org.apache.kafka.common.errors.UnsupportedCompressionTypeException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.errors.s3.BrokerEpochExpiredException;
-import org.apache.kafka.common.errors.s3.BrokerEpochNotExistException;
+import org.apache.kafka.common.errors.s3.NodeEpochExpiredException;
+import org.apache.kafka.common.errors.s3.NodeEpochNotExistException;
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
 import org.apache.kafka.common.errors.s3.KeyExistException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
@@ -396,8 +396,8 @@ public enum Errors {
     REDUNDANT_OPERATION(507, "The operation is redundant.", RedundantOperationException::new),
     COMPACTED_OBJECTS_NOT_FOUND(508, "The compacted objects are not found.", CompactedObjectsNotFoundException::new),
     OFFSET_NOT_MATCHED(509, "The offset is not matched.", OffsetNotMatchedException::new),
-    BROKER_EPOCH_EXPIRED(510, "The broker's epoch has been expired", BrokerEpochExpiredException::new),
-    BROKER_EPOCH_NOT_EXIST(511, "The broker's epoch does not exist", BrokerEpochNotExistException::new),
+    NODE_EPOCH_EXPIRED(510, "The node's epoch has been expired", NodeEpochExpiredException::new),
+    NODE_EPOCH_NOT_EXIST(511, "The node's epoch does not exist", NodeEpochNotExistException::new),
     KEY_EXIST(512, "The key already exists.", KeyExistException::new),
     KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);

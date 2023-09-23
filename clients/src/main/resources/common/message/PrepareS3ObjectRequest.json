@@ -25,10 +25,10 @@
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "BrokerId",
+      "name": "NodeId",
       "type": "int32",
       "versions": "0+",
-      "entityType": "brokerId",
+      "entityType": "nodeId",
       "about": "The ID of the requesting broker"
     },
     {

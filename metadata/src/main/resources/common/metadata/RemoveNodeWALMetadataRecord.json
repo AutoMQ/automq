@@ -14,23 +14,17 @@
 // limitations under the License.
 
 {
-  "apiKey": 513,
+  "apiKey": 514,
   "type": "metadata",
-  "name": "BrokerWALMetadataRecord",
+  "name": "RemoveNodeWALMetadataRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "BrokerId",
+      "name": "NodeId",
       "type": "int32",
       "versions": "0+",
-      "about": "The broker id."
-    },
-    {
-      "name": "BrokerEpoch",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The broker epoch."
+      "about": "The ID of the node to be removed"
     }
   ]
 }

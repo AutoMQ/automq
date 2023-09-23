@@ -39,9 +39,10 @@ import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamRespons
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
@@ -54,7 +55,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
-import org.apache.kafka.controller.stream.StreamControlManager.BrokerS3WALMetadata;
+import org.apache.kafka.controller.stream.StreamControlManager.NodeS3WALMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3WALObject;
@@ -115,7 +116,7 @@ public class StreamControlManagerTest {
 
         // 1. create stream_0 success
         CreateStreamRequest request0 = new CreateStreamRequest()
-            .setBrokerId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         List<ApiMessageAndVersion> records0 = result0.records();
         CreateStreamResponse response0 = result0.response();
@@ -195,7 +196,7 @@ public class StreamControlManagerTest {
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM1));
         assertEquals(2, manager.nextAssignedStreamId());
 
-        // 2. broker_0 open stream_0 and stream_1 with epoch0
+        // 2. node_0 open stream_0 and stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, EPOCH0,
             new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         ControllerResult<OpenStreamResponse> result3 = manager.openStream(BROKER0, EPOCH0,
@@ -223,13 +224,13 @@ public class StreamControlManagerTest {
         verifyFirstRange(manager.streamsMetadata().get(STREAM1), EPOCH0, BROKER0);
 
         // TODO: support write range record, then roll the range and verify
-        // 3. broker_1 try to open stream_0 with epoch0
+        // 3. node_1 try to open stream_0 with epoch0
         ControllerResult<OpenStreamResponse> result4 = manager.openStream(BROKER1, 0,
             new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result4.response().errorCode());
         assertEquals(0, result4.records().size());
 
-        // 4. broker_0 try to open stream_1 with epoch0
+        // 4. node_0 try to open stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result6 = manager.openStream(BROKER0, 0,
             new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
@@ -237,44 +238,44 @@ public class StreamControlManagerTest {
         assertEquals(0L, result6.response().nextOffset());
         assertEquals(0, result6.records().size());
 
-        // 5. broker_0 try to open stream_1 with epoch1
+        // 5. node_0 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result7 = manager.openStream(BROKER0, 0,
             new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_NOT_CLOSED.code(), result7.response().errorCode());
 
-        // 6. broker_1 try to open stream_1 with epoch0
+        // 6. node_1 try to open stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result8 = manager.openStream(BROKER1, 0,
             new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result8.response().errorCode());
         assertEquals(0, result8.records().size());
 
-        // 7. broker_1 try to open stream_1 with epoch1
+        // 7. node_1 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result9 = manager.openStream(BROKER1, 0,
             new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_NOT_CLOSED.code(), result9.response().errorCode());
 
-        // 8. broker_1 try to close stream_1 with epoch0
+        // 8. node_1 try to close stream_1 with epoch0
         ControllerResult<CloseStreamResponse> result10 = manager.closeStream(BROKER1, BROKER_EPOCH0,
             new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result10.response().errorCode());
 
-        // 9. broker_0 try to close stream_1 with epoch1
+        // 9. node_0 try to close stream_1 with epoch1
         ControllerResult<CloseStreamResponse> result11 = manager.closeStream(BROKER0, BROKER_EPOCH0,
             new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_INNER_ERROR.code(), result11.response().errorCode());
 
-        // 10. broker_0 try to close stream_1 with epoch0
+        // 10. node_0 try to close stream_1 with epoch0
         ControllerResult<CloseStreamResponse> result12 = manager.closeStream(BROKER0, BROKER_EPOCH0,
             new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result12.response().errorCode());
         replay(manager, result12.records());
 
-        // 11. broker_0 try to close stream_1 with epoch0 again
+        // 11. node_0 try to close stream_1 with epoch0 again
         ControllerResult<CloseStreamResponse> result13 = manager.closeStream(BROKER0, BROKER_EPOCH0,
             new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result13.response().errorCode());
 
-        // 12. broker_1 try to open stream_1 with epoch1
+        // 12. node_1 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result14 = manager.openStream(BROKER1, 0,
             new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.NONE.code(), result14.response().errorCode());
@@ -285,7 +286,7 @@ public class StreamControlManagerTest {
         assertEquals(EPOCH1, streamMetadata1.currentEpoch());
         RangeMetadata range = streamMetadata1.ranges().get(streamMetadata1.currentRangeIndex());
         assertEquals(EPOCH1, range.epoch());
-        assertEquals(BROKER1, range.brokerId());
+        assertEquals(BROKER1, range.nodeId());
     }
 
     @Test
@@ -316,7 +317,7 @@ public class StreamControlManagerTest {
             .setEndOffset(100L));
         CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
             .setObjectId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
         ControllerResult<CommitWALObjectResponseData> result3 = manager.commitWALObject(commitRequest0);
@@ -328,7 +329,7 @@ public class StreamControlManagerTest {
         RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(100L, rangeMetadata0.endOffset());
-        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
         // 3. commit a wal object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
@@ -337,12 +338,12 @@ public class StreamControlManagerTest {
             .setEndOffset(200));
         CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
             .setObjectId(1L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
         ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
-        // 4. broker_0 close stream_0 with epoch_0 and broker_1 open stream_0 with epoch_1
+        // 4. node_0 close stream_0 with epoch_0 and node_1 open stream_0 with epoch_1
         ControllerResult<CloseStreamResponse> result7 = manager.closeStream(BROKER0, BROKER_EPOCH0,
             new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result7.response().errorCode());
@@ -353,14 +354,14 @@ public class StreamControlManagerTest {
         assertEquals(0L, result8.response().startOffset());
         assertEquals(100L, result8.response().nextOffset());
         replay(manager, result8.records());
-        // 5. broker_1 successfully commit wal object which contains stream_0's data
+        // 5. node_1 successfully commit wal object which contains stream_0's data
         List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
             .setStartOffset(100)
             .setEndOffset(300));
         CommitWALObjectRequestData commitRequest6 = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER1)
+            .setNodeId(BROKER1)
             .setObjectId(6L)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges6);
@@ -375,11 +376,11 @@ public class StreamControlManagerTest {
         RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
         assertEquals(100L, rangeMetadata1.startOffset());
         assertEquals(300L, rangeMetadata1.endOffset());
-        assertEquals(1, manager.brokersMetadata().get(BROKER1).walObjects().size());
+        assertEquals(1, manager.nodesMetadata().get(BROKER1).walObjects().size());
 
         // 6. get stream's offset
         GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
-            .setBrokerId(BROKER1).setBrokerEpoch(0L);
+            .setNodeId(BROKER1).setNodeEpoch(0L);
         GetOpeningStreamsResponseData response = manager.getOpeningStreams(request).response();
         assertEquals(1, response.streamMetadataList().size());
         assertEquals(STREAM0, response.streamMetadataList().get(0).streamId());
@@ -387,7 +388,7 @@ public class StreamControlManagerTest {
         assertEquals(300L, response.streamMetadataList().get(0).endOffset());
 
         request = new GetOpeningStreamsRequestData()
-            .setBrokerId(BROKER0).setBrokerEpoch(0L);
+            .setNodeId(BROKER0).setNodeEpoch(0L);
         assertEquals(0, manager.getOpeningStreams(request).response().streamMetadataList().size());
     }
 
@@ -398,22 +399,22 @@ public class StreamControlManagerTest {
         return result0.response().streamId();
     }
 
-    private void openStream(int brokerId, long epoch, long streamId) {
-        ControllerResult<OpenStreamResponse> result1 = manager.openStream(brokerId, 0,
+    private void openStream(int nodeId, long epoch, long streamId) {
+        ControllerResult<OpenStreamResponse> result1 = manager.openStream(nodeId, 0,
             new OpenStreamRequest().setStreamId(streamId).setStreamEpoch(epoch));
         replay(manager, result1.records());
     }
 
-    private void closeStream(int brokerId, long epoch, long streamId) {
-        ControllerResult<CloseStreamResponse> result = manager.closeStream(brokerId, BROKER_EPOCH0, new CloseStreamRequest()
+    private void closeStream(int nodeId, long epoch, long streamId) {
+        ControllerResult<CloseStreamResponse> result = manager.closeStream(nodeId, BROKER_EPOCH0, new CloseStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch));
         replay(manager, result.records());
     }
 
-    private void createAndOpenStream(int brokerId, long epoch) {
+    private void createAndOpenStream(int nodeId, long epoch) {
         long streamId = createStream();
-        openStream(brokerId, epoch, streamId);
+        openStream(nodeId, epoch, streamId);
     }
 
     @Test
@@ -442,7 +443,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
         ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
@@ -450,7 +451,7 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(0L);
         GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamMetadataList().size());
         assertEquals(STREAM0, streamsOffset.streamMetadataList().get(0).streamId());
@@ -459,7 +460,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(200L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object0DataTs = manager.brokersMetadata().get(BROKER0).walObjects().get(0L).dataTimeInMs();
+        long object0DataTs = manager.nodesMetadata().get(BROKER0).walObjects().get(0L).dataTimeInMs();
 
         // 4. keep committing first level object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -476,7 +477,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
         ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
@@ -492,7 +493,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object1DataTs = manager.brokersMetadata().get(BROKER0).walObjects().get(1L).dataTimeInMs();
+        long object1DataTs = manager.nodesMetadata().get(BROKER0).walObjects().get(1L).dataTimeInMs();
 
         // 6. commit an invalid wal object which contains the destroyed or not exist wal object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
@@ -510,7 +511,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest2 = new CommitWALObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
@@ -523,7 +524,7 @@ public class StreamControlManagerTest {
         commitRequest2 = new CommitWALObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L));
@@ -540,12 +541,12 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        assertEquals(object0DataTs, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).dataTimeInMs());
+        assertEquals(object0DataTs, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).dataTimeInMs());
 
         // 9. verify compacted wal objects is removed
-        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
-        assertEquals(2, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).objectId());
-        assertEquals(0, manager.brokersMetadata().get(BROKER0).walObjects().get(2L).orderId());
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
+        assertEquals(2, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).objectId());
+        assertEquals(0, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).orderId());
 
     }
 
@@ -570,7 +571,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0)
             .setStreamObjects(List.of(
@@ -586,7 +587,7 @@ public class StreamControlManagerTest {
         replay(manager, result4.records());
 
         // 3. fetch range end offset
-        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(0L);
         GetOpeningStreamsResponseData streamsOffset = manager.getOpeningStreams(request).response();
         assertEquals(2, streamsOffset.streamMetadataList().size());
         assertEquals(STREAM0, streamsOffset.streamMetadataList().get(0).streamId());
@@ -609,7 +610,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1)
             .setStreamObjects(List.of(
@@ -645,7 +646,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0)
             .setStreamObjects(List.of(
@@ -671,7 +672,7 @@ public class StreamControlManagerTest {
         CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
             .setObjectId(2L)
             .setOrderId(1L)
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1)
             .setStreamObjects(List.of(
@@ -700,7 +701,7 @@ public class StreamControlManagerTest {
         replay(manager, result2.records());
 
         // 5. fetch stream offset range
-        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setBrokerId(BROKER0).setBrokerEpoch(0L);
+        GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(0L);
         GetOpeningStreamsResponseData response = manager.getOpeningStreams(request).response();
         assertEquals(2, response.streamMetadataList().size());
         assertEquals(STREAM0, response.streamMetadataList().get(0).streamId());
@@ -738,12 +739,12 @@ public class StreamControlManagerTest {
         registerAlwaysSuccessEpoch(BROKER0);
         registerAlwaysSuccessEpoch(BROKER1);
 
-        // 1. create and open stream0 and stream1 for broker0
+        // 1. create and open stream0 and stream1 for node0
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
         // 2. commit wal object with stream0-[0, 10)
         CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(0)
             .setObjectId(0)
@@ -756,7 +757,7 @@ public class StreamControlManagerTest {
         replay(manager, result.records());
         // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10)
         requestData = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(1)
             .setObjectId(1)
@@ -773,7 +774,7 @@ public class StreamControlManagerTest {
         replay(manager, result.records());
         // 4. commit with a stream object with stream0-[20, 40)
         requestData = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
             .setObjectId(ObjectUtils.NOOP_OBJECT_ID)
@@ -785,12 +786,12 @@ public class StreamControlManagerTest {
                 .setEndOffset(40)));
         result = manager.commitWALObject(requestData);
         replay(manager, result.records());
-        // 5. broker0 close stream0 and broker1 open stream0
+        // 5. node0 close stream0 and node1 open stream0
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
         // 6. commit wal object with stream0-[40, 70)
         requestData = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER1)
+            .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(3)
             .setOrderId(3)
@@ -825,15 +826,15 @@ public class StreamControlManagerTest {
         assertEquals(60, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        BrokerS3WALMetadata broker0Metadata = manager.brokersMetadata().get(BROKER0);
-        assertEquals(1, broker0Metadata.walObjects().size());
-        S3WALObject s3WALObject = broker0Metadata.walObjects().get(1L);
+        NodeS3WALMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
+        assertEquals(1, node0Metadata.walObjects().size());
+        S3WALObject s3WALObject = node0Metadata.walObjects().get(1L);
         assertEquals(1, s3WALObject.offsetRanges().size());
         StreamOffsetRange range = s3WALObject.offsetRanges().get(STREAM0);
         assertNull(range);
-        BrokerS3WALMetadata broker1Metadata = manager.brokersMetadata().get(BROKER1);
-        assertEquals(1, broker1Metadata.walObjects().size());
-        s3WALObject = broker1Metadata.walObjects().get(3L);
+        NodeS3WALMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
+        assertEquals(1, node1Metadata.walObjects().size());
+        s3WALObject = node1Metadata.walObjects().get(3L);
         assertEquals(1, s3WALObject.offsetRanges().size());
         range = s3WALObject.offsetRanges().get(STREAM0);
         assertNotNull(range);
@@ -858,14 +859,14 @@ public class StreamControlManagerTest {
         assertEquals(70, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        broker0Metadata = manager.brokersMetadata().get(BROKER0);
-        assertEquals(1, broker0Metadata.walObjects().size());
-        broker1Metadata = manager.brokersMetadata().get(BROKER1);
-        assertEquals(0, broker1Metadata.walObjects().size());
+        node0Metadata = manager.nodesMetadata().get(BROKER0);
+        assertEquals(1, node0Metadata.walObjects().size());
+        node1Metadata = manager.nodesMetadata().get(BROKER1);
+        assertEquals(0, node1Metadata.walObjects().size());
 
         // 5. commit wal object with stream0-[70, 100)
         CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectId(4)
             .setOrderId(4)
@@ -918,12 +919,12 @@ public class StreamControlManagerTest {
         // 4. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
-        assertEquals(1, manager.brokersMetadata().get(BROKER0).walObjects().size());
-        S3WALObject walObject = manager.brokersMetadata().get(BROKER0).walObjects().get(1L);
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
+        S3WALObject walObject = manager.nodesMetadata().get(BROKER0).walObjects().get(1L);
         assertEquals(1, walObject.offsetRanges().size());
         StreamOffsetRange offsetRange = walObject.offsetRanges().get(STREAM1);
         assertNotNull(offsetRange);
-        assertEquals(0, manager.brokersMetadata().get(BROKER1).walObjects().size());
+        assertEquals(0, manager.nodesMetadata().get(BROKER1).walObjects().size());
 
         // 5. delete again
         req = new DeleteStreamRequest()
@@ -937,14 +938,14 @@ public class StreamControlManagerTest {
     public void testGetOpeningStreams() {
         // 1. create stream without register
         CreateStreamRequest request0 = new CreateStreamRequest()
-            .setBrokerId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
-        assertEquals(Errors.BROKER_EPOCH_NOT_EXIST, Errors.forCode(result0.response().errorCode()));
+        assertEquals(Errors.NODE_EPOCH_NOT_EXIST, Errors.forCode(result0.response().errorCode()));
 
         // 2. register
         GetOpeningStreamsRequestData request1 = new GetOpeningStreamsRequestData()
-            .setBrokerId(BROKER0)
-            .setBrokerEpoch(1);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(1);
         ControllerResult<GetOpeningStreamsResponseData> result1 = manager.getOpeningStreams(request1);
         assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
         assertEquals(0, result1.response().streamMetadataList().size());
@@ -952,42 +953,42 @@ public class StreamControlManagerTest {
 
         // 3. register with lower epoch again
         request1 = new GetOpeningStreamsRequestData()
-            .setBrokerId(BROKER0)
-            .setBrokerEpoch(0);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(0);
         result1 = manager.getOpeningStreams(request1);
-        assertEquals(Errors.BROKER_EPOCH_EXPIRED, Errors.forCode(result1.response().errorCode()));
+        assertEquals(Errors.NODE_EPOCH_EXPIRED, Errors.forCode(result1.response().errorCode()));
 
         // 4. register with higher epoch
         request1 = new GetOpeningStreamsRequestData()
-            .setBrokerId(BROKER0)
-            .setBrokerEpoch(2);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(2);
         result1 = manager.getOpeningStreams(request1);
         assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
         assertEquals(0, result1.response().streamMetadataList().size());
         replay(manager, result1.records());
 
-        // 5. verify broker's epoch
-        assertEquals(2, manager.brokersMetadata().get(BROKER0).getBrokerEpoch());
+        // 5. verify node's epoch
+        assertEquals(2, manager.nodesMetadata().get(BROKER0).getNodeEpoch());
 
         // 6. create stream with lower epoch
         CreateStreamRequest request2 = new CreateStreamRequest()
-            .setBrokerId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result2 = manager.createStream(BROKER0, BROKER_EPOCH0, request2);
-        assertEquals(Errors.BROKER_EPOCH_EXPIRED, Errors.forCode(result2.response().errorCode()));
+        assertEquals(Errors.NODE_EPOCH_EXPIRED, Errors.forCode(result2.response().errorCode()));
 
         // 7. create stream with matched epoch
         CreateStreamRequest request3 = new CreateStreamRequest()
-            .setBrokerId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result3 = manager.createStream(BROKER0, 2, request3);
         assertEquals(Errors.NONE, Errors.forCode(result3.response().errorCode()));
         replay(manager, result3.records());
 
     }
 
-    private void registerAlwaysSuccessEpoch(int brokerId) {
+    private void registerAlwaysSuccessEpoch(int nodeId) {
         GetOpeningStreamsRequestData req = new GetOpeningStreamsRequestData()
-            .setBrokerId(brokerId)
-            .setBrokerEpoch(-1);
+            .setNodeId(nodeId)
+            .setNodeEpoch(-1);
         ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(req);
         replay(manager, result.records());
     }
@@ -1013,8 +1014,11 @@ public class StreamControlManagerTest {
                 case REMOVE_RANGE_RECORD:
                     manager.replay((RemoveRangeRecord) message);
                     break;
-                case BROKER_WALMETADATA_RECORD:
-                    manager.replay((BrokerWALMetadataRecord) message);
+                case NODE_WALMETADATA_RECORD:
+                    manager.replay((NodeWALMetadataRecord) message);
+                    break;
+                case REMOVE_NODE_WALMETADATA_RECORD:
+                    manager.replay((RemoveNodeWALMetadataRecord) message);
                     break;
                 case WALOBJECT_RECORD:
                     manager.replay((WALObjectRecord) message);
@@ -1042,7 +1046,7 @@ public class StreamControlManagerTest {
     }
 
     private void verifyFirstTimeOpenStreamResult(ControllerResult<OpenStreamResponse> result,
-        long expectedEpoch, int expectedBrokerId) {
+        long expectedEpoch, int expectedNodeId) {
         assertEquals(0, result.response().errorCode());
         assertEquals(0, result.response().startOffset());
         assertEquals(2, result.records().size());
@@ -1059,21 +1063,21 @@ public class StreamControlManagerTest {
         ApiMessageAndVersion record1 = result.records().get(1);
         assertInstanceOf(RangeRecord.class, record1.message());
         RangeRecord rangeRecord0 = (RangeRecord) record1.message();
-        assertEquals(expectedBrokerId, rangeRecord0.brokerId());
+        assertEquals(expectedNodeId, rangeRecord0.nodeId());
         assertEquals(expectedEpoch, rangeRecord0.epoch());
         assertEquals(0, rangeRecord0.rangeIndex());
         assertEquals(0L, rangeRecord0.startOffset());
         assertEquals(0L, rangeRecord0.endOffset());
     }
 
-    private void verifyFirstRange(S3StreamMetadata streamMetadata, long expectedEpoch, int expectedBrokerId) {
+    private void verifyFirstRange(S3StreamMetadata streamMetadata, long expectedEpoch, int expectedNodeId) {
         assertNotNull(streamMetadata);
         assertEquals(expectedEpoch, streamMetadata.currentEpoch());
         assertEquals(0, streamMetadata.currentRangeIndex());
         assertEquals(0L, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
         RangeMetadata rangeMetadata0 = streamMetadata.ranges().get(0);
-        assertEquals(expectedBrokerId, rangeMetadata0.brokerId());
+        assertEquals(expectedNodeId, rangeMetadata0.nodeId());
         assertEquals(expectedEpoch, rangeMetadata0.epoch());
         assertEquals(0, rangeMetadata0.rangeIndex());
         assertEquals(0L, rangeMetadata0.startOffset());
