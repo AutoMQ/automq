@@ -266,11 +266,11 @@ public class S3ObjectControlManager {
                 });
         // check the mark destroyed objects
         List<String> destroyedObjectKeys = this.markDestroyedObjects.stream()
-            .map(id -> this.objectsMetadata.get(id))
+            .map(this.objectsMetadata::get)
             .filter(obj -> obj.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis())
             .map(S3Object::getObjectKey)
             .collect(Collectors.toList());
-        if (destroyedObjectKeys == null || destroyedObjectKeys.size() == 0) {
+        if (destroyedObjectKeys.isEmpty()) {
             return ControllerResult.of(records, null);
         }
         this.operator.delete(destroyedObjectKeys).whenCompleteAsync((resp, e) -> {

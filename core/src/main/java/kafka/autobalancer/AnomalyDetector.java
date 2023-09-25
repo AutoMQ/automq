@@ -40,6 +40,8 @@ import java.util.concurrent.TimeUnit;
 public class AnomalyDetector {
     private final Logger logger;
     private final List<AbstractGoal> goalsByPriority;
+    private final int maxActionsNumPerExecution;
+    private final long executionInterval;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ExecutionManager executionManager;
@@ -54,9 +56,11 @@ public class AnomalyDetector {
         }
         this.logger = logContext.logger(AnomalyDetector.class);
         this.goalsByPriority = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, AbstractGoal.class);
+        this.maxActionsNumPerExecution = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
         Collections.sort(this.goalsByPriority);
         logger.info("Goals: {}", this.goalsByPriority);
         this.detectInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
+        this.executionInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
         fetchExcludedConfig(config);
         this.clusterModel = clusterModel;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("anomaly-detector"));
@@ -81,7 +85,7 @@ public class AnomalyDetector {
 
     public void start() {
         this.executionManager.start();
-        this.executorService.scheduleWithFixedDelay(this::detect, detectInterval, detectInterval, TimeUnit.MILLISECONDS);
+        this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
         logger.info("Started");
     }
 
@@ -115,14 +119,22 @@ public class AnomalyDetector {
             }
         }
 
+        int availableActionNum = maxActionsNumPerExecution;
         for (AbstractGoal goal : goalsByPriority) {
             if (!this.running) {
                 break;
             }
             List<Action> actions = goal.optimize(snapshot, goalsByPriority);
-            logger.debug("Optimized actions {} for goal {}", actions, goal.name());
-            this.executionManager.appendActions(actions);
+            int size = Math.min(availableActionNum, actions.size());
+            this.executionManager.appendActions(actions.subList(0, size));
+            availableActionNum -= size;
+            if (availableActionNum <= 0) {
+                break;
+            }
         }
-        // TODO: wait for completion of all actions before next detect
+
+        long nextDelay = (maxActionsNumPerExecution - availableActionNum) * this.executionInterval + this.detectInterval;
+        this.executorService.schedule(this::detect, nextDelay, TimeUnit.MILLISECONDS);
+        logger.info("Detect finished, next detect will be after {} ms", nextDelay);
     }
 }
