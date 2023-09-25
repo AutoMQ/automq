@@ -45,6 +45,7 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_UTILIZATION_THRESHOLD = PREFIX + "network.in.utilization.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_UTILIZATION_THRESHOLD = PREFIX + "network.out.utilization.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = PREFIX + "execution.interval.ms";
+    public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS = PREFIX + "execution.steps";
     public static final String AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION = PREFIX + "load.aggregation";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = PREFIX + "exclude.broker.ids";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = PREFIX + "exclude.topics";
@@ -66,7 +67,8 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.2;
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD = 0.8;
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD = 0.8;
-    public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = 100;
+    public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = 1000;
+    public static final int DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS = 60;
     public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION = false;
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = "";
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = "";
@@ -85,6 +87,7 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD_DOC = "The maximum network input bandwidth usage of broker before trigger load balance";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD_DOC = PREFIX + "network.out.usage.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC = "Time interval between reassignments per broker in milliseconds";
+    public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS_DOC = "The max number of reassignments per broker in one execution";
     public static final String AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION_DOC = "Use aggregation of partition load as broker load, instead of using reported broker metrics directly";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC = "Broker ids that auto balancer will ignore during balancing, separated by comma";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC = "Topics that auto balancer will ignore during balancing, separated by comma";
@@ -132,6 +135,9 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
                 .define(AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS, ConfigDef.Type.INT,
+                        DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS, ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION, ConfigDef.Type.BOOLEAN,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION_DOC)

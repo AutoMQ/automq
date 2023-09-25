@@ -89,21 +89,25 @@ public class ExecutionManager implements Runnable {
                 if (shutdown) {
                     break;
                 }
-                ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
-                AlterPartitionReassignmentsRequestData request = new AlterPartitionReassignmentsRequestData();
-                List<AlterPartitionReassignmentsRequestData.ReassignableTopic> topicList = new ArrayList<>();
-                topicList.add(buildTopic(action.getSrcTopicPartition(), action.getDestBrokerId()));
-                if (action.getType() == ActionType.SWAP) {
-                    topicList.add(buildTopic(action.getDestTopicPartition(), action.getSrcBrokerId()));
-                }
-                request.setTopics(topicList);
-                this.controller.alterPartitionReassignments(context, request);
+                doReassign(action);
                 lastExecutionTime = Time.SYSTEM.milliseconds();
                 logger.info("Executing {}", action.prettyString());
             } catch (InterruptedException ignored) {
 
             }
         }
+    }
+
+    private void doReassign(Action action) {
+        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
+        AlterPartitionReassignmentsRequestData request = new AlterPartitionReassignmentsRequestData();
+        List<AlterPartitionReassignmentsRequestData.ReassignableTopic> topicList = new ArrayList<>();
+        topicList.add(buildTopic(action.getSrcTopicPartition(), action.getDestBrokerId()));
+        if (action.getType() == ActionType.SWAP) {
+            topicList.add(buildTopic(action.getDestTopicPartition(), action.getSrcBrokerId()));
+        }
+        request.setTopics(topicList);
+        this.controller.alterPartitionReassignments(context, request);
     }
 
     private AlterPartitionReassignmentsRequestData.ReassignableTopic buildTopic(TopicPartition tp, int brokerId) {
@@ -118,13 +122,17 @@ public class ExecutionManager implements Runnable {
         return topic;
     }
 
+    public void appendAction(Action action) {
+        try {
+            this.actionQueue.put(action);
+        } catch (InterruptedException ignored) {
+
+        }
+    }
+
     public void appendActions(List<Action> actions) {
         for (Action action : actions) {
-            try {
-                this.actionQueue.put(action);
-            } catch (InterruptedException ignored) {
-
-            }
+            appendAction(action);
         }
     }
 }
