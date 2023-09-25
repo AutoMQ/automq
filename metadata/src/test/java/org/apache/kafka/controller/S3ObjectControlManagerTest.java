@@ -59,7 +59,7 @@ public class S3ObjectControlManagerTest {
     private static final String S3_REGION = "us-east-1";
     private static final String S3_BUCKET = "kafka-on-S3-bucket";
 
-    private static final S3Config S3_CONFIG = new S3Config(S3_ENDPOINT, S3_REGION, S3_BUCKET);
+    private static final S3Config S3_CONFIG = new S3Config(S3_ENDPOINT, S3_REGION, S3_BUCKET, 5);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private S3Operator operator;
@@ -204,8 +204,13 @@ public class S3ObjectControlManagerTest {
         // 1. prepare 1 object
         prepareOneObject(3 * 1000);
         assertEquals(1, manager.objectsMetadata().size());
-        // 3. wait for expired
-        Thread.sleep(11 * 1000);
+        // 2. 5s later, it should be marked as destroyed
+        Thread.sleep(5 * 1000);
+        assertEquals(1, manager.objectsMetadata().size());
+        S3Object object = manager.objectsMetadata().get(0L);
+        assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
+        // 3. 5s later, it should be removed
+        Thread.sleep(5 * 1000);
         assertEquals(0, manager.objectsMetadata().size());
         Mockito.verify(operator, Mockito.times(1)).delete(anyList());
     }
