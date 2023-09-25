@@ -54,9 +54,10 @@ public interface S3Operator {
      * New multi-part object writer.
      *
      * @param path object path
+     * @param logIdent log identifier
      * @return {@link Writer}
      */
-    Writer writer(String path);
+    Writer writer(String path, String logIdent);
 
     CompletableFuture<Void> delete(String path);
 
