@@ -61,13 +61,16 @@ public class AutoBalancerManager {
         ClusterModel clusterModel = new ClusterModel(config, new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
                 new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
-        this.anomalyDetector = new AnomalyDetector(config, quorumController, clusterModel,
+        ExecutionManager executionManager = new ExecutionManager(config, quorumController,
+                new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
+        this.anomalyDetector = new AnomalyDetector(config, clusterModel, executionManager,
                 new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())));
         this.queue = new KafkaEventQueue(time, new LogContext(), "auto-balancer-");
         this.quorumController = quorumController;
         ClusterStatusListenerRegistry registry = new ClusterStatusListenerRegistry();
         registry.register((BrokerStatusListener) clusterModel);
         registry.register((TopicPartitionStatusListener) clusterModel);
+        registry.register(executionManager);
         registry.register(this.loadRetriever);
         raftClient.register(new AutoBalancerListener(registry, this.loadRetriever, this.anomalyDetector));
     }

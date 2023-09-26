@@ -50,7 +50,7 @@ public class AnomalyDetector {
     private final Set<String> excludedTopics = new HashSet<>();
     private volatile boolean running;
 
-    public AnomalyDetector(AutoBalancerControllerConfig config, QuorumController quorumController, ClusterModel clusterModel, LogContext logContext) {
+    public AnomalyDetector(AutoBalancerControllerConfig config, ClusterModel clusterModel, ExecutionManager executionManager, LogContext logContext) {
         if (logContext == null) {
             logContext = new LogContext("[AnomalyDetector] ");
         }
@@ -64,8 +64,7 @@ public class AnomalyDetector {
         fetchExcludedConfig(config);
         this.clusterModel = clusterModel;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("anomaly-detector"));
-        this.executionManager = new ExecutionManager(config, quorumController,
-                new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
+        this.executionManager = executionManager;
         this.running = false;
     }
 
