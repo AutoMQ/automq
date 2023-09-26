@@ -241,7 +241,7 @@ public class DefaultS3Operator implements S3Operator {
             this.delete(path).get(30, TimeUnit.SECONDS);
 
             // Multipart write/read/delete
-            Writer writer = this.writer("[checkAvailable]", multipartPath);
+            Writer writer = this.writer(multipartPath, "[checkAvailable]");
             writer.write(Unpooled.wrappedBuffer(content));
             writer.close().get(30, TimeUnit.SECONDS);
             read = this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
