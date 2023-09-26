@@ -20,25 +20,34 @@ package kafka.autobalancer;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.listeners.BrokerStatusListener;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
+import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
+import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
+import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class ExecutionManager implements Runnable {
+public class ExecutionManager implements Runnable, BrokerStatusListener {
     private final Logger logger;
     private final Controller controller;
     private final BlockingQueue<Action> actionQueue = new ArrayBlockingQueue<>(1000);
+    private final Set<Integer> fencedBrokers = ConcurrentHashMap.newKeySet();
     private final long executionInterval;
     private final KafkaThread dispatchThread;
     // TODO: optimize to per-broker concurrency control
@@ -76,6 +85,10 @@ public class ExecutionManager implements Runnable {
         while (!shutdown) {
             try {
                 Action action = actionQueue.take();
+                if (fencedBrokers.contains(action.getDestBrokerId())) {
+                    logger.info("Broker {} is fenced, skip action {}", action.getDestBrokerId(), action);
+                    continue;
+                }
                 long now = System.currentTimeMillis();
                 long nextExecutionTime = lastExecutionTime + executionInterval;
                 while (!shutdown && lastExecutionTime != 0 && now < nextExecutionTime) {
@@ -133,6 +146,27 @@ public class ExecutionManager implements Runnable {
     public void appendActions(List<Action> actions) {
         for (Action action : actions) {
             appendAction(action);
+        }
+    }
+
+    @Override
+    public void onBrokerRegister(RegisterBrokerRecord record) {
+        fencedBrokers.remove(record.brokerId());
+    }
+
+    @Override
+    public void onBrokerUnregister(UnregisterBrokerRecord record) {
+        fencedBrokers.add(record.brokerId());
+    }
+
+    @Override
+    public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
+        boolean fenced = record.fenced() == BrokerRegistrationFencingChange.FENCE.value()
+                || record.inControlledShutdown() == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value();
+        if (fenced) {
+            fencedBrokers.add(record.brokerId());
+        } else {
+            fencedBrokers.remove(record.brokerId());
         }
     }
 }
