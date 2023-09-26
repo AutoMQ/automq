@@ -26,7 +26,6 @@ import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.controller.QuorumController;
 import org.slf4j.Logger;
 
 import java.util.Collections;
