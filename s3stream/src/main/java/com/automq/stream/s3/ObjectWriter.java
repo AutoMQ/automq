@@ -89,7 +89,7 @@ public interface ObjectWriter {
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
             completedBlocks = new LinkedList<>();
-            writer = s3Operator.writer(objectKey);
+            writer = s3Operator.writer(objectKey, "[DefaultObjectWriter objId=" + objectId + "]");
         }
 
         public void write(long streamId, List<StreamRecordBatch> records) {

@@ -1936,6 +1936,13 @@ public class ReplicationControlManager {
         if (target.replicas().size() != 1) {
             throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
         }
+
+        if (!this.clusterControl.isActive(target.replicas().get(0))) {
+            throw new InvalidReplicaAssignmentException("Unable to reassign " +
+                    "partition: " + tp + " to " +
+                    "broker " + target.replicas().get(0) + " because it is not currently active.");
+        }
+
         // Check that the requested partition assignment is valid.
         validateManualPartitionAssignment(target.replicas(), OptionalInt.empty());
 

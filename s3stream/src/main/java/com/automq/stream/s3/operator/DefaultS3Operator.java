@@ -62,6 +62,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -174,13 +175,13 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path) {
-        return new DefaultWriter(path);
+    public Writer writer(String path, String logIdent) {
+        return new DefaultWriter(path, logIdent);
     }
 
     // used for test only.
-    Writer writer(String path, long minPartSize) {
-        return new DefaultWriter(path, minPartSize);
+    Writer writer(String path, String logIdent, long minPartSize) {
+        return new DefaultWriter(path, logIdent, minPartSize);
     }
 
     @Override
@@ -240,7 +241,7 @@ public class DefaultS3Operator implements S3Operator {
             this.delete(path).get(30, TimeUnit.SECONDS);
 
             // Multipart write/read/delete
-            Writer writer = this.writer(multipartPath);
+            Writer writer = this.writer(multipartPath, "[checkAvailable]");
             writer.write(Unpooled.wrappedBuffer(content));
             writer.close().get(30, TimeUnit.SECONDS);
             read = this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
@@ -255,6 +256,7 @@ public class DefaultS3Operator implements S3Operator {
 
     class DefaultWriter implements Writer {
         private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
+        private final String logIdent;
         private final String path;
         private final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
         private volatile String uploadId;
@@ -268,12 +270,13 @@ public class DefaultS3Operator implements S3Operator {
         private ObjectPart objectPart = null;
         private final long start = System.nanoTime();
 
-        public DefaultWriter(String path) {
-            this(path, MIN_PART_SIZE);
+        public DefaultWriter(String path, String logIdent) {
+            this(path, logIdent, MIN_PART_SIZE);
         }
 
-        public DefaultWriter(String path, long minPartSize) {
+        public DefaultWriter(String path, String logIdent, long minPartSize) {
             this.path = path;
+            this.logIdent = logIdent;
             this.minPartSize = minPartSize;
             init();
         }
@@ -285,10 +288,10 @@ public class DefaultS3Operator implements S3Operator {
                 uploadIdCf.complete(createMultipartUploadResponse.uploadId());
             }).exceptionally(ex -> {
                 if (isUnrecoverable(ex)) {
-                    LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
+                    LOGGER.error("{} CreateMultipartUpload for object {} fail", logIdent, path, ex);
                     uploadIdCf.completeExceptionally(ex);
                 } else {
-                    LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, ex);
+                    LOGGER.warn("{} CreateMultipartUpload for object {} fail, retry later", logIdent, path, ex);
                     scheduler.schedule(this::init, 100, TimeUnit.MILLISECONDS);
                 }
                 return null;
@@ -328,10 +331,10 @@ public class DefaultS3Operator implements S3Operator {
                 partCf.complete(completedPart);
             }).exceptionally(ex -> {
                 if (isUnrecoverable(ex)) {
-                    LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
+                    LOGGER.error("{} UploadPart for object {}-{} fail", logIdent, path, partNumber, ex);
                     partCf.completeExceptionally(ex);
                 } else {
-                    LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, ex);
+                    LOGGER.warn("{} UploadPart for object {}-{} fail, retry later", logIdent, path, partNumber, ex);
                     scheduler.schedule(() -> write0(uploadId, partNumber, part, partCf), 100, TimeUnit.MILLISECONDS);
                 }
                 return null;
@@ -353,6 +356,7 @@ public class DefaultS3Operator implements S3Operator {
                     long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
                     objectPart.readAndWrite(sourcePath, start, readAndWriteCopyEnd);
                     objectPart.upload();
+                    this.objectPart = null;
                     new CopyObjectPart(sourcePath, readAndWriteCopyEnd, end);
                 } else {
                     objectPart.readAndWrite(sourcePath, start, end);
@@ -370,7 +374,7 @@ public class DefaultS3Operator implements S3Operator {
                         .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
                 partCf.complete(completedPart);
             }).exceptionally(ex -> {
-                LOGGER.warn("UploadPartCopy for object {}-{} fail, retry later", path, partNumber, ex);
+                LOGGER.warn("{} UploadPartCopy for object {}-{} fail, retry later", logIdent, path, partNumber, ex);
                 scheduler.schedule(() -> copyWrite0(partNumber, request, partCf), 100, TimeUnit.MILLISECONDS);
                 return null;
             });
@@ -401,7 +405,8 @@ public class DefaultS3Operator implements S3Operator {
                 long now = System.currentTimeMillis();
                 if (now - LAST_LOG_TIMESTAMP.get() > 10000) {
                     LAST_LOG_TIMESTAMP.set(now);
-                    LOGGER.info("upload s3 metrics, object_part_upload_timer {}, object_into_close_timer {}, object_upload_timer {}, object_upload_size {}",
+                    LOGGER.info("{} upload s3 metrics, object_part_upload_timer {}, object_into_close_timer {}, object_upload_timer {}, object_upload_size {}",
+                            logIdent,
                             PART_UPLOAD_COST.getAndReset(),
                             OBJECT_INTO_CLOSE_COST.getAndReset(),
                             OBJECT_UPLOAD_COST.getAndReset(),
@@ -414,14 +419,22 @@ public class DefaultS3Operator implements S3Operator {
         private void close0(CompleteMultipartUploadRequest request) {
             s3.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> closeCf.complete(null)).exceptionally(ex -> {
                 if (isUnrecoverable(ex)) {
-                    LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
+                    LOGGER.error("{} CompleteMultipartUpload for object {} fail", logIdent, path, ex);
                     closeCf.completeExceptionally(ex);
+                } else if (!checkPartNumbers(request.multipartUpload())) {
+                    LOGGER.error("{} CompleteMultipartUpload for object {} fail, part numbers are not continuous", logIdent, path);
+                    closeCf.completeExceptionally(new IllegalArgumentException("Part numbers are not continuous"));
                 } else {
-                    LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
+                    LOGGER.warn("{} CompleteMultipartUpload for object {} fail, retry later", logIdent, path, ex);
                     scheduler.schedule(() -> close0(request), 100, TimeUnit.MILLISECONDS);
                 }
                 return null;
             });
+        }
+
+        private boolean checkPartNumbers(CompletedMultipartUpload multipartUpload) {
+            Optional<Integer> maxOpt = multipartUpload.parts().stream().map(CompletedPart::partNumber).max(Integer::compareTo);
+            return maxOpt.isPresent() && maxOpt.get() == multipartUpload.parts().size();
         }
 
         private List<CompletedPart> genCompleteParts() {
