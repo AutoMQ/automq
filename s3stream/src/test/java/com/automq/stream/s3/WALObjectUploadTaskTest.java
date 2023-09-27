@@ -79,7 +79,11 @@ public class WALObjectUploadTaskTest {
                 new StreamRecordBatch(234, 0, 22, 2, random(128))
         ));
 
-        walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024, 1000, ForkJoinPool.commonPool());
+        Config config = new Config()
+                .s3ObjectBlockSize(16 * 1024 * 1024)
+                .s3ObjectPartSize(16 * 1024 * 1024)
+                .s3StreamSplitSize(1000);
+        walObjectUploadTask = new WALObjectUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
 
         walObjectUploadTask.prepare().get();
         walObjectUploadTask.upload().get();
@@ -143,7 +147,11 @@ public class WALObjectUploadTaskTest {
                 new StreamRecordBatch(233, 0, 12, 2, random(128)),
                 new StreamRecordBatch(233, 0, 14, 2, random(512))
         ));
-        walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, ForkJoinPool.commonPool());
+        Config config = new Config()
+                .s3ObjectBlockSize(16 * 1024 * 1024)
+                .s3ObjectPartSize(16 * 1024 * 1024)
+                .s3StreamSplitSize(16 * 1024 * 1024);
+        walObjectUploadTask = new WALObjectUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
 
         walObjectUploadTask.prepare().get();
         walObjectUploadTask.upload().get();
