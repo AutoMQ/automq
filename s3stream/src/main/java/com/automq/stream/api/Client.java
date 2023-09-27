@@ -21,6 +21,9 @@ package com.automq.stream.api;
  * Elastic Stream client.
  */
 public interface Client {
+    void start();
+
+    void shutdown();
     /**
      * Get stream client.
      *
