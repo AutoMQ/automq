@@ -26,6 +26,7 @@ import com.automq.stream.s3.objects.CommitWALObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
+import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -64,6 +65,10 @@ public class CompactionManager {
     private final int compactionInterval;
     private final int forceSplitObjectPeriod;
     private final TokenBucketThrottle networkInThrottle;
+
+    public CompactionManager(Config config, ObjectManager objectManager) {
+        this(config, objectManager, new DefaultS3Operator(config.s3Endpont(), config.s3Region(), config.s3Bucket()));
+    }
 
     public CompactionManager(Config config, ObjectManager objectManager, S3Operator s3Operator) {
         this.logger = new LogContext(String.format("[CompactionManager id=%d] ", config.brokerId())).logger(CompactionManager.class);
