@@ -57,21 +57,21 @@ public class ControllerObjectManager implements ObjectManager {
     private final ControllerRequestSender requestSender;
     private final StreamMetadataManager metadataManager;
     private final KafkaConfig config;
-    private final int brokerId;
-    private final long brokerEpoch;
+    private final int nodeId;
+    private final long nodeEpoch;
 
     public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager, KafkaConfig config) {
         this.requestSender = requestSender;
         this.metadataManager = metadataManager;
         this.config = config;
-        this.brokerId = config.brokerId();
-        this.brokerEpoch = config.brokerEpoch();
+        this.nodeId = config.brokerId();
+        this.nodeEpoch = config.brokerEpoch();
     }
 
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         PrepareS3ObjectRequestData request = new PrepareS3ObjectRequestData()
-            .setBrokerId(brokerId)
+            .setNodeId(nodeId)
             .setPreparedCount(count)
             .setTimeToLiveInMs(ttl);
         WrapRequest req = new WrapRequest() {
@@ -103,8 +103,8 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest commitWALObjectRequest) {
         CommitWALObjectRequestData request = new CommitWALObjectRequestData()
-            .setBrokerId(brokerId)
-            .setBrokerEpoch(brokerEpoch)
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
             .setOrderId(commitWALObjectRequest.getOrderId())
             .setObjectId(commitWALObjectRequest.getObjectId())
             .setObjectSize(commitWALObjectRequest.getObjectSize())
@@ -133,9 +133,9 @@ public class ControllerObjectManager implements ObjectManager {
             switch (code) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(new CommitWALObjectResponse());
-                case BROKER_EPOCH_EXPIRED:
-                case BROKER_EPOCH_NOT_EXIST:
-                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                case NODE_EPOCH_EXPIRED:
+                case NODE_EPOCH_NOT_EXIST:
+                    LOGGER.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
@@ -152,8 +152,8 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest commitStreamObjectRequest) {
         CommitStreamObjectRequestData request = new CommitStreamObjectRequestData()
-            .setBrokerId(brokerId)
-            .setBrokerEpoch(brokerEpoch)
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
             .setObjectId(commitStreamObjectRequest.getObjectId())
             .setObjectSize(commitStreamObjectRequest.getObjectSize())
             .setStreamId(commitStreamObjectRequest.getStreamId())
@@ -178,9 +178,9 @@ public class ControllerObjectManager implements ObjectManager {
             switch (code) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(null);
-                case BROKER_EPOCH_EXPIRED:
-                case BROKER_EPOCH_NOT_EXIST:
-                    LOGGER.error("Broker epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                case NODE_EPOCH_EXPIRED:
+                case NODE_EPOCH_NOT_EXIST:
+                    LOGGER.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:

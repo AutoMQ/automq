@@ -17,17 +17,19 @@
 
 package org.apache.kafka.controller.stream;
 
+import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
+import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
+import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
+import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
+import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
+import org.apache.kafka.common.message.PutKVsRequestData.PutKVRequest;
+import org.apache.kafka.common.message.PutKVsResponseData.PutKVResponse;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
@@ -50,39 +52,41 @@ public class KVControlManager {
         this.kv = new TimelineHashMap<>(registry, 0);
     }
 
-    public GetKVResponseData getKV(GetKVRequestData request) {
-        GetKVResponseData resp = new GetKVResponseData();
-        resp.setKeyValues(
-            request.keys().stream().map(key -> {
-                byte[] value = kv.containsKey(key) ? kv.get(key).array() : null;
-                return new GetKVResponseData.KeyValue()
+    public GetKVResponse getKV(GetKVRequest request) {
+        String key = request.key();
+        byte[] value = kv.containsKey(key) ? kv.get(key).array() : null;
+        return new GetKVResponse()
+            .setValue(value);
+    }
+
+    public ControllerResult<PutKVResponse> putKV(PutKVRequest request) {
+        String key = request.key();
+        ByteBuffer value = kv.get(key);
+        if (value == null || request.overwrite()) {
+            // generate kv record
+            ApiMessageAndVersion record = new ApiMessageAndVersion(new KVRecord()
+                .setKeyValues(Collections.singletonList(new KeyValue()
                     .setKey(key)
-                    .setValue(value);
-            }).collect(Collectors.toList()));
-        log.trace("GetKVResponseData: req: {}, resp: {}", request, resp);
-        // generate kv record
-        return resp;
+                    .setValue(request.value()))), (short) 0);
+            return ControllerResult.of(Collections.singletonList(record), new PutKVResponse().setValue(request.value()));
+        }
+        // exist and not allow overwriting
+        return ControllerResult.of(Collections.emptyList(), new PutKVResponse()
+            .setErrorCode(KEY_EXIST.code())
+            .setValue(value.array()));
     }
 
-    public ControllerResult<PutKVResponseData> putKV(PutKVRequestData request) {
-        log.trace("PutKVRequestData: {}", request);
-        PutKVResponseData resp = new PutKVResponseData();
-        // generate kv record
-        ApiMessageAndVersion record = new ApiMessageAndVersion(new KVRecord()
-            .setKeyValues(request.keyValues().stream().map(kv -> new KeyValue()
-                .setKey(kv.key())
-                .setValue(kv.value())
-            ).collect(Collectors.toList())), (short) 0);
-        return ControllerResult.of(Collections.singletonList(record), resp);
-    }
-
-    public ControllerResult<DeleteKVResponseData> deleteKV(DeleteKVRequestData request) {
+    public ControllerResult<DeleteKVResponse> deleteKV(DeleteKVRequest request) {
         log.trace("DeleteKVRequestData: {}", request);
-        DeleteKVResponseData resp = new DeleteKVResponseData();
-        // generate remove-kv record
-        ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
-            .setKeys(request.keys()), (short) 0);
-        return ControllerResult.of(Collections.singletonList(record), resp);
+        DeleteKVResponse resp = new DeleteKVResponse();
+        ByteBuffer value = kv.get(request.key());
+        if (value != null) {
+            // generate remove-kv record
+            ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
+                .setKeys(Collections.singletonList(request.key())), (short) 0);
+            return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()));
+        }
+        return ControllerResult.of(Collections.emptyList(), resp.setErrorCode(KEY_NOT_EXIST.code()));
     }
 
     public void replay(KVRecord record) {

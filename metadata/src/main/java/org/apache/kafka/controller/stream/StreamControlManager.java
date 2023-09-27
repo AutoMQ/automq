@@ -21,9 +21,7 @@ import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import java.util.HashMap;
 import java.util.stream.Stream;
-import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
-import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
@@ -31,29 +29,21 @@ import org.apache.kafka.common.message.CommitWALObjectRequestData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitWALObjectResponseData;
-import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
-import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
-import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
-import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamMetadata;
-import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
-import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
-import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
-import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
-import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
@@ -163,25 +153,25 @@ public class StreamControlManager {
         }
     }
 
-    public static class BrokerS3WALMetadata {
+    public static class NodeS3WALMetadata {
 
-        private final int brokerId;
-        private final TimelineLong brokerEpoch;
+        private final int nodeId;
+        private final TimelineLong nodeEpoch;
         private final TimelineHashMap<Long/*objectId*/, S3WALObject> walObjects;
 
-        public BrokerS3WALMetadata(int brokerId, long brokerEpoch, SnapshotRegistry registry) {
-            this.brokerId = brokerId;
-            this.brokerEpoch = new TimelineLong(registry);
-            this.brokerEpoch.set(brokerEpoch);
+        public NodeS3WALMetadata(int nodeId, long nodeEpoch, SnapshotRegistry registry) {
+            this.nodeId = nodeId;
+            this.nodeEpoch = new TimelineLong(registry);
+            this.nodeEpoch.set(nodeEpoch);
             this.walObjects = new TimelineHashMap<>(registry, 0);
         }
 
-        public int getBrokerId() {
-            return brokerId;
+        public int getNodeId() {
+            return nodeId;
         }
 
-        public long getBrokerEpoch() {
-            return brokerEpoch.get();
+        public long getNodeEpoch() {
+            return nodeEpoch.get();
         }
 
         public TimelineHashMap<Long, S3WALObject> walObjects() {
@@ -190,9 +180,9 @@ public class StreamControlManager {
 
         @Override
         public String toString() {
-            return "BrokerS3WALMetadata{" +
-                    "brokerId=" + brokerId +
-                    ", brokerEpoch=" + brokerEpoch +
+            return "NodeS3WALMetadata{" +
+                    "nodeId=" + nodeId +
+                    ", nodeEpoch=" + nodeEpoch +
                     ", walObjects=" + walObjects +
                     '}';
         }
@@ -211,7 +201,7 @@ public class StreamControlManager {
 
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
-    private final TimelineHashMap<Integer/*brokerId*/, BrokerS3WALMetadata> brokersMetadata;
+    private final TimelineHashMap<Integer/*nodeId*/, NodeS3WALMetadata> nodesMetadata;
 
     public StreamControlManager(
             SnapshotRegistry snapshotRegistry,
@@ -222,32 +212,18 @@ public class StreamControlManager {
         this.s3ObjectControlManager = s3ObjectControlManager;
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
-        this.brokersMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
     }
 
-    public ControllerResult<CreateStreamsResponseData> createStream(CreateStreamsRequestData data) {
-        CreateStreamsResponseData resp = new CreateStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<CreateStreamResponse> resps = data.createStreamRequests().stream().map(req -> {
-            ControllerResult<CreateStreamResponse> result = createStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setCreateStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<CreateStreamResponse> createStream(int brokerId, long brokerEpoch, CreateStreamRequest request) {
+    public ControllerResult<CreateStreamResponse> createStream(int nodeId, long nodeEpoch, CreateStreamRequest request) {
         CreateStreamResponse resp = new CreateStreamResponse();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[CreateStream]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[CreateStream]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // TODO: pre assigned a batch of stream id in controller
@@ -266,19 +242,6 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
-    public ControllerResult<OpenStreamsResponseData> openStream(OpenStreamsRequestData data) {
-        OpenStreamsResponseData resp = new OpenStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<OpenStreamResponse> resps = data.openStreamRequests().stream().map(req -> {
-            ControllerResult<OpenStreamResponse> result = openStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setOpenStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
 
     /**
      * Open stream.
@@ -289,7 +252,7 @@ public class StreamControlManager {
      *         <code>STREAM_FENCED</code>:
      *          <ol>
      *              <li> stream's epoch is larger than request epoch </li>
-     *              <li> stream's current range's broker is not equal to request broker </li>
+     *              <li> stream's current range's node is not equal to request node </li>
      *              <li> stream's epoch matched, but stream's state is <code>CLOSED</code> </li>
      *          </ol>
      *     </li>
@@ -313,17 +276,17 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
-    public ControllerResult<OpenStreamResponse> openStream(int brokerId, long brokerEpoch, OpenStreamRequest request) {
+    public ControllerResult<OpenStreamResponse> openStream(int nodeId, long nodeEpoch, OpenStreamRequest request) {
         OpenStreamResponse resp = new OpenStreamResponse();
         long streamId = request.streamId();
         long epoch = request.streamEpoch();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[OpenStream]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[OpenStream]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -342,8 +305,8 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.currentEpoch.get() == epoch) {
-            // broker may use the same epoch to open -> close -> open stream.
-            // verify broker
+            // node may use the same epoch to open -> close -> open stream.
+            // verify node
             RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
             if (rangeMetadata == null) {
                 // should not happen
@@ -352,13 +315,13 @@ public class StreamControlManager {
                 resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
-            if (rangeMetadata.brokerId() != brokerId) {
-                log.warn("[OpenStream]: stream {}'s current range {}'s broker {} is not equal to request broker {}",
-                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
+            if (rangeMetadata.nodeId() != nodeId) {
+                log.warn("[OpenStream]: stream {}'s current range {}'s node {} is not equal to request node {}",
+                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
                 resp.setErrorCode(Errors.STREAM_FENCED.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
-            // epoch equals, broker equals, regard it as redundant open operation, just return success
+            // epoch equals, node equals, regard it as redundant open operation, just return success
             resp.setStartOffset(streamMetadata.startOffset());
             resp.setNextOffset(rangeMetadata.endOffset());
             List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -378,7 +341,7 @@ public class StreamControlManager {
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // now the request in valid, update the stream's epoch and create a new range for this broker
+        // now the request in valid, update the stream's epoch and create a new range for this node
         List<ApiMessageAndVersion> records = new ArrayList<>();
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
@@ -399,14 +362,14 @@ public class StreamControlManager {
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
-            .setBrokerId(brokerId)
+            .setNodeId(nodeId)
             .setStartOffset(startOffset)
             .setEndOffset(startOffset)
             .setEpoch(epoch)
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
-        log.info("[OpenStream]: broker: {} open stream: {} with epoch: {} success", brokerId, streamId, epoch);
+        log.info("[OpenStream]: node: {} open stream: {} with epoch: {} success", nodeId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -419,7 +382,7 @@ public class StreamControlManager {
      *         <code>STREAM_FENCED</code>:
      *         <ol>
      *             <li> stream's epoch is larger than request epoch </li>
-     *             <li> stream's current range's broker is not equal to request broker </li>
+     *             <li> stream's current range's node is not equal to request node </li>
      *         </ol>
      *     </li>
      *     <li>
@@ -437,36 +400,22 @@ public class StreamControlManager {
      *     </li>
      * </ul>
      */
-    public ControllerResult<CloseStreamsResponseData> closeStream(CloseStreamsRequestData data) {
-        CloseStreamsResponseData resp = new CloseStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<CloseStreamResponse> resps = data.closeStreamRequests().stream().map(req -> {
-            ControllerResult<CloseStreamResponse> result = closeStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setCloseStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<CloseStreamResponse> closeStream(int brokerId, long brokerEpoch, CloseStreamRequest request) {
+    public ControllerResult<CloseStreamResponse> closeStream(int nodeId, long nodeEpoch, CloseStreamRequest request) {
         CloseStreamResponse resp = new CloseStreamResponse();
         long streamId = request.streamId();
         long epoch = request.streamEpoch();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[CloseStream]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[CloseStream]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
         // verify ownership
-        Errors authResult = streamOwnershipCheck(streamId, epoch, brokerId, "CloseStream");
+        Errors authResult = streamOwnershipCheck(streamId, epoch, nodeId, "CloseStream");
         if (authResult != Errors.NONE) {
             resp.setErrorCode(authResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -485,42 +434,28 @@ public class StreamControlManager {
                 .setRangeIndex(streamMetadata.currentRangeIndex())
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
-        log.info("[CloseStream]: broker: {} close stream: {} with epoch: {} success", brokerId, streamId, epoch);
+        log.info("[CloseStream]: node: {} close stream: {} with epoch: {} success", nodeId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<TrimStreamsResponseData> trimStream(TrimStreamsRequestData data) {
-        TrimStreamsResponseData resp = new TrimStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<TrimStreamResponse> resps = data.trimStreamRequests().stream().map(req -> {
-            ControllerResult<TrimStreamResponse> result = trimStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setTrimStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<TrimStreamResponse> trimStream(int brokerId, long brokerEpoch, TrimStreamRequest request) {
+    public ControllerResult<TrimStreamResponse> trimStream(int nodeId, long nodeEpoch, TrimStreamRequest request) {
         // TODO: speed up offset updating
         long epoch = request.streamEpoch();
         long streamId = request.streamId();
         long newStartOffset = request.newStartOffset();
         TrimStreamResponse resp = new TrimStreamResponse();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[TrimStream]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[TrimStream]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
         // verify ownership
-        Errors authResult = streamOwnershipCheck(streamId, epoch, brokerId, "TrimStream");
+        Errors authResult = streamOwnershipCheck(streamId, epoch, nodeId, "TrimStream");
         if (authResult != Errors.NONE) {
             resp.setErrorCode(authResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -567,7 +502,7 @@ public class StreamControlManager {
                 records.add(new ApiMessageAndVersion(new RangeRecord()
                     .setStreamId(streamId)
                     .setRangeIndex(rangeIndex)
-                    .setBrokerId(range.brokerId())
+                    .setNodeId(range.nodeId())
                     .setEpoch(range.epoch())
                     .setStartOffset(newRangeStartOffset)
                     .setEndOffset(range.endOffset()), (short) 0));
@@ -583,7 +518,7 @@ public class StreamControlManager {
             // update range's start offset
             records.add(new ApiMessageAndVersion(new RangeRecord()
                 .setStreamId(streamId)
-                .setBrokerId(range.brokerId())
+                .setNodeId(range.nodeId())
                 .setStartOffset(newStartOffset)
                 .setEndOffset(range.endOffset())
                 .setEpoch(range.epoch())
@@ -618,7 +553,7 @@ public class StreamControlManager {
         }
         // remove wal object or remove stream range in wal object
         // TODO: optimize
-        this.brokersMetadata.values()
+        this.nodesMetadata.values()
             .stream()
             .flatMap(entry -> entry.walObjects.values().stream())
             .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
@@ -628,7 +563,7 @@ public class StreamControlManager {
                     // only this range, but we will remove this range, so now we can remove this wal object
                     records.add(new ApiMessageAndVersion(
                         new RemoveWALObjectRecord()
-                            .setBrokerId(walObj.brokerId())
+                            .setNodeId(walObj.nodeId())
                             .setObjectId(walObj.objectId()), (short) 0
                     ));
                     ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
@@ -646,7 +581,7 @@ public class StreamControlManager {
                 newOffsetRange.remove(streamId);
                 records.add(new ApiMessageAndVersion(new WALObjectRecord()
                     .setObjectId(walObj.objectId())
-                    .setBrokerId(walObj.brokerId())
+                    .setNodeId(walObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
                     .setDataTimeInMs(walObj.dataTimeInMs())
                     .setOrderId(walObj.orderId()), (short) 0));
@@ -654,40 +589,26 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[TrimStream]: broker: {} trim stream: {} to new start offset: {} with epoch: {} success", brokerId, streamId, newStartOffset, epoch);
+        log.info("[TrimStream]: node: {} trim stream: {} to new start offset: {} with epoch: {} success", nodeId, streamId, newStartOffset, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<DeleteStreamsResponseData> deleteStream(DeleteStreamsRequestData data) {
-        DeleteStreamsResponseData resp = new DeleteStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        List<DeleteStreamResponse> resps = data.deleteStreamRequests().stream().map(req -> {
-            ControllerResult<DeleteStreamResponse> result = deleteStream(brokerId, brokerEpoch, req);
-            records.addAll(result.records());
-            return result.response();
-        }).collect(Collectors.toList());
-        resp.setDeleteStreamResponses(resps);
-        return ControllerResult.atomicOf(records, resp);
-    }
-
-    public ControllerResult<DeleteStreamResponse> deleteStream(int brokerId, long brokerEpoch, DeleteStreamRequest request) {
+    public ControllerResult<DeleteStreamResponse> deleteStream(int nodeId, long nodeEpoch, DeleteStreamRequest request) {
         long epoch = request.streamEpoch();
         long streamId = request.streamId();
         DeleteStreamResponse resp = new DeleteStreamResponse();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[DeleteStream]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[DeleteStream]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
         // verify ownership
-        Errors authResult = streamOwnershipCheck(streamId, epoch, brokerId, "DeleteStream");
+        Errors authResult = streamOwnershipCheck(streamId, epoch, nodeId, "DeleteStream");
         if (authResult != Errors.NONE) {
             resp.setErrorCode(authResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -709,7 +630,7 @@ public class StreamControlManager {
         }
         records.addAll(markDestroyResult.records());
         // remove wal object or remove stream-offset-range in wal object
-        this.brokersMetadata.values()
+        this.nodesMetadata.values()
             .stream()
             .flatMap(entry -> entry.walObjects.values().stream())
             .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
@@ -718,7 +639,7 @@ public class StreamControlManager {
                     // only this range, but we will remove this range, so now we can remove this wal object
                     records.add(new ApiMessageAndVersion(
                         new RemoveWALObjectRecord()
-                            .setBrokerId(walObj.brokerId())
+                            .setNodeId(walObj.nodeId())
                             .setObjectId(walObj.objectId()), (short) 0
                     ));
                     ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
@@ -736,7 +657,7 @@ public class StreamControlManager {
                 newOffsetRange.remove(streamId);
                 records.add(new ApiMessageAndVersion(new WALObjectRecord()
                     .setObjectId(walObj.objectId())
-                    .setBrokerId(walObj.brokerId())
+                    .setNodeId(walObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
                     .setDataTimeInMs(walObj.dataTimeInMs())
                     .setOrderId(walObj.orderId()), (short) 0));
@@ -744,7 +665,7 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[DeleteStream]: broker: {} delete stream: {} with epoch: {} success", brokerId, streamId, epoch);
+        log.info("[DeleteStream]: node: {} delete stream: {} with epoch: {} success", nodeId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -772,17 +693,17 @@ public class StreamControlManager {
     public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
         CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
         long objectId = data.objectId();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
+        int nodeId = data.nodeId();
+        long nodeEpoch = data.nodeEpoch();
         long objectSize = data.objectSize();
         long orderId = data.orderId();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[CommitWALObject]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[CommitWALObject]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -835,22 +756,22 @@ public class StreamControlManager {
             // update dataTs to the min compacted object's dataTs
             //noinspection OptionalGetWithoutIsPresent
             dataTs = compactedObjectIds.stream()
-                    .map(id -> this.brokersMetadata.get(brokerId).walObjects.get(id))
+                    .map(id -> this.nodesMetadata.get(nodeId).walObjects.get(id))
                     .map(S3WALObject::dataTimeInMs)
                     .min(Long::compareTo).get();
         }
         List<StreamOffsetRange> indexes = streamRanges.stream()
                 .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
                 .collect(Collectors.toList());
-        // update broker's wal object
-        BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
-        if (brokerMetadata == null) {
-            // first time commit wal object, generate broker's metadata record
-            records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
-                    .setBrokerId(brokerId), (short) 0));
+        // update node's wal object
+        NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            // first time commit wal object, generate node's metadata record
+            records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
+                    .setNodeId(nodeId), (short) 0));
         }
         if (objectId != NOOP_OBJECT_ID) {
-            // generate broker's wal object record
+            // generate node's wal object record
             List<StreamIndex> streamIndexes = indexes.stream()
                     .map(Convertor::to)
                     .collect(Collectors.toList());
@@ -858,7 +779,7 @@ public class StreamControlManager {
                     .setObjectId(objectId)
                     .setDataTimeInMs(dataTs)
                     .setOrderId(orderId)
-                    .setBrokerId(brokerId)
+                    .setNodeId(nodeId)
                     .setStreamsIndex(streamIndexes);
             records.add(new ApiMessageAndVersion(walObjectRecord, (short) 0));
         }
@@ -886,10 +807,10 @@ public class StreamControlManager {
         // generate compacted objects' remove record
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
             compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
-                    .setBrokerId(brokerId)
+                    .setNodeId(nodeId)
                     .setObjectId(id), (short) 0)));
         }
-        log.info("[CommitWALObject]: broker: {} commit wal object: {} success, compacted objects: {}, stream objects: {}", brokerId, objectId,
+        log.info("[CommitWALObject]: node: {} commit wal object: {} success, compacted objects: {}, stream objects: {}", nodeId, objectId,
                 compactedObjectIds, streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
@@ -914,8 +835,8 @@ public class StreamControlManager {
      * </ul>
      */
     public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
+        int nodeId = data.nodeId();
+        long nodeEpoch = data.nodeEpoch();
         long streamObjectId = data.objectId();
         long streamId = data.streamId();
         long startOffset = data.startOffset();
@@ -925,12 +846,12 @@ public class StreamControlManager {
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
 
-        // verify broker epoch
-        Errors brokerEpochCheckResult = brokerEpochCheck(brokerId, brokerEpoch);
-        if (brokerEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(brokerEpochCheckResult.code());
-            log.warn("[CommitStreamObject]: broker: {}'s epoch: {} check failed, code: {}",
-                brokerId, brokerEpoch, brokerEpochCheckResult.code());
+        // verify node epoch
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeEpochCheckResult != Errors.NONE) {
+            resp.setErrorCode(nodeEpochCheckResult.code());
+            log.warn("[CommitStreamObject]: node: {}'s epoch: {} check failed, code: {}",
+                nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -986,23 +907,23 @@ public class StreamControlManager {
 
     public ControllerResult<GetOpeningStreamsResponseData> getOpeningStreams(GetOpeningStreamsRequestData data) {
         GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
-        int brokerId = data.brokerId();
-        long brokerEpoch = data.brokerEpoch();
+        int nodeId = data.nodeId();
+        long nodeEpoch = data.nodeEpoch();
 
-        // verify and update broker epoch
-        if (brokersMetadata.containsKey(brokerId) && brokerEpoch < brokersMetadata.get(brokerId).getBrokerEpoch()) {
-            // broker epoch has been expired
-            resp.setErrorCode(Errors.BROKER_EPOCH_EXPIRED.code());
-            log.warn("[GetOpeningStreams]: broker: {}'s epoch: {} has been expired", brokerId, brokerEpoch);
+        // verify and update node epoch
+        if (nodesMetadata.containsKey(nodeId) && nodeEpoch < nodesMetadata.get(nodeId).getNodeEpoch()) {
+            // node epoch has been expired
+            resp.setErrorCode(Errors.NODE_EPOCH_EXPIRED.code());
+            log.warn("[GetOpeningStreams]: node: {}'s epoch: {} has been expired", nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        // update broker epoch
-        records.add(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
-            .setBrokerId(brokerId)
-            .setBrokerEpoch(brokerEpoch), (short) 0));
+        // update node epoch
+        records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch), (short) 0));
 
-        // The getOpeningStreams is invoked when broker startup, so we just iterate all streams to get the broker opening streams.
+        // The getOpeningStreams is invoked when node startup, so we just iterate all streams to get the node opening streams.
         List<StreamMetadata> streamStatusList = this.streamsMetadata.entrySet().stream().filter(entry -> {
             S3StreamMetadata streamMetadata = entry.getValue();
             if (!StreamState.OPENED.equals(streamMetadata.currentState.get())) {
@@ -1013,7 +934,7 @@ public class StreamControlManager {
                 return false;
             }
             RangeMetadata rangeMetadata = streamMetadata.ranges.get(rangeIndex);
-            return rangeMetadata.brokerId() == brokerId;
+            return rangeMetadata.nodeId() == nodeId;
         }).map(e -> {
             S3StreamMetadata streamMetadata = e.getValue();
             RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
@@ -1031,9 +952,9 @@ public class StreamControlManager {
     // private check methods
 
     /**
-     * Check whether this broker is the owner of this stream.
+     * Check whether this node is the owner of this stream.
      */
-    private Errors streamOwnershipCheck(long streamId, long epoch, int brokerId, String operationName) {
+    private Errors streamOwnershipCheck(long streamId, long epoch, int nodeId, String operationName) {
         if (!this.streamsMetadata.containsKey(streamId)) {
             log.warn("[{}]: stream {} not exist", operationName, streamId);
             return Errors.STREAM_NOT_EXIST;
@@ -1050,7 +971,7 @@ public class StreamControlManager {
                 streamMetadata.currentEpoch.get(), epoch);
             return Errors.STREAM_INNER_ERROR;
         }
-        // verify broker
+        // verify node
         RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
         if (rangeMetadata == null) {
             // should not happen
@@ -1058,9 +979,9 @@ public class StreamControlManager {
                 streamMetadata.currentRangeIndex(), epoch);
             return Errors.STREAM_INNER_ERROR;
         }
-        if (rangeMetadata.brokerId() != brokerId) {
-            log.warn("[{}]: stream {}'s current range {}'s broker {} is not equal to request broker {}", operationName,
-                streamId, streamMetadata.currentRangeIndex(), rangeMetadata.brokerId(), brokerId);
+        if (rangeMetadata.nodeId() != nodeId) {
+            log.warn("[{}]: stream {}'s current range {}'s node {} is not equal to request node {}", operationName,
+                streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
             return Errors.STREAM_FENCED;
         }
         return Errors.NONE;
@@ -1115,18 +1036,18 @@ public class StreamControlManager {
     }
 
     /**
-     * Check whether this broker is valid to operate the stream related resources.
+     * Check whether this node is valid to operate the stream related resources.
      */
-    private Errors brokerEpochCheck(int brokerId, long brokerEpoch) {
-        if (!this.brokersMetadata.containsKey(brokerId)) {
+    private Errors nodeEpochCheck(int nodeId, long nodeEpoch) {
+        if (!this.nodesMetadata.containsKey(nodeId)) {
             // should not happen
-            log.error("[BrokerEpochCheck]: broker {} not exist when check broker epoch", brokerId);
-            return Errors.BROKER_EPOCH_NOT_EXIST;
+            log.error("[NodeEpochCheck]: node {} not exist when check node epoch", nodeId);
+            return Errors.NODE_EPOCH_NOT_EXIST;
         }
-        if (this.brokersMetadata.get(brokerId).getBrokerEpoch() > brokerEpoch) {
-            log.warn("[BrokerEpochCheck]: broker {}'s epoch {} is larger than request epoch {}", brokerId,
-                this.brokersMetadata.get(brokerId).getBrokerEpoch(), brokerEpoch);
-            return Errors.BROKER_EPOCH_EXPIRED;
+        if (this.nodesMetadata.get(nodeId).getNodeEpoch() > nodeEpoch) {
+            log.warn("[NodeEpochCheck]: node {}'s epoch {} is larger than request epoch {}", nodeId,
+                this.nodesMetadata.get(nodeId).getNodeEpoch(), nodeEpoch);
+            return Errors.NODE_EPOCH_EXPIRED;
         }
         return Errors.NONE;
     }
@@ -1179,29 +1100,29 @@ public class StreamControlManager {
         streamMetadata.ranges.remove(record.rangeIndex());
     }
 
-    public void replay(BrokerWALMetadataRecord record) {
-        int brokerId = record.brokerId();
-        long brokerEpoch = record.brokerEpoch();
-        // already exist, update the broker's self metadata
-        if (this.brokersMetadata.containsKey(brokerId)) {
-            BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
-            brokerMetadata.brokerEpoch.set(brokerEpoch);
+    public void replay(NodeWALMetadataRecord record) {
+        int nodeId = record.nodeId();
+        long nodeEpoch = record.nodeEpoch();
+        // already exist, update the node's self metadata
+        if (this.nodesMetadata.containsKey(nodeId)) {
+            NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+            nodeMetadata.nodeEpoch.set(nodeEpoch);
             return;
         }
-        // not exist, create a new broker
-        this.brokersMetadata.put(brokerId, new BrokerS3WALMetadata(brokerId, brokerEpoch, this.snapshotRegistry));
+        // not exist, create a new node
+        this.nodesMetadata.put(nodeId, new NodeS3WALMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
     }
 
     public void replay(WALObjectRecord record) {
         long objectId = record.objectId();
-        int brokerId = record.brokerId();
+        int nodeId = record.nodeId();
         long orderId = record.orderId();
         long dataTs = record.dataTimeInMs();
         List<StreamIndex> streamIndexes = record.streamsIndex();
-        BrokerS3WALMetadata brokerMetadata = this.brokersMetadata.get(brokerId);
-        if (brokerMetadata == null) {
+        NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
             // should not happen
-            log.error("broker {} not exist when replay wal object record {}", brokerId, record);
+            log.error("node {} not exist when replay wal object record {}", nodeId, record);
             return;
         }
 
@@ -1209,7 +1130,7 @@ public class StreamControlManager {
         Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
                 .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
-        brokerMetadata.walObjects.put(objectId, new S3WALObject(objectId, brokerId, indexMap, orderId, dataTs));
+        nodeMetadata.walObjects.put(objectId, new S3WALObject(objectId, nodeId, indexMap, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -1240,10 +1161,10 @@ public class StreamControlManager {
 
     public void replay(RemoveWALObjectRecord record) {
         long objectId = record.objectId();
-        BrokerS3WALMetadata walMetadata = this.brokersMetadata.get(record.brokerId());
+        NodeS3WALMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
         if (walMetadata == null) {
             // should not happen
-            log.error("broker {} not exist when replay remove wal object record {}", record.brokerId(), record);
+            log.error("node {} not exist when replay remove wal object record {}", record.nodeId(), record);
             return;
         }
         walMetadata.walObjects.remove(objectId);
@@ -1292,9 +1213,9 @@ public class StreamControlManager {
         streamMetadata.streamObjects.remove(objectId);
     }
 
-    public void replay(RemoveBrokerWALMetadataRecord record) {
-        int brokerId = record.brokerId();
-        this.brokersMetadata.remove(brokerId);
+    public void replay(RemoveNodeWALMetadataRecord record) {
+        int nodeId = record.nodeId();
+        this.nodesMetadata.remove(nodeId);
     }
 
 
@@ -1302,8 +1223,8 @@ public class StreamControlManager {
         return streamsMetadata;
     }
 
-    public Map<Integer, BrokerS3WALMetadata> brokersMetadata() {
-        return brokersMetadata;
+    public Map<Integer, NodeS3WALMetadata> nodesMetadata() {
+        return nodesMetadata;
     }
 
     public Long nextAssignedStreamId() {
@@ -1316,7 +1237,7 @@ public class StreamControlManager {
                 "snapshotRegistry=" + snapshotRegistry +
                 ", s3ObjectControlManager=" + s3ObjectControlManager +
                 ", streamsMetadata=" + streamsMetadata +
-                ", brokersMetadata=" + brokersMetadata +
+                ", nodesMetadata=" + nodesMetadata +
                 '}';
     }
 }
