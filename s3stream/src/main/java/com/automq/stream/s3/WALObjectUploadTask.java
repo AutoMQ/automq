@@ -40,6 +40,7 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
+    private final Logger s3ObjectLogger;
     private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
     private final int objectBlockSize;
     private final int objectPartSize;
@@ -47,26 +48,29 @@ public class WALObjectUploadTask {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final boolean forceSplit;
+    private final boolean s3ObjectLogEnable;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private volatile CommitWALObjectRequest commitWALObjectRequest;
     private final CompletableFuture<CommitWALObjectRequest> uploadCf = new CompletableFuture<>();
     private final ExecutorService executor;
 
-    public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, boolean forceSplit, ExecutorService executor) {
+    public WALObjectUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+                               ExecutorService executor, boolean forceSplit) {
+        this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[WALObjectUploadTask id=%d] ", config.brokerId()));
         this.streamRecordsMap = streamRecordsMap;
-        this.objectBlockSize = objectBlockSize;
-        this.objectPartSize = objectPartSize;
-        this.streamSplitSizeThreshold = streamSplitSizeThreshold;
+        this.objectBlockSize = config.s3ObjectBlockSize();
+        this.objectPartSize = config.s3ObjectPartSize();
+        this.streamSplitSizeThreshold = config.s3StreamSplitSize();
+        this.s3ObjectLogEnable = config.s3ObjectLogEnable();
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.forceSplit = forceSplit;
         this.executor = executor;
     }
 
-    public WALObjectUploadTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               int objectBlockSize, int objectPartSize, int streamSplitSizeThreshold, ExecutorService executor) {
-        this(streamRecordsMap, objectManager, s3Operator, objectBlockSize, objectPartSize, streamSplitSizeThreshold, streamRecordsMap.size() == 1, executor);
+    public WALObjectUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+                               ExecutorService executor) {
+        this(config, streamRecordsMap, objectManager, s3Operator, executor, streamRecordsMap.size() == 1);
     }
 
     public CompletableFuture<Long> prepare() {
@@ -137,6 +141,9 @@ public class WALObjectUploadTask {
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> {
             LOGGER.debug("Commit WAL object {}", commitWALObjectRequest);
+            if (s3ObjectLogEnable) {
+                s3ObjectLogger.trace("{}", commitWALObjectRequest);
+            }
             return null;
         }));
     }

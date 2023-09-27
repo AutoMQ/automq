@@ -53,6 +53,7 @@ public class Config {
     private int s3ObjectCompactionForceSplitPeriod = 120;
     private int s3ObjectCompactionMaxObjectNum = 500;
     private boolean s3MockEnable = false;
+    private boolean s3ObjectLogEnable = false;
 
     public int brokerId() {
         return brokerId;
@@ -188,6 +189,10 @@ public class Config {
 
     public boolean s3MockEnable() {
         return s3MockEnable;
+    }
+
+    public boolean s3ObjectLogEnable() {
+        return s3ObjectLogEnable;
     }
 
     public Config brokerId(int brokerId) {
@@ -357,6 +362,11 @@ public class Config {
 
     public Config s3MockEnable(boolean s3MockEnable) {
         this.s3MockEnable = s3MockEnable;
+        return this;
+    }
+
+    public Config s3ObjectLogEnable(boolean s3ObjectLogEnable) {
+        this.s3ObjectLogEnable = s3ObjectLogEnable;
         return this;
     }
 }

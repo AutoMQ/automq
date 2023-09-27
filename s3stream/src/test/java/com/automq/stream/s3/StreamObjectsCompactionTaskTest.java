@@ -190,8 +190,11 @@ class StreamObjectsCompactionTaskTest {
 
             Map<Long, List<StreamRecordBatch>> map = Map.of(streamId,
                     List.of(new StreamRecordBatch(streamId, 0, startOffset, Math.toIntExact(endOffset - startOffset), TestUtils.random(recordsSize))));
-            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(map, objectManager, s3Operator, 16 * 1024 * 1024, 16 * 1024 * 1024,
-                    recordsSize - 1, false, ForkJoinPool.commonPool());
+            Config config = new Config()
+                    .s3ObjectBlockSize(16 * 1024 * 1024)
+                    .s3ObjectPartSize(16 * 1024 * 1024)
+                    .s3StreamSplitSize(recordsSize - 1);
+            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool(), false);
 
             walObjectUploadTask.prepare().get();
             walObjectUploadTask.upload().get();
