@@ -51,6 +51,15 @@ public class LogContext {
         }
     }
 
+    public Logger logger(String clazz) {
+        Logger logger = LoggerFactory.getLogger(clazz);
+        if (logger instanceof LocationAwareLogger) {
+            return new LocationAwareKafkaLogger(logPrefix, (LocationAwareLogger) logger);
+        } else {
+            return new LocationIgnorantKafkaLogger(logPrefix, logger);
+        }
+    }
+
     public String logPrefix() {
         return logPrefix;
     }
