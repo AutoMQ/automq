@@ -180,7 +180,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         endOffset = endOffset == NOOP_OFFSET ? streamEndOffset : endOffset;
         if (endOffset > streamEndOffset) {
             // lag behind, need to wait for cache catch up
-            return pendingFetch(streamId, startOffset, endOffset, limit);
+            return pendingFetch(streamId, startOffset, endOffset, streamEndOffset, limit);
         }
         long finalEndOffset = endOffset;
         return FutureUtil.exec(() -> fetch0(streamId, startOffset, finalEndOffset, limit), LOGGER, "fetch");
@@ -208,14 +208,15 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
     }
 
     // must access thread safe
-    private CompletableFuture<InRangeObjects> pendingFetch(long streamId, long startOffset, long endOffset, int limit) {
+    private CompletableFuture<InRangeObjects> pendingFetch(long streamId, long startOffset, long endOffset,
+                                                           long streamEndOffset, int limit) {
         GetObjectsTask task = GetObjectsTask.of(streamId, startOffset, endOffset, limit);
         Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.computeIfAbsent(task.streamId,
                 k -> new TreeMap<>());
         List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
         getObjectsTasks.add(task);
-        LOGGER.warn("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
-                limit);
+        LOGGER.warn("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, streamEndOffset: {}, limit: {}, and pending fetch",
+                streamId, startOffset, endOffset, streamEndOffset, limit);
         return task.cf;
     }
 

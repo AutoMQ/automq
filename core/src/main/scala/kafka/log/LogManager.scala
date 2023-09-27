@@ -996,6 +996,8 @@ class LogManager(logDirs: Seq[File],
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false, topicId: Option[Uuid], leaderEpoch: Long = 0): UnifiedLog = {
     logCreationOrDeletionLock synchronized {
       val log = getLog(topicPartition, isFuture).getOrElse {
+        val now = time.milliseconds()
+
         // create the log if it has not already been created in another thread
         if (!isNew && offlineLogDirs.nonEmpty)
           throw new KafkaStorageException(s"Can not create log for $topicPartition because log directories ${offlineLogDirs.mkString(",")} are offline")
@@ -1053,7 +1055,7 @@ class LogManager(logDirs: Seq[File],
         else
           currentLogs.put(topicPartition, log)
 
-        info(s"Created log for partition $topicPartition in $logDir with properties ${config.overriddenConfigsAsLoggableString}")
+        info(s"Created log for partition $topicPartition in $logDir with properties ${config.overriddenConfigsAsLoggableString}, cost=${time.milliseconds() - now}ms")
         // Remove the preferred log dir since it has already been satisfied
         preferredLogDirs.remove(topicPartition)
 

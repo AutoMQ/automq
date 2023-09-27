@@ -62,6 +62,16 @@ public class ElasticRedisClient implements Client {
     }
 
     @Override
+    public void start() {
+        // do nothing
+    }
+
+    @Override
+    public void shutdown() {
+        // do nothing
+    }
+
+    @Override
     public StreamClient streamClient() {
         return streamClient;
     }

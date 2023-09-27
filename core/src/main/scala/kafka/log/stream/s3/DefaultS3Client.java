@@ -38,9 +38,11 @@ import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DefaultS3Client implements Client {
-
+    private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     private final Config config;
     private final StreamMetadataManager metadataManager;
 
@@ -74,13 +76,25 @@ public class DefaultS3Client implements Client {
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
         this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.operator);
-        this.compactionManager.start();
         this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath(), this.config.s3WALCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, operator);
-        this.storage.startup();
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
         this.kvClient = new ControllerKVClient(this.requestSender);
-        // TODO: startup method
+    }
+
+    @Override
+    public void start() {
+        this.storage.startup();
+        this.compactionManager.start();
+        LOGGER.info("S3Client started");
+    }
+
+    @Override
+    public void shutdown() {
+        this.compactionManager.shutdown();
+        this.storage.shutdown();
+        this.streamClient.shutdown();
+        LOGGER.info("S3Client shutdown successfully");
     }
 
     @Override
@@ -91,11 +105,5 @@ public class DefaultS3Client implements Client {
     @Override
     public KVClient kvClient() {
         return this.kvClient;
-    }
-
-    public void shutdown() {
-        this.storage.shutdown();
-        this.compactionManager.shutdown();
-        this.streamClient.shutdown();
     }
 }

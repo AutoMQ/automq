@@ -64,12 +64,13 @@ class AlwaysSuccessClientTest {
     @AfterEach
     public void teardown() {
         SeparateSlowAndQuickFetchHint.reset();
-        client.shutdownNow();
+        client.shutdown();
     }
 
     @Test
     public void basicAppendAndFetch() throws ExecutionException, InterruptedException {
         client = new AlwaysSuccessClient(new MemoryClient());
+        client.start();
         Stream stream = client
                 .streamClient()
                 .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
@@ -92,6 +93,7 @@ class AlwaysSuccessClientTest {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
         long slowFetchTimeoutMillis = 1000 * 2;
         client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
+        client.start();
         List<Long> quickFetchDelayMillisList = List.of(1L, slowFetchTimeoutMillis / 2);
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
@@ -120,6 +122,7 @@ class AlwaysSuccessClientTest {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
         long slowFetchTimeoutMillis = 1000 * 2;
         client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
+        client.start();
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
 
         long slowFetchDelay = slowFetchTimeoutMillis * 3 / 2;
@@ -161,6 +164,7 @@ class AlwaysSuccessClientTest {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
         ((MemoryClientWithDelay.StreamClientImpl) memoryClientWithDelay.streamClient()).setHaltOpeningStream(true);
         client = new AlwaysSuccessClient(memoryClientWithDelay);
+        client.start();
 
         AtomicBoolean exceptionThrown = new AtomicBoolean(false);
         openStream(1)
@@ -179,6 +183,7 @@ class AlwaysSuccessClientTest {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
         ((MemoryClientWithDelay.StreamClientImpl) memoryClientWithDelay.streamClient()).setExceptionHint(ExceptionHint.HALT_EXCEPTION);
         client = new AlwaysSuccessClient(memoryClientWithDelay);
+        client.start();
 
         Stream stream = client
                 .streamClient()
@@ -224,6 +229,7 @@ class AlwaysSuccessClientTest {
         MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
         ((MemoryClientWithDelay.StreamClientImpl) memoryClientWithDelay.streamClient()).setExceptionHint(ExceptionHint.OTHER_EXCEPTION);
         client = new AlwaysSuccessClient(memoryClientWithDelay);
+        client.start();
 
         Stream stream = openStream(1).join();
         stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap("hello".getBytes()))).join();

@@ -47,6 +47,16 @@ public class MemoryClient implements Client {
     private final KVClient kvClient = new KVClientImpl();
 
     @Override
+    public void start() {
+        // do nothing
+    }
+
+    @Override
+    public void shutdown() {
+        // do nothing
+    }
+
+    @Override
     public StreamClient streamClient() {
         return streamClient;
     }
