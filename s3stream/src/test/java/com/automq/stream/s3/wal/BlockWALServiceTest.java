@@ -217,15 +217,15 @@ class BlockWALServiceTest {
 
     @ParameterizedTest(name = "Test {index}: shutdown={0}, overCapacity={1}, recordCount={2}")
     @CsvSource({
-            "true, false, 10",
-            "true, true, 9",
-            "true, true, 10",
-            "true, true, 11",
+        "true, false, 10",
+        "true, true, 9",
+        "true, true, 10",
+        "true, true, 11",
 
-            "false, false, 10",
-            "false, true, 9",
-            "false, true, 10",
-            "false, true, 11",
+        "false, false, 10",
+        "false, true, 9",
+        "false, true, 10",
+        "false, true, 11",
     })
     public void testSingleThreadRecover(boolean shutdown, boolean overCapacity, int recordCount) throws IOException {
         final int recordSize = 4096 + 1;

@@ -46,7 +46,7 @@ public class Config {
     private int s3ObjectCompactionInterval = 20;
     private long s3ObjectCompactionCacheSize = 200 * 1024 * 1024;
     private long s3ObjectCompactionNWInBandwidth = 50 * 1024 * 1024;
-    private long s3ObjectCompactionNWOutBandwidth= 50 * 1024 * 1024;
+    private long s3ObjectCompactionNWOutBandwidth = 50 * 1024 * 1024;
     private int s3ObjectCompactionUploadConcurrency = 8;
     private double s3ObjectCompactionExecutionScoreThreshold = 0.5;
     private long s3ObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
