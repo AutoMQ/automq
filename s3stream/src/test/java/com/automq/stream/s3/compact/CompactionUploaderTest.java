@@ -28,7 +28,6 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
