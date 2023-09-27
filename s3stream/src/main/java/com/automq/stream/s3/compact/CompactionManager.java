@@ -17,6 +17,7 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.S3ObjectLogger;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
 
 public class CompactionManager {
     private final Logger logger;
+    private final Logger s3ObjectLogger;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final CompactionAnalyzer compactionAnalyzer;
@@ -63,10 +65,13 @@ public class CompactionManager {
     private final int maxObjectNumToCompact;
     private final int compactionInterval;
     private final int forceSplitObjectPeriod;
+    private final boolean s3ObjectLogEnable;
     private final TokenBucketThrottle networkInThrottle;
 
     public CompactionManager(Config config, ObjectManager objectManager, S3Operator s3Operator) {
-        this.logger = new LogContext(String.format("[CompactionManager id=%d] ", config.brokerId())).logger(CompactionManager.class);
+        String logPrefix = String.format("[CompactionManager id=%d] ", config.brokerId());
+        this.logger = new LogContext(logPrefix).logger(CompactionManager.class);
+        this.s3ObjectLogger = S3ObjectLogger.logger(logPrefix);
         this.kafkaConfig = config;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -76,6 +81,7 @@ public class CompactionManager {
         this.streamSplitSize = config.s3ObjectCompactionStreamSplitSize();
         this.forceSplitObjectPeriod = config.s3ObjectCompactionForceSplitPeriod();
         this.maxObjectNumToCompact = config.s3ObjectCompactionMaxObjectNum();
+        this.s3ObjectLogEnable = config.s3ObjectLogEnable();
         this.networkInThrottle = new TokenBucketThrottle(config.s3ObjectCompactionNWInBandwidth());
         this.uploader = new CompactionUploader(objectManager, s3Operator, config);
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, executionScoreThreshold, streamSplitSize,
@@ -131,6 +137,9 @@ public class CompactionManager {
             return objectManager.commitWALObject(request).thenApply(resp -> {
                 logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
                         request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
+                if (s3ObjectLogEnable) {
+                    s3ObjectLogger.trace("[Compact] {}", request);
+                }
                 return CompactResult.SUCCESS;
             });
         });
@@ -159,18 +168,36 @@ public class CompactionManager {
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
-        this.scheduledExecutorService.execute(() -> this.objectManager.getServerObjects().thenAccept(objects -> {
+        this.scheduledExecutorService.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objects -> {
             List<CompletableFuture<StreamObject>> cfList = splitWALObjects(objects);
-            long successCnt = cfList.stream().map(e -> {
+            List<StreamObject> streamObjects = cfList.stream().map(e -> {
                 try {
                     return e.join();
                 } catch (Exception ex) {
                     logger.error("Error while force split object ", ex);
                 }
                 return null;
-            }).filter(Objects::nonNull).count();
-            logger.info("Force split all WAL objects, {}/{} success", successCnt, cfList.size());
-        }));
+            }).collect(Collectors.toList());
+            if (streamObjects.stream().anyMatch(Objects::isNull)) {
+                logger.error("Force split WAL objects failed");
+                cf.completeExceptionally(new RuntimeException("Force split WAL objects failed"));
+                return;
+            }
+            CommitWALObjectRequest request = new CommitWALObjectRequest();
+            streamObjects.forEach(request::addStreamObject);
+            request.setCompactedObjectIds(objects.stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+            objectManager.commitWALObject(request).thenAccept(resp -> {
+                logger.info("Force split {} WAL objects succeed, produce {} stream objects", objects.size(), streamObjects.size());
+                if (s3ObjectLogEnable) {
+                    s3ObjectLogger.trace("[ForceSplit] {}", request);
+                }
+                cf.complete(null);
+            }).exceptionally(ex -> {
+                logger.error("Force split all WAL objects failed", ex);
+                cf.completeExceptionally(ex);
+                return null;
+            });
+        }, executorService));
 
         return cf;
     }
