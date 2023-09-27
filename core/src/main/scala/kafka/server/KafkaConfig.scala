@@ -718,6 +718,7 @@ object KafkaConfig {
   val S3ObjectCompactionMaxObjectNumProp = "s3.object.compaction.max.num"
   val S3MockEnableProp = "s3.mock.enable"
   val S3ObjectRetentionTimeInSecondProp = "s3.object.retention.time.in.second"
+  val S3ObjectLogEnableProp = "s3.object.log.enable"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -753,6 +754,7 @@ object KafkaConfig {
   val S3ObjectCompactionMaxObjectNumDoc = "The maximum num of WAL objects to be compact at one time"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
   val S3ObjectRetentionTimeInSecondDoc = "The S3 object retention time in second, default is 10 minutes (600s)."
+  val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
 
   // Kafka on S3 inject end
 
@@ -1585,6 +1587,7 @@ object KafkaConfig {
       .define(S3ObjectCompactionMaxObjectNumProp, INT, Defaults.S3ObjectCompactionMaxObjectNum, MEDIUM, S3ObjectCompactionMaxObjectNumDoc)
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
       .define(S3ObjectRetentionTimeInSecondProp, LONG, Defaults.S3ObjectRetentionTimeInSecond, MEDIUM, S3ObjectRetentionTimeInSecondDoc)
+      .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
     // Kafka on S3 inject end
   }
 
@@ -2154,6 +2157,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectCompactionMaxObjectNum = getInt(KafkaConfig.S3ObjectCompactionMaxObjectNumProp)
   val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
   val s3ObjectRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectRetentionTimeInSecondProp)
+  val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

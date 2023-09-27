@@ -56,7 +56,8 @@ public class ConfigUtils {
                 .s3ObjectCompactionStreamSplitSize(s.s3ObjectCompactionStreamSplitSize())
                 .s3ObjectCompactionForceSplitPeriod(s.s3ObjectCompactionForceSplitPeriod())
                 .s3ObjectCompactionMaxObjectNum(s.s3ObjectCompactionMaxObjectNum())
-                .s3MockEnable(s.s3MockEnable());
+                .s3MockEnable(s.s3MockEnable())
+                .s3ObjectLogEnable(s.s3ObjectLogEnable());
     }
 
 }
