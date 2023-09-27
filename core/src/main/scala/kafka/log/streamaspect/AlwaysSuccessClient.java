@@ -75,6 +75,7 @@ public class AlwaysSuccessClient implements Client {
             ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private final ScheduledExecutorService delayFetchScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("fetch-delayer-%d", true));
+    private final Client innerClient;
     private final StreamClient streamClient;
     private final KVClient kvClient;
     private final Delayer delayer;
@@ -96,6 +97,7 @@ public class AlwaysSuccessClient implements Client {
     }
 
     public AlwaysSuccessClient(Client client, boolean appendCallbackAsync, long slowFetchTimeoutMillis) {
+        this.innerClient = client;
         this.streamClient = new StreamClientImpl(client.streamClient());
         this.kvClient = client.kvClient();
         this.delayer = new Delayer(delayFetchScheduler);
@@ -113,7 +115,14 @@ public class AlwaysSuccessClient implements Client {
         return kvClient;
     }
 
-    public void shutdownNow() {
+    @Override
+    public void start() {
+        innerClient.start();
+    }
+
+    @Override
+    public void shutdown() {
+        innerClient.shutdown();
         streamClient.shutdown();
         streamManagerRetryScheduler.shutdownNow();
         streamManagerCallbackExecutors.shutdownNow();

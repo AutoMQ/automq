@@ -117,6 +117,7 @@ public class S3StreamClient implements StreamClient {
                 });
     }
 
+    @Override
     public void shutdown() {
         // cancel the submitted task if not started; do not interrupt the task if it is running.
         if (scheduledCompactionTaskFuture != null) {
