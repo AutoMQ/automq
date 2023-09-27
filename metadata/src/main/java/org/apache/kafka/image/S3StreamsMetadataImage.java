@@ -47,20 +47,20 @@ public final class S3StreamsMetadataImage {
 
     private final Map<Long/*streamId*/, S3StreamMetadataImage> streamsMetadata;
 
-    private final Map<Integer/*brokerId*/, BrokerS3WALMetadataImage> brokerWALMetadata;
+    private final Map<Integer/*nodeId*/, NodeS3WALMetadataImage> nodeWALMetadata;
 
     public S3StreamsMetadataImage(
             long assignedStreamId,
             Map<Long, S3StreamMetadataImage> streamsMetadata,
-            Map<Integer, BrokerS3WALMetadataImage> brokerWALMetadata) {
+            Map<Integer, NodeS3WALMetadataImage> nodeWALMetadata) {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamsMetadata = streamsMetadata;
-        this.brokerWALMetadata = brokerWALMetadata;
+        this.nodeWALMetadata = nodeWALMetadata;
     }
 
 
     boolean isEmpty() {
-        return this.brokerWALMetadata.isEmpty() && this.streamsMetadata.isEmpty();
+        return this.nodeWALMetadata.isEmpty() && this.streamsMetadata.isEmpty();
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -68,7 +68,7 @@ public final class S3StreamsMetadataImage {
                 new ApiMessageAndVersion(
                         new AssignedStreamIdRecord().setAssignedStreamId(nextAssignedStreamId - 1), (short) 0));
         streamsMetadata.values().forEach(image -> image.write(writer, options));
-        brokerWALMetadata.values().forEach(image -> image.write(writer, options));
+        nodeWALMetadata.values().forEach(image -> image.write(writer, options));
     }
 
     public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
@@ -130,8 +130,8 @@ public final class S3StreamsMetadataImage {
         }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).limit(limit).collect(Collectors.toCollection(ArrayList::new));
     }
 
-    public List<S3WALObject> getWALObjects(int brokerId) {
-        BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
+    public List<S3WALObject> getWALObjects(int nodeId) {
+        NodeS3WALMetadataImage wal = nodeWALMetadata.get(nodeId);
         if (wal == null) {
             return Collections.emptyList();
         }
@@ -155,7 +155,7 @@ public final class S3StreamsMetadataImage {
             if (searchStartOffset == searchEndOffset) {
                 continue;
             }
-            rangeSearchers.add(new RangeSearcher(searchStartOffset, searchEndOffset, streamId, range.brokerId()));
+            rangeSearchers.add(new RangeSearcher(searchStartOffset, searchEndOffset, streamId, range.nodeId()));
         }
         return rangeSearchers;
     }
@@ -165,17 +165,17 @@ public final class S3StreamsMetadataImage {
         private final long startOffset;
         private final long endOffset;
         private final long streamId;
-        private final int brokerId;
+        private final int nodeId;
 
-        public RangeSearcher(long startOffset, long endOffset, long streamId, int brokerId) {
+        public RangeSearcher(long startOffset, long endOffset, long streamId, int nodeId) {
             this.startOffset = startOffset;
             this.endOffset = endOffset;
             this.streamId = streamId;
-            this.brokerId = brokerId;
+            this.nodeId = nodeId;
         }
 
         private Queue<S3ObjectMetadataWrapper> rangeOfWalObjects() {
-            BrokerS3WALMetadataImage wal = brokerWALMetadata.get(brokerId);
+            NodeS3WALMetadataImage wal = nodeWALMetadata.get(nodeId);
             return wal.orderList().stream()
                 .filter(obj -> obj.offsetRanges().containsKey(streamId))
                 .filter(obj -> {
@@ -221,7 +221,7 @@ public final class S3StreamsMetadataImage {
             if (limit <= 0) {
                 return InRangeObjects.INVALID;
             }
-            if (!brokerWALMetadata.containsKey(brokerId) || !streamsMetadata.containsKey(streamId)) {
+            if (!nodeWALMetadata.containsKey(nodeId) || !streamsMetadata.containsKey(streamId)) {
                 return InRangeObjects.INVALID;
             }
 
@@ -260,7 +260,7 @@ public final class S3StreamsMetadataImage {
                     "startOffset=" + startOffset +
                     ", endOffset=" + endOffset +
                     ", streamId=" + streamId +
-                    ", brokerId=" + brokerId +
+                    ", nodeId=" + nodeId +
                     '}';
         }
     }
@@ -301,16 +301,16 @@ public final class S3StreamsMetadataImage {
         S3StreamsMetadataImage other = (S3StreamsMetadataImage) obj;
         return this.nextAssignedStreamId == other.nextAssignedStreamId
                 && this.streamsMetadata.equals(other.streamsMetadata)
-                && this.brokerWALMetadata.equals(other.brokerWALMetadata);
+                && this.nodeWALMetadata.equals(other.nodeWALMetadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nextAssignedStreamId, streamsMetadata, brokerWALMetadata);
+        return Objects.hash(nextAssignedStreamId, streamsMetadata, nodeWALMetadata);
     }
 
-    public Map<Integer, BrokerS3WALMetadataImage> brokerWALMetadata() {
-        return brokerWALMetadata;
+    public Map<Integer, NodeS3WALMetadataImage> nodeWALMetadata() {
+        return nodeWALMetadata;
     }
 
     public Map<Long, S3StreamMetadataImage> streamsMetadata() {
@@ -336,7 +336,7 @@ public final class S3StreamsMetadataImage {
                 "nextAssignedStreamId=" + nextAssignedStreamId +
                 ", streamsMetadata=" + streamsMetadata.entrySet().stream().
                 map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
-                ", brokerWALMetadata=" + brokerWALMetadata.entrySet().stream().
+                ", nodeWALMetadata=" + nodeWALMetadata.entrySet().stream().
                 map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
                 '}';
     }

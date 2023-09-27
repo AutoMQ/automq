@@ -112,9 +112,9 @@ public class S3StreamsMetadataImageTest {
                 5L, new S3WALObject(5, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
                 6L, new S3WALObject(6, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
                 7L, new S3WALObject(7, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
-        BrokerS3WALMetadataImage broker0WALMetadataImage = new BrokerS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+        NodeS3WALMetadataImage broker0WALMetadataImage = new NodeS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
                 new HashMap<>(broker0WalObjects));
-        BrokerS3WALMetadataImage broker1WALMetadataImage = new BrokerS3WALMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
+        NodeS3WALMetadataImage broker1WALMetadataImage = new NodeS3WALMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
                 new HashMap<>(broker1WalObjects));
         Map<Integer, RangeMetadata> ranges = Map.of(
                 0, new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),

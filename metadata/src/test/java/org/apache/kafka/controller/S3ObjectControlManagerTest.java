@@ -81,7 +81,7 @@ public class S3ObjectControlManagerTest {
     public void testPrepareObject() {
         // 1. prepare 3 objects
         ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setPreparedCount(3)
             .setTimeToLiveInMs(60 * 1000));
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
@@ -107,7 +107,7 @@ public class S3ObjectControlManagerTest {
 
         // 2. prepare 5 objects
         ControllerResult<PrepareS3ObjectResponseData> result1 = manager.prepareObject(new PrepareS3ObjectRequestData()
-            .setBrokerId(BROKER1)
+            .setNodeId(BROKER1)
             .setPreparedCount(5)
             .setTimeToLiveInMs(60 * 1000));
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
@@ -217,7 +217,7 @@ public class S3ObjectControlManagerTest {
 
     private void prepareOneObject(long ttl) {
         ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
-            .setBrokerId(BROKER0)
+            .setNodeId(BROKER0)
             .setPreparedCount(1)
             .setTimeToLiveInMs(ttl));
         assertEquals(Errors.NONE.code(), result0.response().errorCode());

@@ -19,9 +19,10 @@ package org.apache.kafka.common.errors.s3;
 
 import org.apache.kafka.common.errors.ApiException;
 
-public class BrokerEpochExpiredException extends ApiException {
+public class NodeEpochNotExistException extends ApiException {
 
-    public BrokerEpochExpiredException(String message) {
+    public NodeEpochNotExistException(String message) {
         super(message);
     }
+
 }

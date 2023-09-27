@@ -21,29 +21,29 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
 
-public class BrokerS3WALMetadataDelta {
+public class NodeS3WALMetadataDelta {
 
-    private final BrokerS3WALMetadataImage image;
-    private int brokerId;
-    private long brokerEpoch;
+    private final NodeS3WALMetadataImage image;
+    private int nodeId;
+    private long nodeEpoch;
     private final Map<Long/*objectId*/, S3WALObject> addedS3WALObjects = new HashMap<>();
 
     private final Set<Long/*objectId*/> removedS3WALObjects = new HashSet<>();
 
-    public BrokerS3WALMetadataDelta(BrokerS3WALMetadataImage image) {
+    public NodeS3WALMetadataDelta(NodeS3WALMetadataImage image) {
         this.image = image;
-        this.brokerId = image.getBrokerId();
-        this.brokerEpoch = image.getBrokerEpoch();
+        this.nodeId = image.getNodeId();
+        this.nodeEpoch = image.getNodeEpoch();
     }
 
-    public void replay(BrokerWALMetadataRecord record) {
-        this.brokerId = record.brokerId();
-        this.brokerEpoch = record.brokerEpoch();
+    public void replay(NodeWALMetadataRecord record) {
+        this.nodeId = record.nodeId();
+        this.nodeEpoch = record.nodeEpoch();
     }
 
     public void replay(WALObjectRecord record) {
@@ -58,13 +58,13 @@ public class BrokerS3WALMetadataDelta {
         addedS3WALObjects.remove(record.objectId());
     }
 
-    public BrokerS3WALMetadataImage apply() {
+    public NodeS3WALMetadataImage apply() {
         Map<Long, S3WALObject> newS3WALObjects = new HashMap<>(image.getWalObjects());
         // add all changed WAL objects
         newS3WALObjects.putAll(addedS3WALObjects);
         // remove all removed WAL objects
         removedS3WALObjects.forEach(newS3WALObjects::remove);
-        return new BrokerS3WALMetadataImage(this.brokerId, this.brokerEpoch, newS3WALObjects);
+        return new NodeS3WALMetadataImage(this.nodeId, this.nodeEpoch, newS3WALObjects);
     }
 
 }

@@ -18,25 +18,39 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class DeleteKVRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<DeleteKVRequest> {
+public class GetKVsRequest extends AbstractRequest {
 
-        private final DeleteKVRequestData data;
-        public Builder(DeleteKVRequestData data) {
-            super(ApiKeys.DELETE_KV);
+    public static class Builder extends AbstractRequest.Builder<GetKVsRequest> {
+
+        private final GetKVsRequestData data;
+        public Builder(GetKVsRequestData data) {
+            super(ApiKeys.GET_KVS);
             this.data = data;
         }
 
+        public Builder addSubRequest(GetKVsRequestData.GetKVRequest request) {
+            List<GetKVRequest> keyRequests = data.getKeyRequests();
+            if (keyRequests == null) {
+                keyRequests = new ArrayList<>();
+                data.setGetKeyRequests(keyRequests);
+            }
+            keyRequests.add(request);
+            return this;
+        }
+
         @Override
-        public DeleteKVRequest build(short version) {
-            return new DeleteKVRequest(data, version);
+        public GetKVsRequest build(short version) {
+            return new GetKVsRequest(data, version);
         }
 
         @Override
@@ -45,29 +59,30 @@ public class DeleteKVRequest extends AbstractRequest {
         }
     }
 
-    private final DeleteKVRequestData data;
+    private final GetKVsRequestData data;
 
-    public DeleteKVRequest(DeleteKVRequestData data, short version) {
-        super(ApiKeys.DELETE_KV, version);
+    public GetKVsRequest(GetKVsRequestData data, short version) {
+        super(ApiKeys.GET_KVS, version);
         this.data = data;
     }
 
     @Override
-    public DeleteKVResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public GetKVsResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        DeleteKVResponseData response = new DeleteKVResponseData()
+        GetKVsResponseData response = new GetKVsResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new DeleteKVResponse(response);
+        return new GetKVsResponse(response);
     }
 
     @Override
-    public DeleteKVRequestData data() {
+    public GetKVsRequestData data() {
         return data;
     }
 
-    public static DeleteKVRequest parse(ByteBuffer buffer, short version) {
-        return new DeleteKVRequest(new DeleteKVRequestData(
+    public static GetKVsRequest parse(ByteBuffer buffer, short version) {
+        return new GetKVsRequest(new GetKVsRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
+    
 }

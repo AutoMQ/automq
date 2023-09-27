@@ -40,14 +40,14 @@ import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -56,8 +56,8 @@ import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
@@ -398,7 +398,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Create a stream
      */
-    CompletableFuture<CreateStreamsResponseData> createStream(
+    CompletableFuture<CreateStreamsResponseData> createStreams(
         ControllerRequestContext context,
         CreateStreamsRequestData request
     );
@@ -406,7 +406,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to open a stream with its epoch
      */
-    CompletableFuture<OpenStreamsResponseData> openStream(
+    CompletableFuture<OpenStreamsResponseData> openStreams(
         ControllerRequestContext context,
         OpenStreamsRequestData request
     );
@@ -414,7 +414,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to close a stream.
      */
-    CompletableFuture<CloseStreamsResponseData> closeStream(
+    CompletableFuture<CloseStreamsResponseData> closeStreams(
         ControllerRequestContext context,
         CloseStreamsRequestData request
     );
@@ -422,7 +422,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to trim a stream.
      */
-    CompletableFuture<TrimStreamsResponseData> trimStream(
+    CompletableFuture<TrimStreamsResponseData> trimStreams(
         ControllerRequestContext context,
         TrimStreamsRequestData request
     );
@@ -430,7 +430,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Delete a stream.
      */
-    CompletableFuture<DeleteStreamsResponseData> deleteStream(
+    CompletableFuture<DeleteStreamsResponseData> deleteStreams(
         ControllerRequestContext context,
         DeleteStreamsRequestData request
     );
@@ -468,27 +468,27 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to get value from KV store embedded in controller.
+     * Broker trys to get value from KVs store embedded in controller.
      */
-    CompletableFuture<GetKVResponseData> getKV(
+    CompletableFuture<GetKVsResponseData> getKVs(
         ControllerRequestContext context,
-        GetKVRequestData request
+        GetKVsRequestData request
     );
 
     /**
-     * Broker trys to put key-value into KV store embedded in controller.
+     * Broker trys to put key-value into KVs store embedded in controller.
      */
-    CompletableFuture<PutKVResponseData> putKV(
+    CompletableFuture<PutKVsResponseData> putKVs(
         ControllerRequestContext context,
-        PutKVRequestData request
+        PutKVsRequestData request
     );
 
     /**
-     * Broker trys to delete key-value from KV store embedded in controller.
+     * Broker trys to delete key-value from KVs store embedded in controller.
      */
-    CompletableFuture<DeleteKVResponseData> deleteKV(
+    CompletableFuture<DeleteKVsResponseData> deleteKVs(
         ControllerRequestContext context,
-        DeleteKVRequestData request
+        DeleteKVsRequestData request
     );
 
     // Kafka on S3 inject end

@@ -28,24 +28,24 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import com.automq.stream.s3.metadata.S3StreamConstant;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.metadata.stream.S3WALObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class BrokerS3WALMetadataImage {
+public class NodeS3WALMetadataImage {
 
-    public static final BrokerS3WALMetadataImage EMPTY = new BrokerS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
+    public static final NodeS3WALMetadataImage EMPTY = new NodeS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
         S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
-    private final int brokerId;
-    private final long brokerEpoch;
+    private final int nodeId;
+    private final long nodeEpoch;
     private final Map<Long/*objectId*/, S3WALObject> s3WalObjects;
     private final SortedMap<Long/*orderId*/, S3WALObject> orderIndex;
 
-    public BrokerS3WALMetadataImage(int brokerId, long brokerEpoch, Map<Long, S3WALObject> walObjects) {
-        this.brokerId = brokerId;
-        this.brokerEpoch = brokerEpoch;
+    public NodeS3WALMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3WALObject> walObjects) {
+        this.nodeId = nodeId;
+        this.nodeEpoch = nodeEpoch;
         this.s3WalObjects = new HashMap<>(walObjects);
         // build order index
         if (s3WalObjects.isEmpty()) {
@@ -64,19 +64,19 @@ public class BrokerS3WALMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        BrokerS3WALMetadataImage that = (BrokerS3WALMetadataImage) o;
-        return brokerId == that.brokerId && brokerEpoch == that.brokerEpoch && Objects.equals(s3WalObjects, that.s3WalObjects);
+        NodeS3WALMetadataImage that = (NodeS3WALMetadataImage) o;
+        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(s3WalObjects, that.s3WalObjects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(brokerId, brokerEpoch, s3WalObjects);
+        return Objects.hash(nodeId, nodeEpoch, s3WalObjects);
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        writer.write(new ApiMessageAndVersion(new BrokerWALMetadataRecord()
-            .setBrokerId(brokerId)
-            .setBrokerEpoch(brokerEpoch), (short) 0));
+        writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch), (short) 0));
         s3WalObjects.values().forEach(wal -> {
             writer.write(wal.toRecord());
         });
@@ -94,19 +94,19 @@ public class BrokerS3WALMetadataImage {
         return orderIndex.values().stream().collect(Collectors.toList());
     }
 
-    public int getBrokerId() {
-        return brokerId;
+    public int getNodeId() {
+        return nodeId;
     }
 
-    public long getBrokerEpoch() {
-        return brokerEpoch;
+    public long getNodeEpoch() {
+        return nodeEpoch;
     }
 
     @Override
     public String toString() {
-        return "BrokerS3WALMetadataImage{" +
-            "brokerId=" + brokerId +
-            ", brokerEpoch=" + brokerEpoch +
+        return "NodeS3WALMetadataImage{" +
+            "nodeId=" + nodeId +
+            ", nodeEpoch=" + nodeEpoch +
             ", s3WalObjects=" + s3WalObjects +
             '}';
     }

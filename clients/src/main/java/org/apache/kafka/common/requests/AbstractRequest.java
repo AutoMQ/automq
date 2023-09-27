@@ -30,13 +30,13 @@ import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
 import org.apache.kafka.common.requests.s3.CommitWALObjectRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
-import org.apache.kafka.common.requests.s3.DeleteKVRequest;
+import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
-import org.apache.kafka.common.requests.s3.GetKVRequest;
+import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
-import org.apache.kafka.common.requests.s3.PutKVRequest;
+import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
@@ -336,12 +336,12 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return CommitStreamObjectRequest.parse(buffer, apiVersion);
             case GET_OPENING_STREAMS:
                 return GetOpeningStreamsRequest.parse(buffer, apiVersion);
-            case GET_KV:
-                return GetKVRequest.parse(buffer, apiVersion);
-            case PUT_KV:
-                return PutKVRequest.parse(buffer, apiVersion);
-            case DELETE_KV:
-                return DeleteKVRequest.parse(buffer, apiVersion);
+            case GET_KVS:
+                return GetKVsRequest.parse(buffer, apiVersion);
+            case PUT_KVS:
+                return PutKVsRequest.parse(buffer, apiVersion);
+            case DELETE_KVS:
+                return DeleteKVsRequest.parse(buffer, apiVersion);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +

@@ -18,26 +18,38 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsRequestData.PutKVRequest;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class GetKVRequest extends AbstractRequest {
+public class PutKVsRequest extends AbstractRequest {
+    public static class Builder extends AbstractRequest.Builder<PutKVsRequest> {
 
-    public static class Builder extends AbstractRequest.Builder<GetKVRequest> {
-
-        private final GetKVRequestData data;
-        public Builder(GetKVRequestData data) {
-            super(ApiKeys.GET_KV);
+        private final PutKVsRequestData data;
+        public Builder(PutKVsRequestData data) {
+            super(ApiKeys.PUT_KVS);
             this.data = data;
         }
 
+        public Builder addSubRequest(PutKVRequest request) {
+            List<PutKVRequest> requests = data.putKVRequests();
+            if (requests == null) {
+                requests = new ArrayList<>();
+                data.setPutKVRequests(requests);
+            }
+            requests.add(request);
+            return this;
+        }
+
         @Override
-        public GetKVRequest build(short version) {
-            return new GetKVRequest(data, version);
+        public PutKVsRequest build(short version) {
+            return new PutKVsRequest(data, version);
         }
 
         @Override
@@ -46,30 +58,29 @@ public class GetKVRequest extends AbstractRequest {
         }
     }
 
-    private final GetKVRequestData data;
+    private final PutKVsRequestData data;
 
-    public GetKVRequest(GetKVRequestData data, short version) {
-        super(ApiKeys.GET_KV, version);
+    public PutKVsRequest(PutKVsRequestData data, short version) {
+        super(ApiKeys.PUT_KVS, version);
         this.data = data;
     }
 
     @Override
-    public GetKVResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public PutKVsResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        GetKVResponseData response = new GetKVResponseData()
+        PutKVsResponseData response = new PutKVsResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new GetKVResponse(response);
+        return new PutKVsResponse(response);
     }
 
     @Override
-    public GetKVRequestData data() {
+    public PutKVsRequestData data() {
         return data;
     }
 
-    public static GetKVRequest parse(ByteBuffer buffer, short version) {
-        return new GetKVRequest(new GetKVRequestData(
+    public static PutKVsRequest parse(ByteBuffer buffer, short version) {
+        return new PutKVsRequest(new PutKVsRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
-    
 }

@@ -14,21 +14,17 @@
 // limitations under the License.
 
 {
-  "apiKey": 511,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "DeleteKVRequest",
+  "apiKey": 514,
+  "type": "metadata",
+  "name": "RemoveNodeWALMetadataRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "Keys",
-      "type": "[]string",
+      "name": "NodeId",
+      "type": "int32",
       "versions": "0+",
-      "about": "Keys"
+      "about": "The ID of the node to be removed"
     }
   ]
 }

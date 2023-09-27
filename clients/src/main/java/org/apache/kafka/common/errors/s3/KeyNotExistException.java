@@ -15,13 +15,14 @@
  * limitations under the License.
  */
 
+
 package org.apache.kafka.common.errors.s3;
 
 import org.apache.kafka.common.errors.ApiException;
 
-public class BrokerEpochNotExistException extends ApiException {
+public class KeyNotExistException extends ApiException {
 
-    public BrokerEpochNotExistException(String message) {
+    public KeyNotExistException(String message) {
         super(message);
     }
 

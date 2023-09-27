@@ -245,25 +245,25 @@ public class S3ObjectControlManager {
         List<ApiMessageAndVersion> records = new ArrayList<>();
         // check the expired objects
         this.preparedObjects.stream().
-                map(objectsMetadata::get).
-                filter(S3Object::isExpired).
-                forEach(obj -> {
-                    S3ObjectRecord record = new S3ObjectRecord()
-                            .setObjectId(obj.getObjectId())
-                            .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
-                            .setObjectSize(obj.getObjectSize())
-                            .setPreparedTimeInMs(obj.getPreparedTimeInMs())
-                            .setExpiredTimeInMs(obj.getExpiredTimeInMs())
-                            .setCommittedTimeInMs(obj.getCommittedTimeInMs())
-                            .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
-                    // generate the records which mark the expired objects as destroyed
-                    records.add(new ApiMessageAndVersion(record, (short) 0));
-                    // generate the records which listener reply for the object-destroy events
-                    lifecycleListeners.forEach(listener -> {
-                        ControllerResult<Void> result = listener.onDestroy(obj.getObjectId());
-                        records.addAll(result.records());
-                    });
+            map(objectsMetadata::get).
+            filter(S3Object::isExpired).
+            forEach(obj -> {
+                S3ObjectRecord record = new S3ObjectRecord()
+                        .setObjectId(obj.getObjectId())
+                        .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
+                        .setObjectSize(obj.getObjectSize())
+                        .setPreparedTimeInMs(obj.getPreparedTimeInMs())
+                        .setExpiredTimeInMs(obj.getExpiredTimeInMs())
+                        .setCommittedTimeInMs(obj.getCommittedTimeInMs())
+                        .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
+                // generate the records which mark the expired objects as destroyed
+                records.add(new ApiMessageAndVersion(record, (short) 0));
+                // generate the records which listener reply for the object-destroy events
+                lifecycleListeners.forEach(listener -> {
+                    ControllerResult<Void> result = listener.onDestroy(obj.getObjectId());
+                    records.addAll(result.records());
                 });
+            });
         // check the mark destroyed objects
         List<String> destroyedObjectKeys = this.markDestroyedObjects.stream()
             .map(this.objectsMetadata::get)

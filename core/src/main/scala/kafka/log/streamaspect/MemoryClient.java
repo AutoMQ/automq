@@ -24,6 +24,8 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.KeyValue;
+import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.Value;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
@@ -32,11 +34,9 @@ import com.automq.stream.api.StreamClient;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -148,22 +148,25 @@ public class MemoryClient implements Client {
         private final Map<String, ByteBuffer> store = new ConcurrentHashMap<>();
 
         @Override
-        public CompletableFuture<Void> putKV(List<KeyValue> list) {
-            list.forEach(kv -> store.put(kv.key(), kv.value().duplicate()));
-            return CompletableFuture.completedFuture(null);
+        public CompletableFuture<Value> putKV(KeyValue keyValue) {
+            store.put(keyValue.key().get(), keyValue.value().get().duplicate());
+            return CompletableFuture.completedFuture(keyValue.value());
         }
 
         @Override
-        public CompletableFuture<List<KeyValue>> getKV(List<String> list) {
-            List<KeyValue> rst = new LinkedList<>();
-            list.forEach(key -> rst.add(KeyValue.of(key, Optional.ofNullable(store.get(key)).map(ByteBuffer::slice).orElse(null))));
-            return CompletableFuture.completedFuture(rst);
+        public CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue) {
+            ByteBuffer value = store.putIfAbsent(keyValue.key().get(), keyValue.value().get().duplicate());
+            return CompletableFuture.completedFuture(Value.of(value));
         }
 
         @Override
-        public CompletableFuture<Void> delKV(List<String> list) {
-            list.forEach(store::remove);
-            return CompletableFuture.completedFuture(null);
+        public CompletableFuture<Value> getKV(Key key) {
+            return CompletableFuture.completedFuture(Value.of(store.get(key.get())));
+        }
+
+        @Override
+        public CompletableFuture<Value> delKV(Key key) {
+            return CompletableFuture.completedFuture(Value.of(store.remove(key.get())));
         }
     }
 }

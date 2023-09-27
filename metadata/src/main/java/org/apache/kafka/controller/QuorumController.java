@@ -43,6 +43,7 @@ import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsResponseData;
+import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitWALObjectRequestData;
@@ -51,35 +52,41 @@ import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartiti
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsResponseData;
+import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
 import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsResponseData;
+import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
+import org.apache.kafka.common.message.PutKVsResponseData.PutKVResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
+import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -87,14 +94,15 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
-import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -1518,11 +1526,11 @@ public final class QuorumController implements Controller {
             case ASSIGNED_S3_OBJECT_ID_RECORD:
                 s3ObjectControlManager.replay((AssignedS3ObjectIdRecord) message);
                 break;
-            case BROKER_WALMETADATA_RECORD:
-                streamControlManager.replay((BrokerWALMetadataRecord) message);
+            case NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((NodeWALMetadataRecord) message);
                 break;
-            case REMOVE_BROKER_WALMETADATA_RECORD:
-                streamControlManager.replay((RemoveBrokerWALMetadataRecord) message);
+            case REMOVE_NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((RemoveNodeWALMetadataRecord) message);
                 break;
             case KVRECORD:
                 kvControlManager.replay((KVRecord) message);
@@ -2281,33 +2289,73 @@ public final class QuorumController implements Controller {
 
 
     @Override
-    public CompletableFuture<CreateStreamsResponseData> createStream(ControllerRequestContext context, CreateStreamsRequestData request) {
-        return appendWriteEvent("creatStream", context.deadlineNs(),
-            () -> streamControlManager.createStream(request));
+    public CompletableFuture<CreateStreamsResponseData> createStreams(ControllerRequestContext context, CreateStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<CreateStreamResponse>> batchCf = request.createStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new CreateStreamsResponseData().setCreateStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<OpenStreamsResponseData> openStream(ControllerRequestContext context, OpenStreamsRequestData request) {
-        return appendWriteEvent("openStream", context.deadlineNs(),
-            () -> streamControlManager.openStream(request));
+    public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<OpenStreamResponse>> batchCf = request.openStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new OpenStreamsResponseData().setOpenStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<CloseStreamsResponseData> closeStream(ControllerRequestContext context, CloseStreamsRequestData request) {
-        return appendWriteEvent("closeStream", context.deadlineNs(),
-            () -> streamControlManager.closeStream(request));
+    public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<CloseStreamResponse>> batchCf = request.closeStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new CloseStreamsResponseData().setCloseStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<TrimStreamsResponseData> trimStream(ControllerRequestContext context, TrimStreamsRequestData request) {
-        return appendWriteEvent("trimStream", context.deadlineNs(),
-            () -> streamControlManager.trimStream(request));
+    public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<TrimStreamResponse>> batchCf = request.trimStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new TrimStreamsResponseData().setTrimStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<DeleteStreamsResponseData> deleteStream(ControllerRequestContext context, DeleteStreamsRequestData request) {
-        return appendWriteEvent("deleteStream", context.deadlineNs(),
-            () -> streamControlManager.deleteStream(request));
+    public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<DeleteStreamResponse>> batchCf = request.deleteStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new DeleteStreamsResponseData().setDeleteStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
@@ -2336,21 +2384,39 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<GetKVResponseData> getKV(ControllerRequestContext context, GetKVRequestData request) {
-        return appendReadEvent("getKV", context.deadlineNs(),
-            () -> kvControlManager.getKV(request));
+    public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
+        List<CompletableFuture<GetKVResponse>> batchCf = request.getKeyRequests()
+            .stream()
+            .map(req -> appendReadEvent("getKV", context.deadlineNs(), () -> kvControlManager.getKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new GetKVsResponseData().setGetKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<PutKVResponseData> putKV(ControllerRequestContext context, PutKVRequestData request) {
-        return appendWriteEvent("putKV", context.deadlineNs(),
-            () -> kvControlManager.putKV(request));
+    public CompletableFuture<PutKVsResponseData> putKVs(ControllerRequestContext context, PutKVsRequestData request) {
+        List<CompletableFuture<PutKVResponse>> batchCf = request.putKVRequests()
+            .stream()
+            .map(req -> appendWriteEvent("putKV", context.deadlineNs(), () -> kvControlManager.putKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new PutKVsResponseData().setPutKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     @Override
-    public CompletableFuture<DeleteKVResponseData> deleteKV(ControllerRequestContext context, DeleteKVRequestData request) {
-        return appendWriteEvent("deleteKV", context.deadlineNs(),
-            () -> kvControlManager.deleteKV(request));
+    public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
+        List<CompletableFuture<DeleteKVResponse>> batchCf = request.deleteKVRequests()
+            .stream()
+            .map(req -> appendWriteEvent("deleteKV", context.deadlineNs(), () -> kvControlManager.deleteKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new DeleteKVsResponseData().setDeleteKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
     }
 
     // Kafka on S3 inject end

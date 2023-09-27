@@ -21,7 +21,7 @@ import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
-import org.apache.kafka.common.metadata.BrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
@@ -34,7 +34,7 @@ import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
-import org.apache.kafka.common.metadata.RemoveBrokerWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
@@ -319,11 +319,11 @@ public final class MetadataDelta {
             case ASSIGNED_STREAM_ID_RECORD:
                 replay((AssignedStreamIdRecord) record);
                 break;
-            case BROKER_WALMETADATA_RECORD:
-                replay((BrokerWALMetadataRecord) record);
+            case NODE_WALMETADATA_RECORD:
+                replay((NodeWALMetadataRecord) record);
                 break;
-            case REMOVE_BROKER_WALMETADATA_RECORD:
-                replay((RemoveBrokerWALMetadataRecord) record);
+            case REMOVE_NODE_WALMETADATA_RECORD:
+                replay((RemoveNodeWALMetadataRecord) record);
                 break;
             case KVRECORD:
                 replay((KVRecord) record);
@@ -457,11 +457,11 @@ public final class MetadataDelta {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(BrokerWALMetadataRecord record) {
+    public void replay(NodeWALMetadataRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(RemoveBrokerWALMetadataRecord record) {
+    public void replay(RemoveNodeWALMetadataRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
