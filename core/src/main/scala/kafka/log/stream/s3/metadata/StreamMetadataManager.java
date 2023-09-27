@@ -180,6 +180,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         endOffset = endOffset == NOOP_OFFSET ? streamEndOffset : endOffset;
         if (endOffset > streamEndOffset) {
             // lag behind, need to wait for cache catch up
+            LOGGER.warn("[FetchObjects]: pending request, stream: {}, startOffset: {}, endOffset: {}, streamEndOffset: {}, limit: {}",
+                    streamId, startOffset, endOffset, streamEndOffset, limit);
             return pendingFetch(streamId, startOffset, endOffset, limit);
         }
         long finalEndOffset = endOffset;
@@ -214,8 +216,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                 k -> new TreeMap<>());
         List<GetObjectsTask> getObjectsTasks = tasks.computeIfAbsent(task.endOffset, k -> new ArrayList<>());
         getObjectsTasks.add(task);
-        LOGGER.warn("[PendingFetch]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and pending fetch", streamId, startOffset, endOffset,
-                limit);
         return task.cf;
     }
 

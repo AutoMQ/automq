@@ -103,12 +103,12 @@ class ElasticLogManager(val client: Client) extends Logging {
     segment
   }
 
+  def startup(): Unit = {
+    client.start()
+  }
+
   def shutdownNow(): Unit = {
-    client match {
-      case alwaysSuccessClient: AlwaysSuccessClient =>
-        alwaysSuccessClient.shutdownNow()
-      case _ =>
-    }
+    client.shutdown()
   }
 
 }
@@ -139,6 +139,7 @@ object ElasticLogManager {
     context.brokerServer = broker
     context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
+    INSTANCE.foreach(_.startup())
     true
   }
 
