@@ -357,14 +357,14 @@ class BrokerMetadataListener(
       debug(s"Publishing new metadata delta $delta at offset ${_image.highestOffsetAndEpoch().offset}.")
     }
 
-    // This publish call is done with its own try-catch and fault handler
-    publisher.publish(delta, _image)
-
     // Kafka on S3 inject start
 
     _streamMetadataListener.foreach(_.onChange(delta, _image))
 
     // Kafka on S3 inject end
+
+    // This publish call is done with its own try-catch and fault handler
+    publisher.publish(delta, _image)
 
     // Update the metrics since the publisher handled the lastest image
     brokerMetrics.updateLastAppliedImageProvenance(_image.provenance())
