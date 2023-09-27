@@ -30,7 +30,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 public class S3WALObject implements Comparable<S3WALObject> {
 
     private final long objectId;
-    private final int brokerId;
+    private final int nodeId;
     private final Map<Long/*streamId*/, StreamOffsetRange> streamOffsetRanges;
 
     /**
@@ -43,14 +43,14 @@ public class S3WALObject implements Comparable<S3WALObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3WALObject(long objectId, int brokerId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
-        this(objectId, brokerId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
+    public S3WALObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
+        this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3WALObject(long objectId, int brokerId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3WALObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
-        this.brokerId = brokerId;
+        this.nodeId = nodeId;
         this.streamOffsetRanges = streamOffsetRanges;
         this.dataTimeInMs = dataTimeInMs;
     }
@@ -70,7 +70,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new WALObjectRecord()
             .setObjectId(objectId)
-            .setBrokerId(brokerId)
+            .setNodeId(nodeId)
             .setOrderId(orderId)
             .setDataTimeInMs(dataTimeInMs)
             .setStreamsIndex(
@@ -86,13 +86,13 @@ public class S3WALObject implements Comparable<S3WALObject> {
             .stream()
             .collect(Collectors.toMap(index -> index.streamId(),
                 index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
-        S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.brokerId(),
+        S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.nodeId(),
             offsetRanges, record.orderId(), record.dataTimeInMs());
         return s3WalObject;
     }
 
-    public Integer brokerId() {
-        return brokerId;
+    public Integer nodeId() {
+        return nodeId;
     }
 
     public Long objectId() {
@@ -133,7 +133,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
         return "S3WALObject{" +
             "objectId=" + objectId +
             ", orderId=" + orderId +
-            ", brokerId=" + brokerId +
+            ", nodeId=" + nodeId +
             ", streamOffsetRanges=" + streamOffsetRanges +
             ", dataTimeInMs=" + dataTimeInMs +
             '}';

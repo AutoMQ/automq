@@ -51,10 +51,10 @@
       "about": "The end offset of the range"
     },
     {
-      "name": "BrokerId",
+      "name": "NodeId",
       "type": "int32",
       "versions": "0+",
-      "about": "The Broker which created this range"
+      "about": "The Node which created this range"
     }
   ]
 }

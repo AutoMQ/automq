@@ -15,18 +15,13 @@
  * limitations under the License.
  */
 
-package kafka.log.streamaspect.client.redis;
+package org.apache.kafka.common.errors.s3;
 
-import kafka.log.streamaspect.ElasticRedisClient;
-import com.automq.stream.api.Client;
-import kafka.log.streamaspect.client.Context;
+import org.apache.kafka.common.errors.ApiException;
 
-public class ClientFactory {
-    public static final String REDIS_ENDPOINT_PREFIX = "redis://";
+public class NodeEpochExpiredException extends ApiException {
 
-    public static Client get(Context context) {
-        String endpoint = context.config.elasticStreamEndpoint();
-        return new ElasticRedisClient(endpoint.substring(REDIS_ENDPOINT_PREFIX.length()));
+    public NodeEpochExpiredException(String message) {
+        super(message);
     }
-
 }

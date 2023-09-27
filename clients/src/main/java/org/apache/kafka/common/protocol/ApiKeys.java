@@ -121,9 +121,9 @@ public enum ApiKeys {
     COMMIT_WALOBJECT(ApiMessageType.COMMIT_WALOBJECT, false, true),
     COMMIT_STREAM_OBJECT(ApiMessageType.COMMIT_STREAM_OBJECT, false, true),
     GET_OPENING_STREAMS(ApiMessageType.GET_OPENING_STREAMS, false, true),
-    GET_KV(ApiMessageType.GET_KV, false, true),
-    PUT_KV(ApiMessageType.PUT_KV, false, true),
-    DELETE_KV(ApiMessageType.DELETE_KV, false, true);
+    GET_KVS(ApiMessageType.GET_KVS, false, true),
+    PUT_KVS(ApiMessageType.PUT_KVS, false, true),
+    DELETE_KVS(ApiMessageType.DELETE_KVS, false, true);
     // Kafka on S3 inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =

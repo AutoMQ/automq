@@ -18,25 +18,38 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class PutKVRequest extends AbstractRequest {
-    public static class Builder extends AbstractRequest.Builder<PutKVRequest> {
+public class DeleteKVsRequest extends AbstractRequest {
+    public static class Builder extends AbstractRequest.Builder<DeleteKVsRequest> {
 
-        private final PutKVRequestData data;
-        public Builder(PutKVRequestData data) {
-            super(ApiKeys.PUT_KV);
+        private final DeleteKVsRequestData data;
+        public Builder(DeleteKVsRequestData data) {
+            super(ApiKeys.DELETE_KVS);
             this.data = data;
         }
 
+        public Builder addSubRequest(DeleteKVsRequestData.DeleteKVRequest request) {
+            List<DeleteKVRequest> requests = data.deleteKVRequests();
+            if (requests == null) {
+                requests = new ArrayList<>();
+                data.setDeleteKVRequests(requests);
+            }
+            requests.add(request);
+            return this;
+        }
+
         @Override
-        public PutKVRequest build(short version) {
-            return new PutKVRequest(data, version);
+        public DeleteKVsRequest build(short version) {
+            return new DeleteKVsRequest(data, version);
         }
 
         @Override
@@ -45,29 +58,29 @@ public class PutKVRequest extends AbstractRequest {
         }
     }
 
-    private final PutKVRequestData data;
+    private final DeleteKVsRequestData data;
 
-    public PutKVRequest(PutKVRequestData data, short version) {
-        super(ApiKeys.PUT_KV, version);
+    public DeleteKVsRequest(DeleteKVsRequestData data, short version) {
+        super(ApiKeys.DELETE_KVS, version);
         this.data = data;
     }
 
     @Override
-    public PutKVResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public DeleteKVsResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        PutKVResponseData response = new PutKVResponseData()
+        DeleteKVsResponseData response = new DeleteKVsResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new PutKVResponse(response);
+        return new DeleteKVsResponse(response);
     }
 
     @Override
-    public PutKVRequestData data() {
+    public DeleteKVsRequestData data() {
         return data;
     }
 
-    public static PutKVRequest parse(ByteBuffer buffer, short version) {
-        return new PutKVRequest(new PutKVRequestData(
+    public static DeleteKVsRequest parse(ByteBuffer buffer, short version) {
+        return new DeleteKVsRequest(new DeleteKVsRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
 }

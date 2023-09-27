@@ -17,6 +17,8 @@
 
 package com.automq.stream.api;
 
+import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.Value;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -25,26 +27,33 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface KVClient {
     /**
-     * Put key value.
+     * Put key value if key not exist, return current key value after putting.
      *
-     * @param keyValues {@link KeyValue} list.
-     * @return async put result.
+     * @param keyValue {@link KeyValue} k-v pair
+     * @return async put result. {@link Value} current value after putting.
      */
-    CompletableFuture<Void> putKV(List<KeyValue> keyValues);
+    CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue);
+
+    /**
+     * Put key value, overwrite if key exist, return current key value after putting.
+     * @param keyValue {@link KeyValue} k-v pair
+     * @return async put result. {@link KeyValue} current value after putting.
+     */
+    CompletableFuture<Value> putKV(KeyValue keyValue);
 
     /**
      * Get value by key.
      *
-     * @param keys key list.
-     * @return {@link KeyValue} list.
+     * @param key key.
+     * @return async get result. {@link KeyValue} k-v pair, null if key not exist.
      */
-    CompletableFuture<List<KeyValue>> getKV(List<String> keys);
+    CompletableFuture<Value> getKV(Key key);
 
     /**
-     * Delete key value by key.
+     * Delete key value by key. If key not exist, return null.
      *
-     * @param keys key list.
-     * @return async delete result.
+     * @param key key.
+     * @return async delete result. {@link Value} deleted value, null if key not exist.
      */
-    CompletableFuture<Void> delKV(List<String> keys);
+    CompletableFuture<Value> delKV(Key key);
 }

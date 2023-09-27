@@ -14,35 +14,23 @@
 // limitations under the License.
 
 {
-  "apiKey": 510,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "PutKVRequest",
+  "apiKey": 513,
+  "type": "metadata",
+  "name": "NodeWALMetadataRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "KeyValues",
-      "type": "[]KeyValue",
+      "name": "NodeId",
+      "type": "int32",
       "versions": "0+",
-      "about": "Key-values",
-      "fields": [
-        {
-          "name": "Key",
-          "type": "string",
-          "versions": "0+",
-          "about": "Key"
-        },
-        {
-          "name": "Value",
-          "type": "bytes",
-          "versions": "0+",
-          "about": "Value"
-        }
-      ]
+      "about": "The node id."
+    },
+    {
+      "name": "NodeEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "about": "The node epoch."
     }
   ]
 }

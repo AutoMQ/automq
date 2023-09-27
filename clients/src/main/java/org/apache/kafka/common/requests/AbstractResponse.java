@@ -33,13 +33,13 @@ import org.apache.kafka.common.requests.s3.CloseStreamsResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.CommitWALObjectResponse;
 import org.apache.kafka.common.requests.s3.CreateStreamsResponse;
-import org.apache.kafka.common.requests.s3.DeleteKVResponse;
+import org.apache.kafka.common.requests.s3.DeleteKVsResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamsResponse;
-import org.apache.kafka.common.requests.s3.GetKVResponse;
+import org.apache.kafka.common.requests.s3.GetKVsResponse;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
-import org.apache.kafka.common.requests.s3.PutKVResponse;
+import org.apache.kafka.common.requests.s3.PutKVsResponse;
 import org.apache.kafka.common.requests.s3.TrimStreamsResponse;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
@@ -280,12 +280,12 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return CommitWALObjectResponse.parse(responseBuffer, version);
             case GET_OPENING_STREAMS:
                 return GetOpeningStreamsResponse.parse(responseBuffer, version);
-            case GET_KV:
-                return GetKVResponse.parse(responseBuffer, version);
-            case PUT_KV:
-                return PutKVResponse.parse(responseBuffer, version);
-            case DELETE_KV:
-                return DeleteKVResponse.parse(responseBuffer, version);
+            case GET_KVS:
+                return GetKVsResponse.parse(responseBuffer, version);
+            case PUT_KVS:
+                return PutKVsResponse.parse(responseBuffer, version);
+            case DELETE_KVS:
+                return DeleteKVsResponse.parse(responseBuffer, version);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +

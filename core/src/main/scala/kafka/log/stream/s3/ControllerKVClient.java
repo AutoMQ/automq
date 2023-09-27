@@ -19,32 +19,32 @@ package kafka.log.stream.s3;
 
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.KeyValue;
+import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.Value;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
+import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
-import org.apache.kafka.common.message.DeleteKVRequestData;
-import org.apache.kafka.common.message.DeleteKVResponseData;
-import org.apache.kafka.common.message.GetKVRequestData;
-import org.apache.kafka.common.message.GetKVResponseData;
-import org.apache.kafka.common.message.PutKVRequestData;
-import org.apache.kafka.common.message.PutKVResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
+import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
+import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsRequestData.PutKVRequest;
+import org.apache.kafka.common.message.PutKVsResponseData.PutKVResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
-import org.apache.kafka.common.requests.s3.DeleteKVRequest;
-import org.apache.kafka.common.requests.s3.DeleteKVResponse;
-import org.apache.kafka.common.requests.s3.GetKVRequest;
-import org.apache.kafka.common.requests.s3.GetKVResponse;
-import org.apache.kafka.common.requests.s3.PutKVRequest;
-import org.apache.kafka.common.requests.s3.PutKVResponse;
+import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
+import org.apache.kafka.common.requests.s3.GetKVsRequest;
+import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.ByteBuffer;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 public class ControllerKVClient implements KVClient {
 
@@ -56,34 +56,42 @@ public class ControllerKVClient implements KVClient {
     }
 
     @Override
-    public CompletableFuture<Void> putKV(List<KeyValue> list) {
-        LOGGER.trace("[ControllerKVClient]: Put KV: {}", list);
-        PutKVRequestData request = new PutKVRequestData()
-            .setKeyValues(list.stream().map(kv -> new PutKVRequestData.KeyValue()
-                .setKey(kv.key())
-                .setValue(kv.value().array())
-            ).collect(Collectors.toList()));
-        WrapRequest req = new WrapRequest() {
+    public CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue) {
+        LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}", keyValue);
+        PutKVRequest request = new PutKVRequest()
+            .setKey(keyValue.key().get())
+            .setValue(keyValue.value().get().array());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                PutKVsRequest.Builder realBuilder = (PutKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
             @Override
             public ApiKeys apiKey() {
-                return ApiKeys.PUT_KV;
+                return ApiKeys.PUT_KVS;
             }
 
             @Override
             public Builder toRequestBuilder() {
-                return new PutKVRequest.Builder(request);
+                return new PutKVsRequest.Builder(
+                    new PutKVsRequestData()
+                ).addSubRequest(request);
             }
         };
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<PutKVResponse, Void> task = new RequestTask<PutKVResponse, Void>(req, future, response -> {
-            PutKVResponseData resp = response.data();
-            Errors code = Errors.forCode(resp.errorCode());
+        CompletableFuture<Value> future = new CompletableFuture<>();
+        RequestTask<PutKVResponse, Value> task = new RequestTask<PutKVResponse, Value>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", list, resp);
-                    return ResponseHandleResult.withSuccess(null);
+                    LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}, result: {}", keyValue, response);
+                    return ResponseHandleResult.withSuccess(Value.of(response.value()));
+                case KEY_EXIST:
+                    LOGGER.warn("[ControllerKVClient]: Failed to Put KV if absent: {}, code: {}, key already exist", keyValue, code);
+                    return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 default:
-                    LOGGER.error("[ControllerKVClient]: Failed to Put KV: {}, code: {}, retry later", list, code);
+                    LOGGER.error("[ControllerKVClient]: Failed to Put KV if absent: {}, code: {}, retry later", keyValue, code);
                     return ResponseHandleResult.withRetry();
             }
         });
@@ -92,35 +100,81 @@ public class ControllerKVClient implements KVClient {
     }
 
     @Override
-    public CompletableFuture<List<KeyValue>> getKV(List<String> list) {
-        LOGGER.trace("[ControllerKVClient]: Get KV: {}", list);
-        GetKVRequestData request = new GetKVRequestData()
-            .setKeys(list);
-        WrapRequest req = new WrapRequest() {
+    public CompletableFuture<Value> putKV(KeyValue keyValue) {
+        LOGGER.trace("[ControllerKVClient]: Put KV: {}", keyValue);
+        PutKVRequest request = new PutKVRequest()
+            .setKey(keyValue.key().get())
+            .setValue(keyValue.value().get().array())
+            .setOverwrite(true);
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                PutKVsRequest.Builder realBuilder = (PutKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
             @Override
             public ApiKeys apiKey() {
-                return ApiKeys.GET_KV;
+                return ApiKeys.PUT_KVS;
             }
 
             @Override
             public Builder toRequestBuilder() {
-                return new GetKVRequest.Builder(request);
+                return new PutKVsRequest.Builder(
+                    new PutKVsRequestData()
+                ).addSubRequest(request);
             }
         };
-        CompletableFuture<List<KeyValue>> future = new CompletableFuture<>();
-        RequestTask<GetKVResponse, List<KeyValue>> task = new RequestTask<>(req, future, response -> {
-            GetKVResponseData resp = response.data();
-            Errors code = Errors.forCode(resp.errorCode());
+        CompletableFuture<Value> future = new CompletableFuture<>();
+        RequestTask<PutKVResponse, Value> task = new RequestTask<PutKVResponse, Value>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    List<KeyValue> keyValues = resp.keyValues()
-                        .stream()
-                        .map(kv -> KeyValue.of(kv.key(), kv.value() != null ? ByteBuffer.wrap(kv.value()) : null))
-                        .collect(Collectors.toList());
-                    LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", list, keyValues);
-                    return ResponseHandleResult.withSuccess(keyValues);
+                    LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", keyValue, response);
+                    return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 default:
-                    LOGGER.error("[ControllerKVClient]: Failed to Get KV: {}, code: {}, retry later", list, code);
+                    LOGGER.error("[ControllerKVClient]: Failed to Put KV: {}, code: {}, retry later", keyValue, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return null;
+    }
+
+    @Override
+    public CompletableFuture<Value> getKV(Key key) {
+        LOGGER.trace("[ControllerKVClient]: Get KV: {}", key);
+        GetKVRequest request = new GetKVRequest()
+            .setKey(key.get());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                GetKVsRequest.Builder realBuilder = (GetKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.GET_KVS;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new GetKVsRequest.Builder(
+                    new GetKVsRequestData()
+                ).addSubRequest(request);
+            }
+        };
+        CompletableFuture<Value> future = new CompletableFuture<>();
+        RequestTask<GetKVResponse, Value> task = new RequestTask<>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
+            switch (code) {
+                case NONE:
+                    Value val = Value.of(response.value());
+                    LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", key, response);
+                    return ResponseHandleResult.withSuccess(val);
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Get KV: {}, code: {}, retry later", key, code);
                     return ResponseHandleResult.withRetry();
             }
         });
@@ -129,31 +183,39 @@ public class ControllerKVClient implements KVClient {
     }
 
     @Override
-    public CompletableFuture<Void> delKV(List<String> list) {
-        LOGGER.trace("[ControllerKVClient]: Delete KV: {}", String.join(",", list));
-        DeleteKVRequestData request = new DeleteKVRequestData()
-            .setKeys(list);
-        WrapRequest req = new WrapRequest() {
+    public CompletableFuture<Value> delKV(Key key) {
+        LOGGER.trace("[ControllerKVClient]: Delete KV: {}", key);
+        DeleteKVRequest request = new DeleteKVRequest()
+            .setKey(key.get());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                DeleteKVsRequest.Builder realBuilder = (DeleteKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
             @Override
             public ApiKeys apiKey() {
-                return ApiKeys.DELETE_KV;
+                return ApiKeys.DELETE_KVS;
             }
 
             @Override
             public Builder toRequestBuilder() {
-                return new DeleteKVRequest.Builder(request);
+                return new DeleteKVsRequest.Builder(
+                    new DeleteKVsRequestData()
+                ).addSubRequest(request);
             }
         };
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        RequestTask<DeleteKVResponse, Void> task = new RequestTask<>(req, future, response -> {
-            DeleteKVResponseData resp = response.data();
-            Errors code = Errors.forCode(resp.errorCode());
+
+        CompletableFuture<Value> future = new CompletableFuture<>();
+        RequestTask<DeleteKVResponse, Value> task = new RequestTask<>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", list, resp);
-                    return ResponseHandleResult.withSuccess(null);
+                    LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", key, response);
+                    return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 default:
-                    LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}, retry later", String.join(",", list), code);
+                    LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}, retry later", key, code);
                     return ResponseHandleResult.withRetry();
             }
         });

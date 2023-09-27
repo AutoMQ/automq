@@ -49,17 +49,17 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
      */
     private long endOffset;
     /**
-     * The broker id of the broker that owns the range.
+     * The node id of the node that owns the range.
      */
-    private int brokerId;
+    private int nodeId;
 
-    public RangeMetadata(long streamId, long epoch, int rangeIndex, long startOffset, long endOffset, int brokerId) {
+    public RangeMetadata(long streamId, long epoch, int rangeIndex, long startOffset, long endOffset, int nodeId) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.rangeIndex = rangeIndex;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
-        this.brokerId = brokerId;
+        this.nodeId = nodeId;
     }
 
     @Override
@@ -83,8 +83,8 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         return endOffset;
     }
 
-    public int brokerId() {
-        return brokerId;
+    public int nodeId() {
+        return nodeId;
     }
 
     public void setEndOffset(long endOffset) {
@@ -95,7 +95,7 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         return new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
             .setEpoch(epoch)
-            .setBrokerId(brokerId)
+            .setNodeId(nodeId)
             .setRangeIndex(rangeIndex)
             .setStartOffset(startOffset)
             .setEndOffset(endOffset), (short) 0);
@@ -104,7 +104,7 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
     public static RangeMetadata of(RangeRecord record) {
         RangeMetadata rangeMetadata = new RangeMetadata(
             record.streamId(), record.epoch(), record.rangeIndex(),
-            record.startOffset(), record.endOffset(), record.brokerId()
+            record.startOffset(), record.endOffset(), record.nodeId()
         );
         return rangeMetadata;
     }
@@ -119,11 +119,11 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         }
         RangeMetadata that = (RangeMetadata) o;
         return streamId == that.streamId && epoch == that.epoch && rangeIndex == that.rangeIndex && startOffset == that.startOffset
-            && endOffset == that.endOffset && brokerId == that.brokerId;
+            && endOffset == that.endOffset && nodeId == that.nodeId;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, epoch, rangeIndex, startOffset, endOffset, brokerId);
+        return Objects.hash(streamId, epoch, rangeIndex, startOffset, endOffset, nodeId);
     }
 }
