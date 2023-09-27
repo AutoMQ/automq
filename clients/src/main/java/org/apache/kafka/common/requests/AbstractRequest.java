@@ -39,7 +39,6 @@ import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
-import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
