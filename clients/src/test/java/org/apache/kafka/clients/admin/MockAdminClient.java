@@ -326,6 +326,22 @@ public class MockAdminClient extends AdminClient {
         return new DescribeClusterResult(nodesFuture, controllerFuture, brokerIdFuture, authorizedOperationsFuture);
     }
 
+    // Kafka on S3 inject start
+    @Override
+    synchronized public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
+        KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
+        if (timeoutNextRequests > 0) {
+            nodeIdFuture.completeExceptionally(new TimeoutException());
+            --timeoutNextRequests;
+            return new GetNextNodeIdResult(nodeIdFuture);
+        }
+
+        int maxNodeId = Math.max(controller.id(), brokers.stream().mapToInt(Node::id).max().orElse(0));
+        nodeIdFuture.complete(maxNodeId + 1);
+        return new GetNextNodeIdResult(nodeIdFuture);
+    }
+    // Kafka on S3 inject end
+
     @Override
     synchronized public CreateTopicsResult createTopics(Collection<NewTopic> newTopics, CreateTopicsOptions options) {
         Map<String, KafkaFuture<CreateTopicsResult.TopicMetadataAndConfig>> createTopicResult = new HashMap<>();

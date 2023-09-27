@@ -123,7 +123,8 @@ public enum ApiKeys {
     GET_OPENING_STREAMS(ApiMessageType.GET_OPENING_STREAMS, false, true),
     GET_KVS(ApiMessageType.GET_KVS, false, true),
     PUT_KVS(ApiMessageType.PUT_KVS, false, true),
-    DELETE_KVS(ApiMessageType.DELETE_KVS, false, true);
+    DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
+    GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true);
     // Kafka on S3 inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =

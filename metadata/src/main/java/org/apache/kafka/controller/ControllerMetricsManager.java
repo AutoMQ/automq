@@ -164,6 +164,7 @@ final class ControllerMetricsManager {
             case ADVANCE_RANGE_RECORD:
             case KVRECORD:
             case REMOVE_KVRECORD:
+            case UPDATE_NEXT_NODE_ID_RECORD:
             // Kafka on S3 inject end
                 // These record types do not affect metrics
                 break;

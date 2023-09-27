@@ -81,6 +81,13 @@ public class ForwardingAdmin implements Admin {
         return delegate.describeCluster(options);
     }
 
+    // Kafka on S3 inject start
+    @Override
+    public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
+        return delegate.getNextNodeId(options);
+    }
+    // Kafka on S3 inject end
+
     @Override
     public DescribeAclsResult describeAcls(AclBindingFilter filter, DescribeAclsOptions options) {
         return delegate.describeAcls(filter, options);

@@ -42,7 +42,7 @@ import org.apache.kafka.common.message._
 import org.apache.kafka.common.protocol.Errors._
 import org.apache.kafka.common.protocol.{ApiKeys, ApiMessage, Errors}
 import org.apache.kafka.common.requests._
-import org.apache.kafka.common.requests.s3.{CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVsRequest, DeleteKVsResponse, DeleteStreamsRequest, DeleteStreamsResponse, GetKVsRequest, GetKVsResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVsRequest, PutKVsResponse, TrimStreamsRequest, TrimStreamsResponse}
+import org.apache.kafka.common.requests.s3.{CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitWALObjectRequest, CommitWALObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVsRequest, DeleteKVsResponse, DeleteStreamsRequest, DeleteStreamsResponse, GetKVsRequest, GetKVsResponse, GetNextNodeIdRequest, GetNextNodeIdResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVsRequest, PutKVsResponse, TrimStreamsRequest, TrimStreamsResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC}
 import org.apache.kafka.common.utils.Time
@@ -123,6 +123,7 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
+        case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
         // Kafka on S3 inject end
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
@@ -634,6 +635,31 @@ class ControllerApis(val requestChannel: RequestChannel,
       }
       requestHelper.sendResponseMaybeThrottle(request,
         requestThrottleMs => createResponseCallback(requestThrottleMs, e))
+    }
+  }
+
+  def handleGetNextNodeId(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val getNextNodeIdRequest = request.body[GetNextNodeIdRequest]
+    authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.getNextNodeId(context, getNextNodeIdRequest.data()).handle[Unit] { (reply, e) =>
+      def createResponseCallback(requestThrottleMs: Int,
+                                 reply: Int,
+                                 e: Throwable): GetNextNodeIdResponse = {
+        if (e != null) {
+          new GetNextNodeIdResponse(new GetNextNodeIdResponseData().
+            setThrottleTimeMs(requestThrottleMs).
+            setErrorCode(Errors.forException(e).code))
+        } else {
+          new GetNextNodeIdResponse(new GetNextNodeIdResponseData().
+            setThrottleTimeMs(requestThrottleMs).
+            setErrorCode(NONE.code).
+            setNodeId(reply))
+        }
+      }
+      requestHelper.sendResponseMaybeThrottle(request,
+        requestThrottleMs => createResponseCallback(requestThrottleMs, reply, e))
     }
   }
 

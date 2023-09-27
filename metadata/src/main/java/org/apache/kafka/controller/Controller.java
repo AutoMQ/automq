@@ -48,6 +48,7 @@ import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -287,6 +288,19 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,
         BrokerRegistrationRequestData request
+    );
+
+    /**
+     * Attempt to get the next available node id.
+     *
+     * @param context       The controller request context.
+     * @param request      The getting next node id request.
+     *
+     * @return             A future yielding the next node id.
+     */
+    CompletableFuture<Integer> getNextNodeId(
+            ControllerRequestContext context,
+            GetNextNodeIdRequestData request
     );
 
     /**

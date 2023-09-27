@@ -140,6 +140,7 @@ import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData.UserName;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.LeaveGroupRequestData.MemberIdentity;
 import org.apache.kafka.common.message.ListGroupsRequestData;
 import org.apache.kafka.common.message.ListGroupsResponseData;
@@ -232,6 +233,8 @@ import org.apache.kafka.common.requests.UnregisterBrokerRequest;
 import org.apache.kafka.common.requests.UnregisterBrokerResponse;
 import org.apache.kafka.common.requests.UpdateFeaturesRequest;
 import org.apache.kafka.common.requests.UpdateFeaturesResponse;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.scram.internals.ScramFormatter;
 import org.apache.kafka.common.security.token.delegation.DelegationToken;
@@ -2075,6 +2078,35 @@ public class KafkaAdminClient extends AdminClient {
         }
         return new HashMap<>(topicFutures);
     }
+
+    // Kafka on S3 inject start
+    @Override
+    public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
+        KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        runnable.call(new Call("getNextNodeId", calcDeadlineMs(now, options.timeoutMs()),
+                new LeastLoadedNodeProvider()) {
+
+            @Override
+            GetNextNodeIdRequest.Builder createRequest(int timeoutMs) {
+                return new GetNextNodeIdRequest.Builder(new GetNextNodeIdRequestData());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                GetNextNodeIdResponse response = (GetNextNodeIdResponse) abstractResponse;
+                nodeIdFuture.complete(response.data.nodeId());
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                nodeIdFuture.completeExceptionally(throwable);
+            }
+        }, now);
+        return new GetNextNodeIdResult(nodeIdFuture);
+    }
+    // Kafka on S3 inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
                                                             Integer authorizedOperations) {

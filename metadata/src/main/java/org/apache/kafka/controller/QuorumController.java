@@ -66,6 +66,7 @@ import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetKVsResponseData.GetKVResponse;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -117,6 +118,7 @@ import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
@@ -238,6 +240,7 @@ public final class QuorumController implements Controller {
         // Kafka on S3 inject start
 
         private S3Config s3Config;
+        private List<String> quorumVoters;
 
         // Kafka on S3 inject end
 
@@ -367,6 +370,11 @@ public final class QuorumController implements Controller {
             return this;
         }
 
+        public Builder setQuorumVoters(List<String> quorumVoters) {
+            this.quorumVoters = quorumVoters;
+            return this;
+        }
+
         // Kafka on S3 inject end
 
         @SuppressWarnings("unchecked")
@@ -420,7 +428,8 @@ public final class QuorumController implements Controller {
                     bootstrapMetadata,
                     maxRecordsPerBatch,
                     zkMigrationEnabled,
-                    s3Config
+                    s3Config,
+                    quorumVoters
                 );
             } catch (Exception e) {
                 Utils.closeQuietly(queue, "event queue");
@@ -1538,6 +1547,9 @@ public final class QuorumController implements Controller {
             case REMOVE_KVRECORD:
                 kvControlManager.replay((RemoveKVRecord) message);
                 break;
+            case UPDATE_NEXT_NODE_ID_RECORD:
+                clusterControl.replay((UpdateNextNodeIdRecord) message);
+                break;
             // Kafka on S3 inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
@@ -1817,7 +1829,8 @@ public final class QuorumController implements Controller {
         BootstrapMetadata bootstrapMetadata,
         int maxRecordsPerBatch,
         boolean zkMigrationEnabled,
-        S3Config s3Config
+        S3Config s3Config,
+        List<String> quorumVoters
     ) {
         this.fatalFaultHandler = fatalFaultHandler;
         this.logContext = logContext;
@@ -1862,6 +1875,9 @@ public final class QuorumController implements Controller {
             setReplicaPlacer(replicaPlacer).
             setFeatureControlManager(featureControl).
             setZkMigrationEnabled(zkMigrationEnabled).
+            // Kafka on S3 inject start
+            setQuorumVoters(quorumVoters).
+            // Kafka on S3 inject end
             build();
         this.producerIdControlManager = new ProducerIdControlManager(clusterControl, snapshotRegistry);
         this.leaderImbalanceCheckIntervalNs = leaderImbalanceCheckIntervalNs;
@@ -2123,6 +2139,15 @@ public final class QuorumController implements Controller {
                     }
                 }
             });
+    }
+
+    @Override
+    public CompletableFuture<Integer> getNextNodeId(
+            ControllerRequestContext context,
+            GetNextNodeIdRequestData request
+    ) {
+        return appendWriteEvent("getNextNodeId", context.deadlineNs(),
+                clusterControl::getNextNodeId);
     }
 
     @Override

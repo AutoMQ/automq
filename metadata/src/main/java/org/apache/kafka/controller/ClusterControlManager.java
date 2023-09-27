@@ -32,6 +32,7 @@ import org.apache.kafka.common.metadata.RegisterBrokerRecord.BrokerEndpoint;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord.BrokerFeature;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
@@ -45,6 +46,7 @@ import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.placement.UsableBroker;
+import org.apache.kafka.raft.RaftConfig;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -63,6 +65,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -85,6 +88,16 @@ public class ClusterControlManager {
         private ReplicaPlacer replicaPlacer = null;
         private FeatureControlManager featureControl = null;
         private boolean zkMigrationEnabled = false;
+
+        // Kafka on S3 inject start
+        private List<String> quorumVoters;
+
+        Builder setQuorumVoters(List<String> quorumVoters) {
+            this.quorumVoters = quorumVoters;
+            return this;
+        }
+
+        // Kafka on S3 inject end
 
         Builder setLogContext(LogContext logContext) {
             this.logContext = logContext;
@@ -149,7 +162,8 @@ public class ClusterControlManager {
                 sessionTimeoutNs,
                 replicaPlacer,
                 featureControl,
-                zkMigrationEnabled
+                zkMigrationEnabled,
+                quorumVoters
             );
         }
     }
@@ -237,6 +251,15 @@ public class ClusterControlManager {
     private final FeatureControlManager featureControl;
 
     private final boolean zkMigrationEnabled;
+    // Kafka on S3 inject start
+    private final int maxControllerId;
+
+    /**
+     * Used to generate the next available node ID. Note that the stored value is the last allocated node ID.
+     * The real next available node id is generally one greater than this value.
+     */
+    private AtomicInteger nextNodeId = new AtomicInteger(-1);
+    // Kafka on S3 inject end
 
     private ClusterControlManager(
         LogContext logContext,
@@ -246,7 +269,8 @@ public class ClusterControlManager {
         long sessionTimeoutNs,
         ReplicaPlacer replicaPlacer,
         FeatureControlManager featureControl,
-        boolean zkMigrationEnabled
+        boolean zkMigrationEnabled,
+        List<String> quorumVoters
     ) {
         this.logContext = logContext;
         this.clusterId = clusterId;
@@ -260,6 +284,9 @@ public class ClusterControlManager {
         this.readyBrokersFuture = Optional.empty();
         this.featureControl = featureControl;
         this.zkMigrationEnabled = zkMigrationEnabled;
+        // Kafka on S3 inject start
+        this.maxControllerId = RaftConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
+        // Kafka on S3 inject end
     }
 
     ReplicaPlacer replicaPlacer() {
@@ -305,6 +332,19 @@ public class ClusterControlManager {
     boolean zkRegistrationAllowed() {
         return zkMigrationEnabled && featureControl.metadataVersion().isMigrationSupported();
     }
+
+    // Kafka on S3 inject start
+    public ControllerResult<Integer> getNextNodeId() {
+        int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
+        int maxNodeId = Math.max(maxBrokerId, maxControllerId);
+        int nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
+        UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
+
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        records.add(new ApiMessageAndVersion(record, (short) 0));
+        return ControllerResult.atomicOf(records, nextId);
+    }
+    // Kafka on S3 inject end
 
     /**
      * Process an incoming broker registration request.
@@ -403,6 +443,10 @@ public class ClusterControlManager {
             return OptionalLong.of(registrationOffset);
         }
         return OptionalLong.empty();
+    }
+
+    public void replay(UpdateNextNodeIdRecord record) {
+        nextNodeId.set(record.nodeId());
     }
 
     public void replay(RegisterBrokerRecord record, long offset) {

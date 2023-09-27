@@ -53,6 +53,7 @@ import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
@@ -400,6 +401,14 @@ public class MockController implements Controller {
     public CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,
         BrokerRegistrationRequestData request
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<Integer> getNextNodeId(
+            ControllerRequestContext context,
+            GetNextNodeIdRequestData request
     ) {
         throw new UnsupportedOperationException();
     }

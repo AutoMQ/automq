@@ -31,18 +31,20 @@ import java.util.stream.Collectors;
  * This class is thread-safe.
  */
 public final class ClusterImage {
-    public static final ClusterImage EMPTY = new ClusterImage(Collections.emptyMap());
+    public static final ClusterImage EMPTY = new ClusterImage(Collections.emptyMap(), -1);
 
     private final Map<Integer, BrokerRegistration> brokers;
     private final Map<Integer, BrokerRegistration> zkBrokers;
+    private final Integer nextNodeId;
 
-    public ClusterImage(Map<Integer, BrokerRegistration> brokers) {
+    public ClusterImage(Map<Integer, BrokerRegistration> brokers, int nextNodeId) {
         this.brokers = Collections.unmodifiableMap(brokers);
         this.zkBrokers = Collections.unmodifiableMap(brokers
             .entrySet()
             .stream()
             .filter(entry -> entry.getValue().isMigratingZkBroker())
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+        this.nextNodeId = nextNodeId;
     }
 
     public boolean isEmpty() {
@@ -51,6 +53,10 @@ public final class ClusterImage {
 
     public Map<Integer, BrokerRegistration> brokers() {
         return brokers;
+    }
+
+    public Integer nextNodeId() {
+        return nextNodeId;
     }
 
     public Map<Integer, BrokerRegistration> zkBrokers() {

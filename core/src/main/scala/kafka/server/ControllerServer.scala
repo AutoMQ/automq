@@ -243,7 +243,8 @@ class ControllerServer(
           setBootstrapMetadata(bootstrapMetadata).
           setFatalFaultHandler(sharedServer.quorumControllerFaultHandler).
           setZkMigrationEnabled(config.migrationEnabled).
-          setS3Config(s3Config)
+          setS3Config(s3Config).
+          setQuorumVoters(config.quorumVoters)
       }
       authorizer match {
         case Some(a: ClusterMetadataAuthorizer) => controllerBuilder.setAuthorizer(a)

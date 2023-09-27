@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutionException
 import kafka.utils.{Exit, Logging}
 import net.sourceforge.argparse4j.ArgumentParsers
 import net.sourceforge.argparse4j.impl.Arguments.store
-import org.apache.kafka.clients.admin.Admin
+import org.apache.kafka.clients.admin.{Admin, GetNextNodeIdOptions}
 import org.apache.kafka.common.errors.UnsupportedVersionException
 import org.apache.kafka.common.utils.Utils
 
@@ -41,7 +41,10 @@ object ClusterTool extends Logging {
         help("Get information about the ID of a cluster.")
       val unregisterParser = subparsers.addParser("unregister").
         help("Unregister a broker.")
-      List(clusterIdParser, unregisterParser).foreach(parser => {
+      // Kafka on S3 inject start
+      val nodeIdsParser = subparsers.addParser("next-node-id")
+        .help("Get next available node id of the cluster.")
+      List(clusterIdParser, unregisterParser, nodeIdsParser).foreach(parser => {
         parser.addArgument("--bootstrap-server", "-b").
           action(store()).
           help("A list of host/port pairs to use for establishing the connection to the kafka cluster.")
@@ -86,6 +89,15 @@ object ClusterTool extends Logging {
             adminClient.close()
           }
           Exit.exit(0)
+        case "next-node-id" =>
+          val adminClient = Admin.create(properties)
+          try {
+            nextNodeIdCommand(System.out, adminClient)
+          } finally {
+            adminClient.close()
+          }
+          // Kafka on S3 inject end
+          Exit.exit(0)
         case _ =>
           throw new RuntimeException(s"Unknown command $command")
       }
@@ -95,6 +107,14 @@ object ClusterTool extends Logging {
         System.exit(1)
     }
   }
+
+  // Kafka on S3 inject start
+  def nextNodeIdCommand(stream: PrintStream,
+                        adminClient: Admin): Unit = {
+    val nodeIdResult = adminClient.getNextNodeId(new GetNextNodeIdOptions())
+    stream.println(s"next node id: ${nodeIdResult.nodeId().get()}")
+  }
+  // Kafka on S3 inject end
 
   def clusterIdCommand(stream: PrintStream,
                        adminClient: Admin): Unit = {
