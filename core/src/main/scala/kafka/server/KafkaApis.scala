@@ -310,6 +310,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LIST_TRANSACTIONS => handleListTransactionsRequest(request)
         case ApiKeys.ALLOCATE_PRODUCER_IDS => handleAllocateProducerIdsRequest(request)
         case ApiKeys.DESCRIBE_QUORUM => forwardToControllerOrFail(request)
+        // Kafka on S3 inject start
+        case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
+        // Kafka on S3 inject end
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {

@@ -48,6 +48,7 @@ import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.metadata.WALObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
@@ -232,6 +233,9 @@ public final class MetadataDelta {
             case REGISTER_BROKER_RECORD:
                 replay((RegisterBrokerRecord) record);
                 break;
+            case UPDATE_NEXT_NODE_ID_RECORD:
+                replay((UpdateNextNodeIdRecord) record);
+                break;
             case UNREGISTER_BROKER_RECORD:
                 replay((UnregisterBrokerRecord) record);
                 break;
@@ -338,6 +342,10 @@ public final class MetadataDelta {
     }
 
     public void replay(RegisterBrokerRecord record) {
+        getOrCreateClusterDelta().replay(record);
+    }
+
+    public void replay(UpdateNextNodeIdRecord record) {
         getOrCreateClusterDelta().replay(record);
     }
 

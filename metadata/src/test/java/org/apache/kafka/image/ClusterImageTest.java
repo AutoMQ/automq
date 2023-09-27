@@ -88,7 +88,7 @@ public class ClusterImageTest {
             Optional.of("arack"),
             false,
             false));
-        IMAGE1 = new ClusterImage(map1);
+        IMAGE1 = new ClusterImage(map1, 0);
 
         DELTA1_RECORDS = new ArrayList<>();
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new UnfenceBrokerRecord().
@@ -123,7 +123,7 @@ public class ClusterImageTest {
             Optional.empty(),
             true,
             false));
-        IMAGE2 = new ClusterImage(map2);
+        IMAGE2 = new ClusterImage(map2, 0);
     }
 
     @Test

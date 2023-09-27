@@ -33,11 +33,13 @@ import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetKVsRequest;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
@@ -342,6 +344,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return PutKVsRequest.parse(buffer, apiVersion);
             case DELETE_KVS:
                 return DeleteKVsRequest.parse(buffer, apiVersion);
+            case GET_NEXT_NODE_ID:
+                return GetNextNodeIdRequest.parse(buffer, apiVersion);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +

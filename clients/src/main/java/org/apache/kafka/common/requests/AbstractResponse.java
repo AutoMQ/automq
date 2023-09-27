@@ -41,6 +41,7 @@ import org.apache.kafka.common.requests.s3.OpenStreamsResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVsResponse;
 import org.apache.kafka.common.requests.s3.TrimStreamsResponse;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
     public static final int DEFAULT_THROTTLE_TIME = 0;
@@ -286,6 +287,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return PutKVsResponse.parse(responseBuffer, version);
             case DELETE_KVS:
                 return DeleteKVsResponse.parse(responseBuffer, version);
+            case GET_NEXT_NODE_ID:
+                return GetNextNodeIdResponse.parse(responseBuffer, version);
             // Kafka on S3 inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +

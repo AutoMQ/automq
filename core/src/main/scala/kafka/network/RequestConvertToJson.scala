@@ -96,6 +96,7 @@ object RequestConvertToJson {
       case req: DescribeProducersRequest => DescribeProducersRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeTransactionsRequest => DescribeTransactionsRequestDataJsonConverter.write(req.data, request.version)
       case req: ListTransactionsRequest => ListTransactionsRequestDataJsonConverter.write(req.data, request.version)
+      // Kafka on S3 inject start
       case req: CloseStreamsRequest => CloseStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: CommitStreamObjectRequest => CommitStreamObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: CommitWALObjectRequest => CommitWALObjectRequestDataJsonConverter.write(req.data, request.version)
@@ -107,6 +108,8 @@ object RequestConvertToJson {
       case req: OpenStreamsRequest => OpenStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: PrepareS3ObjectRequest => PrepareS3ObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: PutKVsRequest => PutKVsRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
+      // Kafka on S3 inject end
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.");
     }
@@ -182,6 +185,7 @@ object RequestConvertToJson {
       case res: DescribeProducersResponse => DescribeProducersResponseDataJsonConverter.write(res.data, version)
       case res: DescribeTransactionsResponse => DescribeTransactionsResponseDataJsonConverter.write(res.data, version)
       case res: ListTransactionsResponse => ListTransactionsResponseDataJsonConverter.write(res.data, version)
+      // Kafka on S3 inject start
       case res: CloseStreamsResponse => CloseStreamsResponseDataJsonConverter.write(res.data, version)
       case res: CommitStreamObjectResponse => CommitStreamObjectResponseDataJsonConverter.write(res.data, version)
       case res: CommitWALObjectResponse => CommitWALObjectResponseDataJsonConverter.write(res.data, version)
@@ -193,6 +197,8 @@ object RequestConvertToJson {
       case res: OpenStreamsResponse => OpenStreamsResponseDataJsonConverter.write(res.data, version)
       case res: PrepareS3ObjectResponse => PrepareS3ObjectResponseDataJsonConverter.write(res.data, version)
       case res: PutKVsResponse => PutKVsResponseDataJsonConverter.write(res.data, version)
+      case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
+      // Kafka on S3 inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.");
     }

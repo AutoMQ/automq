@@ -22,6 +22,7 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
 public final class ClusterDelta {
     private final ClusterImage image;
     private final HashMap<Integer, Optional<BrokerRegistration>> changedBrokers = new HashMap<>();
+    private Integer nextNodeId = -1;
 
     public ClusterDelta(ClusterImage image) {
         this.image = image;
@@ -88,6 +90,10 @@ public final class ClusterDelta {
 
     public void replay(UnregisterBrokerRecord record) {
         changedBrokers.put(record.brokerId(), Optional.empty());
+    }
+
+    public void replay(UpdateNextNodeIdRecord record) {
+        nextNodeId = record.nodeId();
     }
 
     private BrokerRegistration getBrokerOrThrow(int brokerId, long epoch, String action) {
@@ -160,13 +166,15 @@ public final class ClusterDelta {
                 }
             }
         }
-        return new ClusterImage(newBrokers);
+        Integer nextNodeId = this.nextNodeId >= 0 ? this.nextNodeId : image.nextNodeId();
+        return new ClusterImage(newBrokers, nextNodeId);
     }
 
     @Override
     public String toString() {
         return "ClusterDelta(" +
             "changedBrokers=" + changedBrokers +
+            ", nextNodeId=" + nextNodeId +
             ')';
     }
 }
