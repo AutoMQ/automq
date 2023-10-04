@@ -23,8 +23,7 @@ Compared to Apache Kafka, AutoMQ for Apache Kafka offers the following advantage
 ## Quick Start
 ### Build and Run
 #### Requirements
-- Linux kernel 5.19+
-- JDK 11/17
+- JDK 17
 - Scala 2.13
 
 AutoMQ for Apache Kafka requires elastic streams for data storage. If you want to set them up locally, you can initiate them using docker-compose in [Elastic Stream](https://github.com/AutoMQ/elastic-stream/tree/develop/dist/docker-compose), bringing about following requirements:
