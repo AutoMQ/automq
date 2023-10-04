@@ -87,7 +87,7 @@ public class DefaultS3Operator implements S3Operator {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
 
-    public DefaultS3Operator(String endpoint, String region, String bucket) {
+    public DefaultS3Operator(String endpoint, String region, String bucket, String accessKey, String secretKey) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
@@ -95,7 +95,7 @@ public class DefaultS3Operator implements S3Operator {
         builder.credentialsProvider(AwsCredentialsProviderChain.builder()
                 .reuseLastProviderEnabled(true)
                 .credentialsProviders(
-                        () -> AwsBasicCredentials.create(System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME)),
+                        () -> AwsBasicCredentials.create(accessKey, secretKey),
                         InstanceProfileCredentialsProvider.create(),
                         AnonymousCredentialsProvider.create()
                 ).build()

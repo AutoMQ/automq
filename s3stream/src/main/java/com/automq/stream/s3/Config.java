@@ -23,6 +23,8 @@ public class Config {
     private String s3Endpoint;
     private String s3Region;
     private String s3Bucket;
+    private String s3AccessKey;
+    private String s3SecretKey;
     private String s3WALPath = "/tmp/s3stream_wal";
     private long s3WALCacheSize = 200 * 1024 * 1024;
     private long s3WALCapacity = 1024L * 1024 * 1024;
@@ -193,6 +195,14 @@ public class Config {
 
     public boolean s3ObjectLogEnable() {
         return s3ObjectLogEnable;
+    }
+
+    public String s3AccessKey() {
+        return s3AccessKey;
+    }
+
+    public String s3SecretKey() {
+        return s3SecretKey;
     }
 
     public Config brokerId(int brokerId) {
@@ -367,6 +377,16 @@ public class Config {
 
     public Config s3ObjectLogEnable(boolean s3ObjectLogEnable) {
         this.s3ObjectLogEnable = s3ObjectLogEnable;
+        return this;
+    }
+
+    public Config s3AccessKey(String s3AccessKey) {
+        this.s3AccessKey = s3AccessKey;
+        return this;
+    }
+
+    public Config s3SecretKey(String s3SecretKey) {
+        this.s3SecretKey = s3SecretKey;
         return this;
     }
 }
