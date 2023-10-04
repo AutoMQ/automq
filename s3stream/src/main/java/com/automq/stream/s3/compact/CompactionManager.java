@@ -70,7 +70,8 @@ public class CompactionManager {
     private final TokenBucketThrottle networkInThrottle;
 
     public CompactionManager(Config config, ObjectManager objectManager) {
-        this(config, objectManager, new DefaultS3Operator(config.s3Endpont(), config.s3Region(), config.s3Bucket()));
+        this(config, objectManager, new DefaultS3Operator(config.s3Endpont(), config.s3Region(),
+            config.s3Bucket(), config.s3AccessKey(), config.s3SecretKey()));
     }
 
     public CompactionManager(Config config, ObjectManager objectManager, S3Operator s3Operator) {
