@@ -64,7 +64,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, TimeUnit}
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
@@ -222,9 +222,6 @@ class ReplicaManager(val config: KafkaConfig,
       purgatoryName = "ElectLeader", brokerId = config.brokerId))
   // This threadPool is used to separate slow fetches from quick fetches.
   val slowFetchExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("slow-fetch-executor-%d", true))
-  // This threadPool is used to handle partition open/close in case of throttling metadata replay.
-  val partitionOpenCloseExecutors = new ThreadPoolExecutor(4, 32, 30, TimeUnit.SECONDS, new util.concurrent.LinkedBlockingQueue[Runnable](32),
-    ThreadUtils.createThreadFactory("partition-open-close-executor-%d", true))
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
@@ -289,6 +286,11 @@ class ReplicaManager(val config: KafkaConfig,
   val isrExpandRate: Meter = newMeter("IsrExpandsPerSec", "expands", TimeUnit.SECONDS)
   val isrShrinkRate: Meter = newMeter("IsrShrinksPerSec", "shrinks", TimeUnit.SECONDS)
   val failedIsrUpdatesRate: Meter = newMeter("FailedIsrUpdatesPerSec", "failedUpdates", TimeUnit.SECONDS)
+
+  // elastic stream inject start
+  private val partitionOpExecutor = ThreadUtils.newCachedThread(256, "partition_op_%d", true)
+  private val partitionOpMap = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
+  // elastic stream inject end
 
   def underReplicatedPartitionCount: Int = leaderPartitionsIterator.count(_.isUnderReplicated)
 
@@ -2036,7 +2038,6 @@ class ReplicaManager(val config: KafkaConfig,
     removeAllTopicMetrics()
 
     slowFetchExecutors.shutdown()
-    partitionOpenCloseExecutors.shutdown()
 
     awaitAllPartitionShutdown()
 
@@ -2193,45 +2194,62 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
+  def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
+    asyncApplyDelta(delta, newImage).get()
+  }
+
+  // elastic stream inject start
   /**
    * Apply a KRaft topic change delta.
    *
    * @param delta           The delta to apply.
    * @param newImage        The new metadata image.
    */
-  def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
+
+    val opCfList = new util.LinkedList[CompletableFuture[Void]]()
+
+    val start = System.currentTimeMillis()
 
     replicaStateChangeLock.synchronized {
       // Handle deleted partitions. We need to do this first because we might subsequently
       // create new partitions with the same names as the ones we are deleting here.
-      // elastic stream inject start
       if (!localChanges.deletes.isEmpty) {
         val deletes = localChanges.deletes.asScala.map(tp => (tp, true)).toMap
 
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
-          stopPartitions(deletes).forKeyValue { (topicPartition, e) =>
-            if (e.isInstanceOf[KafkaStorageException]) {
-              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                  "the local replica for the partition is in an offline log directory")
-            } else {
-              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                  s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
-            }
-          }
+          deletes.forKeyValue((tp, _) => {
+            val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
+            val opCf = new CompletableFuture[Void]()
+            opCfList.add(opCf)
+            partitionOpMap.put(tp, opCf)
+            prevOp.whenComplete((_, _) => {
+              partitionOpExecutor.execute(() => {
+                try {
+                  val delete = mutable.Map[TopicPartition, Boolean]()
+                  delete += (tp -> true)
+                  stopPartitions(delete).forKeyValue { (topicPartition, e) =>
+                    if (e.isInstanceOf[KafkaStorageException]) {
+                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                        "the local replica for the partition is in an offline log directory")
+                    } else {
+                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                        s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
+                    }
+                  }
+                } finally {
+                  opCf.complete(null)
+                  partitionOpMap.remove(tp, opCf)
+                }
+              })
+            })
+          })
         }
 
-        if (ElasticLogManager.enabled()) {
-          partitionOpenCloseExecutors.submit(new Runnable {
-            override def run(): Unit = {
-              doPartitionDeletion()
-            }
-          })
-        } else {
-          doPartitionDeletion()
-        }
+        doPartitionDeletion()
 
       }
 
@@ -2243,7 +2261,27 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionLeadingOrFollowing(onlyLeaderChange: Boolean): Unit = {
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
           if (!localChanges.leaders.isEmpty) {
-            applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala)
+            localChanges.leaders.forEach((tp, info) => {
+              val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
+              val opCf = new CompletableFuture[Void]()
+              opCfList.add(opCf)
+              partitionOpMap.put(tp, opCf)
+              prevOp.whenComplete((_, _) => {
+                partitionOpExecutor.execute(() => {
+                  try {
+                    val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
+                    leader += (tp -> info)
+                    applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, leader)
+                  } catch {
+                    case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
+                  } finally {
+                    opCf.complete(null)
+                    partitionOpMap.remove(tp, opCf)
+                  }
+                })
+              })
+            })
+
           }
           // skip becoming follower or adding log dir
           if (!onlyLeaderChange) {
@@ -2266,9 +2304,15 @@ class ReplicaManager(val config: KafkaConfig,
         }
 
       }
-      // elastic stream inject end
     }
+    CompletableFuture.allOf(opCfList.asScala.toArray: _*).whenComplete((nil, ex) => {
+      if (!opCfList.isEmpty) {
+        val elapsedMs = System.currentTimeMillis() - start
+        info(s"open ${localChanges.leaders.size()} / close ${localChanges.deletes.size()} partitions cost ${elapsedMs}ms")
+      }
+    })
   }
+  // elastic stream inject end
 
   private def applyLocalLeadersDelta(
     changedPartitions: mutable.Set[Partition],

@@ -46,16 +46,22 @@ class ElasticLogManager(val client: Client) extends Logging {
                      maxTransactionTimeoutMs: Int,
                      producerStateManagerConfig: ProducerStateManagerConfig,
                      leaderEpoch: Long): ElasticLog = {
-    elasticLogs.computeIfAbsent(topicPartition, _ => {
-      var elasticLog: ElasticLog = null
-      ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
-        override def run(): Unit = {
-          elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-            numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
-        }
-      }, s"Failed to create elastic log for $topicPartition", this)
-      elasticLog
-    })
+    val log = elasticLogs.get(topicPartition)
+    if (log != null) {
+      return log
+    }
+    var elasticLog: ElasticLog = null
+    // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
+    // operate sequentially. So it's safe without lock
+    ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
+      override def run(): Unit = {
+        // ElasticLog new is a time cost operation.
+        elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+          numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
+      }
+    }, s"Failed to create elastic log for $topicPartition", this)
+    elasticLogs.putIfAbsent(topicPartition, elasticLog)
+    elasticLog
   }
 
   /**

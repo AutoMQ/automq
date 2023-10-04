@@ -17,7 +17,10 @@
 
 package org.apache.kafka.common.utils;
 
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -51,5 +54,18 @@ public class ThreadUtils {
                 return thread;
             }
         };
+    }
+
+    public static ThreadPoolExecutor newCachedThread(int maximumPoolSize, String pattern, boolean daemon) {
+        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(maximumPoolSize, maximumPoolSize,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), createThreadFactory(pattern, daemon));
+        threadPoolExecutor.allowCoreThreadTimeOut(true);
+        return threadPoolExecutor;
+    }
+
+    public static ThreadPoolExecutor newSingleThreadExecutor(String pattern, boolean daemon) {
+        return new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<Runnable>(), createThreadFactory(pattern, daemon));
     }
 }

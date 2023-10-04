@@ -981,6 +981,8 @@ class LogManager(logDirs: Seq[File],
   }
 
   /**
+   * NotThreadSafe: the caller should ensure the same partition should sequentially invoke #getOrCreateLog.
+   *
    * If the log already exists, just return a copy of the existing log
    * Otherwise if isNew=true or if there is no offline log directory, create a log for the given topic and the given partition
    * Otherwise throw KafkaStorageException
@@ -994,7 +996,10 @@ class LogManager(logDirs: Seq[File],
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false, topicId: Option[Uuid], leaderEpoch: Long = 0): UnifiedLog = {
-    logCreationOrDeletionLock synchronized {
+    // elastic stream inject start
+    // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
+    // sequentially operate. So it's safe without lock
+//    logCreationOrDeletionLock synchronized {
       val log = getLog(topicPartition, isFuture).getOrElse {
         val now = time.milliseconds()
 
@@ -1075,7 +1080,8 @@ class LogManager(logDirs: Seq[File],
         }
       }
       log
-    }
+//    }
+    // elastic stream inject end
   }
 
   private[log] def createLogDirectory(logDir: File, logDirName: String): Try[File] = {
