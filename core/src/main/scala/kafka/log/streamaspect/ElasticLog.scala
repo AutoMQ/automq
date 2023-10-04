@@ -92,9 +92,6 @@ class ElasticLog(val metaStream: MetaStream,
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
   private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
 
-  private var modified = false
-
-
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
     if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
@@ -210,8 +207,6 @@ class ElasticLog(val metaStream: MetaStream,
         })
       }
     })
-
-    modified = true
   }
 
   private def appendCallback(startNanos: Long): Unit = {
@@ -288,10 +283,7 @@ class ElasticLog(val metaStream: MetaStream,
 
     maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
       CoreUtils.swallow(persistPartitionMeta(), this)
-      if (modified) {
-        // update log size
-        CoreUtils.swallow(persistLogMeta(), this)
-      }
+      CoreUtils.swallow(persistLogMeta(), this)
       CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
       CoreUtils.swallow(segments.close(), this)
     }
