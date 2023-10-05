@@ -89,9 +89,11 @@ public class LazyStream implements Stream {
     public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
             try {
+                // TODO: 异步
                 this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
                         .epoch(epoch).build()).get();
                 LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                // TODO: 内部异步
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {
                 return FutureUtil.failedFuture(new IOException(e));

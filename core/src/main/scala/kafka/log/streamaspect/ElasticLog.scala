@@ -86,7 +86,7 @@ class ElasticLog(val metaStream: MetaStream,
   /**
    * The next valid offset. The records with offset smaller than $confirmOffset has been confirmed by ElasticStream.
    */
-  var confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
+  var _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
@@ -184,9 +184,9 @@ class ElasticLog(val metaStream: MetaStream,
       var notify = false
       breakable {
         while (true) {
-          val offset = confirmOffset.get()
+          val offset = _confirmOffset.get()
           if (offset.messageOffset < endOffset) {
-            confirmOffset.compareAndSet(offset, LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
+            _confirmOffset.compareAndSet(offset, LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
             notify = true
           } else {
             break()
@@ -233,6 +233,11 @@ class ElasticLog(val metaStream: MetaStream,
       logger.info(s"log append cost, permitAcquireFail=$permitAcquireFailStatistics, remainingPermit=$remainingPermits/$APPEND_PERMIT ,append=$appendStatistics, callback=$callbackStatistics, ack=$ackStatistics")
     }
   }
+
+  private def confirmOffset: Long = {
+    Math.min(_confirmOffset, logSegmentManager.offsetUpperBound.get())
+  }
+
 
   override private[log] def flush(offset: Long): Unit = {
     val currentRecoveryPoint = recoveryPoint
@@ -553,13 +558,13 @@ object ElasticLog extends Logging {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }
+    // TODO: make createAndSaveSegment async
     val meta = new ElasticStreamSegmentMeta()
     meta.baseOffset(baseOffset)
     meta.streamSuffix(suffix)
     val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time, logSegmentManager.logSegmentEventListener())
     if (suffix.equals("")) {
-      logSegmentManager.put(baseOffset, segment)
-      logSegmentManager.persistLogMeta()
+      logSegmentManager.create(baseOffset, segment)
     }
 
     info(s"${logIdent}Created a new log segment with baseOffset = $baseOffset, suffix = $suffix")

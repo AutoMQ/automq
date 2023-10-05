@@ -21,15 +21,28 @@ import ElasticLog.{debug, error, info}
 
 import java.util
 import java.util.Optional
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicLong
 import java.util.stream.Collectors
 import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
 class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: ElasticLogStreamManager, logIdent: String) {
   val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
   val segmentEventListener = new EventListener()
+  val offsetUpperBound = new AtomicLong(Long.MaxValue)
 
   def put(baseOffset: Long, segment: ElasticLogSegment): Unit = {
     segments.put(baseOffset, segment)
+  }
+
+  def create(baseOffset: Long, segment: ElasticLogSegment): Unit = {
+    while (!offsetUpperBound.compareAndSet(Long.MaxValue, baseOffset)) {
+      Thread.sleep(1L)
+    }
+    segments.put(baseOffset, segment)
+    asyncPersistLogMeta().thenAccept(_ => {
+      offsetUpperBound.set(Long.MaxValue)
+    })
   }
 
   def remove(baseOffset: Long): ElasticLogSegment = {
@@ -37,12 +50,21 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
   }
 
   def persistLogMeta(): ElasticLogMeta = {
+    asyncPersistLogMeta().get()
+  }
+  
+  def asyncPersistLogMeta(): CompletableFuture[ElasticLogMeta] = {
     val meta = logMeta()
     val kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta))
-    metaStream.appendSync(kv)
-    info(s"${logIdent}save log meta $meta")
-    trimStream(meta)
-    meta
+    metaStream.append(kv).thenApply(_ => {
+      info(s"${logIdent}save log meta $meta")
+      trimStream(meta)
+      meta
+    }).whenComplete((_, ex) => {
+      if (ex != null) {
+        error(s"$logIdent persist log meta $meta fail", ex)
+      }
+    })
   }
 
   private def trimStream(meta: ElasticLogMeta): Unit = {
