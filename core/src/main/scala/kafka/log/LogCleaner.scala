@@ -1114,7 +1114,7 @@ private[log] class Cleaner(val id: Int,
       }
     }
 
-    val fetchDataInfo = src.read(0, Integer.MAX_VALUE)
+    val fetchDataInfo = src.read(src.baseOffset, Integer.MAX_VALUE)
     for (batch <- fetchDataInfo.records.batches().asScala) {
       checkDone(topicPartition)
       val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
