@@ -123,7 +123,7 @@ object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
 
-  def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null, appendWithAsyncCallbacks: Boolean = true): Boolean = {
+  def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null): Boolean = {
     if (!config.elasticStreamEnabled) {
       return false
     }
@@ -143,7 +143,6 @@ object ElasticLogManager {
     val context = new Context()
     context.config = config
     context.brokerServer = broker
-    context.appendWithAsyncCallbacks = appendWithAsyncCallbacks
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
     INSTANCE.foreach(_.startup())
     true

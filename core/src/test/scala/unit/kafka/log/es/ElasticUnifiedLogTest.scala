@@ -19,6 +19,7 @@ package kafka.log.es
 
 import kafka.common.{OffsetsOutOfOrderException, RecordValidationException, UnexpectedAppendOffsetException}
 import kafka.log._
+import kafka.log.streamaspect.client.Context
 import kafka.log.streamaspect.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticLogSegment, ElasticUnifiedLog}
 import kafka.server._
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
@@ -63,7 +64,8 @@ class ElasticUnifiedLogTest {
     def setUp(): Unit = {
         val props = TestUtils.createSimpleEsBrokerConfig()
         config = KafkaConfig.fromProps(props)
-        ElasticLogManager.init(config, clusterId, appendWithAsyncCallbacks = false)
+        Context.testMode = true
+        ElasticLogManager.init(config, clusterId)
     }
 
     @AfterEach

@@ -21,7 +21,8 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 
 public class Context {
+    // TODO: remove sync test mode, test should keep the same logic as production code.
+    public static boolean testMode = false;
     public KafkaConfig config;
     public BrokerServer brokerServer;
-    public boolean appendWithAsyncCallbacks;
 }

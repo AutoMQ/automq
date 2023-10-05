@@ -18,6 +18,7 @@
 package kafka.log.es
 
 import kafka.log._
+import kafka.log.streamaspect.client.Context
 import kafka.log.streamaspect.{ElasticLog, ElasticLogManager, MemoryClient}
 import kafka.server.{FetchDataInfo, KafkaConfig, LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{MockTime, Scheduler, TestUtils}
@@ -674,7 +675,8 @@ class ElasticLogTest {
         topicPartition: TopicPartition = topicPartition,
         logDirFailureChannel: LogDirFailureChannel = logDirFailureChannel,
         clusterId: String = "test_cluster"): ElasticLog = {
-        ElasticLogManager.init(kafkaConfig, clusterId, appendWithAsyncCallbacks = false)
+        Context.testMode = true
+        ElasticLogManager.init(kafkaConfig, clusterId)
         ElasticLogManager.getOrCreateLog(dir = dir,
             config = config,
             scheduler = scheduler,

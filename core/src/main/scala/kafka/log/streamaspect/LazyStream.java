@@ -25,6 +25,9 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
+import kafka.log.streamaspect.client.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,12 +36,15 @@ import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 
 /**
  * Lazy stream, create stream when append record.
  */
 public class LazyStream implements Stream {
     private static final Logger LOGGER = LoggerFactory.getLogger(LazyStream.class);
+    private static final ExecutorService STREAM_LISTENER_EXECUTOR = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory("lazy_stream_listener_%d", true), LOGGER);
     public static final long NOOP_STREAM_ID = -1L;
     private static final Stream NOOP_STREAM = new NoopStream();
     private final String name;
@@ -85,6 +91,7 @@ public class LazyStream implements Stream {
         return inner.nextOffset();
     }
 
+
     @Override
     public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
@@ -92,11 +99,16 @@ public class LazyStream implements Stream {
                 CompletableFuture<Stream> creatingCf = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
                         .epoch(epoch).build());
                 this.inner = new CreatingStream(creatingCf);
-                creatingCf.thenAccept(stream -> {
-                    LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
-                    this.inner = stream;
+                if (Context.testMode) {
+                    this.inner = creatingCf.get();
                     notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
-                });
+                } else {
+                    creatingCf.thenAcceptAsync(stream -> {
+                        LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                        this.inner = stream;
+                        notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
+                    }, STREAM_LISTENER_EXECUTOR);
+                }
             } catch (Throwable e) {
                 return FutureUtil.failedFuture(new IOException(e));
             }
@@ -192,17 +204,29 @@ public class LazyStream implements Stream {
 
         @Override
         public long streamId() {
-            return NOOP_STREAM_ID;
+            try {
+                return creatingCf.thenApply(Stream::streamId).get();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
         public long startOffset() {
-            return 0;
+            try {
+                return creatingCf.thenApply(Stream::startOffset).get();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
         public long nextOffset() {
-            return 0;
+            try {
+                return creatingCf.thenApply(Stream::nextOffset).get();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
@@ -217,17 +241,17 @@ public class LazyStream implements Stream {
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
-            return CompletableFuture.completedFuture(null);
+            return creatingCf.thenCompose(s -> s.trim(newStartOffset));
         }
 
         @Override
         public CompletableFuture<Void> close() {
-            return CompletableFuture.completedFuture(null);
+            return creatingCf.thenCompose(Stream::close);
         }
 
         @Override
         public CompletableFuture<Void> destroy() {
-            return CompletableFuture.completedFuture(null);
+            return creatingCf.thenCompose(Stream::destroy);
         }
     }
 }
