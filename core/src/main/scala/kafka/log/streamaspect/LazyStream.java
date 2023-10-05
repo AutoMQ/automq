@@ -89,10 +89,10 @@ public class LazyStream implements Stream {
     public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
             try {
-                CompletableFuture<Stream> openCf = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
+                CompletableFuture<Stream> creatingCf = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
                         .epoch(epoch).build());
-                this.inner = new OpeningStream(openCf);
-                openCf.thenAccept(stream -> {
+                this.inner = new CreatingStream(creatingCf);
+                creatingCf.thenAccept(stream -> {
                     LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                     this.inner = stream;
                     notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
@@ -183,63 +183,51 @@ public class LazyStream implements Stream {
         }
     }
 
-    static class OpeningStream implements Stream {
-        private final CompletableFuture<Stream> openCf;
+    static class CreatingStream implements Stream {
+        private final CompletableFuture<Stream> creatingCf;
 
-        public OpeningStream(CompletableFuture<Stream> openCf) {
-            this.openCf = openCf;
+        public CreatingStream(CompletableFuture<Stream> creatingCf) {
+            this.creatingCf = creatingCf;
         }
 
         @Override
         public long streamId() {
-            try {
-                return openCf.thenApply(Stream::streamId).get();
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
+            return NOOP_STREAM_ID;
         }
 
         @Override
         public long startOffset() {
-            try {
-                return openCf.thenApply(Stream::startOffset).get();
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
+            return 0;
         }
 
         @Override
         public long nextOffset() {
-            try {
-                return openCf.thenApply(Stream::nextOffset).get();
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
+            return 0;
         }
 
         @Override
         public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
-            return openCf.thenCompose(s -> s.append(recordBatch));
+            return creatingCf.thenCompose(s -> s.append(recordBatch));
         }
 
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-            return openCf.thenCompose(s -> s.fetch(startOffset, endOffset, maxBytesHint));
+            return creatingCf.thenCompose(s -> s.fetch(startOffset, endOffset, maxBytesHint));
         }
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
-            return openCf.thenCompose(s -> s.trim(newStartOffset));
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override
         public CompletableFuture<Void> close() {
-            return openCf.thenCompose(Stream::close);
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override
         public CompletableFuture<Void> destroy() {
-            return openCf.thenCompose(Stream::destroy);
+            return CompletableFuture.completedFuture(null);
         }
     }
 }
