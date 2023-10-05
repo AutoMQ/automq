@@ -99,7 +99,7 @@ public class LazyStream implements Stream {
                 CompletableFuture<Stream> creatingCf = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
                         .epoch(epoch).build());
                 this.inner = new CreatingStream(creatingCf);
-                if (Context.testMode) {
+                if (Context.isTestMode()) {
                     this.inner = creatingCf.get();
                     notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
                 } else {

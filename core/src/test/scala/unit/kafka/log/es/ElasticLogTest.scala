@@ -675,7 +675,7 @@ class ElasticLogTest {
         topicPartition: TopicPartition = topicPartition,
         logDirFailureChannel: LogDirFailureChannel = logDirFailureChannel,
         clusterId: String = "test_cluster"): ElasticLog = {
-        Context.testMode = true
+        Context.enableTestMode()
         ElasticLogManager.init(kafkaConfig, clusterId)
         ElasticLogManager.getOrCreateLog(dir = dir,
             config = config,

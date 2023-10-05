@@ -25,7 +25,7 @@ import kafka.log.streamaspect.client.Context;
 public class ClientFactory {
 
     public static Client get(Context context) {
-        return new AlwaysSuccessClient(new MemoryClient(), !Context.testMode);
+        return new AlwaysSuccessClient(new MemoryClient(), !Context.isTestMode());
     }
 
 }
