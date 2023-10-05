@@ -18,30 +18,33 @@
 package kafka.log.streamaspect
 
 import ElasticLog.{debug, error, info}
+import kafka.server.LogOffsetMetadata
 
 import java.util
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.stream.Collectors
 import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
 class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: ElasticLogStreamManager, logIdent: String) {
   val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
   val segmentEventListener = new EventListener()
-  val offsetUpperBound = new AtomicLong(Long.MaxValue)
+  val offsetUpperBound = new AtomicReference[LogOffsetMetadata]()
 
   def put(baseOffset: Long, segment: ElasticLogSegment): Unit = {
     segments.put(baseOffset, segment)
   }
 
-  def create(baseOffset: Long, segment: ElasticLogSegment): Unit = {
-    while (!offsetUpperBound.compareAndSet(Long.MaxValue, baseOffset)) {
+  def create(baseOffset: Long, segment: ElasticLogSegment): CompletableFuture[Void] = {
+    val offset = LogOffsetMetadata(baseOffset, baseOffset, 0)
+    while (!offsetUpperBound.compareAndSet(null, offset)) {
+      info(s"$logIdent try create new segment with offset $baseOffset, wait last segment meta persisted.")
       Thread.sleep(1L)
     }
     segments.put(baseOffset, segment)
     asyncPersistLogMeta().thenAccept(_ => {
-      offsetUpperBound.set(Long.MaxValue)
+      offsetUpperBound.set(null)
     })
   }
 

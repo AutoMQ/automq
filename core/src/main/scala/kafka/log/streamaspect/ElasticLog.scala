@@ -86,7 +86,7 @@ class ElasticLog(val metaStream: MetaStream,
   /**
    * The next valid offset. The records with offset smaller than $confirmOffset has been confirmed by ElasticStream.
    */
-  var _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
+  private val _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
@@ -95,7 +95,7 @@ class ElasticLog(val metaStream: MetaStream,
   // persist log meta when lazy stream real create
   streamManager.setListener((_, event) => {
     if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
-      persistLogMeta()
+      logSegmentManager.asyncPersistLogMeta()
     }
   })
 
@@ -143,7 +143,9 @@ class ElasticLog(val metaStream: MetaStream,
 
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
-    createAndSaveSegment(logSegmentManager, suffix, logIdent = logIdent)(baseOffset, _dir, config, streamSliceManager, time)
+    val rst = createAndSaveSegment(logSegmentManager, suffix, logIdent = logIdent)(baseOffset, _dir, config, streamSliceManager, time)
+    rst._2.thenAccept(_ => confirmOffsetChangeListener.foreach(_.apply()))
+    rst._1
   }
 
   private def persistLogMeta(): Unit = {
@@ -234,8 +236,14 @@ class ElasticLog(val metaStream: MetaStream,
     }
   }
 
-  private def confirmOffset: Long = {
-    Math.min(_confirmOffset, logSegmentManager.offsetUpperBound.get())
+  private[log] def confirmOffset: LogOffsetMetadata = {
+    val confirmOffset = _confirmOffset.get()
+    val offsetUpperBound = logSegmentManager.offsetUpperBound.get()
+    if (offsetUpperBound != null && offsetUpperBound.messageOffset < confirmOffset.messageOffset) {
+      offsetUpperBound
+    } else {
+      confirmOffset
+    }
   }
 
 
@@ -287,10 +295,10 @@ class ElasticLog(val metaStream: MetaStream,
     partitionMeta.setRecoverOffset(recoveryPoint)
 
     maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
-      CoreUtils.swallow(persistPartitionMeta(), this)
       CoreUtils.swallow(persistLogMeta(), this)
       CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
       CoreUtils.swallow(segments.close(), this)
+      CoreUtils.swallow(persistPartitionMeta(), this)
     }
     info("log(except for streams) closed")
     closeStreams()
@@ -551,23 +559,24 @@ object ElasticLog extends Logging {
   /**
    * Create a new segment and save the meta in metaStream if needed. This method can be used to create a new normal segment or a new cleaned segment.
    * For the newly created segment, the meta will immediately be saved in metaStream.
-   * For the newly created cleaned segment, the meta should not be saved here. It will be saved iff the replacement happens.
+   * For the newly created cleaned segment, the meta should not be saved here. It will be saved if the replacement happens.
    */
-  private def createAndSaveSegment(logSegmentManager: ElasticLogSegmentManager, suffix: String = "", logIdent: String)(baseOffset: Long, dir: File,
-                                                                                                                       config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time): ElasticLogSegment = {
+  private def createAndSaveSegment(logSegmentManager: ElasticLogSegmentManager, suffix: String = "", logIdent: String)
+                                  (baseOffset: Long, dir: File, config: LogConfig, streamSliceManager: ElasticStreamSliceManager, time: Time)
+  : (ElasticLogSegment, CompletableFuture[Void]) = {
     if (!suffix.equals("") && !suffix.equals(LocalLog.CleanedFileSuffix)) {
       throw new IllegalArgumentException("suffix must be empty or " + LocalLog.CleanedFileSuffix)
     }
-    // TODO: make createAndSaveSegment async
     val meta = new ElasticStreamSegmentMeta()
     meta.baseOffset(baseOffset)
     meta.streamSuffix(suffix)
     val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time, logSegmentManager.logSegmentEventListener())
+    var metaSaveCf: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
     if (suffix.equals("")) {
-      logSegmentManager.create(baseOffset, segment)
+      metaSaveCf = logSegmentManager.create(baseOffset, segment)
     }
 
     info(s"${logIdent}Created a new log segment with baseOffset = $baseOffset, suffix = $suffix")
-    segment
+    (segment, metaSaveCf)
   }
 }
