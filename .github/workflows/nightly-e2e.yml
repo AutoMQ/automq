@@ -11,6 +11,8 @@ jobs:
     env:
       TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
       ESK_TEST_YML: "tests/kos_test_suite.yml"
+      # keep Kafka process running for debugging; fail fast
+      _DUCKTAPE_OPTIONS: "--no-teardown --exit-first"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
