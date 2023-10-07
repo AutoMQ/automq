@@ -23,6 +23,7 @@ public class Config {
     private String s3Endpoint;
     private String s3Region;
     private String s3Bucket;
+    private boolean s3ForcePathStyle = false;
     private String s3AccessKey;
     private String s3SecretKey;
     private String s3WALPath = "/tmp/s3stream_wal";
@@ -71,6 +72,10 @@ public class Config {
 
     public String s3Bucket() {
         return s3Bucket;
+    }
+
+    public boolean s3ForcePathStyle() {
+        return s3ForcePathStyle;
     }
 
     public String s3WALPath() {
@@ -222,6 +227,11 @@ public class Config {
 
     public Config s3Bucket(String s3Bucket) {
         this.s3Bucket = s3Bucket;
+        return this;
+    }
+
+    public Config s3ForcePathStyle(boolean s3ForcePathStyle) {
+        this.s3ForcePathStyle = s3ForcePathStyle;
         return this;
     }
 
