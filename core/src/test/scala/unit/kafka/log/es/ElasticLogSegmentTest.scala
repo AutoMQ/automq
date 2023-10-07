@@ -29,6 +29,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse}
 import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
+import kafka.log.streamaspect.client.Context
 
 import java.io.File
 import java.util.Properties
@@ -87,7 +88,8 @@ class ElasticLogSegmentTest {
     def setup(): Unit = {
         segments.clear()
         logDir = TestUtils.tempDir()
-        ElasticLogManager.init(kafkaConfig, "fake_cluster_id", appendWithAsyncCallbacks = false)
+        Context.enableTestMode()
+        ElasticLogManager.init(kafkaConfig, "fake_cluster_id")
     }
 
     @AfterEach

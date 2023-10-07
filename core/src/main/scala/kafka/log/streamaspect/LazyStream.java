@@ -85,6 +85,7 @@ public class LazyStream implements Stream {
         return inner.nextOffset();
     }
 
+
     @Override
     public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {

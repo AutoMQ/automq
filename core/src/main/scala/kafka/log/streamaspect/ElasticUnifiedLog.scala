@@ -44,7 +44,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
 
   def confirmOffset(): LogOffsetMetadata = {
-    elasticLog.confirmOffset.get()
+    elasticLog.confirmOffset
   }
 
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
