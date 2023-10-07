@@ -26,7 +26,7 @@ import org.apache.kafka.common.errors.InvalidOffsetException
 import org.apache.kafka.common.utils.Time
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap}
 
 /**
  * ref. LogLoader
@@ -45,7 +45,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        leaderEpochCache: Option[LeaderEpochFileCache],
                        producerStateManager: ElasticProducerStateManager,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-                       createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => ElasticLogSegment)
+                       createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => (ElasticLogSegment, CompletableFuture[Void]))
   extends Logging {
   logIdent = s"[ElasticLogLoader partition=$topicPartition, dir=${dir.getParent}] "
 
@@ -232,7 +232,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
   }
 
   private def createAndAddToSegments(baseOffset: Long): Unit = {
-    val segment = createAndSaveSegmentFunc(baseOffset, dir, config, streamSliceManager, time)
+    val (segment, _) = createAndSaveSegmentFunc(baseOffset, dir, config, streamSliceManager, time)
     segments.add(segment)
   }
 
