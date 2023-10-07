@@ -21,7 +21,7 @@ VOLUME ["/opt/kafka-dev"]
 
 # setting mirrors
 ARG GENERAL_MIRROR_URL=""
-RUN [[ -z "${GENERAL_MIRROR_URL}" ]] || sed -i "s/deb.debian.org/${GENERAL_MIRROR_URL}/g" /etc/apt/sources.list
+RUN [[ -z "${GENERAL_MIRROR_URL}" ]] || sed -i "s/deb.debian.org/${GENERAL_MIRROR_URL}/g" /etc/apt/sources.list && sed -i 's|security.debian.org/debian-security|${GENERAL_MIRROR_URL}/debian-security|g' /etc/apt/sources.list
 
 # Do not ask for confirmations when running apt-get, etc.
 ENV DEBIAN_FRONTEND noninteractive
