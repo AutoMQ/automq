@@ -63,6 +63,11 @@ public class ElasticLogStreamManager {
         }
         LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch);
         lazyStream.setListener(innerListener);
+        // pre-create log and tim stream cause of their high frequency of use.
+        boolean warmUp = "log".equals(name) || "tim".equals(name);
+        if (warmUp) {
+            lazyStream.warmUp();
+        }
         streamMap.put(name, lazyStream);
         return lazyStream;
     }
