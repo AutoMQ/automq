@@ -70,6 +70,19 @@ public class LazyStream implements Stream {
         }
     }
 
+    public void warmUp() throws IOException {
+        if (this.inner == NOOP_STREAM) {
+            try {
+                this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
+                        .epoch(epoch).build()).get();
+                LOGGER.info("warmup, created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
+            } catch (Throwable e) {
+                throw new IOException(e);
+            }
+        }
+    }
+
     @Override
     public long streamId() {
         return inner.streamId();
