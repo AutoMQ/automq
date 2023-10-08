@@ -50,6 +50,7 @@ public class Config {
     private long s3ObjectCompactionCacheSize = 200 * 1024 * 1024;
     private long s3ObjectCompactionNWInBandwidth = 50 * 1024 * 1024;
     private long s3ObjectCompactionNWOutBandwidth = 50 * 1024 * 1024;
+    private long s3StreamObjectsCompactionNWInBandwidth = 10L * 1024 * 1024;
     private int s3ObjectCompactionUploadConcurrency = 8;
     private double s3ObjectCompactionExecutionScoreThreshold = 0.5;
     private long s3ObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
@@ -172,6 +173,10 @@ public class Config {
 
     public long s3ObjectCompactionNWOutBandwidth() {
         return s3ObjectCompactionNWOutBandwidth;
+    }
+
+    public long s3StreamObjectsCompactionNWInBandwidth() {
+        return s3StreamObjectsCompactionNWInBandwidth;
     }
 
     public int s3ObjectCompactionUploadConcurrency() {
@@ -397,6 +402,11 @@ public class Config {
 
     public Config s3SecretKey(String s3SecretKey) {
         this.s3SecretKey = s3SecretKey;
+        return this;
+    }
+
+    public Config s3StreamObjectsCompactionNWInBandwidth(long s3StreamObjectsCompactionNWInBandwidth) {
+        this.s3StreamObjectsCompactionNWInBandwidth = s3StreamObjectsCompactionNWInBandwidth;
         return this;
     }
 }
