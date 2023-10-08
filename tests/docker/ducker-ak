@@ -411,8 +411,11 @@ attempting to start new ones."
     echo "ducker_up: successfully wrote ${ducker_dir}/build/cluster.json"
 
     # Kafka on S3 inject start
-    must_do -v awslocal s3api create-bucket --bucket ko3
-    echo "ducker_up: bucket ready for tests"
+    # ip is static and referenced from docker/s3/docker-compose.yaml
+    cmd="aws s3api create-bucket --bucket ko3 --endpoint=http://10.5.0.2:4566"
+    echo "docker exec ducker01 bash -c \"${cmd}\""
+    exec docker exec --user=ducker ducker01 bash -c "${cmd}"
+    echo "ducker_up: bucket ko3 ready for tests"
     # Kafka on S3 inject end
 
     echo "** ducker_up: successfully brought up ${num_nodes} nodes."

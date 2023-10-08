@@ -19,6 +19,7 @@ import os.path
 import re
 import signal
 import time
+import subprocess
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -434,7 +435,11 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     node.config = KafkaConfig(**kraft_broker_configs)
         self.colocated_nodes_started = 0
         self.nodes_to_start = self.nodes
-        self.have_cleaned_topics = False
+        self.have_cleaned_topic_data = False
+        # ip is static and referenced from docker/s3/docker-compose.yaml
+        self.default_s3_ip = "10.5.0.2"
+        self.default_s3_port = 4566
+        self.default_s3_bucket_name = "ko3"
 
     def reconfigure_zk_for_migration(self, kraft_quorum):
         self.configured_for_zk_migration = True
@@ -596,7 +601,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     nodes_for_kdc = self.nodes.copy()
                     if other_service and other_service != self:
                         nodes_for_kdc += other_service.nodes
-                    self.minikdc = MiniKdc(self.context, nodes_for_kdc, kafka_service=self, extra_principals = add_principals)
+                    self.minikdc = MiniKdc(self.context, nodes_for_kdc, extra_principals = add_principals)
                     self.minikdc.start()
         else:
             self.minikdc = None
@@ -943,41 +948,33 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         """
         If minikdc is enabled, topics have been already deleted in minikdc.stop_node().
         """
-        if not self.minikdc:
-            self.delete_all_topics()
         super(KafkaService, self).stop()
+        self.delete_data_on_s3()
 
-    def delete_all_topics(self, timeout_sec=60):
+    def delete_data_on_s3(self, timeout_sec=60):
         """
-        Delete all topics on the cluster.
-        Note that this is needed to keep E2E tests isolated from each other.
+        Delete all topic data stored in s3.
+        Note that this is needed to prevent too much data stored in s3.
         """
+        # make sure we don't try to delete data twice
         if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
             self.logger.info("skip topic deletion on KRaft controller-only cluster")
             return
-        if self.have_cleaned_topics:
+        if self.have_cleaned_topic_data:
             self.logger.info("skip topic deletion since it has already been done")
             return
 
-        node = self.nodes[0]
-        force_use_zk_connection = not self.all_nodes_topic_command_supports_bootstrap_server() or \
-                                 not self.all_nodes_topic_command_supports_if_not_exists_with_bootstrap_server()
-        cmd = fix_opts_for_new_jvm(node)
-        cmd += "%(kafka_topics_cmd)s --delete --if-exists --topic %(topic)s " % {
-            'kafka_topics_cmd': self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection),
-            'topic': "\".*\"",
+        cmd = "aws s3 rm s3://%(bucket_name)s --recursive --endpoint=http://%(s3_ip)s:%(s3_port)d" % {
+            'bucket_name': self.default_s3_bucket_name,
+            's3_ip': self.default_s3_ip,
+            's3_port': self.default_s3_port
         }
 
-        self.logger.info("Running topic deletion command...\n%s" % cmd)
-        node.account.ssh(cmd)
-
-        try:
-            # TODO: remove clean topic after fix https://github.com/AutoMQ/kafka-on-s3/issues/292
-            wait_until(lambda: sum(1 for _ in self.list_topics(node)) == 0, timeout_sec=timeout_sec,
-                       err_msg="Kafka node failed to delete all topics in %d seconds" % timeout_sec)
-        except Exception:
-            self.thread_dump(node)
-        self.have_cleaned_topics = True
+        self.logger.info("Running cleaning s3 bucket command...\n%s" % cmd)
+        ret, val = subprocess.getstatusoutput(cmd)
+        if ret != 0:
+            raise Exception("Failed to delete s3 bucket, output: %s" % val)
+        self.have_cleaned_topic_data = True
 
     def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
         pids = self.pids(node)

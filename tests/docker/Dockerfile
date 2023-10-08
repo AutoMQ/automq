@@ -19,12 +19,15 @@ FROM $jdk_version
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
 VOLUME ["/opt/kafka-dev"]
 
-# setting mirrors
+# Set mirrors
 ARG GENERAL_MIRROR_URL=""
 RUN [[ -z "${GENERAL_MIRROR_URL}" ]] || sed -i "s/deb.debian.org/${GENERAL_MIRROR_URL}/g" /etc/apt/sources.list && sed -i 's|security.debian.org/debian-security|${GENERAL_MIRROR_URL}/debian-security|g' /etc/apt/sources.list
 
 # Do not ask for confirmations when running apt-get, etc.
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    AWS_ACCESS_KEY_ID=test \
+    AWS_SECRET_ACCESS_KEY=test \
+    AWS_DEFAULT_REGION=us-east-1
 
 # Set the ducker.creator label so that we know that this is a ducker image.  This will make it
 # visible to 'ducker purge'.  The ducker.creator label also lets us know what UNIX user built this
@@ -39,7 +42,7 @@ RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl 
 
 # setting mirrors
 RUN [[ -z "${GENERAL_MIRROR_URL}" ]] || pip install -i "https://${GENERAL_MIRROR_URL}/pypi/web/simple" pip -U && pip config set global.index-url "https://${GENERAL_MIRROR_URL}/pypi/web/simple"
-RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
+RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy awscli && pip3 install --upgrade "ducktape>0.8"
 
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
