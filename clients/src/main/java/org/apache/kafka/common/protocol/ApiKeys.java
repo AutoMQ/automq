@@ -111,7 +111,6 @@ public enum ApiKeys {
     ALLOCATE_PRODUCER_IDS(ApiMessageType.ALLOCATE_PRODUCER_IDS, true, true),
 
     // Kafka on S3 inject start
-
     CREATE_STREAMS(ApiMessageType.CREATE_STREAMS, false, true),
     DELETE_STREAMS(ApiMessageType.DELETE_STREAMS, false, true),
     OPEN_STREAMS(ApiMessageType.OPEN_STREAMS, false, true),
