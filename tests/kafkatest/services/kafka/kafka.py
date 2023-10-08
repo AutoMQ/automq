@@ -1317,19 +1317,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 self.logger.info("get topic: %s" % line.rstrip())
                 yield line.rstrip()
 
-    def list_s3_bucket_files(self):
-        cmd = "aws s3 ls s3://%(bucket_name)s --endpoint=http://%(s3_ip)s:%(s3_port)d" % {
-            'bucket_name': self.default_s3_bucket_name,
-            's3_ip': self.default_s3_ip,
-            's3_port': self.default_s3_port
-        }
-        self.logger.info("Running list s3 bucket files command...\n%s" % cmd)
-        ret, val = subprocess.getstatusoutput(cmd)
-        for line in val.split("\n"):
-            if len(line.rstrip()) > 0:
-                self.logger.info("get s3 bucket file: %s" % line.rstrip())
-                yield line.rstrip()
-
     def alter_message_format(self, topic, msg_format_version, node=None):
         if node is None:
             node = self.nodes[0]

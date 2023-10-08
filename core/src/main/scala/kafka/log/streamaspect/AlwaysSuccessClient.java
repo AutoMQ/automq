@@ -29,6 +29,7 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.api.StreamClientException;
 import com.automq.stream.utils.FutureUtil;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -142,6 +143,11 @@ public class AlwaysSuccessClient implements Client {
      * @return true if the exception is a ElasticStreamClientException with a halt error code, otherwise false
      */
     private static boolean shouldHalt(Throwable t) {
+        // s3stream will retry all retryable exceptions, so we should halt all exceptions.
+        // AlwaysSuccessClient could be removed later.
+        if (t instanceof KafkaException) {
+            return true;
+        }
         if (!(t instanceof StreamClientException)) {
             return false;
         }
