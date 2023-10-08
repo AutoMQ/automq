@@ -970,14 +970,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         self.logger.info("Running topic deletion command...\n%s" % cmd)
         node.account.ssh(cmd)
-
-        try:
-            # wait until no topics exist
-            wait_until(lambda: sum(1 for _ in self.list_topics(node)) == 0, timeout_sec=timeout_sec,
-                       err_msg="Kafka node failed to delete all topics in %d seconds" % timeout_sec)
-        except Exception:
-            self.thread_dump(node)
-            raise
         self.have_cleaned_topics = True
 
     def stop_node(self, node, clean_shutdown=True, timeout_sec=60):
