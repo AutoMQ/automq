@@ -28,7 +28,6 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedList;
@@ -208,10 +207,10 @@ public class DefaultS3Operator implements S3Operator {
         long start = System.currentTimeMillis();
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
         return this.s3.deleteObjects(request).thenApply(resp -> {
-            LOGGER.info("[ControllerS3Operator]: Delete objects: {}, cost: {}", Arrays.toString(resp.deleted().toArray()), System.currentTimeMillis() - start);
+            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), System.currentTimeMillis() - start);
             return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
         }).exceptionally(ex -> {
-            LOGGER.error("[ControllerS3Operator]:Delete objects: {} failed", Arrays.toString(objectKeys.toArray()), ex);
+            LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}", objectKeys.size(), System.currentTimeMillis() - start, ex);
             return Collections.emptyList();
         });    }
 
