@@ -20,6 +20,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.metrics.Counter;
 import com.automq.stream.metrics.Timer;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.utils.ThreadUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -74,8 +75,6 @@ import static com.automq.stream.utils.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
-    public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
-    public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
     private final String bucket;
     private final S3AsyncClient s3;
     private static final Timer PART_UPLOAD_COST = new Timer();
@@ -176,13 +175,13 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, String logIdent) {
-        return new DefaultWriter(path, logIdent);
+    public Writer writer(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
+        return new DefaultWriter(path, logIdent, readThrottle);
     }
 
     // used for test only.
-    Writer writer(String path, String logIdent, long minPartSize) {
-        return new DefaultWriter(path, logIdent, minPartSize);
+    Writer writer(String path, String logIdent, long minPartSize, AsyncTokenBucketThrottle readThrottle) {
+        return new DefaultWriter(path, logIdent, minPartSize, readThrottle);
     }
 
     @Override
@@ -270,19 +269,24 @@ public class DefaultS3Operator implements S3Operator {
         private final long minPartSize;
         private ObjectPart objectPart = null;
         private final long start = System.nanoTime();
+        private final AsyncTokenBucketThrottle readThrottle;
 
-        public DefaultWriter(String path, String logIdent) {
-            this(path, logIdent, MIN_PART_SIZE);
+        public DefaultWriter(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
+            this(path, logIdent, MIN_PART_SIZE, readThrottle);
         }
 
-        public DefaultWriter(String path, String logIdent, long minPartSize) {
+        DefaultWriter(String path, String logIdent, long minPartSize, AsyncTokenBucketThrottle readThrottle) {
             this.path = path;
             this.logIdent = logIdent;
             this.minPartSize = minPartSize;
+            this.readThrottle = readThrottle;
             init();
         }
 
         private void init() {
+            if (readThrottle != null && readThrottle.getTokenSize() < minPartSize) {
+                throw new IllegalArgumentException("Read throttle token size should be larger than minPartSize");
+            }
             CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).build();
             s3.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
                 uploadId = createMultipartUploadResponse.uploadId();
@@ -304,7 +308,7 @@ public class DefaultS3Operator implements S3Operator {
             OBJECT_UPLOAD_SIZE.inc(data.readableBytes());
 
             if (objectPart == null) {
-                objectPart = new ObjectPart();
+                objectPart = new ObjectPart(readThrottle);
             }
             ObjectPart objectPart = this.objectPart;
 
@@ -347,7 +351,7 @@ public class DefaultS3Operator implements S3Operator {
             long targetSize = end - start;
             if (objectPart == null) {
                 if (targetSize < minPartSize) {
-                    this.objectPart = new ObjectPart();
+                    this.objectPart = new ObjectPart(readThrottle);
                     objectPart.readAndWrite(sourcePath, start, end);
                 } else {
                     new CopyObjectPart(sourcePath, start, end);
@@ -455,8 +459,10 @@ public class DefaultS3Operator implements S3Operator {
             private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
             private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
             private long size;
+            private final AsyncTokenBucketThrottle readThrottle;
 
-            public ObjectPart() {
+            public ObjectPart(AsyncTokenBucketThrottle readThrottle) {
+                this.readThrottle = readThrottle;
                 parts.add(partCf);
             }
 
@@ -470,8 +476,10 @@ public class DefaultS3Operator implements S3Operator {
                 size += end - start;
                 // TODO: parallel read and sequence add.
                 this.lastRangeReadCf = lastRangeReadCf
-                        .thenCompose(nil -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
-                        .thenAccept(buf -> partBuf.addComponent(true, buf));
+                    .thenCompose(nil -> readThrottle == null ?
+                        CompletableFuture.completedFuture(null) : readThrottle.throttle(end - start))
+                    .thenCompose(nil -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
+                    .thenAccept(buf -> partBuf.addComponent(true, buf));
             }
 
             public void upload() {

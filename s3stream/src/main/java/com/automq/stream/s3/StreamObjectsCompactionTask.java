@@ -17,12 +17,14 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,6 +61,7 @@ public class StreamObjectsCompactionTask {
     private final S3Operator s3Operator;
     private List<CompactionResult> compactionResults;
     private final String logIdent;
+    private final AsyncTokenBucketThrottle readThrottle;
 
     /**
      * Constructor of StreamObjectsCompactionTask.
@@ -71,8 +74,9 @@ public class StreamObjectsCompactionTask {
      * @param eligibleStreamObjectLivingTimeInMs eligible stream object living time in ms.
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-                                       long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs) {
-        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, false);
+                                       long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs,
+        AsyncTokenBucketThrottle readThrottle) {
+        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, readThrottle, false);
     }
 
     /**
@@ -84,10 +88,12 @@ public class StreamObjectsCompactionTask {
      * If it is bigger than {@link Writer#MAX_OBJECT_SIZE},
      * it will be set to {@link Writer#MAX_OBJECT_SIZE}.
      * @param eligibleStreamObjectLivingTimeInMs eligible stream object living time in ms.
+     * @param readThrottle read throttle in compaction task.
      * @param s3ObjectLogEnabled is s3 object log enabled.
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-        long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs, boolean s3ObjectLogEnabled) {
+                                       long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs,
+        AsyncTokenBucketThrottle readThrottle, boolean s3ObjectLogEnabled) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
@@ -98,6 +104,7 @@ public class StreamObjectsCompactionTask {
         this.compactionResults = Collections.emptyList();
         this.logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
+        this.readThrottle = readThrottle;
     }
 
     private CompletableFuture<CompactionResult> doCompaction(List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList) {
@@ -116,9 +123,10 @@ public class StreamObjectsCompactionTask {
                 + endOffset));
         }
 
+        AtomicInteger smallSizeCopyWriteCount = new AtomicInteger(0);
         return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
             .thenCompose(objId -> {
-                StreamObjectCopier objectCopier = new StreamObjectCopier(objId, s3Operator);
+                StreamObjectCopier objectCopier = new StreamObjectCopier(objId, s3Operator, readThrottle);
                 streamObjectMetadataList.forEach(metadataWrapper -> {
                     S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(metadataWrapper.s3StreamObjectMetadata().objectId(),
                         metadataWrapper.s3StreamObjectMetadata().objectSize(),
@@ -127,7 +135,10 @@ public class StreamObjectsCompactionTask {
                 });
                 return objectCopier
                     .close()
-                    .thenApply(v -> new CommitStreamObjectRequest(objId, objectCopier.size(), stream.streamId(), startOffset, endOffset, sourceObjectIds));
+                    .thenApply(v -> {
+                        smallSizeCopyWriteCount.set(objectCopier.smallSizeCopyWriteCount());
+                        return new CommitStreamObjectRequest(objId, objectCopier.size(), stream.streamId(), startOffset, endOffset, sourceObjectIds);
+                    });
             })
             .thenCompose(request -> {
                 if (s3ObjectLogEnabled) {
@@ -137,7 +148,7 @@ public class StreamObjectsCompactionTask {
                     LOGGER.debug("{} stream objects compaction task with range [{}, {}) is done, objects {} => object {}, size {}",
                             logIdent, startOffset, endOffset, request.getSourceObjectIds(), request.getObjectId(), request.getObjectSize());
                     return new CompactionResult(stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(),
-                            request.getObjectId(), request.getObjectSize(), System.currentTimeMillis() - startTimestamp);
+                            request.getObjectId(), request.getObjectSize(), System.currentTimeMillis() - startTimestamp, smallSizeCopyWriteCount.get());
                 });
             });
     }
@@ -184,7 +195,8 @@ public class StreamObjectsCompactionTask {
         long totalObjectSize = compactionResults.stream().mapToLong(r -> r.objectSize).sum();
         long sourceObjectsCount = compactionResults.stream().mapToLong(r -> r.sourceObjectIds.size()).sum();
         long targetObjectCount = compactionResults.size();
-        return new CompactionSummary(streamId, startOffset, endOffset, timeCostInMs, totalObjectSize, sourceObjectsCount, targetObjectCount);
+        long smallSizeCopyWriteCount = compactionResults.stream().mapToLong(r -> r.smallSizeCopyWriteCount).sum();
+        return new CompactionSummary(streamId, startOffset, endOffset, timeCostInMs, totalObjectSize, sourceObjectsCount, targetObjectCount, smallSizeCopyWriteCount);
     }
 
     static class CompactionResult {
@@ -195,8 +207,9 @@ public class StreamObjectsCompactionTask {
         private final long objectId;
         private final long objectSize;
         private final long timeCostInMs;
+        private final int smallSizeCopyWriteCount;
 
-        public CompactionResult(long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds, long objectId, long objectSize, long timeCostInMs) {
+        public CompactionResult(long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds, long objectId, long objectSize, long timeCostInMs, int smallSizeCopyWriteCount) {
             this.streamId = streamId;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
@@ -204,6 +217,11 @@ public class StreamObjectsCompactionTask {
             this.objectId = objectId;
             this.objectSize = objectSize;
             this.timeCostInMs = timeCostInMs;
+            this.smallSizeCopyWriteCount = smallSizeCopyWriteCount;
+        }
+
+        public long getSmallSizeCopyWriteCount() {
+            return smallSizeCopyWriteCount;
         }
 
         public long getStreamId() {
@@ -244,6 +262,7 @@ public class StreamObjectsCompactionTask {
                     ", objectId=" + objectId +
                     ", objectSize=" + objectSize +
                     ", timeCostInMs=" + timeCostInMs +
+                    ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
                     '}';
         }
     }
@@ -256,8 +275,10 @@ public class StreamObjectsCompactionTask {
         private final long totalObjectSize;
         private final long sourceObjectsCount;
         private final long targetObjectCount;
+        private final long smallSizeCopyWriteCount;
 
-        public CompactionSummary(long streamId, long startOffset, long endOffset, long timeCostInMs, long totalObjectSize, long sourceObjectsCount, long targetObjectCount) {
+        public CompactionSummary(long streamId, long startOffset, long endOffset, long timeCostInMs,
+            long totalObjectSize, long sourceObjectsCount, long targetObjectCount, long smallSizeCopyWriteCount) {
             this.streamId = streamId;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
@@ -265,6 +286,7 @@ public class StreamObjectsCompactionTask {
             this.totalObjectSize = totalObjectSize;
             this.sourceObjectsCount = sourceObjectsCount;
             this.targetObjectCount = targetObjectCount;
+            this.smallSizeCopyWriteCount = smallSizeCopyWriteCount;
         }
 
         @Override
@@ -277,6 +299,7 @@ public class StreamObjectsCompactionTask {
                     ", totalObjectSize=" + totalObjectSize +
                     ", sourceObjectsCount=" + sourceObjectsCount +
                     ", targetObjectCount=" + targetObjectCount +
+                    ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
                     '}';
         }
     }
@@ -537,6 +560,7 @@ public class StreamObjectsCompactionTask {
         private long compactedStreamObjectMaxSizeInBytes;
         private long eligibleStreamObjectLivingTimeInMs;
         private boolean s3ObjectLogEnabled;
+        private AsyncTokenBucketThrottle readThrottle;
 
         public Builder(ObjectManager objectManager, S3Operator s3Operator) {
             this.objectManager = objectManager;
@@ -566,8 +590,15 @@ public class StreamObjectsCompactionTask {
             this.s3ObjectLogEnabled = s3ObjectLogEnabled;
             return this;
         }
+
+        public Builder withReadThrottle(AsyncTokenBucketThrottle readThrottle) {
+            this.readThrottle = readThrottle;
+            return this;
+        }
+
         public StreamObjectsCompactionTask build() {
-            return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, s3ObjectLogEnabled);
+            return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes,
+                eligibleStreamObjectLivingTimeInMs, readThrottle, s3ObjectLogEnabled);
         }
     }
 }

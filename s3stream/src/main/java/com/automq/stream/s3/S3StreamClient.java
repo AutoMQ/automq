@@ -21,6 +21,7 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
@@ -53,6 +54,7 @@ public class S3StreamClient implements StreamClient {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final Config config;
+    private final AsyncTokenBucketThrottle readThrottle;
 
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager, S3Operator s3Operator, Config config) {
         this.streamManager = streamManager;
@@ -61,6 +63,7 @@ public class S3StreamClient implements StreamClient {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.config = config;
+        this.readThrottle = new AsyncTokenBucketThrottle(config.s3StreamObjectsCompactionNWInBandwidth(), 1, "s3-stream-objects-compaction");
         startStreamObjectsCompactions();
     }
 
@@ -105,7 +108,8 @@ public class S3StreamClient implements StreamClient {
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                             .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
                             .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
-                            .withS3ObjectLogEnabled(config.s3ObjectLogEnable());
+                            .withS3ObjectLogEnabled(config.s3ObjectLogEnable())
+                            .withReadThrottle(readThrottle);
                     S3Stream stream = new S3Stream(
                         metadata.getStreamId(), metadata.getEpoch(),
                         metadata.getStartOffset(), metadata.getEndOffset(),
@@ -125,5 +129,8 @@ public class S3StreamClient implements StreamClient {
             scheduledCompactionTaskFuture.cancel(false);
         }
         streamObjectCompactionExecutor.shutdown();
+        if (readThrottle != null) {
+            readThrottle.stop();
+        }
     }
 }

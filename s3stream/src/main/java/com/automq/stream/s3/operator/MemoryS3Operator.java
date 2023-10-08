@@ -16,6 +16,7 @@
  */
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -52,7 +53,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, String logIdent) {
+    public Writer writer(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
         ByteBuf buf = Unpooled.buffer();
         storage.put(path, buf);
         return new Writer() {
