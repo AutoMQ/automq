@@ -92,13 +92,15 @@ public class S3ObjectControlManager {
 
     private final ScheduledExecutorService lifecycleCheckTimer;
 
+    private final ObjectCleaner objectCleaner;
+
     public S3ObjectControlManager(
-            QuorumController quorumController,
-            SnapshotRegistry snapshotRegistry,
-            LogContext logContext,
-            String clusterId,
-            S3Config config,
-            S3Operator operator) {
+        QuorumController quorumController,
+        SnapshotRegistry snapshotRegistry,
+        LogContext logContext,
+        String clusterId,
+        S3Config config,
+        S3Operator operator) {
         this.quorumController = quorumController;
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(S3ObjectControlManager.class);
@@ -112,12 +114,13 @@ public class S3ObjectControlManager {
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor();
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
-                DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+            DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        this.objectCleaner = new ObjectCleaner();
     }
 
     private void triggerCheckEvent() {
         ControllerRequestContext ctx = new ControllerRequestContext(
-                null, null, OptionalLong.empty());
+            null, null, OptionalLong.empty());
         this.quorumController.checkS3ObjectsLifecycle(ctx).whenComplete((ignore, exp) -> {
             if (exp != null) {
                 log.error("Failed to check the S3Object's lifecycle", exp);
@@ -142,7 +145,7 @@ public class S3ObjectControlManager {
         // update assigned stream id
         long newAssignedObjectId = nextAssignedObjectId.get() + count - 1;
         records.add(new ApiMessageAndVersion(new AssignedS3ObjectIdRecord()
-                .setAssignedS3ObjectId(newAssignedObjectId), (short) 0));
+            .setAssignedS3ObjectId(newAssignedObjectId), (short) 0));
 
         long firstAssignedObjectId = nextAssignedObjectId.get();
         for (int i = 0; i < count; i++) {
@@ -150,10 +153,10 @@ public class S3ObjectControlManager {
             long preparedTs = System.currentTimeMillis();
             long expiredTs = preparedTs + request.timeToLiveInMs();
             S3ObjectRecord record = new S3ObjectRecord()
-                    .setObjectId(objectId)
-                    .setObjectState(S3ObjectState.PREPARED.toByte())
-                    .setPreparedTimeInMs(preparedTs)
-                    .setExpiredTimeInMs(expiredTs);
+                .setObjectId(objectId)
+                .setObjectState(S3ObjectState.PREPARED.toByte())
+                .setPreparedTimeInMs(preparedTs)
+                .setExpiredTimeInMs(expiredTs);
             records.add(new ApiMessageAndVersion(record, (short) 0));
         }
         response.setFirstS3ObjectId(firstAssignedObjectId);
@@ -179,14 +182,14 @@ public class S3ObjectControlManager {
             return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
         }
         S3ObjectRecord record = new S3ObjectRecord()
-                .setObjectId(objectId)
-                .setObjectSize(objectSize)
-                .setObjectState(S3ObjectState.COMMITTED.toByte())
-                .setPreparedTimeInMs(object.getPreparedTimeInMs())
-                .setExpiredTimeInMs(object.getExpiredTimeInMs())
-                .setCommittedTimeInMs(committedTs);
+            .setObjectId(objectId)
+            .setObjectSize(objectSize)
+            .setObjectState(S3ObjectState.COMMITTED.toByte())
+            .setPreparedTimeInMs(object.getPreparedTimeInMs())
+            .setExpiredTimeInMs(object.getExpiredTimeInMs())
+            .setCommittedTimeInMs(committedTs);
         return ControllerResult.of(List.of(
-                new ApiMessageAndVersion(record, (short) 0)), Errors.NONE);
+            new ApiMessageAndVersion(record, (short) 0)), Errors.NONE);
     }
 
     public ControllerResult<Boolean> markDestroyObjects(List<Long> objects) {
@@ -198,12 +201,12 @@ public class S3ObjectControlManager {
                 return ControllerResult.of(Collections.emptyList(), false);
             }
             S3ObjectRecord record = new S3ObjectRecord()
-                    .setObjectId(objectId)
-                    .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
-                    .setPreparedTimeInMs(object.getPreparedTimeInMs())
-                    .setExpiredTimeInMs(object.getExpiredTimeInMs())
-                    .setCommittedTimeInMs(object.getCommittedTimeInMs())
-                    .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+                .setObjectId(objectId)
+                .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                .setPreparedTimeInMs(object.getPreparedTimeInMs())
+                .setExpiredTimeInMs(object.getExpiredTimeInMs())
+                .setCommittedTimeInMs(object.getCommittedTimeInMs())
+                .setMarkDestroyedTimeInMs(System.currentTimeMillis());
             records.add(new ApiMessageAndVersion(record, (short) 0));
         }
         return ControllerResult.atomicOf(records, true);
@@ -216,8 +219,8 @@ public class S3ObjectControlManager {
     public void replay(S3ObjectRecord record) {
         String objectKey = ObjectUtils.genKey(0, record.objectId());
         S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
-                record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
-                S3ObjectState.fromByte(record.objectState()));
+            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
+            S3ObjectState.fromByte(record.objectState()));
         objectsMetadata.put(record.objectId(), object);
         // TODO: recover the prepared objects and mark destroyed objects when restart the controller
         if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
@@ -249,13 +252,13 @@ public class S3ObjectControlManager {
             filter(S3Object::isExpired).
             forEach(obj -> {
                 S3ObjectRecord record = new S3ObjectRecord()
-                        .setObjectId(obj.getObjectId())
-                        .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
-                        .setObjectSize(obj.getObjectSize())
-                        .setPreparedTimeInMs(obj.getPreparedTimeInMs())
-                        .setExpiredTimeInMs(obj.getExpiredTimeInMs())
-                        .setCommittedTimeInMs(obj.getCommittedTimeInMs())
-                        .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
+                    .setObjectId(obj.getObjectId())
+                    .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
+                    .setObjectSize(obj.getObjectSize())
+                    .setPreparedTimeInMs(obj.getPreparedTimeInMs())
+                    .setExpiredTimeInMs(obj.getExpiredTimeInMs())
+                    .setCommittedTimeInMs(obj.getCommittedTimeInMs())
+                    .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, (short) 0));
                 // generate the records which listener reply for the object-destroy events
@@ -273,25 +276,7 @@ public class S3ObjectControlManager {
         if (destroyedObjectKeys.isEmpty()) {
             return ControllerResult.of(records, null);
         }
-        this.operator.delete(destroyedObjectKeys).whenCompleteAsync((resp, e) -> {
-            if (e != null) {
-                log.error("Failed to delete the S3Object from S3, objectKeys: {}",
-                        String.join(",", destroyedObjectKeys), e);
-                return;
-            }
-            if (resp != null && !resp.isEmpty()) {
-                List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
-                // notify the controller an objects deletion event to drive the removal of the objects
-                ControllerRequestContext ctx = new ControllerRequestContext(
-                    null, null, OptionalLong.empty());
-                this.quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
-                    if (exp != null) {
-                        log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
-                            Arrays.toString(deletedObjectIds.toArray()), exp);
-                    }
-                });
-            }
-        });
+        this.objectCleaner.clean(destroyedObjectKeys);
         return ControllerResult.of(records, null);
     }
 
@@ -330,30 +315,41 @@ public class S3ObjectControlManager {
         ControllerResult<Void> onDestroy(Long objectId);
     }
 
-    static class ObjectPair {
+    class ObjectCleaner {
 
-        private final Long objectId;
-        private final String objectKey;
+        public static final int MAX_BATCH_DELETE_SIZE = 800;
 
-        public ObjectPair(Long objectId, String objectKey) {
-            this.objectId = objectId;
-            this.objectKey = objectKey;
+        void clean(List<String> objectKeys) {
+            for (int i = 0; i < objectKeys.size() / MAX_BATCH_DELETE_SIZE; i++) {
+                List<String> batch = objectKeys.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
+                clean0(batch);
+            }
+            if (objectKeys.size() % MAX_BATCH_DELETE_SIZE != 0) {
+                List<String> batch = objectKeys.subList(objectKeys.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objectKeys.size());
+                clean0(batch);
+            }
         }
 
-        public Long objectId() {
-            return objectId;
-        }
-
-        public String objectKey() {
-            return objectKey;
-        }
-
-        @Override
-        public String toString() {
-            return "ObjectPair{" +
-                    "objectId=" + objectId +
-                    ", objectKey='" + objectKey + '\'' +
-                    '}';
+        private void clean0(List<String> objectKeys) {
+            operator.delete(objectKeys).whenCompleteAsync((resp, e) -> {
+                if (e != null) {
+                    log.error("Failed to delete the S3Object from S3, objectKeys: {}",
+                        String.join(",", objectKeys), e);
+                    return;
+                }
+                if (resp != null && !resp.isEmpty()) {
+                    List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
+                    // notify the controller an objects deletion event to drive the removal of the objects
+                    ControllerRequestContext ctx = new ControllerRequestContext(
+                        null, null, OptionalLong.empty());
+                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                        if (exp != null) {
+                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                                Arrays.toString(deletedObjectIds.toArray()), exp);
+                        }
+                    });
+                }
+            });
         }
     }
 
