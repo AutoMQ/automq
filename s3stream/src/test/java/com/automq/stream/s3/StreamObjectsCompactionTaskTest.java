@@ -87,7 +87,7 @@ class StreamObjectsCompactionTaskTest {
         // two stream object groups should be handled
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
                 .thenReturn(CompletableFuture.completedFuture(metadataList));
-        StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, Long.MAX_VALUE, 0);
+        StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, Long.MAX_VALUE, 0, null);
 
         AtomicLong objectIdAlloc = new AtomicLong(100);
         when(objectManager.prepareObject(anyInt(), anyLong())).thenAnswer(
@@ -136,7 +136,7 @@ class StreamObjectsCompactionTaskTest {
                 CompletableFuture.failedFuture(new RuntimeException("halt compaction task")));
 
         // The first group's compaction failed in prepareObject phase, the second group should not be handled.
-        StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0);
+        StreamObjectsCompactionTask task = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0, null);
         task.prepare();
         try {
             task.doCompactions().get();
@@ -221,7 +221,7 @@ class StreamObjectsCompactionTaskTest {
     @Test
     void testPrepareCompactGroups() throws ExecutionException, InterruptedException {
         // check if we can filter groups without limit of timestamp
-        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0);
+        StreamObjectsCompactionTask task1 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 0, null);
 
         long currentTimestamp = System.currentTimeMillis();
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
@@ -256,7 +256,7 @@ class StreamObjectsCompactionTaskTest {
         assertEquals(10, task1.getNextStartSearchingOffset());
 
         // check if we can filter two groups with limit of timestamp
-        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000);
+        StreamObjectsCompactionTask task2 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 100, 10000, null);
 
         currentTimestamp = System.currentTimeMillis();
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
@@ -293,7 +293,7 @@ class StreamObjectsCompactionTaskTest {
         assertEquals(5, task2.getNextStartSearchingOffset());
 
         // check if we can split big objects.
-        StreamObjectsCompactionTask task3 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 10 * MAX_PART_SIZE, 0);
+        StreamObjectsCompactionTask task3 = new StreamObjectsCompactionTask(objectManager, s3Operator, stream, 10 * MAX_PART_SIZE, 0, null);
 
         currentTimestamp = System.currentTimeMillis();
         when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))

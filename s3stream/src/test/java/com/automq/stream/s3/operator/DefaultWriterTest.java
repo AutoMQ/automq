@@ -69,7 +69,7 @@ class DefaultWriterTest {
 
     @Test
     void testWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = operator.writer("test-path", "testWrite", 100);
+        writer = operator.writer("test-path", "testWrite", 100, null);
 
         List<UploadPartRequest> requests = new ArrayList<>();
         List<Long> contentLengths = new ArrayList<>();
@@ -119,7 +119,7 @@ class DefaultWriterTest {
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = operator.writer("test-path-2", "testCopyWrite", 100);
+        writer = operator.writer("test-path-2", "testCopyWrite", 100, null);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();

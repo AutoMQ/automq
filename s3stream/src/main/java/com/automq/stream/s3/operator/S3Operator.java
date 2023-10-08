@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
@@ -53,11 +54,17 @@ public interface S3Operator {
     /**
      * New multi-part object writer.
      *
-     * @param path object path
-     * @param logIdent log identifier
+     * @param path         object path
+     * @param logIdent     log identifier
+     * @param readThrottle read throttle. null means no throttle.
+     *                     It is used to throttle reading in copy-write.
      * @return {@link Writer}
      */
-    Writer writer(String path, String logIdent);
+    Writer writer(String path, String logIdent, AsyncTokenBucketThrottle readThrottle);
+
+    default Writer writer(String path, String logIdent) {
+        return writer(path, logIdent, null);
+    }
 
     CompletableFuture<Void> delete(String path);
 

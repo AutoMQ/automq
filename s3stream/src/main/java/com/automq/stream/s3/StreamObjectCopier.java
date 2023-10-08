@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
@@ -35,17 +36,22 @@ public class StreamObjectCopier {
     private final Writer writer;
     private long nextObjectDataStartPosition;
     private int blockCount;
+    /**
+     * The number of copy-write operations for a small object(range). It can indicate the frequency of reading in copy-write.
+     */
+    private int smallSizeCopyWriteCount;
 
     private long size;
 
-    public StreamObjectCopier(long objectId, S3Operator s3Operator) {
+    public StreamObjectCopier(long objectId, S3Operator s3Operator, AsyncTokenBucketThrottle readThrottle) {
         this.s3Operator = s3Operator;
         // TODO: use a better clusterName
-        this.writer = s3Operator.writer(ObjectUtils.genKey(0, objectId), "[StreamObjectCopier objId=" + objectId + "]");
+        this.writer = s3Operator.writer(ObjectUtils.genKey(0, objectId), "[StreamObjectCopier objId=" + objectId + "]", readThrottle);
         this.completedObjects = new LinkedList<>();
         this.nextObjectDataStartPosition = 0;
         this.blockCount = 0;
         this.size = 0;
+        this.smallSizeCopyWriteCount = 0;
     }
 
     public void copy(S3ObjectMetadata metadata) {
@@ -65,17 +71,17 @@ public class StreamObjectCopier {
         try (ObjectReader reader = new ObjectReader(metadata, s3Operator)) {
             ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().join();
 
-            long restBytes = basicObjectInfo.dataBlockSize();
+            long remainingBytes = basicObjectInfo.dataBlockSize();
             // Only copy data blocks for now.
-            for (long i = 0; i < splitCount - 1 && restBytes >= Writer.MAX_PART_SIZE; i++) {
-                writer.copyWrite(metadata.key(), i * Writer.MAX_PART_SIZE, (i + 1) * Writer.MAX_PART_SIZE);
-                restBytes -= Writer.MAX_PART_SIZE;
+            for (long i = 0; i < splitCount - 1 && remainingBytes >= Writer.MAX_PART_SIZE; i++) {
+                copyWrite(metadata.key(), i * Writer.MAX_PART_SIZE, (i + 1) * Writer.MAX_PART_SIZE);
+                remainingBytes -= Writer.MAX_PART_SIZE;
             }
-            if (restBytes > Writer.MAX_PART_SIZE) {
-                throw new IllegalArgumentException("splitCount is too small, resting bytes: " + restBytes + " is larger than MAX_PART_SIZE: " + Writer.MAX_PART_SIZE + ".");
+            if (remainingBytes > Writer.MAX_PART_SIZE) {
+                throw new IllegalArgumentException("splitCount is too small, remaining bytes: " + remainingBytes + " is larger than MAX_PART_SIZE: " + Writer.MAX_PART_SIZE + ".");
             }
-            if (restBytes > 0) {
-                writer.copyWrite(metadata.key(), (splitCount - 1) * Writer.MAX_PART_SIZE, basicObjectInfo.dataBlockSize());
+            if (remainingBytes > 0) {
+                copyWrite(metadata.key(), (splitCount - 1) * Writer.MAX_PART_SIZE, basicObjectInfo.dataBlockSize());
             }
 
             completedObjects.add(new StreamObjectIndexData(basicObjectInfo.indexBlock(), nextObjectDataStartPosition, blockCount));
@@ -83,6 +89,13 @@ public class StreamObjectCopier {
             nextObjectDataStartPosition += basicObjectInfo.dataBlockSize();
             size += basicObjectInfo.dataBlockSize();
         }
+    }
+
+    private void copyWrite(String key, long start, long end) {
+        if (end - start <= Writer.MIN_PART_SIZE) {
+            smallSizeCopyWriteCount++;
+        }
+        writer.copyWrite(key, start, end);
     }
 
     public CompletableFuture<Void> close() {
@@ -94,6 +107,10 @@ public class StreamObjectCopier {
         writer.write(buf.duplicate());
         size += indexBlock.size() + footer.size();
         return writer.close();
+    }
+
+    public int smallSizeCopyWriteCount() {
+        return smallSizeCopyWriteCount;
     }
 
     public long size() {
