@@ -215,6 +215,55 @@ public class S3ObjectControlManagerTest {
         Mockito.verify(operator, Mockito.times(1)).delete(anyList());
     }
 
+    @Test
+    public void testDeleteTooManyOneRequest() throws Exception {
+        Mockito.when(controller.checkS3ObjectsLifecycle(any(ControllerRequestContext.class)))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.checkS3ObjectsLifecycle();
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+        Mockito.when(controller.notifyS3ObjectDeleted(any(ControllerRequestContext.class), anyList()))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.notifyS3ObjectDeleted(inv.getArgument(1));
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+        Mockito.doAnswer(ink -> {
+            List<String> objectKeys = ink.getArgument(0);
+            assertEquals(800, objectKeys.size());
+            return CompletableFuture.completedFuture(objectKeys);
+        }).doAnswer(ink -> {
+            List<String> objectKeys = ink.getArgument(0);
+            assertEquals(800, objectKeys.size());
+            return CompletableFuture.completedFuture(objectKeys);
+        }).doAnswer(ink -> {
+            List<String> objectKeys = ink.getArgument(0);
+            assertEquals(100, objectKeys.size());
+            return CompletableFuture.completedFuture(objectKeys);
+        }).when(operator).delete(anyList());
+        // 1. prepare 1700 object
+        ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
+            .setNodeId(BROKER0)
+            .setPreparedCount(1700)
+            .setTimeToLiveInMs(3 * 1000));
+        assertEquals(Errors.NONE.code(), result0.response().errorCode());
+        replay(manager, result0.records());
+
+        assertEquals(1700, manager.objectsMetadata().size());
+        // 2. 5s later, it should be marked as destroyed
+        Thread.sleep(5 * 1000);
+        assertEquals(1700, manager.objectsMetadata().size());
+        for (int i = 0; i < 1700; i++) {
+            S3Object object = manager.objectsMetadata().get((long) i);
+            assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
+        }
+        // 3. 5s later, it should be removed
+        Thread.sleep(5 * 1000);
+        assertEquals(0, manager.objectsMetadata().size());
+        Mockito.verify(operator, Mockito.times(3)).delete(anyList());
+    }
+
     private void prepareOneObject(long ttl) {
         ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
             .setNodeId(BROKER0)
@@ -227,8 +276,7 @@ public class S3ObjectControlManagerTest {
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
         assertEquals(0, assignedRecord.assignedS3ObjectId());
         verifyPrepareObjectRecord(result0.records().get(1), 0, ttl);
-        manager.replay(assignedRecord);
-        manager.replay((S3ObjectRecord) result0.records().get(1).message());
+        replay(manager, result0.records());
     }
 
 }
