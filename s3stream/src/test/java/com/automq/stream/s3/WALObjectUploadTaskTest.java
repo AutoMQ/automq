@@ -89,6 +89,8 @@ public class WALObjectUploadTaskTest {
         walObjectUploadTask.upload().get();
         walObjectUploadTask.commit().get();
 
+        // Release all the buffers
+        map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
         ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
         verify(objectManager, times(1)).commitWALObject(reqArg.capture());
@@ -119,6 +121,7 @@ public class WALObjectUploadTaskTest {
                 assertEquals(20, record.getBaseOffset());
                 record = it.next();
                 assertEquals(24, record.getLastOffset());
+                record.release();
             }
         }
 
@@ -128,9 +131,15 @@ public class WALObjectUploadTaskTest {
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get().get(0);
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
             try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
-                assertEquals(10, it.next().getBaseOffset());
-                assertEquals(12, it.next().getBaseOffset());
-                assertEquals(14, it.next().getBaseOffset());
+                StreamRecordBatch r1 = it.next();
+                assertEquals(10, r1.getBaseOffset());
+                r1.release();
+                StreamRecordBatch r2 = it.next();
+                assertEquals(12, r2.getBaseOffset());
+                r2.release();
+                StreamRecordBatch r3 = it.next();
+                assertEquals(14, r3.getBaseOffset());
+                r3.release();
             }
         }
     }
@@ -156,6 +165,9 @@ public class WALObjectUploadTaskTest {
         walObjectUploadTask.prepare().get();
         walObjectUploadTask.upload().get();
         walObjectUploadTask.commit().get();
+
+        // Release all the buffers
+        map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
 
         ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
