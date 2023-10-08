@@ -53,7 +53,7 @@ class EndToEndTest(Test):
 
         topics = {
             self.topic: self.topic_config,
-            "__consumer_offsets": group_metadata_config
+            # "__consumer_offsets": group_metadata_config
         }
 
         if self.topic:
