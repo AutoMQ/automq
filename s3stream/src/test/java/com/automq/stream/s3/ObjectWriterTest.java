@@ -75,12 +75,14 @@ public class ObjectWriterTest {
             assertEquals(10L, r.getBaseOffset());
             assertEquals(5L, r.getRecordBatch().count());
             assertEquals(r1.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            r.release();
             r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(15L, r.getBaseOffset());
             assertEquals(10L, r.getRecordBatch().count());
             assertEquals(r2.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
             assertFalse(it.hasNext());
+            r.release();
         }
 
         {
@@ -90,6 +92,7 @@ public class ObjectWriterTest {
             assertEquals(25L, r.getBaseOffset());
             assertEquals(5L, r.getRecordBatch().count());
             assertEquals(r3.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            r.release();
         }
 
         blockIndexes = objectReader.find(234, 1, 2).get();
@@ -103,6 +106,7 @@ public class ObjectWriterTest {
             assertEquals(5L, r.getRecordBatch().count());
             assertEquals(r4.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
             assertFalse(it.hasNext());
+            r.release();
         }
     }
 

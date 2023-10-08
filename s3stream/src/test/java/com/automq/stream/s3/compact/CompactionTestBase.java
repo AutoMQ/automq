@@ -83,16 +83,17 @@ public class CompactionTestBase {
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_0);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
+            List.of(r1, r2, r3, r4).forEach(StreamRecordBatch::release);
         }).join();
 
         // stream data for object 1
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
-            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(5));
-            StreamRecordBatch r5 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(60));
-            objectWriter.write(STREAM_0, List.of(r4));
-            objectWriter.write(STREAM_1, List.of(r5));
+            StreamRecordBatch r5 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(5));
+            StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(60));
+            objectWriter.write(STREAM_0, List.of(r5));
+            objectWriter.write(STREAM_1, List.of(r6));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
                     new StreamOffsetRange(STREAM_0, 15, 20),
@@ -101,6 +102,7 @@ public class CompactionTestBase {
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_1);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
+            List.of(r5, r6).forEach(StreamRecordBatch::release);
         }).join();
 
         // stream data for object 2
@@ -108,12 +110,12 @@ public class CompactionTestBase {
             assertEquals(OBJECT_2, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, s3Operator, 1024, 1024);
             // redundant record
-            StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 260, 20, TestUtils.random(20));
-            StreamRecordBatch r7 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(100));
-            StreamRecordBatch r8 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(40));
-            objectWriter.write(STREAM_1, List.of(r6));
+            StreamRecordBatch r7 = new StreamRecordBatch(STREAM_1, 0, 260, 20, TestUtils.random(20));
+            StreamRecordBatch r8 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(100));
+            StreamRecordBatch r9 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(40));
             objectWriter.write(STREAM_1, List.of(r7));
-            objectWriter.write(STREAM_2, List.of(r8));
+            objectWriter.write(STREAM_1, List.of(r8));
+            objectWriter.write(STREAM_2, List.of(r9));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
                     new StreamOffsetRange(STREAM_1, 400, 500),
@@ -122,6 +124,7 @@ public class CompactionTestBase {
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_2);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
+            List.of(r7, r8, r9).forEach(StreamRecordBatch::release);
         }).join();
         doReturn(CompletableFuture.completedFuture(S3_WAL_OBJECT_METADATA_LIST)).when(objectManager).getServerObjects();
     }

@@ -83,6 +83,7 @@ public class StreamObjectCopierTest {
             assertEquals(10L, r.getRecordBatch().count());
             assertEquals(r2.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
             assertFalse(it.hasNext());
+            r.release();
         }
 
         {
@@ -98,7 +99,11 @@ public class StreamObjectCopierTest {
             assertEquals(6L, r.getRecordBatch().count());
             assertEquals(r4.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
             assertFalse(it.hasNext());
+            r.release();
         }
+
+        // Release all StreamRecordBatch
+        List.of(r1, r2, r3, r4).forEach(StreamRecordBatch::release);
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
