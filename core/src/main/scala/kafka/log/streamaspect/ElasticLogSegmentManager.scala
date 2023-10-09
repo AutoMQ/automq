@@ -86,13 +86,13 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
 
   private def trimStream0(meta: ElasticLogMeta): Unit = {
     val streamMinOffsets = new util.HashMap[String, java.lang.Long]()
-    for (segMeta <- meta.getSegmentMetas.asScala) {
-      calStreamsMinOffset(streamMinOffsets, segMeta)
-    }
     inflightCleanedSegments.forEach((_, segment) => {
       val segMeta = segment.meta
       calStreamsMinOffset(streamMinOffsets, segMeta)
     })
+    for (segMeta <- meta.getSegmentMetas.asScala) {
+      calStreamsMinOffset(streamMinOffsets, segMeta)
+    }
 
     for (entry <- streamManager.streams().entrySet().asScala) {
       val streamName = entry.getKey
@@ -108,13 +108,13 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
 
   private def calStreamsMinOffset(streamMinOffsets: util.HashMap[String, java.lang.Long], segMeta: ElasticStreamSegmentMeta): Unit = {
     streamMinOffsets.compute("log" + segMeta.streamSuffix(), (_, v) => {
-      math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(0L))
+      math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(Long.MaxValue))
     })
     streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (_, v) => {
-      Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(0L))
+      Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(Long.MaxValue))
     })
     streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (_, v) => {
-      Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(0L))
+      Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(Long.MaxValue))
     })
   }
 
