@@ -23,7 +23,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
       - name: Build
-        run: ./gradlew releaseTarGz
+        run: ./gradlew releaseTarGz --refresh-dependencies
       - name: Update Nightly Release
         uses: andelf/nightly-release@main
         env:
