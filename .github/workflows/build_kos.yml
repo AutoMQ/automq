@@ -38,7 +38,7 @@ jobs:
         jdk: [ 17 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:
@@ -57,7 +57,7 @@ jobs:
         jdk: [ 17 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:
@@ -76,7 +76,7 @@ jobs:
         jdk: [ 17 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:

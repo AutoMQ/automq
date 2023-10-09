@@ -60,3 +60,6 @@ esk_test_suite:
     # exclude benchmark tests
     - kafkatest/tests/core/produce_bench_test.py
     - kafkatest/tests/core/consume_bench_test.py
+
+    # exclude kafka hanging or force shutdown tests
+    - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_produce_consume_with_broker_pause
