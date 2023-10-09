@@ -498,32 +498,39 @@ object ElasticLog extends Logging {
     val logIdent = s"[ElasticLog partition=$topicPartition] "
 
     val key = formatStreamKey(namespace, topicPartition)
+    var metaStreamIdOpt:Option[Long] = None
 
     try {
       val value = client.kvClient().getKV(KeyValue.Key.of(key)).get()
       val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
-      // First, open partition meta stream with higher epoch.
-      val metaStream = openStreamWithRetry(client, metaStreamId, currentEpoch + 1, logIdent)
-      info(s"$logIdent opened meta stream: stream_id=$metaStreamId, epoch=${currentEpoch + 1}")
-      // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
-      val metaMap = metaStream.replay().asScala
-
-      metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
-        // Then, destroy log stream, time index stream, txn stream, ...
-        // streamId <0 means the stream is not actually created.
-        logMeta.getStreamMap.values().forEach(streamId => if (streamId >= 0) {
-          openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
-          info(s"$logIdent destroyed stream: stream_id=$streamId, epoch=${currentEpoch + 1}")
-        })
-      })
-
-      // Finally, destroy meta stream.
-      metaStream.destroy()
+      metaStreamIdOpt = Some(metaStreamId)
     } finally {
       // remove kv info
       client.kvClient().delKV(KeyValue.Key.of(key)).get()
     }
 
+    if (metaStreamIdOpt.isEmpty) {
+      warn(s"$logIdent meta stream not exists for topicPartition $topicPartition, skip destroy")
+      return
+    }
+
+    // First, open partition meta stream with higher epoch.
+    val metaStream = openStreamWithRetry(client, metaStreamIdOpt.get, currentEpoch + 1, logIdent)
+    info(s"$logIdent opened meta stream: stream_id=${metaStreamIdOpt.get}, epoch=${currentEpoch + 1}")
+    // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
+    val metaMap = metaStream.replay().asScala
+
+    metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).foreach(logMeta => {
+      // Then, destroy log stream, time index stream, txn stream, ...
+      // streamId <0 means the stream is not actually created.
+      logMeta.getStreamMap.values().forEach(streamId => if (streamId >= 0) {
+        openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
+        info(s"$logIdent destroyed stream: stream_id=$streamId, epoch=${currentEpoch + 1}")
+      })
+    })
+
+    // Finally, destroy meta stream.
+    metaStream.destroy()
     info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
   }
 
