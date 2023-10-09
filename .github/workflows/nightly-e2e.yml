@@ -12,7 +12,7 @@ jobs:
       TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
       ESK_TEST_YML: "tests/kos_test_suite.yml"
       # fail fast
-      _DUCKTAPE_OPTIONS: "--exit-first"
+      # _DUCKTAPE_OPTIONS: "--exit-first"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
