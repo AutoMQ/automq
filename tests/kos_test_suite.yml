@@ -16,9 +16,9 @@
 # list all tests that are part of the suite under the test suite name:
 esk_test_suite:
   included:
-    #- kafkatest/sanity_checks
-    #- kafkatest/tests/client
-    #- kafkatest/tests/core
+    - kafkatest/sanity_checks
+    - kafkatest/tests/client
+    - kafkatest/tests/core
     - kafkatest/tests/tools
 
   # exclude zk tests and other no-needed tests
