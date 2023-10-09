@@ -22,18 +22,24 @@ import kafka.server.LogOffsetMetadata
 
 import java.util
 import java.util.Optional
-import java.util.concurrent.CompletableFuture
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
 import java.util.concurrent.atomic.AtomicReference
 import java.util.stream.Collectors
 import scala.jdk.CollectionConverters.{ListHasAsScala, SetHasAsScala}
 
 class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: ElasticLogStreamManager, logIdent: String) {
-  val segments = new java.util.concurrent.ConcurrentHashMap[Long, ElasticLogSegment]()
+  val segments = new ConcurrentHashMap[Long, ElasticLogSegment]()
+  private val inflightCleanedSegments = new ConcurrentHashMap[Long, ElasticLogSegment]()
   val segmentEventListener = new EventListener()
   val offsetUpperBound = new AtomicReference[LogOffsetMetadata]()
 
   def put(baseOffset: Long, segment: ElasticLogSegment): Unit = {
     segments.put(baseOffset, segment)
+    inflightCleanedSegments.remove(baseOffset, segment)
+  }
+
+  def putInflightCleaned(baseOffset: Long, segment: ElasticLogSegment): Unit = {
+    inflightCleanedSegments.put(baseOffset, segment)
   }
 
   def create(baseOffset: Long, segment: ElasticLogSegment): CompletableFuture[Void] = {
@@ -81,16 +87,13 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
   private def trimStream0(meta: ElasticLogMeta): Unit = {
     val streamMinOffsets = new util.HashMap[String, java.lang.Long]()
     for (segMeta <- meta.getSegmentMetas.asScala) {
-      streamMinOffsets.compute("log" + segMeta.streamSuffix(), (_, v) => {
-        math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(0L))
-      })
-      streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (_, v) => {
-        Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(0L))
-      })
-      streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (_, v) => {
-        Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(0L))
-      })
+      calStreamsMinOffset(streamMinOffsets, segMeta)
     }
+    inflightCleanedSegments.forEach((_, segment) => {
+      val segMeta = segment.meta
+      calStreamsMinOffset(streamMinOffsets, segMeta)
+    })
+
     for (entry <- streamManager.streams().entrySet().asScala) {
       val streamName = entry.getKey
       val stream = entry.getValue
@@ -101,6 +104,18 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
         stream.trim(minOffset)
       }
     }
+  }
+
+  private def calStreamsMinOffset(streamMinOffsets: util.HashMap[String, java.lang.Long], segMeta: ElasticStreamSegmentMeta): Unit = {
+    streamMinOffsets.compute("log" + segMeta.streamSuffix(), (_, v) => {
+      math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(0L))
+    })
+    streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (_, v) => {
+      Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(0L))
+    })
+    streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (_, v) => {
+      Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(0L))
+    })
   }
 
 
