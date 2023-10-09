@@ -574,6 +574,8 @@ object ElasticLog extends Logging {
     var metaSaveCf: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
     if (suffix.equals("")) {
       metaSaveCf = logSegmentManager.create(baseOffset, segment)
+    } else if (suffix.equals(UnifiedLog.CleanedFileSuffix)) {
+      logSegmentManager.putInflightCleaned(baseOffset, segment)
     }
 
     info(s"${logIdent}Created a new log segment with baseOffset = $baseOffset, suffix = $suffix")

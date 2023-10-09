@@ -371,6 +371,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     _meta.logSize(_log.sizeInBytes())
     _meta.time(timeIdx.stream.sliceRange)
     _meta.txn(txnIndex.stream.sliceRange)
+    _meta.streamSuffix(_meta.streamSuffix())
     _meta
   }
 
