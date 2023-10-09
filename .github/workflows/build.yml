@@ -26,7 +26,7 @@ jobs:
     outputs:
       build-kos: ${{ steps.filter.outputs.build-kos }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -45,7 +45,7 @@ jobs:
     needs: [ build-kos ]
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Collect build result
         run: |
           if echo build-kos-${{ needs.build-kos.result }} | grep -E 'cancelled|failure' -o > null
