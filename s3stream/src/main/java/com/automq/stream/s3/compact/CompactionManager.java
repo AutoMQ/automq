@@ -138,10 +138,10 @@ public class CompactionManager {
                 return CompletableFuture.completedFuture(CompactResult.SKIPPED);
             }
 
-            logger.info("Build compact request complete, time cost: {} ms, start committing objects", System.currentTimeMillis() - start);
+            logger.info("Build compact request complete, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms, start committing objects"
+                    , request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
             return objectManager.commitWALObject(request).thenApply(resp -> {
-                logger.info("Commit compact request succeed, {} objects compacted, WAL object id: {}, size: {}, stream object num: {}, time cost: {} ms",
-                        request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), System.currentTimeMillis() - start);
+                logger.info("Commit compact request succeed, time cost: {} ms", System.currentTimeMillis() - start);
                 if (s3ObjectLogEnable) {
                     s3ObjectLogger.trace("[Compact] {}", request);
                 }
@@ -182,7 +182,7 @@ public class CompactionManager {
                     logger.error("Error while force split object ", ex);
                 }
                 return null;
-            }).collect(Collectors.toList());
+            }).toList();
             if (streamObjects.stream().anyMatch(Objects::isNull)) {
                 logger.error("Force split WAL objects failed");
                 cf.completeExceptionally(new RuntimeException("Force split WAL objects failed"));
@@ -255,6 +255,7 @@ public class CompactionManager {
         List<CompletableFuture<StreamObject>> forceSplitCfs = splitWALObjects(objectsToSplit);
 
         CommitWALObjectRequest request = new CommitWALObjectRequest();
+        request.setObjectId(-1L);
         List<CompactionPlan> compactionPlans = new ArrayList<>();
         try {
             logger.info("{} WAL objects as compact candidates, total compaction size: {}",
