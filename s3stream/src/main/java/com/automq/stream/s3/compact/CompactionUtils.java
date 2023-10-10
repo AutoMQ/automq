@@ -84,4 +84,28 @@ public class CompactionUtils {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
     }
+
+    public static List<StreamDataBlock> mergeStreamDataBlocks(List<StreamDataBlock> streamDataBlocks) {
+        List<StreamDataBlock> mergedStreamDataBlocks = new ArrayList<>();
+        StreamDataBlock currStreamDataBlock = null;
+        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
+            if (currStreamDataBlock == null) {
+                currStreamDataBlock = streamDataBlock;
+            } else {
+                if (currStreamDataBlock.getStreamId() == streamDataBlock.getStreamId()
+                        && currStreamDataBlock.getEndOffset() == streamDataBlock.getStartOffset()) {
+                    currStreamDataBlock = new StreamDataBlock(currStreamDataBlock.getStreamId(),
+                            currStreamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(),
+                            currStreamDataBlock.getBlockId(), currStreamDataBlock.getObjectId(),
+                            currStreamDataBlock.getBlockStartPosition(), currStreamDataBlock.getBlockSize() + streamDataBlock.getBlockSize(),
+                            currStreamDataBlock.getRecordCount() + streamDataBlock.getRecordCount());
+                } else {
+                    mergedStreamDataBlocks.add(currStreamDataBlock);
+                    currStreamDataBlock = streamDataBlock;
+                }
+            }
+        }
+        mergedStreamDataBlocks.add(currStreamDataBlock);
+        return mergedStreamDataBlocks;
+    }
 }
