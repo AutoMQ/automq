@@ -217,7 +217,8 @@ public class CompactionManager {
         List<CompletableFuture<StreamObject>> splitFutureList = new ArrayList<>();
         for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlocksMap.entrySet()) {
             List<StreamDataBlock> streamDataBlocks = entry.getValue();
-            for (StreamDataBlock streamDataBlock : streamDataBlocks) {
+            List<StreamDataBlock> mergedStreamDataBlocks = CompactionUtils.mergeStreamDataBlocks(streamDataBlocks);
+            for (StreamDataBlock streamDataBlock : mergedStreamDataBlocks) {
                 CompletableFuture<StreamObject> streamObjectCf = new CompletableFuture<>();
                 splitFutureList.add(streamObjectCf);
                 objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
