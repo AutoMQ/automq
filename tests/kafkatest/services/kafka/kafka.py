@@ -168,6 +168,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     ADMIN_CLIENT_AS_BROKER_JAAS_CONF_PROPERTY = "java.security.auth.login.config=/mnt/security/admin_client_as_broker_jaas.conf"
     KRB5_CONF = "java.security.krb5.conf=/mnt/security/krb5.conf"
     SECURITY_PROTOCOLS = [SecurityConfig.PLAINTEXT, SecurityConfig.SSL, SecurityConfig.SASL_PLAINTEXT, SecurityConfig.SASL_SSL]
+    KAFKA_HEAP_OPTS = "-Xmx512m -Xms512m"
 
     logs = {
         "kafka_server_start_stdout_stderr": {
@@ -804,6 +805,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         cmd += fix_opts_for_new_jvm(node)
         cmd += "export KAFKA_OPTS=\"%s %s %s\"; " % (heap_kafka_opts, security_kafka_opts, self.extra_kafka_opts)
+        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.KAFKA_HEAP_OPTS
         cmd += "%s %s 1>> %s 2>> %s &" % \
                (self.path.script("kafka-server-start.sh", node),
                 KafkaService.CONFIG_FILE,
