@@ -353,8 +353,8 @@ class BrokerMetadataListener(
     }
 
     _delta = new MetadataDelta(_image)
-    if (isDebugEnabled) {
-      debug(s"Publishing new metadata delta $delta at offset ${_image.highestOffsetAndEpoch().offset}.")
+    if (isTraceEnabled) {
+      trace(s"Publishing new metadata delta $delta at offset ${_image.highestOffsetAndEpoch().offset}.")
     }
 
     // Kafka on S3 inject start
