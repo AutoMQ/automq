@@ -35,6 +35,11 @@ public interface Stream {
     long startOffset();
 
     /**
+     * Get stream confirm record offset.
+     */
+    long confirmOffset();
+
+    /**
      * Get stream next append record offset.
      */
     long nextOffset();

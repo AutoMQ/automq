@@ -64,7 +64,7 @@ public class S3StreamTest {
 
         boolean isException = false;
         try {
-            stream.fetch(100000, 200000, 100).get();
+            stream.fetch(120, 140, 100).get();
         } catch (ExecutionException e) {
             if (e.getCause() instanceof StreamClientException) {
                 isException = true;
