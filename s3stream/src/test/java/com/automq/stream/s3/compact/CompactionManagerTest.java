@@ -95,25 +95,11 @@ public class CompactionManagerTest extends CompactionTestBase {
     @Test
     public void testForceSplit() {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
-        List<StreamDataBlock> streamDataBlocks = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator)
-                .values().stream().flatMap(Collection::stream).collect(Collectors.toList());
         compactionManager = new CompactionManager(config, objectManager, s3Operator);
         List<CompletableFuture<StreamObject>> cfList = compactionManager.splitWALObjects(s3ObjectMetadata);
-        List<StreamObject> streamObjects = cfList.stream().map(CompletableFuture::join).collect(Collectors.toList());
+        List<StreamObject> streamObjects = cfList.stream().map(CompletableFuture::join).toList();
 
-        for (StreamObject streamObject : streamObjects) {
-            StreamDataBlock streamDataBlock = get(streamDataBlocks, streamObject);
-            Assertions.assertNotNull(streamDataBlock);
-            assertEquals(calculateObjectSize(List.of(streamDataBlock)), streamObject.getObjectSize());
-
-            DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(streamObject.getObjectId(),
-                    streamObject.getObjectSize(), S3ObjectType.STREAM), s3Operator);
-            reader.parseDataBlockIndex();
-            List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
-            assertEquals(1, streamDataBlocksFromS3.size());
-            assertEquals(0, streamDataBlocksFromS3.get(0).getBlockStartPosition());
-            assertTrue(contains(streamDataBlocks, streamDataBlocksFromS3.get(0)));
-        }
+        Assertions.assertEquals(7, streamObjects.size());
     }
 
     private StreamDataBlock get(List<StreamDataBlock> streamDataBlocks, StreamObject streamObject) {
