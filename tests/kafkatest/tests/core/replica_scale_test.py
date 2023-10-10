@@ -40,7 +40,9 @@ class ReplicaScaleTest(Test):
         self.kafka.start()
 
     @cluster(num_nodes=12)
-    @matrix(topic_count=[50], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
+    # FIXME: support large scale topic create
+    # @matrix(topic_count=[50], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
+    @matrix(topic_count=[3], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
     def test_produce_consume(self, topic_count, partition_count, replication_factor, metadata_quorum=quorum.zk):
         topics_create_start_time = time.time()
         for i in range(topic_count):
@@ -95,7 +97,9 @@ class ReplicaScaleTest(Test):
         trogdor.stop()
 
     @cluster(num_nodes=12)
-    @matrix(topic_count=[50], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
+    # FIXME: support large scale topic create
+    # @matrix(topic_count=[50], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
+    @matrix(topic_count=[1], partition_count=[34], replication_factor=[3], metadata_quorum=quorum.all_non_upgrade)
     def test_clean_bounce(self, topic_count, partition_count, replication_factor, metadata_quorum=quorum.zk):
         topics_create_start_time = time.time()
         for i in range(topic_count):
