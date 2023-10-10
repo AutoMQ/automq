@@ -22,16 +22,15 @@ import com.automq.stream.api.StreamClientException;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.eq;
@@ -65,7 +64,7 @@ public class S3StreamTest {
 
         boolean isException = false;
         try {
-            stream.fetch(120, 140, 100).get();
+            stream.fetch(100000, 200000, 100).get();
         } catch (ExecutionException e) {
             if (e.getCause() instanceof StreamClientException) {
                 isException = true;
