@@ -112,6 +112,11 @@ public class S3Stream implements Stream {
     }
 
     @Override
+    public long confirmOffset() {
+        return this.confirmOffset.get();
+    }
+
+    @Override
     public long nextOffset() {
         return nextOffset.get();
     }
@@ -172,32 +177,16 @@ public class S3Stream implements Stream {
         }
         LOGGER.trace("{} stream try fetch, startOffset: {}, endOffset: {}, maxBytes: {}", logIdent, startOffset, endOffset, maxBytes);
         long confirmOffset = this.confirmOffset.get();
-
-        // Reject request with invalid offset range
-        if (startOffset > confirmOffset) {
+        if (startOffset < startOffset() || endOffset > confirmOffset) {
             return FutureUtil.failedFuture(
                 new StreamClientException(
                     ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS,
                     String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
                 ));
         }
-
-        // Fix startOffset and endOffset
-        if (startOffset < startOffset()) {
-            long maxCount = endOffset - startOffset;
-            startOffset = startOffset();
-            endOffset = endOffset + maxCount;
-        }
-
-        if (endOffset > confirmOffset) {
-            endOffset = confirmOffset;
-        }
-
-        long finalStartOffset = startOffset;
-        long finalEndOffset = endOffset;
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
-            LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, finalStartOffset, finalEndOffset, maxBytes, records.size());
+            LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
             return new DefaultFetchResult(records);
         });
     }
