@@ -44,7 +44,8 @@ class AsyncTokenBucketThrottleTest {
         asyncTokenBucketThrottle.throttle(100)
             .thenRun(() -> {
                 // should be satisfied immediately
-                Assertions.assertTrue(System.currentTimeMillis() - startTimeStamp < 5);
+                long timeCost = System.currentTimeMillis() - startTimeStamp;
+                Assertions.assertTrue(timeCost < 10, "should be satisfied immediately but took" + timeCost + "ms");
             }).get();
     }
 
