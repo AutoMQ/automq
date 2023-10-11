@@ -166,7 +166,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // Note that 'maxPosition' and 'minOneMessage' are not used here. 'maxOffset' is a better alternative to 'maxPosition'.
     // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
     val records = _log.read(startOffset, maxOffset, maxSize)
-    if (records.sizeInBytes() == 0) {
+    if (records == null) {
       // After topic compact, the read request might be out of range. Segment should return null and log will retry read next segment.
       return null
     }
