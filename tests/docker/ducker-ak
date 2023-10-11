@@ -42,7 +42,7 @@ docker_run_memory_limit="2000m"
 default_num_nodes=14
 
 # The default OpenJDK base image.
-default_jdk="elasticstream/kos_e2e_base:3.4.0"
+default_jdk="automqinc/kos_e2e_base:3.4.0"
 
 # The default ducker-ak image name.
 default_image_name="ducker-ak-kos"
