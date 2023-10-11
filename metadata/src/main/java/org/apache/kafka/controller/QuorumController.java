@@ -1917,7 +1917,8 @@ public final class QuorumController implements Controller {
             // only use for test
             s3Operator = new MemoryS3Operator();
         } else {
-            s3Operator = new DefaultS3Operator(s3Config.endpoint(), s3Config.region(), s3Config.bucket());
+            s3Operator = new DefaultS3Operator(s3Config.endpoint(), s3Config.region(), s3Config.bucket(), false,
+                    s3Config.getAccessKey(), s3Config.getSecretKey());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);

@@ -86,6 +86,11 @@ public class MemoryClient implements Client {
         }
 
         @Override
+        public long confirmOffset() {
+            return nextOffsetAlloc.get();
+        }
+
+        @Override
         public long nextOffset() {
             return nextOffsetAlloc.get();
         }

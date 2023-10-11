@@ -365,6 +365,11 @@ class AlwaysSuccessClientTest {
             }
 
             @Override
+            public long confirmOffset() {
+                return nextOffset();
+            }
+
+            @Override
             public long nextOffset() {
                 return nextOffsetAlloc.get();
             }

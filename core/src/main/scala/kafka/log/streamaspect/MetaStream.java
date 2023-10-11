@@ -91,6 +91,11 @@ public class MetaStream implements Stream {
     }
 
     @Override
+    public long confirmOffset() {
+        return innerStream.confirmOffset();
+    }
+
+    @Override
     public long nextOffset() {
         return innerStream.nextOffset();
     }

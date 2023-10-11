@@ -21,6 +21,8 @@ package org.apache.kafka.metadata.stream;
  * S3Config contains the configuration of S3, such as the bucket name, the region, etc.
  */
 public class S3Config {
+    public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
+    public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
 
     // Only for test, if true, use mocked S3 related classes
     private final boolean mock;
@@ -32,6 +34,10 @@ public class S3Config {
     private final String region;
 
     private final String bucket;
+
+    private final String accessKey = System.getenv(ACCESS_KEY_NAME);
+
+    private final String secretKey = System.getenv(SECRET_KEY_NAME);
 
     // Only for test
     public S3Config(final boolean mock) {
@@ -69,5 +75,13 @@ public class S3Config {
 
     public long objectRetentionTimeInSecond() {
         return objectRetentionTimeInSecond;
+    }
+
+    public String getAccessKey() {
+        return accessKey;
+    }
+
+    public String getSecretKey() {
+        return secretKey;
     }
 }
