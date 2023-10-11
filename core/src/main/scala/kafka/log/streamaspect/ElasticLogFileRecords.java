@@ -112,6 +112,9 @@ public class ElasticLogFileRecords {
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
+        if (nextFetchOffset >= endOffset) {
+            return null;
+        }
         List<FetchResult> fetchResults = new LinkedList<>();
         while (readSize <= maxSize && nextFetchOffset < endOffset) {
             FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
