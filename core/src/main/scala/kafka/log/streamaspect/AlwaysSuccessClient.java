@@ -246,6 +246,11 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
+        public long confirmOffset() {
+            return stream.confirmOffset();
+        }
+
+        @Override
         public long nextOffset() {
             return stream.nextOffset();
         }

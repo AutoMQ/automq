@@ -94,6 +94,11 @@ public class LazyStream implements Stream {
     }
 
     @Override
+    public long confirmOffset() {
+        return inner.confirmOffset();
+    }
+
+    @Override
     public long nextOffset() {
         return inner.nextOffset();
     }
@@ -159,6 +164,11 @@ public class LazyStream implements Stream {
 
         @Override
         public long startOffset() {
+            return 0;
+        }
+
+        @Override
+        public long confirmOffset() {
             return 0;
         }
 
