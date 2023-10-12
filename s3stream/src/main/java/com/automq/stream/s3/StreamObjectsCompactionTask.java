@@ -289,6 +289,38 @@ public class StreamObjectsCompactionTask {
             this.smallSizeCopyWriteCount = smallSizeCopyWriteCount;
         }
 
+        public long getStreamId() {
+            return streamId;
+        }
+
+        public long getStartOffset() {
+            return startOffset;
+        }
+
+        public long getEndOffset() {
+            return endOffset;
+        }
+
+        public long getTimeCostInMs() {
+            return timeCostInMs;
+        }
+
+        public long getTotalObjectSize() {
+            return totalObjectSize;
+        }
+
+        public long getSourceObjectsCount() {
+            return sourceObjectsCount;
+        }
+
+        public long getTargetObjectCount() {
+            return targetObjectCount;
+        }
+
+        public long getSmallSizeCopyWriteCount() {
+            return smallSizeCopyWriteCount;
+        }
+
         @Override
         public String toString() {
             return "CompactionSummary{" +
