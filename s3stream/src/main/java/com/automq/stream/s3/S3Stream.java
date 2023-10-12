@@ -88,16 +88,10 @@ public class S3Stream implements Stream {
         this.closeHook = closeHook;
     }
 
-    public void triggerCompactionTask() throws ExecutionException, InterruptedException {
+    public StreamObjectsCompactionTask.CompactionSummary triggerCompactionTask() throws ExecutionException, InterruptedException {
         streamObjectsCompactionTask.prepare();
         streamObjectsCompactionTask.doCompactions().get();
-        StreamObjectsCompactionTask.CompactionSummary summary = streamObjectsCompactionTask.getCompactionsSummary();
-        if (summary == null) {
-            LOGGER.info("{} stream objects compaction finished, no compaction happened", logIdent);
-        } else {
-            LOGGER.info("{} stream objects compaction finished, compaction summary: {}", logIdent, summary);
-        }
-
+        return streamObjectsCompactionTask.getCompactionsSummary();
     }
 
     public boolean isClosed() {
