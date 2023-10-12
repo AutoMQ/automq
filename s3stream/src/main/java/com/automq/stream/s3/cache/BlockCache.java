@@ -217,7 +217,7 @@ public class BlockCache {
                 }
                 CacheBlock cacheBlock = streamCache.blocks.remove(entry.getKey().startOffset);
                 cacheBlock.free();
-                if (maxSize - this.size.addAndGet(-entry.getValue()) >= size) {
+                if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
                     return;
                 }
             }

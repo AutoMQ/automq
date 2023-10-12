@@ -54,6 +54,6 @@ public class ReadDataBlock {
     }
 
     public int sizeInBytes() {
-        return records.stream().mapToInt(r -> r.getRecordBatch().rawPayload().remaining()).sum();
+        return records.stream().mapToInt(StreamRecordBatch::size).sum();
     }
 }
