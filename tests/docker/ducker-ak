@@ -252,7 +252,7 @@ ducker_build() {
         --build-arg "ducker_creator=${user_name}" \
         --build-arg "jdk_version=${jdk_version}" \
         --build-arg "UID=${UID}" \
-        --build-arg "GENERAL_MIRROR_URL=${GENERAL_MIRROR_URL}" \
+        --build-arg "general_mirror_url=${general_mirror_url}" \
         -t "${image_name}" \
         -f "${ducker_dir}/Dockerfile" ${docker_args} -- .
     docker_status=$?
@@ -320,13 +320,13 @@ ducker_up() {
             -n|--num-nodes) set_once num_nodes "${2}" "number of nodes"; shift 2;;
             -j|--jdk) set_once jdk_version "${2}" "the OpenJDK base image"; shift 2;;
             -e|--expose-ports) set_once expose_ports "${2}" "the ports to expose"; shift 2;;
-            --general-mirror-url) set_once GENERAL_MIRROR_URL "${2}" "general mirror url to accelerate package downing for apt and pip"; shift 2;;
+            --general-mirror-url) set_once general_mirror_url "${2}" "general mirror url to accelerate package downing for apt and pip"; shift 2;;
             *) set_once image_name "${1}" "docker image name"; shift;;
         esac
     done
     [[ -n "${num_nodes}" ]] || num_nodes="${default_num_nodes}"
     [[ -n "${jdk_version}" ]] || jdk_version="${default_jdk}"
-    [[ -n "${GENERAL_MIRROR_URL}" ]] || GENERAL_MIRROR_URL="${default_general_mirror_url}"
+    [[ -n "${general_mirror_url}" ]] || general_mirror_url="${default_general_mirror_url}"
     [[ -n "${image_name}" ]] || image_name="${default_image_name}-${jdk_version/:/-}"
     [[ "${num_nodes}" =~ ^-?[0-9]+$ ]] || \
         die "ducker_up: the number of nodes must be an integer."
@@ -381,6 +381,10 @@ attempting to start new ones."
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
     # Kafka on S3 inject end
 
+    # node_hosts should be firstly created to be mounted to the container
+    mkdir -p "${ducker_dir}/build"
+    touch "${ducker_dir}/build/node_hosts"
+
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
     fi
@@ -389,7 +393,7 @@ attempting to start new ones."
         local node="ducker${n}"
         docker_run "${node}" "${image_name}" "${expose_ports}"
     done
-    mkdir -p "${ducker_dir}/build"
+
     exec 3<> "${ducker_dir}/build/node_hosts"
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
@@ -399,8 +403,6 @@ attempting to start new ones."
     exec 3>&-
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
-        docker exec --user=root "${node}" \
-            bash -c "cat /opt/kafka-dev/tests/docker/build/node_hosts"
         docker exec --user=root "${node}" \
             bash -c "grep -v ${node} /opt/kafka-dev/tests/docker/build/node_hosts >> /etc/hosts"
         [[ $? -ne 0 ]] && die "failed to append to the /etc/hosts file on ${node}"

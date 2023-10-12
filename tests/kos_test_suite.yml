@@ -47,6 +47,8 @@ esk_test_suite:
     - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-256\"}"
     - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-512\"}"
     - "kafkatest/tests/core/authorizer_test.py::AuthorizerTest.test_authorizer@{\"authorizer_class\": \"kafka.security.authorizer.AclAuthorizer\", \"metadata_quorum\": \"ZK\"}"
+    - kafkatest/tests/core/network_degrade_test.py
+    - kafkatest/tests/core/produce_bench_test.py::ProduceBenchTest.test_produce_bench_transactions
 
     # no-needed tests
     # no lag in esk
@@ -57,9 +59,6 @@ esk_test_suite:
     - kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
     # skip kraft upgrade test
     - kafkatest/tests/core/kraft_upgrade_test.py
-    # exclude benchmark tests
-    - kafkatest/tests/core/produce_bench_test.py
-    - kafkatest/tests/core/consume_bench_test.py
 
     # exclude kafka hanging or force shutdown tests
     - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_round_trip_workload_with_broker_partition
