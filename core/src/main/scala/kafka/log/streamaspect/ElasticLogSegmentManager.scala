@@ -130,7 +130,7 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
       streamMap.put(entry.getKey, entry.getValue.streamId())
     })
     elasticLogMeta.setStreamMap(streamMap)
-    val segmentList: util.List[ElasticStreamSegmentMeta] = segments.values.stream().map(segment => segment.meta).collect(Collectors.toList())
+    val segmentList: util.List[ElasticStreamSegmentMeta] = segments.values().stream().sorted().map(segment => segment.meta).collect(Collectors.toList())
     elasticLogMeta.setSegmentMetas(segmentList)
     elasticLogMeta
   }
