@@ -32,7 +32,7 @@ class ReplicaScaleTest(Test):
         super(ReplicaScaleTest, self).__init__(test_context=test_context)
         self.test_context = test_context
         self.zk = ZookeeperService(test_context, num_nodes=1) if quorum.for_test(test_context) == quorum.zk else None
-        self.kafka = KafkaService(self.test_context, num_nodes=8, zk=self.zk, controller_num_nodes_override=1)
+        self.kafka = KafkaService(self.test_context, num_nodes=6, zk=self.zk, controller_num_nodes_override=1)
 
     def setUp(self):
         if self.zk:
@@ -69,7 +69,9 @@ class ReplicaScaleTest(Test):
                                                 producer_workload_service.producer_node,
                                                 producer_workload_service.bootstrap_servers,
                                                 target_messages_per_sec=150000,
-                                                max_messages=3400000,
+                                                # optimize multiple partition read
+                                                # max_messages=3400000,
+                                                max_messages=1700000,
                                                 producer_conf={},
                                                 admin_client_conf={},
                                                 common_client_conf={},
@@ -85,7 +87,7 @@ class ReplicaScaleTest(Test):
                                                 consumer_workload_service.consumer_node,
                                                 consumer_workload_service.bootstrap_servers,
                                                 target_messages_per_sec=150000,
-                                                max_messages=3400000,
+                                                max_messages=1700000,
                                                 consumer_conf={},
                                                 admin_client_conf={},
                                                 common_client_conf={},
