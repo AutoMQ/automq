@@ -210,6 +210,12 @@ public class BrokerUpdater {
         Broker broker;
         lock.lock();
         try {
+            // Broker is fenced or in shutdown.
+            // For fenced or shutting-down brokers, the replicationControlManager will handle the movement of partitions.
+            // So we do not need to consider them in auto-balancer.
+            if (!this.broker.isActive()) {
+                return null;
+            }
             if (this.broker.timestamp < timeSince) {
                 LOGGER.warn("Broker {} metrics is out of sync, expected earliest time: {}, actual: {}",
                         this.broker.getBrokerId(), timeSince, this.broker.timestamp);
