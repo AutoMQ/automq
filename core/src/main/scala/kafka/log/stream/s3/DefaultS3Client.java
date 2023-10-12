@@ -65,7 +65,7 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, S3Operator operator) {
+    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, S3Operator operator, S3Operator compactionOperator) {
         this.config = ConfigUtils.to(kafkaConfig);
         this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
         this.operator = operator;
@@ -75,7 +75,7 @@ public class DefaultS3Client implements Client {
         this.streamManager = new ControllerStreamManager(this.requestSender, kafkaConfig);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
         this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, operator);
-        this.compactionManager = new CompactionManager(this.config, this.objectManager);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, compactionOperator);
         this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath(), this.config.s3WALCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, operator);
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, this.operator, this.config);
