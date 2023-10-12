@@ -72,6 +72,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         );
         readCf.exceptionally(ex -> {
             LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
+            // TODO: release read records memory
             return null;
         });
         return readCf;
@@ -99,7 +100,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         List<StreamRecordBatch> cacheRecords = cacheRst.getRecords();
         if (!cacheRecords.isEmpty()) {
             nextStartOffset = cacheRecords.get(cacheRecords.size() - 1).getLastOffset();
-            nextMaxBytes -= Math.min(nextMaxBytes, cacheRecords.stream().mapToInt(r -> r.getRecordBatch().rawPayload().remaining()).sum());
+            nextMaxBytes -= Math.min(nextMaxBytes, cacheRecords.stream().mapToInt(StreamRecordBatch::size).sum());
         }
         cacheRst.getReadahead().ifPresent(readahead -> backgroundReadahead(streamId, readahead));
         if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
@@ -192,7 +193,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                             } else {
                                 context.records.add(recordBatch);
                                 nextStartOffset = recordBatch.getLastOffset();
-                                nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.getRecordBatch().rawPayload().remaining());
+                                nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.size());
                                 if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
                                     fulfill = true;
                                 }
