@@ -18,12 +18,6 @@
 package kafka.log.stream.s3.network;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
@@ -38,35 +32,33 @@ import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 public class ControllerRequestSender {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
+    private static final long MAX_RETRY_DELAY_MS = 60 * 1000; // 1min
     private final RetryPolicyContext retryPolicyContext;
-    private final BrokerServer brokerServer;
     private final BrokerToControllerChannelManager channelManager;
 
     private final ScheduledExecutorService retryService;
 
     private final ConcurrentHashMap<ApiKeys, RequestAccumulator> requestAccumulatorMap;
 
-    private final int brokerId;
-
-    private final long brokerEpoch;
-
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
-        this.brokerServer = brokerServer;
         this.channelManager = brokerServer.clientToControllerChannelManager();
         this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
         this.requestAccumulatorMap = new ConcurrentHashMap<>();
-        this.brokerId = brokerServer.config().brokerId();
-        this.brokerEpoch = brokerServer.config().brokerEpoch();
     }
 
     public void send(RequestTask task) {
@@ -80,7 +72,7 @@ public class ControllerRequestSender {
 
     private void batchSend(RequestTask task) {
         requestAccumulatorMap.computeIfAbsent(task.request.apiKey(),
-            this::createRequestAccumulator).send(task);
+                this::createRequestAccumulator).send(task);
     }
 
     private void singleSend(RequestTask task) {
@@ -142,7 +134,7 @@ public class ControllerRequestSender {
             task.completeExceptionally(new RuntimeException("Retry count exceed max retry count: "));
             return;
         }
-        long delay = retryPolicyContext.retryBaseDelayMs * (1 << (task.sendCount() - 1));
+        long delay = Math.min(retryPolicyContext.retryBaseDelayMs * (1L << (Math.min(task.sendCount() - 1, 31))), MAX_RETRY_DELAY_MS);
         LOGGER.warn("Retry task: {}, delay : {} ms", task, delay);
         retryService.schedule(() -> send(task), delay, TimeUnit.MILLISECONDS);
     }
@@ -183,7 +175,7 @@ public class ControllerRequestSender {
                 void onSuccess(AbstractResponse response) {
                     if (!(response instanceof AbstractBatchResponse)) {
                         LOGGER.error("Unexpected response type: {} while sending request: {}",
-                            response.getClass().getSimpleName(), builder);
+                                response.getClass().getSimpleName(), builder);
                         onError(new RuntimeException("Unexpected response type while sending request"));
                         return;
                     }
@@ -238,7 +230,7 @@ public class ControllerRequestSender {
         private int sendCount;
 
         public RequestTask(WrapRequest request, CompletableFuture<R> future,
-            Function<T, ResponseHandleResult<R>> responseHandler) {
+                           Function<T, ResponseHandleResult<R>> responseHandler) {
             this.request = request;
             this.future = future;
             this.responseHandler = responseHandler;
