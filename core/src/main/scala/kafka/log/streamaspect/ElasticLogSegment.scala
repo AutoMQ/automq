@@ -41,7 +41,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         val indexIntervalBytes: Int,
                         val rollJitterMs: Long,
                         val time: Time,
-                        val logListener: ElasticLogSegmentEventListener) extends LogSegment {
+                        val logListener: ElasticLogSegmentEventListener) extends LogSegment with Comparable[ElasticLogSegment]{
 
   def log: FileRecords = throw new UnsupportedOperationException()
 
@@ -386,6 +386,10 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   override def canConvertToRelativeOffset(offset: Long): Boolean = throw new UnsupportedOperationException()
 
   override def hasOverflow: Boolean = throw new UnsupportedOperationException()
+
+  override def compareTo(o: ElasticLogSegment): Int = {
+    baseOffset.compareTo(o.baseOffset)
+  }
 }
 
 object ElasticLogSegment {
