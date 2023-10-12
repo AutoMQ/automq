@@ -30,6 +30,9 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.Unpooled;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -41,8 +44,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
@@ -70,8 +71,8 @@ public class S3Stream implements Stream {
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, StreamObjectsCompactionTask.Builder compactionTaskBuilder,
-        Function<Long, Void> closeHook) {
+                    StreamManager streamManager, StreamObjectsCompactionTask.Builder compactionTaskBuilder,
+                    Function<Long, Void> closeHook) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -164,7 +165,12 @@ public class S3Stream implements Stream {
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
-            cf.whenComplete((nil, ex) -> pendingFetches.remove(cf));
+            cf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
+                }
+                pendingFetches.remove(cf);
+            });
             return cf;
         } finally {
             readLock.unlock();
@@ -179,10 +185,10 @@ public class S3Stream implements Stream {
         long confirmOffset = this.confirmOffset.get();
         if (startOffset < startOffset() || endOffset > confirmOffset) {
             return FutureUtil.failedFuture(
-                new StreamClientException(
-                    ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS,
-                    String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
-                ));
+                    new StreamClientException(
+                            ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS,
+                            String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
+                    ));
         }
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
