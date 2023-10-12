@@ -63,7 +63,7 @@ public class Config {
         return brokerId;
     }
 
-    public String s3Endpont() {
+    public String s3Endpoint() {
         return s3Endpoint;
     }
 
