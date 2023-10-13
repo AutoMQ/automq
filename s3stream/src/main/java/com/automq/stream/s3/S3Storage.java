@@ -17,6 +17,9 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
@@ -184,6 +187,7 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         acquirePermit();
         WriteAheadLog.AppendResult appendResult;
@@ -208,6 +212,10 @@ public class S3Storage implements Storage {
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordOffset(), cf);
         handleAppendRequest(writeRequest);
         appendResult.future().thenAccept(nil -> handleAppendCallback(writeRequest));
+        cf.whenComplete((nil, ex) -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
+        });
         return cf;
     }
 
@@ -218,6 +226,7 @@ public class S3Storage implements Storage {
             } else {
                 // TODO: log limit
                 LOGGER.warn("log cache size {} is larger than {}, wait 100ms", logCache.size(), maxWALCacheSize);
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
                 try {
                     //noinspection BusyWait
                     Thread.sleep(100);
@@ -230,8 +239,13 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         mainExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
+        cf.whenComplete((nil, ex) -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE).operationTime.update(timerUtil.elapsed());
+        });
         return cf;
     }
 
@@ -318,8 +332,13 @@ public class S3Storage implements Storage {
      * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
      */
     CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadWALObject0(logCacheBlock, cf), cf, LOGGER, "uploadWALObject"));
+        cf.whenComplete((nil, ex) -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationTime.update(timerUtil.elapsed());
+        });
         return cf;
     }
 

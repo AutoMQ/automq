@@ -15,39 +15,10 @@
  * limitations under the License.
  */
 
-package com.automq.stream.metrics;
+package com.automq.stream.s3.metrics;
 
-import java.util.concurrent.atomic.LongAdder;
-
-public class Counter {
-    private final LongAdder count = new LongAdder();
-
-    public Counter() {
-    }
-
-    public void inc() {
-        count.add(1);
-    }
-
-    public void inc(int n) {
-        count.add(n);
-    }
-
-    public Statistics getAndReset() {
-        long count = this.count.sumThenReset();
-        return new Statistics(count);
-    }
-
-    public static class Statistics {
-        public long count;
-
-        public Statistics(long count) {
-            this.count = count;
-        }
-
-        @Override
-        public String toString() {
-            return "{count=" + count + '}';
-        }
-    }
+public interface Counter {
+    void inc();
+    void inc(long n);
+    long count();
 }

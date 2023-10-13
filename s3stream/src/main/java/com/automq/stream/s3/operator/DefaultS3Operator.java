@@ -17,8 +17,11 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.metrics.Counter;
-import com.automq.stream.metrics.Timer;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3ObjectStage;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
+import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.utils.FutureUtil;
@@ -78,10 +81,6 @@ public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
     private final String bucket;
     private final S3AsyncClient s3;
-    private static final Timer PART_UPLOAD_COST = new Timer();
-    private static final Timer OBJECT_INTO_CLOSE_COST = new Timer();
-    private static final Timer OBJECT_UPLOAD_COST = new Timer();
-    private static final Counter OBJECT_UPLOAD_SIZE = new Counter();
     private static final AtomicLong LAST_LOG_TIMESTAMP = new AtomicLong(System.currentTimeMillis());
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
@@ -139,11 +138,17 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void rangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
+        TimerUtil timerUtil = new TimerUtil();
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         s3.getObject(request, AsyncResponseTransformer.toPublisher())
-                .thenAccept(responsePublisher ->
-                        responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf)))
+                .thenAccept(responsePublisher -> {
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationCount.inc();
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationTime.update(timerUtil.elapsed());
+                    responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
+                })
                 .exceptionally(ex -> {
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT_FAIL).operationCount.inc();
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT_FAIL).operationTime.update(timerUtil.elapsed());
                     if (isUnrecoverable(ex)) {
                         LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
                         cf.completeExceptionally(ex);
@@ -163,15 +168,19 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void write0(String path, ByteBuf data, CompletableFuture<Void> cf) {
-        long now = System.currentTimeMillis();
+        TimerUtil timerUtil = new TimerUtil();
         int objectSize = data.readableBytes();
         PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         s3.putObject(request, body).thenAccept(putObjectResponse -> {
-            LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, System.currentTimeMillis() - now);
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.PUT_OBJECT).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.PUT_OBJECT).operationTime.update(timerUtil.elapsed());
+            LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsed());
             cf.complete(null);
             data.release();
         }).exceptionally(ex -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.PUT_OBJECT_FAIL).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.PUT_OBJECT_FAIL).operationTime.update(timerUtil.elapsed());
             if (isUnrecoverable(ex)) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -196,16 +205,23 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> delete(String path) {
-        long now = System.currentTimeMillis();
+        TimerUtil timerUtil = new TimerUtil();
         DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(bucket).key(path).build();
-        return s3.deleteObject(request).thenApply(deleteObjectResponse -> {
-            LOGGER.debug("delete object {}, cost {}ms", path, System.currentTimeMillis() - now);
+        return s3.deleteObject(request).thenAccept(deleteObjectResponse -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECT).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECT).operationTime.update(timerUtil.elapsed());
+            LOGGER.info("[ControllerS3Operator]: Delete object finished, path: {}, cost: {}", path, timerUtil.elapsed());
+        }).exceptionally(ex -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECT_FAIL).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECT_FAIL).operationTime.update(timerUtil.elapsed());
+            LOGGER.info("[ControllerS3Operator]: Delete object failed, path: {}, cost: {}, ex: {}", path, timerUtil.elapsed(), ex.getMessage());
             return null;
         });
     }
 
     @Override
     public CompletableFuture<List<String>> delete(List<String> objectKeys) {
+        TimerUtil timerUtil = new TimerUtil();
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
                 ObjectIdentifier.builder()
                         .key(key)
@@ -215,15 +231,19 @@ public class DefaultS3Operator implements S3Operator {
                 .bucket(bucket)
                 .delete(Delete.builder().objects(toDeleteKeys).build())
                 .build();
-        long start = System.currentTimeMillis();
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
         return this.s3.deleteObjects(request).thenApply(resp -> {
-            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), System.currentTimeMillis() - start);
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECTS).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECTS).operationTime.update(timerUtil.elapsed());
+            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), timerUtil.elapsed());
             return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
         }).exceptionally(ex -> {
-            LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}", objectKeys.size(), System.currentTimeMillis() - start, ex);
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECTS_FAIL).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.DELETE_OBJECTS_FAIL).operationTime.update(timerUtil.elapsed());
+            LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}", objectKeys.size(), timerUtil.elapsed(), ex.getMessage());
             return Collections.emptyList();
-        });    }
+        });
+    }
 
     private String range(long start, long end) {
         if (end == -1L) {
@@ -278,8 +298,11 @@ public class DefaultS3Operator implements S3Operator {
          */
         private final long minPartSize;
         private ObjectPart objectPart = null;
-        private final long start = System.nanoTime();
+        private final TimerUtil timerUtil = new TimerUtil();
         private final AsyncTokenBucketThrottle readThrottle;
+        private final AtomicInteger totalParts = new AtomicInteger(0);
+        private final AtomicLong totalUploadPartTime = new AtomicLong(0L);
+        private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
         public DefaultWriter(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
             this(path, logIdent, MIN_PART_SIZE, readThrottle);
@@ -297,11 +320,16 @@ public class DefaultS3Operator implements S3Operator {
             if (readThrottle != null && readThrottle.getTokenSize() < minPartSize) {
                 throw new IllegalArgumentException("Read throttle token size should be larger than minPartSize");
             }
+            TimerUtil timerUtil = new TimerUtil();
             CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).build();
             s3.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_MULTI_PART_UPLOAD).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_MULTI_PART_UPLOAD).operationTime.update(timerUtil.elapsed());
                 uploadId = createMultipartUploadResponse.uploadId();
                 uploadIdCf.complete(createMultipartUploadResponse.uploadId());
             }).exceptionally(ex -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_MULTI_PART_UPLOAD_FAIL).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_MULTI_PART_UPLOAD_FAIL).operationTime.update(timerUtil.elapsed());
                 if (isUnrecoverable(ex)) {
                     LOGGER.error("{} CreateMultipartUpload for object {} fail", logIdent, path, ex);
                     uploadIdCf.completeExceptionally(ex);
@@ -315,7 +343,7 @@ public class DefaultS3Operator implements S3Operator {
 
         @Override
         public CompletableFuture<Void> write(ByteBuf data) {
-            OBJECT_UPLOAD_SIZE.inc(data.readableBytes());
+            totalWriteSize.addAndGet(data.readableBytes());
 
             if (objectPart == null) {
                 objectPart = new ObjectPart(readThrottle);
@@ -337,14 +365,21 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         private void write0(String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> partCf) {
+            TimerUtil timerUtil = new TimerUtil();
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
             UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
                     .partNumber(partNumber).build();
             CompletableFuture<UploadPartResponse> uploadPartCf = s3.uploadPart(request, body);
             uploadPartCf.thenAccept(uploadPartResponse -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART).operationTime.update(timerUtil.elapsed());
+                totalParts.incrementAndGet();
+                totalUploadPartTime.addAndGet(timerUtil.elapsed());
                 CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
                 partCf.complete(completedPart);
             }).exceptionally(ex -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_FAIL).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_FAIL).operationTime.update(timerUtil.elapsed());
                 if (isUnrecoverable(ex)) {
                     LOGGER.error("{} UploadPart for object {}-{} fail", logIdent, path, partNumber, ex);
                     partCf.completeExceptionally(ex);
@@ -384,11 +419,18 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         private void copyWrite0(int partNumber, UploadPartCopyRequest request, CompletableFuture<CompletedPart> partCf) {
+            TimerUtil timerUtil = new TimerUtil();
             s3.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY).operationTime.update(timerUtil.elapsed());
+                totalParts.incrementAndGet();
+                totalUploadPartTime.addAndGet(timerUtil.elapsed());
                 CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber)
                         .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
                 partCf.complete(completedPart);
             }).exceptionally(ex -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY_FAIL).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY_FAIL).operationTime.update(timerUtil.elapsed());
                 LOGGER.warn("{} UploadPartCopy for object {}-{} fail, retry later", logIdent, path, partNumber, ex);
                 scheduler.schedule(() -> copyWrite0(partNumber, request, partCf), 100, TimeUnit.MILLISECONDS);
                 return null;
@@ -407,7 +449,8 @@ public class DefaultS3Operator implements S3Operator {
                 objectPart = null;
             }
 
-            OBJECT_INTO_CLOSE_COST.update(System.nanoTime() - start);
+            S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.READY_CLOSE).update(timerUtil.elapsed());
+            long readyCloseTime = timerUtil.elapsed();
             closeCf = new CompletableFuture<>();
             CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
             uploadDoneCf.thenAccept(nil -> {
@@ -416,23 +459,34 @@ public class DefaultS3Operator implements S3Operator {
                 close0(request);
             });
             closeCf.whenComplete((nil, ex) -> {
-                OBJECT_UPLOAD_COST.update(System.nanoTime() - start);
+                S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.TOTAL).update(timerUtil.elapsed());
+                S3ObjectMetricsStats.S3_OBJECT_COUNT.inc();
+                S3ObjectMetricsStats.S3_OBJECT_SIZE.update(totalWriteSize.get());
+                long totalUploadTime = timerUtil.elapsed();
                 long now = System.currentTimeMillis();
                 if (now - LAST_LOG_TIMESTAMP.get() > 10000) {
                     LAST_LOG_TIMESTAMP.set(now);
-                    LOGGER.info("{} upload s3 metrics, object_part_upload_timer {}, object_into_close_timer {}, object_upload_timer {}, object_upload_size {}",
+                    LOGGER.info("{} upload s3 metrics: total_parts: {}, upload_part_time_avg: {}, ready_close_time {}, total_upload_time {}, total_upload_size {}",
                             logIdent,
-                            PART_UPLOAD_COST.getAndReset(),
-                            OBJECT_INTO_CLOSE_COST.getAndReset(),
-                            OBJECT_UPLOAD_COST.getAndReset(),
-                            OBJECT_UPLOAD_SIZE.getAndReset());
+                            totalParts.get(),
+                            (double) totalUploadPartTime.get() / totalParts.get(),
+                            readyCloseTime,
+                            totalUploadTime,
+                            totalWriteSize.get());
                 }
             });
             return closeCf;
         }
 
         private void close0(CompleteMultipartUploadRequest request) {
-            s3.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> closeCf.complete(null)).exceptionally(ex -> {
+            TimerUtil timerUtil = new TimerUtil();
+            s3.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.COMPLETE_MULTI_PART_UPLOAD).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.COMPLETE_MULTI_PART_UPLOAD).operationTime.update(timerUtil.elapsed());
+                closeCf.complete(null);
+            }).exceptionally(ex -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.COMPLETE_MULTI_PART_UPLOAD_FAIL).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.COMPLETE_MULTI_PART_UPLOAD_FAIL).operationTime.update(timerUtil.elapsed());
                 if (isUnrecoverable(ex)) {
                     LOGGER.error("{} CompleteMultipartUpload for object {} fail", logIdent, path, ex);
                     closeCf.completeExceptionally(ex);
@@ -503,10 +557,10 @@ public class DefaultS3Operator implements S3Operator {
             }
 
             private void upload0() {
-                long start = System.nanoTime();
+                TimerUtil timerUtil = new TimerUtil();
                 uploadIdCf.thenAccept(uploadId -> write0(uploadId, partNumber, partBuf, partCf));
                 partCf.whenComplete((nil, ex) -> {
-                    PART_UPLOAD_COST.update(System.nanoTime() - start);
+                    S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsed());
                     partBuf.release();
                 });
             }

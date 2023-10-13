@@ -21,6 +21,9 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -69,8 +72,12 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> openStream0(streamId, options.epoch())),
-                LOGGER, "createAndOpenStream");
+        TimerUtil timerUtil = new TimerUtil();
+        return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_STREAM).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_STREAM).operationTime.update(timerUtil.elapsed());
+            return openStream0(streamId, options.epoch());
+        }), LOGGER, "createAndOpenStream");
     }
 
     @Override
@@ -103,8 +110,11 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
+        TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                             .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
                             .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
