@@ -26,13 +26,22 @@ import com.yammer.metrics.core.MetricProcessor;
 import com.yammer.metrics.core.Timer;
 import org.slf4j.Logger;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class S3MetricsLoggerProcessor implements MetricProcessor<S3MetricsLoggerProcessor.Context> {
     private static final Logger LOGGER = S3StreamMetricsLogger.logger("");
 
     @Override
     public void processMeter(MetricName name, Metered meter, Context context) throws Exception {
-        LOGGER.info("{}:{}:{}, count={}, mean/m1Rate/m5Rate={}/{}/{}", name.getType(), name.getName(), name.getScope(),
-                meter.count(), meter.meanRate(), meter.oneMinuteRate(), meter.fiveMinuteRate());
+        MetricSnapshot snapshot = context.get(name);
+        double delta = 0;
+        if (snapshot != null) {
+            delta = meter.count() - snapshot.getAccumulativeValue();
+        }
+        LOGGER.info("{}:{}:{}, delta={count={}}, total={count={},mean/m1Rate/m5Rate={}/{}/{}}", name.getType(), name.getName(), name.getScope(),
+                delta, meter.count(), meter.meanRate(), meter.oneMinuteRate(), meter.fiveMinuteRate());
+        context.set(name, new MetricSnapshot(meter.count(), -1));
     }
 
     @Override
@@ -42,8 +51,20 @@ public class S3MetricsLoggerProcessor implements MetricProcessor<S3MetricsLogger
 
     @Override
     public void processHistogram(MetricName name, Histogram histogram, Context context) throws Exception {
-        LOGGER.info("{}:{}:{}, mean/min/max={}/{}/{}", name.getType(), name.getName(), name.getScope(), histogram.mean(),
-                histogram.min(), histogram.max());
+        MetricSnapshot snapshot = context.get(name);
+        double delta = 0;
+        long deltaCount = 0;
+        double meanDelta = 0;
+        if (snapshot != null) {
+            delta = histogram.sum() - snapshot.getAccumulativeValue();
+            deltaCount = histogram.count() - snapshot.getCount();
+            if (deltaCount > 0) {
+                meanDelta = delta / deltaCount;
+            }
+        }
+        LOGGER.info("{}:{}:{}, delta={count={} sum={}, mean={}} total={mean/min/max={}/{}/{}}", name.getType(), name.getName(), name.getScope(),
+                 deltaCount, delta, meanDelta, histogram.mean(), histogram.min(), histogram.max());
+        context.set(name, new MetricSnapshot(histogram.sum(), histogram.count()));
     }
 
     @Override
@@ -58,6 +79,14 @@ public class S3MetricsLoggerProcessor implements MetricProcessor<S3MetricsLogger
     }
 
     public static class Context {
+        private final Map<MetricName, MetricSnapshot> metricsSnapshotMap = new HashMap<>();
 
+        public MetricSnapshot get(MetricName name) {
+            return metricsSnapshotMap.get(name);
+        }
+
+        public void set(MetricName name, MetricSnapshot snapshot) {
+            metricsSnapshotMap.put(name, snapshot);
+        }
     }
 }
