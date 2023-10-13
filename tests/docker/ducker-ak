@@ -36,7 +36,7 @@ kafka_dir="$( cd "${ducker_dir}/../.." && pwd )"
 docker_build_memory_limit="3200m"
 
 # The maximum mmemory consumption to allow in containers.
-docker_run_memory_limit="2000m"
+docker_run_memory_limit="3000m"
 
 # The default number of cluster nodes to bring up if a number is not specified.
 default_num_nodes=14
