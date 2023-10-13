@@ -56,12 +56,14 @@
     <allow pkg="kafka.server" />
     <allow pkg="kafka.log.streamaspect" />
     <allow pkg="kafka.log.stream" />
+    <allow pkg="kafka.metrics" />
     <allow pkg="com.google.flatbuffers" />
     <allow pkg="org.apache.kafka.metadata" />
     <allow pkg="org.apache.kafka.image" />
     <allow pkg="org.apache.kafka.clients" />
     <allow pkg="org.apache.kafka.controller" />
     <allow pkg="org.apache.kafka.raft" />
+    <allow pkg="org.apache.kafka.server" />
     <allow pkg="moe.cnkirito.kdio" />
   </subpackage>
 

@@ -127,6 +127,7 @@ public class AnomalyDetector {
             this.executionManager.appendActions(actions.subList(0, size));
             availableActionNum -= size;
             if (availableActionNum <= 0) {
+                logger.info("No more action can be executed in this round");
                 break;
             }
         }

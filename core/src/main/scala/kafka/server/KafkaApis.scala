@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import com.automq.stream.metrics.Timer
+import com.yammer.metrics.core.Histogram
 import kafka.admin.AdminUtils
 import kafka.api.ElectLeadersRequestOps
 import kafka.common.OffsetAndMetadata
@@ -27,8 +27,9 @@ import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinat
 import kafka.log.AppendOrigin
 import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
 import kafka.message.ZStdCompressionCodec
+import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.network.RequestChannel
-import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIMER, PRODUCE_CALLBACK_TIMER, PRODUCE_TIMER}
+import kafka.server.KafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.metadata.ConfigRepository
 import kafka.utils.Implicits._
@@ -669,7 +670,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
       // elastic stream inject start
       val callbackStartNanos = System.nanoTime()
-      PRODUCE_CALLBACK_TIMER.update(callbackStartNanos - startNanos)
+      PRODUCE_CALLBACK_TIME_HIST.update(callbackStartNanos - startNanos)
       // elastic stream inject end
 
 
@@ -731,14 +732,16 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
 
       // elastic stream inject start
-      PRODUCE_ACK_TIMER.update(System.nanoTime() - callbackStartNanos)
+      PRODUCE_ACK_TIME_HIST.update(System.nanoTime() - callbackStartNanos)
       val now = System.currentTimeMillis()
       val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
       if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
-        val produceStatistics = PRODUCE_TIMER.getAndReset()
-        val produceCallbackStatistics = PRODUCE_CALLBACK_TIMER.getAndReset()
-        val produceAckStatistics = PRODUCE_ACK_TIMER.getAndReset()
-        info(s"produce cost, produce=$produceStatistics callback=$produceCallbackStatistics ack=$produceAckStatistics")
+        info(s"produce cost, produce=${KafkaMetricsUtil.histToString(PRODUCE_TIME_HIST)} " +
+          s"callback=${KafkaMetricsUtil.histToString(PRODUCE_CALLBACK_TIME_HIST)} " +
+          s"ack=${KafkaMetricsUtil.histToString(PRODUCE_ACK_TIME_HIST)}")
+        PRODUCE_TIME_HIST.clear()
+        PRODUCE_CALLBACK_TIME_HIST.clear()
+        PRODUCE_ACK_TIME_HIST.clear()
       }
       // elastic stream inject end
     }
@@ -770,7 +773,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
         // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
         produceRequest.clearPartitionRecords()
-        PRODUCE_TIMER.update(System.nanoTime() - startNanos)
+        PRODUCE_TIME_HIST.update(System.nanoTime() - startNanos)
       }
 
       if (ElasticLogManager.enabled()) {
@@ -3661,9 +3664,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
 object KafkaApis {
   val LAST_RECORD_TIMESTAMP = new AtomicLong()
-  val PRODUCE_TIMER = new Timer()
-  val PRODUCE_CALLBACK_TIMER = new Timer()
-  val PRODUCE_ACK_TIMER = new Timer()
+  val PRODUCE_TIME_HIST: Histogram = KafkaMetricsGroup.newHistogram("ProduceTimeNanos")
+  val PRODUCE_CALLBACK_TIME_HIST: Histogram = KafkaMetricsGroup.newHistogram("ProduceCallbackTimeNanos")
+  val PRODUCE_ACK_TIME_HIST: Histogram = KafkaMetricsGroup.newHistogram("ProduceAckTimeNanos")
 
   // Traffic from both in-sync and out of sync replicas are accounted for in replication quota to ensure total replication
   // traffic doesn't exceed quota.
