@@ -56,6 +56,7 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
 
   @volatile
   protected var cache: MappedByteBuffer = {
+    Files.deleteIfExists(file.toPath)
     val newlyCreated = file.createNewFile()
     val raf = new RandomAccessFile(file, "rw")
     try {
@@ -63,11 +64,12 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
       if (newlyCreated) {
         if (maxIndexSize < entrySize)
           throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize)
-        raf.setLength(adjustedMaxIndexSize)
+        // LogSegment#onBecomeInactiveSegment will append one more record to index.
+        raf.setLength(adjustedMaxIndexSize + entrySize)
       }
 
       /* memory-map the file */
-      val idx = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, adjustedMaxIndexSize)
+      val idx = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, adjustedMaxIndexSize + entrySize)
       /* set the position in the index for the next entry */
       idx
     } finally {
