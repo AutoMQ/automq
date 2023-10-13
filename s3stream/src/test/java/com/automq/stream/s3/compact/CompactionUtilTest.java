@@ -21,6 +21,7 @@ import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.objects.ObjectStreamRange;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -59,22 +60,10 @@ public class CompactionUtilTest extends CompactionTestBase {
                 new StreamDataBlock(STREAM_0, 30, 100, 2, 1, 25, 80, 1),
                 new StreamDataBlock(STREAM_2, 40, 100, 3, 1, 105, 80, 1),
                 new StreamDataBlock(STREAM_2, 120, 150, 4, 1, 185, 30, 1));
-        List<StreamDataBlock> result = CompactionUtils.mergeStreamDataBlocks(streamDataBlocks);
+        List<List<StreamDataBlock>> result = CompactionUtils.groupStreamDataBlocks(streamDataBlocks);
         assertEquals(3, result.size());
-        assertEquals(STREAM_0, result.get(0).getStreamId());
-        assertEquals(0, result.get(0).getStartOffset());
-        assertEquals(100, result.get(0).getEndOffset());
-        assertEquals(0, result.get(0).getBlockStartPosition());
-        assertEquals(105, result.get(0).getBlockEndPosition());
-        assertEquals(STREAM_2, result.get(1).getStreamId());
-        assertEquals(40, result.get(1).getStartOffset());
-        assertEquals(100, result.get(1).getEndOffset());
-        assertEquals(105, result.get(1).getBlockStartPosition());
-        assertEquals(185, result.get(1).getBlockEndPosition());
-        assertEquals(STREAM_2, result.get(2).getStreamId());
-        assertEquals(120, result.get(2).getStartOffset());
-        assertEquals(150, result.get(2).getEndOffset());
-        assertEquals(185, result.get(2).getBlockStartPosition());
-        assertEquals(215, result.get(2).getBlockEndPosition());
+        Assertions.assertEquals(List.of(streamDataBlocks.get(0), streamDataBlocks.get(1), streamDataBlocks.get(2)), result.get(0));
+        Assertions.assertEquals(List.of(streamDataBlocks.get(3)), result.get(1));
+        Assertions.assertEquals(List.of(streamDataBlocks.get(4)), result.get(2));
     }
 }
