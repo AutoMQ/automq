@@ -18,7 +18,6 @@
 package org.apache.kafka.server.metrics.s3stream;
 
 import com.automq.stream.s3.wal.util.ThreadFactoryImpl;
-import com.automq.stream.utils.LogContext;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
