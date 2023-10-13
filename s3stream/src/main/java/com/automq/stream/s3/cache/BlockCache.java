@@ -39,7 +39,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     static final int BLOCK_SIZE = 1024 * 1024;
-    static final int MAX_READAHEAD_SIZE = 128 * 1024 * 1024;
+    static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
     private final long maxSize;
     final Map<Long, StreamCache> stream2cache = new HashMap<>();
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
