@@ -17,6 +17,9 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.ArrayList;
@@ -56,9 +59,13 @@ public class LogCache {
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
+        TimerUtil timerUtil = new TimerUtil();
         tryRealFree();
         size.addAndGet(recordBatch.size());
-        return activeBlock.put(recordBatch);
+        boolean full = activeBlock.put(recordBatch);
+        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE).operationCount.inc();
+        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE).operationTime.update(timerUtil.elapsed());
+        return full;
     }
 
     /**
@@ -86,8 +93,15 @@ public class LogCache {
      * Note: the records is retained, the caller should release it.
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        TimerUtil timerUtil = new TimerUtil();
         List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
         records.forEach(StreamRecordBatch::retain);
+        if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE).operationCount.inc();
+        } else {
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE_MISS).operationCount.inc();
+        }
+        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE).operationTime.update(timerUtil.elapsed());
         return records;
     }
 
