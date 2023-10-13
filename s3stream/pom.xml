@@ -43,7 +43,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-buffer</artifactId>
-            <version>4.1.94.Final</version>
+            <version>4.1.100.Final</version>
         </dependency>
         <dependency>
             <groupId>com.bucket4j</groupId>
@@ -54,6 +54,12 @@
             <groupId>moe.cnkirito.kdio</groupId>
             <artifactId>kdio-core</artifactId>
             <version>1.0.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
