@@ -75,6 +75,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
     private final long consumerPollTimeout;
     private final String consumerClientIdPrefix;
     private final String consumerGroupIdPrefix;
+    private final long consumerRetryBackOffMs;
     private final ClusterModel clusterModel;
     private final KafkaThread retrieveTask;
     private final Lock lock;
@@ -111,6 +112,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
         consumerPollTimeout = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
         consumerClientIdPrefix = config.getString(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX);
         consumerGroupIdPrefix = config.getString(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX);
+        consumerRetryBackOffMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS);
         retrieveTask = KafkaThread.daemon("retrieve-load-task", this);
     }
 
@@ -134,6 +136,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
         consumerProps.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
         consumerProps.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientIdPrefix + "-consumer-" + randomToken);
         consumerProps.setProperty(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupIdPrefix + "-group-" + randomToken);
+        consumerProps.setProperty(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, Long.toString(consumerRetryBackOffMs));
         consumerProps.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         consumerProps.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
         consumerProps.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -170,6 +173,10 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
 
         public boolean isFenced() {
             return this.isFenced;
+        }
+
+        public boolean isValid() {
+            return !this.isFenced && !this.endpoints.isEmpty();
         }
 
     }
@@ -227,10 +234,8 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
         }
         for (int brokerId : brokerIdsInUse) {
             BrokerEndpoints brokerEndpoints = this.bootstrapServerMap.get(brokerId);
-            if (brokerEndpoints != null) {
-                if (!brokerEndpoints.isFenced && !brokerEndpoints.getEndpoints().isEmpty()) {
-                    return true;
-                }
+            if (brokerEndpoints != null && brokerEndpoints.isValid()) {
+                return true;
             }
         }
         return false;
@@ -241,7 +246,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
             return false;
         }
         for (BrokerEndpoints brokerEndpoints : this.bootstrapServerMap.values()) {
-            if (!brokerEndpoints.isFenced() && !brokerEndpoints.getEndpoints().isEmpty()) {
+            if (brokerEndpoints.isValid()) {
                 return true;
             }
         }
@@ -252,7 +257,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
         Set<String> endpoints = new HashSet<>();
         this.brokerIdsInUse.clear();
         for (BrokerEndpoints brokerEndpoints : this.bootstrapServerMap.values()) {
-            if (!brokerEndpoints.isFenced() && !brokerEndpoints.getEndpoints().isEmpty()) {
+            if (brokerEndpoints.isValid()) {
                 endpoints.add(brokerEndpoints.getEndpoints().iterator().next());
                 this.brokerIdsInUse.add(brokerEndpoints.brokerId());
             }
@@ -282,6 +287,7 @@ public class LoadRetriever implements Runnable, BrokerStatusListener {
                     return;
                 }
                 bootstrapServer = buildBootstrapServer();
+                logger.info("Available brokers changed, new bootstrap server {}", bootstrapServer);
             }
         } finally {
             lock.unlock();

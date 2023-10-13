@@ -18,9 +18,9 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
-import com.automq.stream.metrics.Timer
 import io.netty.buffer.Unpooled
 import kafka.log._
+import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
 import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
@@ -166,12 +166,12 @@ class ElasticLog(val metaStream: MetaStream,
       while (!APPEND_PERMIT_SEMAPHORE.tryAcquire(permit, 1, TimeUnit.SECONDS)) {
         tryAppendStatistics()
       }
-      APPEND_PERMIT_ACQUIRE_FAIL_TIMER.update(System.nanoTime() - startTimestamp)
+      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
     }
 
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
-    APPEND_TIMER.update(System.nanoTime() - startTimestamp)
+    APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
     val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
@@ -179,7 +179,7 @@ class ElasticLog(val metaStream: MetaStream,
       APPEND_PERMIT_SEMAPHORE.release(permit)
     })
     cf.thenAccept(_ => {
-      APPEND_CALLBACK_TIMER.update(System.nanoTime() - startTimestamp)
+      APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       val startNanos = System.nanoTime()
@@ -218,7 +218,7 @@ class ElasticLog(val metaStream: MetaStream,
     }
     appendAckQueue.clear()
     confirmOffsetChangeListener.foreach(_.apply())
-    APPEND_ACK_TIMER.update(System.nanoTime() - startNanos)
+    APPEND_ACK_TIME_HIST.update(System.nanoTime() - startNanos)
 
     tryAppendStatistics()
   }
@@ -227,12 +227,16 @@ class ElasticLog(val metaStream: MetaStream,
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
     if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
-      val permitAcquireFailStatistics = APPEND_PERMIT_ACQUIRE_FAIL_TIMER.getAndReset()
       val remainingPermits = APPEND_PERMIT_SEMAPHORE.availablePermits()
-      val appendStatistics = APPEND_TIMER.getAndReset()
-      val callbackStatistics = APPEND_CALLBACK_TIMER.getAndReset()
-      val ackStatistics = APPEND_ACK_TIMER.getAndReset()
-      logger.info(s"log append cost, permitAcquireFail=$permitAcquireFailStatistics, remainingPermit=$remainingPermits/$APPEND_PERMIT ,append=$appendStatistics, callback=$callbackStatistics, ack=$ackStatistics")
+      logger.info(s"log append cost, permitAcquireFail=${KafkaMetricsUtil.histToString(APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST)}, " +
+        s"remainingPermit=$remainingPermits/$APPEND_PERMIT, " +
+        s"append=${KafkaMetricsUtil.histToString(APPEND_TIME_HIST)}, " +
+        s"callback=${KafkaMetricsUtil.histToString(APPEND_CALLBACK_TIME_HIST)}, " +
+        s"ack=${KafkaMetricsUtil.histToString(APPEND_ACK_TIME_HIST)}")
+      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.clear()
+      APPEND_TIME_HIST.clear()
+      APPEND_CALLBACK_TIME_HIST.clear()
+      APPEND_ACK_TIME_HIST.clear()
     }
   }
 
@@ -317,10 +321,10 @@ object ElasticLog extends Logging {
   private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
 
   private val LAST_RECORD_TIMESTAMP = new AtomicLong()
-  private val APPEND_PERMIT_ACQUIRE_FAIL_TIMER = new Timer()
-  private val APPEND_TIMER = new Timer()
-  private val APPEND_CALLBACK_TIMER = new Timer()
-  private val APPEND_ACK_TIMER = new Timer()
+  private val APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = KafkaMetricsGroup.newHistogram("AppendPermitAcquireFailTimeNanos")
+  private val APPEND_TIME_HIST = KafkaMetricsGroup.newHistogram("AppendTimeNanos")
+  private val APPEND_CALLBACK_TIME_HIST = KafkaMetricsGroup.newHistogram("AppendCallbackTimeNanos")
+  private val APPEND_ACK_TIME_HIST = KafkaMetricsGroup.newHistogram("AppendAckTimeNanos")
   private val APPEND_CALLBACK_EXECUTOR: Array[ExecutorService] = new Array[ExecutorService](8)
 
   for (i <- APPEND_CALLBACK_EXECUTOR.indices) {
