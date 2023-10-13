@@ -23,7 +23,6 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.Unpooled;
 import com.automq.stream.s3.metadata.ObjectUtils;
 
 import java.util.LinkedList;
@@ -135,7 +134,7 @@ public class DataBlockWriter {
 
         public IndexBlock() {
             position = nextDataBlockPosition;
-            buf = Unpooled.buffer(calculateIndexBlockSize());
+            buf = ByteBufAlloc.ALLOC.directBuffer(calculateIndexBlockSize());
             buf.writeInt(completedBlocks.size()); // block count
             long nextPosition = 0;
             // block index
@@ -179,7 +178,7 @@ public class DataBlockWriter {
         private final ByteBuf buf;
 
         public Footer() {
-            buf = Unpooled.buffer(FOOTER_SIZE);
+            buf = ByteBufAlloc.ALLOC.directBuffer(FOOTER_SIZE);
             buf.writeLong(indexBlock.position());
             buf.writeInt(indexBlock.size());
             buf.writeZero(40 - 8 - 4);
