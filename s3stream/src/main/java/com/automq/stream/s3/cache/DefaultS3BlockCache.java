@@ -17,6 +17,9 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -65,12 +68,20 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
         // submit read task to mainExecutor to avoid read slower the caller thread.
         mainExecutor.execute(() -> FutureUtil.exec(() ->
                 FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, true), readCf), readCf, LOGGER, "read")
         );
-        readCf.exceptionally(ex -> {
+        readCf.whenComplete((ret, ex) -> {
+            if (ret.isCacheHit()) {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE).operationCount.inc();
+            } else {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE_MISS).operationCount.inc();
+            }
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE).operationTime.update(timerUtil.elapsedAndReset());
+        }).exceptionally(ex -> {
             LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
             // TODO: release read records memory
             return null;
@@ -116,7 +127,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     .thenApply(s3Rst -> {
                         List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
                         records.addAll(s3Rst.getRecords());
-                        return new ReadDataBlock(records);
+                        return new ReadDataBlock(records, false);
                     });
         }, mainExecutor);
     }
