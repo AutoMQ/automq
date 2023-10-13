@@ -48,6 +48,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 
 public class CompactionManager {
@@ -215,42 +218,43 @@ public class CompactionManager {
         }
 
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, s3Operator);
-        Map<StreamDataBlock, CompletableFuture<StreamObject>> mergedDataBlocksMap = new HashMap<>();
+        List<Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>>> groupedDataBlocks = new ArrayList<>();
         for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlocksMap.entrySet()) {
-            List<StreamDataBlock> streamDataBlocks = entry.getValue();
-            for (StreamDataBlock mergedStreamDataBlocks : CompactionUtils.mergeStreamDataBlocks(streamDataBlocks)) {
-                mergedDataBlocksMap.put(mergedStreamDataBlocks, new CompletableFuture<>());
+            for (List<StreamDataBlock> streamDataBlocks : CompactionUtils.groupStreamDataBlocks(entry.getValue())) {
+                groupedDataBlocks.add(new ImmutablePair<>(streamDataBlocks, new CompletableFuture<>()));
             }
         }
-        logger.info("Force split {} WAL objects, expect to produce {} stream objects", objectMetadataList.size(), mergedDataBlocksMap.size());
-        objectManager.prepareObject(mergedDataBlocksMap.size(), TimeUnit.MINUTES.toMillis(30))
+        logger.info("Force split {} WAL objects, expect to produce {} stream objects", objectMetadataList.size(), groupedDataBlocks.size());
+        objectManager.prepareObject(groupedDataBlocks.size(), TimeUnit.MINUTES.toMillis(30))
                 .thenAcceptAsync(objectId -> {
-                    for (Map.Entry<StreamDataBlock, CompletableFuture<StreamObject>> entry : mergedDataBlocksMap.entrySet()) {
-                        StreamDataBlock streamDataBlock = entry.getKey();
-                        logger.debug("Split {} to {}", streamDataBlock, objectId);
+                    for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : groupedDataBlocks) {
+                        List<StreamDataBlock> streamDataBlocks = pair.getKey();
                         DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
-                        writer.copyWrite(streamDataBlock);
+                        for (StreamDataBlock block : streamDataBlocks) {
+                            logger.debug("Split {} to {}", block, objectId);
+                            writer.copyWrite(block);
+                        }
                         final long objectIdFinal = objectId;
                         writer.close().thenAccept(v -> {
                             StreamObject streamObject = new StreamObject();
                             streamObject.setObjectId(objectIdFinal);
-                            streamObject.setStreamId(streamDataBlock.getStreamId());
-                            streamObject.setStartOffset(streamDataBlock.getStartOffset());
-                            streamObject.setEndOffset(streamDataBlock.getEndOffset());
+                            streamObject.setStreamId(streamDataBlocks.get(0).getStreamId());
+                            streamObject.setStartOffset(streamDataBlocks.get(0).getStartOffset());
+                            streamObject.setEndOffset(streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset());
                             streamObject.setObjectSize(writer.size());
-                            entry.getValue().complete(streamObject);
+                            pair.getValue().complete(streamObject);
                         });
                         objectId++;
                     }
                 }, executorService).exceptionally(ex -> {
                     logger.error("Prepare object failed", ex);
-                    for (CompletableFuture<StreamObject> cf : mergedDataBlocksMap.values()) {
-                        cf.completeExceptionally(ex);
+                    for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : groupedDataBlocks) {
+                        pair.getValue().completeExceptionally(ex);
                     }
                     return null;
                 });
 
-        return mergedDataBlocksMap.values();
+        return groupedDataBlocks.stream().map(Pair::getValue).collect(Collectors.toList());
     }
 
     CommitWALObjectRequest buildCompactRequest(List<S3ObjectMetadata> s3ObjectMetadata) {

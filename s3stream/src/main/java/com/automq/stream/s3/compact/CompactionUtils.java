@@ -85,27 +85,28 @@ public class CompactionUtils {
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
     }
 
-    public static List<StreamDataBlock> mergeStreamDataBlocks(List<StreamDataBlock> streamDataBlocks) {
-        List<StreamDataBlock> mergedStreamDataBlocks = new ArrayList<>();
+    public static List<List<StreamDataBlock>> groupStreamDataBlocks(List<StreamDataBlock> streamDataBlocks) {
+        List<List<StreamDataBlock>> groupedStreamDataBlocks = new ArrayList<>();
+        List<StreamDataBlock> currGroup = new ArrayList<>();
         StreamDataBlock currStreamDataBlock = null;
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            if (currStreamDataBlock == null) {
-                currStreamDataBlock = streamDataBlock;
+            if (currGroup.isEmpty() || currStreamDataBlock == null) {
+                currGroup.add(streamDataBlock);
             } else {
                 if (currStreamDataBlock.getStreamId() == streamDataBlock.getStreamId()
                         && currStreamDataBlock.getEndOffset() == streamDataBlock.getStartOffset()) {
-                    currStreamDataBlock = new StreamDataBlock(currStreamDataBlock.getStreamId(),
-                            currStreamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(),
-                            currStreamDataBlock.getBlockId(), currStreamDataBlock.getObjectId(),
-                            currStreamDataBlock.getBlockStartPosition(), currStreamDataBlock.getBlockSize() + streamDataBlock.getBlockSize(),
-                            currStreamDataBlock.getRecordCount() + streamDataBlock.getRecordCount());
+                    currGroup.add(streamDataBlock);
                 } else {
-                    mergedStreamDataBlocks.add(currStreamDataBlock);
-                    currStreamDataBlock = streamDataBlock;
+                    groupedStreamDataBlocks.add(currGroup);
+                    currGroup = new ArrayList<>();
+                    currGroup.add(streamDataBlock);
                 }
             }
+            currStreamDataBlock = streamDataBlock;
         }
-        mergedStreamDataBlocks.add(currStreamDataBlock);
-        return mergedStreamDataBlocks;
+        if (!currGroup.isEmpty()) {
+            groupedStreamDataBlocks.add(currGroup);
+        }
+        return groupedStreamDataBlocks;
     }
 }
