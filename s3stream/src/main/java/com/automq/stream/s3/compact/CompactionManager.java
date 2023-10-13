@@ -34,6 +34,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -174,7 +175,7 @@ public class CompactionManager {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
         this.scheduledExecutorService.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objects -> {
-            List<CompletableFuture<StreamObject>> cfList = splitWALObjects(objects);
+            Collection<CompletableFuture<StreamObject>> cfList = splitWALObjects(objects);
             List<StreamObject> streamObjects = cfList.stream().map(e -> {
                 try {
                     return e.join();
@@ -208,41 +209,48 @@ public class CompactionManager {
     }
 
 
-    List<CompletableFuture<StreamObject>> splitWALObjects(List<S3ObjectMetadata> objectMetadataList) {
+    Collection<CompletableFuture<StreamObject>> splitWALObjects(List<S3ObjectMetadata> objectMetadataList) {
         if (objectMetadataList.isEmpty()) {
             return new ArrayList<>();
         }
 
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, s3Operator);
-        List<CompletableFuture<StreamObject>> splitFutureList = new ArrayList<>();
+        Map<StreamDataBlock, CompletableFuture<StreamObject>> mergedDataBlocksMap = new HashMap<>();
         for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlocksMap.entrySet()) {
             List<StreamDataBlock> streamDataBlocks = entry.getValue();
-            List<StreamDataBlock> mergedStreamDataBlocks = CompactionUtils.mergeStreamDataBlocks(streamDataBlocks);
-            for (StreamDataBlock streamDataBlock : mergedStreamDataBlocks) {
-                CompletableFuture<StreamObject> streamObjectCf = new CompletableFuture<>();
-                splitFutureList.add(streamObjectCf);
-                objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
-                        .thenAcceptAsync(objectId -> {
-                            logger.debug("Split {} to {}", streamDataBlock, objectId);
-                            DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
-                            writer.copyWrite(streamDataBlock);
-                            writer.close().thenAccept(v -> {
-                                StreamObject streamObject = new StreamObject();
-                                streamObject.setObjectId(objectId);
-                                streamObject.setStreamId(streamDataBlock.getStreamId());
-                                streamObject.setStartOffset(streamDataBlock.getStartOffset());
-                                streamObject.setEndOffset(streamDataBlock.getEndOffset());
-                                streamObject.setObjectSize(writer.size());
-                                streamObjectCf.complete(streamObject);
-                            });
-                        }, executorService).exceptionally(ex -> {
-                            logger.error("Prepare object failed", ex);
-                            streamObjectCf.completeExceptionally(ex);
-                            return null;
-                        });
+            for (StreamDataBlock mergedStreamDataBlocks : CompactionUtils.mergeStreamDataBlocks(streamDataBlocks)) {
+                mergedDataBlocksMap.put(mergedStreamDataBlocks, new CompletableFuture<>());
             }
         }
-        return splitFutureList;
+        logger.info("Force split {} WAL objects, expect to produce {} stream objects", objectMetadataList.size(), mergedDataBlocksMap.size());
+        objectManager.prepareObject(mergedDataBlocksMap.size(), TimeUnit.MINUTES.toMillis(30))
+                .thenAcceptAsync(objectId -> {
+                    for (Map.Entry<StreamDataBlock, CompletableFuture<StreamObject>> entry : mergedDataBlocksMap.entrySet()) {
+                        StreamDataBlock streamDataBlock = entry.getKey();
+                        logger.debug("Split {} to {}", streamDataBlock, objectId);
+                        DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
+                        writer.copyWrite(streamDataBlock);
+                        final long objectIdFinal = objectId;
+                        writer.close().thenAccept(v -> {
+                            StreamObject streamObject = new StreamObject();
+                            streamObject.setObjectId(objectIdFinal);
+                            streamObject.setStreamId(streamDataBlock.getStreamId());
+                            streamObject.setStartOffset(streamDataBlock.getStartOffset());
+                            streamObject.setEndOffset(streamDataBlock.getEndOffset());
+                            streamObject.setObjectSize(writer.size());
+                            entry.getValue().complete(streamObject);
+                        });
+                        objectId++;
+                    }
+                }, executorService).exceptionally(ex -> {
+                    logger.error("Prepare object failed", ex);
+                    for (CompletableFuture<StreamObject> cf : mergedDataBlocksMap.values()) {
+                        cf.completeExceptionally(ex);
+                    }
+                    return null;
+                });
+
+        return mergedDataBlocksMap.values();
     }
 
     CommitWALObjectRequest buildCompactRequest(List<S3ObjectMetadata> s3ObjectMetadata) {
@@ -252,7 +260,7 @@ public class CompactionManager {
         // force split objects that exists for too long
         logger.info("{} WAL objects to be force split, total split size {}", objectsToSplit.size(),
                 objectMetadataFilterMap.get(true).stream().mapToLong(S3ObjectMetadata::objectSize).sum());
-        List<CompletableFuture<StreamObject>> forceSplitCfs = splitWALObjects(objectsToSplit);
+        Collection<CompletableFuture<StreamObject>> forceSplitCfs = splitWALObjects(objectsToSplit);
 
         CommitWALObjectRequest request = new CommitWALObjectRequest();
         request.setObjectId(-1L);
