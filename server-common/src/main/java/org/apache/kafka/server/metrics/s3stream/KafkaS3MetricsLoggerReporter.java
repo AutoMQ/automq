@@ -41,6 +41,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("s3-metrics-logger"));
     private final S3MetricsLoggerProcessor processor = new S3MetricsLoggerProcessor();
+    private final S3MetricsLoggerProcessor.Context context = new S3MetricsLoggerProcessor.Context();
     private long loggerIntervalMs = 10000;
 
     @Override
@@ -83,7 +84,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
         for (Map.Entry<String, Map<MetricName, Metric>> entry : interestedMetrics.entrySet()) {
             for (Map.Entry<MetricName, Metric> metricEntry : entry.getValue().entrySet()) {
                 try {
-                    metricEntry.getValue().processWith(processor, metricEntry.getKey(), new S3MetricsLoggerProcessor.Context());
+                    metricEntry.getValue().processWith(processor, metricEntry.getKey(), context);
                 } catch (Exception e) {
                     LOGGER.error("Error when processing metric: {}", metricEntry.getKey(), e);
                 }
