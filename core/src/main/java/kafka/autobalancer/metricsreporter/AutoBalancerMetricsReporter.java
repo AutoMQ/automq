@@ -44,11 +44,10 @@ import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.KafkaThread;
+import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -63,14 +62,8 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     public static final String DEFAULT_BOOTSTRAP_SERVERS_PORT = "9092";
     protected static final Duration PRODUCER_CLOSE_TIMEOUT = Duration.ofSeconds(5);
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
-    // KafkaYammerMetrics class in Kafka 3.3+
-    private static final String YAMMER_METRICS_IN_KAFKA_3_3_AND_LATER = "org.apache.kafka.server.metrics.KafkaYammerMetrics";
-    // KafkaYammerMetrics class in Kafka 2.6+
-    private static final String YAMMER_METRICS_IN_KAFKA_2_6_AND_LATER = "kafka.metrics.KafkaYammerMetrics";
-    // KafkaYammerMetrics class in Kafka 2.5-
-    private static final String YAMMER_METRICS_IN_KAFKA_2_5_AND_EARLIER = "com.yammer.metrics.Metrics";
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
-    private final MetricsRegistry metricsRegistry = metricsRegistry();
+    private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
     private YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
@@ -101,66 +94,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
 
         return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + (port == null ? DEFAULT_BOOTSTRAP_SERVERS_PORT : port);
-    }
-
-    /**
-     * Starting with Kafka 3.3.0 a new class, "org.apache.kafka.server.metrics.KafkaYammerMetrics", provides the default Metrics Registry.
-     * <p>
-     * This is the third default Metrics Registry class change since Kafka 2.5:
-     * - Metrics Registry class in Kafka 3.3+: org.apache.kafka.server.metrics.KafkaYammerMetrics
-     * - Metrics Registry class in Kafka 2.6+: kafka.metrics.KafkaYammerMetrics
-     * - Metrics Registry class in Kafka 2.5-: com.yammer.metrics.Metrics
-     * <p>
-     * The older default registries do not work with the newer versions of Kafka. Therefore, if the new class exists, we use it and if
-     * it doesn't exist we will fall back on the older ones.
-     * <p>
-     * Once CC supports only 2.6.0 and newer, we can clean this up and use only KafkaYammerMetrics all the time.
-     *
-     * @return MetricsRegistry with Kafka metrics
-     */
-    private static MetricsRegistry metricsRegistry() {
-        Object metricsRegistry;
-        Class<?> metricsClass;
-
-        try {
-            // First we try to get the KafkaYammerMetrics class for Kafka 3.3+
-            metricsClass = Class.forName(YAMMER_METRICS_IN_KAFKA_3_3_AND_LATER);
-            LOGGER.info("Found class {} for Kafka 3.3 and newer.", YAMMER_METRICS_IN_KAFKA_3_3_AND_LATER);
-        } catch (ClassNotFoundException e) {
-            LOGGER.info("Class {} not found. We are probably on Kafka 3.2 or older.", YAMMER_METRICS_IN_KAFKA_3_3_AND_LATER);
-
-            // We did not find the KafkaYammerMetrics class from Kafka 3.3+. So we are probably on older Kafka version
-            //     => we will try the older class for Kafka 2.6+.
-            try {
-                metricsClass = Class.forName(YAMMER_METRICS_IN_KAFKA_2_6_AND_LATER);
-                LOGGER.info("Found class {} for Kafka 2.6 and newer.", YAMMER_METRICS_IN_KAFKA_2_6_AND_LATER);
-            } catch (ClassNotFoundException ee) {
-                LOGGER.info("Class {} not found. We are probably on Kafka 2.5 or older.", YAMMER_METRICS_IN_KAFKA_2_6_AND_LATER);
-
-                // We did not find the KafkaYammerMetrics class from Kafka 2.6+. So we are probably on older Kafka version
-                //     => we will try the older class for Kafka 2.5-.
-                try {
-                    metricsClass = Class.forName(YAMMER_METRICS_IN_KAFKA_2_5_AND_EARLIER);
-                    LOGGER.info("Found class {} for Kafka 2.5 and earlier.", YAMMER_METRICS_IN_KAFKA_2_5_AND_EARLIER);
-                } catch (ClassNotFoundException eee) {
-                    // No class was found for any Kafka version => we should fail
-                    throw new RuntimeException("Failed to find Yammer Metrics class", eee);
-                }
-            }
-        }
-
-        try {
-            Method method = metricsClass.getMethod("defaultRegistry");
-            metricsRegistry = method.invoke(null);
-        } catch (InvocationTargetException | NoSuchMethodException | IllegalAccessException e) {
-            throw new RuntimeException("Failed to get metrics registry", e);
-        }
-
-        if (metricsRegistry instanceof MetricsRegistry) {
-            return (MetricsRegistry) metricsRegistry;
-        } else {
-            throw new RuntimeException("Metrics registry does not have the expected type");
-        }
     }
 
     @Override
