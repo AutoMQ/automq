@@ -40,7 +40,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -95,11 +94,14 @@ public class CompactionManagerTest extends CompactionTestBase {
     @Test
     public void testForceSplit() {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        when(config.s3ObjectCompactionForceSplitPeriod()).thenReturn(0);
         compactionManager = new CompactionManager(config, objectManager, s3Operator);
-        Collection<CompletableFuture<StreamObject>> cfList = compactionManager.splitWALObjects(s3ObjectMetadata);
-        List<StreamObject> streamObjects = cfList.stream().map(CompletableFuture::join).toList();
+        CommitWALObjectRequest request = compactionManager.buildCompactRequest(s3ObjectMetadata);
 
-        Assertions.assertEquals(7, streamObjects.size());
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
+        Assertions.assertEquals(7, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(s3ObjectMetadata, request));
     }
 
     private StreamDataBlock get(List<StreamDataBlock> streamDataBlocks, StreamObject streamObject) {
@@ -226,9 +228,12 @@ public class CompactionManagerTest extends CompactionTestBase {
             streamOffsetRanges.add(new StreamOffsetRange(objectStreamRange.getStreamId(),
                     objectStreamRange.getStartOffset(), objectStreamRange.getEndOffset()));
         }
-        S3ObjectMetadata metadata = new S3ObjectMetadata(request.getObjectId(), S3ObjectType.WAL,
-                streamOffsetRanges, System.currentTimeMillis(), System.currentTimeMillis(), request.getObjectSize(), request.getOrderId());
-        compactedObjectMap.put(request.getObjectId(), metadata);
+        if (request.getObjectId() != -1) {
+            S3ObjectMetadata metadata = new S3ObjectMetadata(request.getObjectId(), S3ObjectType.WAL,
+                    streamOffsetRanges, System.currentTimeMillis(), System.currentTimeMillis(), request.getObjectSize(), request.getOrderId());
+            compactedObjectMap.put(request.getObjectId(), metadata);
+        }
+
         Map<Long, List<StreamDataBlock>> compactedStreamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(new ArrayList<>(compactedObjectMap.values()), s3Operator);
         for (Map.Entry<Long, List<StreamDataBlock>> entry : compactedStreamDataBlocksMap.entrySet()) {
             long objectId = entry.getKey();
