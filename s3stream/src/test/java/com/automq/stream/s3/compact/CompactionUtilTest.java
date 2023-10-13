@@ -56,24 +56,25 @@ public class CompactionUtilTest extends CompactionTestBase {
         List<StreamDataBlock> streamDataBlocks = List.of(
                 new StreamDataBlock(STREAM_0, 0, 15, 0, 1, 0, 20, 1),
                 new StreamDataBlock(STREAM_0, 15, 30, 1, 1, 20, 5, 1),
-                new StreamDataBlock(STREAM_2, 40, 100, 2, 1, 25, 80, 1),
-                new StreamDataBlock(STREAM_2, 120, 150, 3, 1, 105, 30, 1));
+                new StreamDataBlock(STREAM_0, 30, 100, 2, 1, 25, 80, 1),
+                new StreamDataBlock(STREAM_2, 40, 100, 3, 1, 105, 80, 1),
+                new StreamDataBlock(STREAM_2, 120, 150, 4, 1, 185, 30, 1));
         List<StreamDataBlock> result = CompactionUtils.mergeStreamDataBlocks(streamDataBlocks);
         assertEquals(3, result.size());
         assertEquals(STREAM_0, result.get(0).getStreamId());
         assertEquals(0, result.get(0).getStartOffset());
-        assertEquals(30, result.get(0).getEndOffset());
+        assertEquals(100, result.get(0).getEndOffset());
         assertEquals(0, result.get(0).getBlockStartPosition());
-        assertEquals(25, result.get(0).getBlockEndPosition());
+        assertEquals(105, result.get(0).getBlockEndPosition());
         assertEquals(STREAM_2, result.get(1).getStreamId());
         assertEquals(40, result.get(1).getStartOffset());
         assertEquals(100, result.get(1).getEndOffset());
-        assertEquals(25, result.get(1).getBlockStartPosition());
-        assertEquals(105, result.get(1).getBlockEndPosition());
+        assertEquals(105, result.get(1).getBlockStartPosition());
+        assertEquals(185, result.get(1).getBlockEndPosition());
         assertEquals(STREAM_2, result.get(2).getStreamId());
         assertEquals(120, result.get(2).getStartOffset());
         assertEquals(150, result.get(2).getEndOffset());
-        assertEquals(105, result.get(2).getBlockStartPosition());
-        assertEquals(135, result.get(2).getBlockEndPosition());
+        assertEquals(185, result.get(2).getBlockStartPosition());
+        assertEquals(215, result.get(2).getBlockEndPosition());
     }
 }

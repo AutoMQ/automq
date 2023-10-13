@@ -96,7 +96,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void testForceSplit() {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         compactionManager = new CompactionManager(config, objectManager, s3Operator);
-        List<CompletableFuture<StreamObject>> cfList = compactionManager.splitWALObjects(s3ObjectMetadata);
+        Collection<CompletableFuture<StreamObject>> cfList = compactionManager.splitWALObjects(s3ObjectMetadata);
         List<StreamObject> streamObjects = cfList.stream().map(CompletableFuture::join).toList();
 
         Assertions.assertEquals(7, streamObjects.size());
