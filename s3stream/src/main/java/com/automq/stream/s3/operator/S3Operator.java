@@ -17,10 +17,8 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -37,11 +35,7 @@ public interface S3Operator {
      * @param end   range end.
      * @return data.
      */
-    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc);
-
-    default CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
-        return rangeRead(path, start, end, ByteBufAlloc.ALLOC);
-    }
+    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end);
 
     /**
      * Write data to object.

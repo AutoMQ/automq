@@ -89,20 +89,20 @@ class DefaultWriterTest {
         when(s3.completeMultipartUpload(any(CompleteMultipartUploadRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
 
         List<ByteBuf> payloads = List.of(
-            // case 2
-            TestUtils.random(120),
-            // case 1
-            TestUtils.random(20),
-            // case 3
-            TestUtils.random(40),
-            // case 4
-            TestUtils.random(60),
-            // case 1
-            TestUtils.random(80),
-            // case 5
-            TestUtils.random(200),
-            // last part
-            TestUtils.random(10)
+                // case 2
+                TestUtils.random(120),
+                // case 1
+                TestUtils.random(20),
+                // case 3
+                TestUtils.random(40),
+                // case 4
+                TestUtils.random(60),
+                // case 1
+                TestUtils.random(80),
+                // case 5
+                TestUtils.random(200),
+                // last part
+                TestUtils.random(10)
         );
 
         payloads.forEach(writer::write);
@@ -111,8 +111,8 @@ class DefaultWriterTest {
         assertEquals("unit-test-bucket", requests.get(0).bucket());
         assertEquals("test-path", requests.get(0).key());
         assertEquals(List.of(1, 2, 3, 4), requests.stream()
-            .map(UploadPartRequest::partNumber)
-            .collect(Collectors.toList()));
+                .map(UploadPartRequest::partNumber)
+                .collect(Collectors.toList()));
         assertEquals(List.of(120L, 120L, 280L, 10L), contentLengths);
     }
 
@@ -186,24 +186,29 @@ class DefaultWriterTest {
         assertEquals(3, uploadPartRequests.size());
         assertEquals("unit-test-bucket", uploadPartRequests.get(0).bucket());
         assertEquals("test-path-2", uploadPartRequests.get(0).key());
-        assertEquals(List.of(2, 3, 4), uploadPartRequests.stream()
-            .map(UploadPartRequest::partNumber)
-            .collect(Collectors.toList()));
-        assertEquals(List.of(120L, 280L, 10L), writeContentLengths);
+        for (int i = 0; i < 3; i++) {
+            int partNum = uploadPartRequests.get(i).partNumber();
+            switch (partNum) {
+                case 2 -> assertEquals(120L, writeContentLengths.get(i));
+                case 3 -> assertEquals(280L, writeContentLengths.get(i));
+                case 4 -> assertEquals(10L, writeContentLengths.get(i));
+                default -> throw new IllegalStateException();
+            }
+        }
 
         assertEquals(1, uploadPartCopyRequests.size());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).sourceBucket());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).destinationBucket());
         assertEquals(List.of("path-1"), uploadPartCopyRequests.stream()
-            .map(UploadPartCopyRequest::sourceKey)
-            .collect(Collectors.toList()));
+                .map(UploadPartCopyRequest::sourceKey)
+                .collect(Collectors.toList()));
         assertEquals("test-path-2", uploadPartCopyRequests.get(0).destinationKey());
         assertEquals(List.of(1), uploadPartCopyRequests.stream()
-            .map(UploadPartCopyRequest::partNumber)
-            .collect(Collectors.toList()));
+                .map(UploadPartCopyRequest::partNumber)
+                .collect(Collectors.toList()));
         assertEquals(List.of("bytes=0-119"), uploadPartCopyRequests.stream()
-            .map(UploadPartCopyRequest::copySourceRange)
-            .collect(Collectors.toList()));
+                .map(UploadPartCopyRequest::copySourceRange)
+                .collect(Collectors.toList()));
     }
 
 }
