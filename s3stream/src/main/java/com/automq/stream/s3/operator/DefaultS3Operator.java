@@ -105,8 +105,8 @@ public class DefaultS3Operator implements S3Operator {
         );
         this.s3 = builder.build();
         this.bucket = bucket;
-        checkAvailable();
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        checkAvailable();
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
     }
 
