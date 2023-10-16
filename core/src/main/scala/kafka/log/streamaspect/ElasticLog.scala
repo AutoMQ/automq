@@ -28,6 +28,7 @@ import kafka.utils.{CoreUtils, Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.Uuid
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -333,7 +334,7 @@ object ElasticLog extends Logging {
 
   private val META_SCHEDULE_EXECUTOR = Executors.newScheduledThreadPool(1, ThreadUtils.createThreadFactory("log-meta-schedule-executor", true))
 
-  def formatStreamKey(namespace: String, topicPartition: TopicPartition): String = namespace + "/" + topicPartition.topic() + "/" + topicPartition.partition()
+  private def formatStreamKey(namespace: String, topicPartition: TopicPartition, topicId: Uuid): String = namespace + "/" + topicId.toString + "/" + topicPartition.partition()
 
   def apply(client: Client, namespace: String, dir: File,
             config: LogConfig,
@@ -344,10 +345,11 @@ object ElasticLog extends Logging {
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
             maxTransactionTimeoutMs: Int,
             producerStateManagerConfig: ProducerStateManagerConfig,
+            topicId: Uuid,
             leaderEpoch: Long): ElasticLog = {
     val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
-    val key = formatStreamKey(namespace, topicPartition)
+    val key = formatStreamKey(namespace, topicPartition, topicId)
     val value = client.kvClient().getKV(KeyValue.Key.of(key)).get()
 
     var partitionMeta: ElasticPartitionMeta = null
@@ -498,10 +500,10 @@ object ElasticLog extends Logging {
    * @param currentEpoch   current epoch of the partition
    * @return Unit
    */
-  def destroy(client: Client, namespace: String, topicPartition: TopicPartition, currentEpoch: Long): Unit = {
-    val logIdent = s"[ElasticLog partition=$topicPartition] "
+  def destroy(client: Client, namespace: String, topicPartition: TopicPartition, topicId: Uuid, currentEpoch: Long): Unit = {
+    val logIdent = s"[ElasticLog partition=$topicPartition topicId=$topicId] "
 
-    val key = formatStreamKey(namespace, topicPartition)
+    val key = formatStreamKey(namespace, topicPartition, topicId)
     var metaStreamIdOpt:Option[Long] = None
 
     try {

@@ -27,6 +27,7 @@ import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.Uuid
 
 import java.io.File
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
@@ -45,6 +46,7 @@ class ElasticLogManager(val client: Client) extends Logging {
                      numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
                      maxTransactionTimeoutMs: Int,
                      producerStateManagerConfig: ProducerStateManagerConfig,
+                     topicId: Uuid,
                      leaderEpoch: Long): ElasticLog = {
     val log = elasticLogs.get(topicPartition)
     if (log != null) {
@@ -57,7 +59,7 @@ class ElasticLogManager(val client: Client) extends Logging {
       override def run(): Unit = {
         // ElasticLog new is a time cost operation.
         elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-          numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
+          numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
       }
     }, s"Failed to create elastic log for $topicPartition", this)
     elasticLogs.putIfAbsent(topicPartition, elasticLog)
@@ -70,11 +72,10 @@ class ElasticLogManager(val client: Client) extends Logging {
    * @param topicPartition topic partition
    * @param epoch          epoch of the partition
    */
-  def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
-    // Removal may have happened in partition's closure. This is a defensive work.
-    elasticLogs.remove(topicPartition)
+  def destroyLog(topicPartition: TopicPartition, topicId: Uuid, epoch: Long): Unit = {
+    // Log is removed from elasticLogs when partition closed.
     try {
-      ElasticLog.destroy(client, NAMESPACE, topicPartition, epoch)
+      ElasticLog.destroy(client, NAMESPACE, topicPartition, topicId, epoch)
     } catch {
       case e: Throwable =>
         // Even though the elastic log failed to be destroyed, the metadata has been deleted in controllers.
@@ -154,8 +155,8 @@ object ElasticLogManager {
     INSTANCE.get.removeLog(topicPartition)
   }
 
-  def destroyLog(topicPartition: TopicPartition, epoch: Long): Unit = {
-    INSTANCE.get.destroyLog(topicPartition, epoch)
+  def destroyLog(topicPartition: TopicPartition, topicId: Uuid, epoch: Long): Unit = {
+    INSTANCE.get.destroyLog(topicPartition, topicId, epoch)
   }
 
   def getElasticLog(topicPartition: TopicPartition): ElasticLog = INSTANCE.get.elasticLogs.get(topicPartition)
@@ -172,9 +173,10 @@ object ElasticLogManager {
                      maxTransactionTimeoutMs: Int,
                      producerStateManagerConfig: ProducerStateManagerConfig,
                      numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
+                     topicId: Uuid,
                      leaderEpoch: Long): ElasticLog = {
     INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
-      maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch)
+      maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
   }
 
   def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {

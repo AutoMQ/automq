@@ -198,7 +198,7 @@ class KafkaApis(val requestChannel: RequestChannel,
               asyncHandleExecutor.submit(new Runnable {
                 override def run(): Unit = {
                   topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
-                    ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), partitionEpochs._2)
+                    ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), result.topicId(), partitionEpochs._2)
                   })
                 }
               })

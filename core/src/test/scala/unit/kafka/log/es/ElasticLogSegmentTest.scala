@@ -24,7 +24,7 @@ import kafka.server.epoch.{EpochEntry, LeaderEpochFileCache}
 import kafka.server.{KafkaConfig, LogDirFailureChannel}
 import kafka.utils.TestUtils.checkEquals
 import kafka.utils.{MockTime, TestUtils}
-import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse}
@@ -72,6 +72,7 @@ class ElasticLogSegmentTest {
                 logDirFailureChannel = logDirFailureChannel,
                 maxTransactionTimeoutMs = 5 * 60 * 1000,
                 producerStateManagerConfig = producerStateManagerConfig,
+                topicId = Uuid.ZERO_UUID,
                 leaderEpoch = 0)
         }
 
@@ -95,7 +96,7 @@ class ElasticLogSegmentTest {
     @AfterEach
     def teardown(): Unit = {
         segments.values.foreach(_.close())
-        ElasticLogManager.destroyLog(topicPartition, 0)
+        ElasticLogManager.destroyLog(topicPartition, Uuid.ZERO_UUID, 0)
         Utils.delete(logDir)
     }
 
