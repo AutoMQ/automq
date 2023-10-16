@@ -3107,7 +3107,7 @@ class ElasticUnifiedLogTest {
         topicId: Option[Uuid],
         leaderEpoch: Long = 0): ElasticUnifiedLog = {
         val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
-        val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, new LogDirFailureChannel(10), maxTransactionTimeoutMs, producerStateManagerConfig, leaderEpoch = leaderEpoch)
+        val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, new LogDirFailureChannel(10), maxTransactionTimeoutMs, producerStateManagerConfig, topicId = Uuid.ZERO_UUID, leaderEpoch = leaderEpoch)
         val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
         // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
         // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

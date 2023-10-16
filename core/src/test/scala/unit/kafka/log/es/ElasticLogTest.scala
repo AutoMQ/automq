@@ -25,7 +25,7 @@ import kafka.utils.{MockTime, Scheduler, TestUtils}
 import org.apache.kafka.common.errors.KafkaStorageException
 import org.apache.kafka.common.record.{CompressionType, MemoryRecords, Record, SimpleRecord}
 import org.apache.kafka.common.utils.{Time, Utils}
-import org.apache.kafka.common.{KafkaException, TopicPartition}
+import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterEach, Tag, Test}
 
@@ -685,6 +685,7 @@ class ElasticLogTest {
             logDirFailureChannel = logDirFailureChannel,
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig = producerStateManagerConfig,
+            topicId = Uuid.ZERO_UUID,
             leaderEpoch = 0)
     }
 }
