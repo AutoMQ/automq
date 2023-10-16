@@ -208,7 +208,7 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * the controller can fully initialize.
  */
 public final class QuorumController implements Controller {
-    private final static int MAX_RECORDS_PER_BATCH = 10000;
+    private final static int MAX_RECORDS_PER_BATCH = 25000;
 
     /**
      * A builder class which creates the QuorumController.
