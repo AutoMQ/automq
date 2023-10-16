@@ -115,13 +115,13 @@ public class DefaultS3BlockCacheTest {
 
         s3BlockCache.read(233L, 10L, 11L, 10000).get();
         // range read index and range read data
-        verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
-        verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
+        verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
         // trigger readahead
         when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata2)));
         when(objectManager.getObjects(eq(233L), eq(30L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
         s3BlockCache.read(233L, 15L, 16L, 10000).get();
-        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
         verify(objectManager, timeout(1000).times(1)).getObjects(eq(233L), eq(30L), eq(-1L), eq(2));
 
         // expect readahead already cached the records

@@ -17,32 +17,18 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.operations.S3ObjectStage;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
-import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3ObjectStage;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
+import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
 import com.automq.stream.utils.ThreadUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.Date;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,18 +59,37 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
 import static com.automq.stream.utils.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
     private final String bucket;
     private final S3AsyncClient s3;
-    private static final AtomicLong LAST_LOG_TIMESTAMP = new AtomicLong(System.currentTimeMillis());
+    private final List<ReadTask> waitingReadTasks = new LinkedList<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
-        String accessKey, String secretKey) {
+                             String accessKey, String secretKey) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
@@ -101,13 +106,21 @@ public class DefaultS3Operator implements S3Operator {
         this.s3 = builder.build();
         this.bucket = bucket;
         checkAvailable();
+        scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
     }
 
     // used for test only.
     DefaultS3Operator(S3AsyncClient s3, String bucket) {
+        this(s3, bucket, false);
+    }
+    // used for test only.
+    DefaultS3Operator(S3AsyncClient s3, String bucket, boolean manualMergeRead) {
         this.s3 = s3;
         this.bucket = bucket;
+        if (!manualMergeRead) {
+            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        }
     }
 
     @Override
@@ -118,16 +131,75 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ByteBufAllocator alloc) {
-        int size = (int)(end - start);
-        end = end - 1;
+    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        ByteBuf buf = alloc.directBuffer((int) (end - start));
-        rangeRead0(path, start, end, buf, cf);
+        synchronized (waitingReadTasks) {
+            waitingReadTasks.add(new ReadTask(path, start, end, cf));
+        }
         return cf;
     }
 
-    private void rangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
+    void tryMergeRead() {
+        try {
+            tryMergeRead0();
+        } catch (Throwable e) {
+            LOGGER.error("[UNEXPECTED] tryMergeRead fail", e);
+        }
+    }
+
+    /**
+     * Get adjacent read tasks and merge them into one read task which read range is not exceed 16MB.
+     */
+    private void tryMergeRead0() {
+        if (waitingReadTasks.isEmpty()) {
+            return;
+        }
+        List<MergedReadTask> mergedReadTasks = new ArrayList<>();
+        synchronized (waitingReadTasks) {
+            int readPermit = availableReadPermit();
+            while (readPermit > 0 && !waitingReadTasks.isEmpty()) {
+                Iterator<ReadTask> it = waitingReadTasks.iterator();
+                Map<String, MergedReadTask> mergingReadTasks = new HashMap<>();
+                while (it.hasNext()) {
+                    ReadTask readTask = it.next();
+                    MergedReadTask mergedReadTask = mergingReadTasks.get(readTask.path);
+                    if (mergedReadTask == null) {
+                        if (readPermit > 0) {
+                            readPermit -= 1;
+                            mergedReadTask = new MergedReadTask(readTask);
+                            mergingReadTasks.put(readTask.path, mergedReadTask);
+                            mergedReadTasks.add(mergedReadTask);
+                            it.remove();
+                        }
+                    } else {
+                        if (mergedReadTask.tryMerge(readTask)) {
+                            it.remove();
+                        }
+                    }
+                }
+            }
+        }
+        mergedReadTasks.forEach(
+                mergedReadTask -> mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
+                        .whenComplete(mergedReadTask::handleReadCompleted)
+        );
+    }
+
+    private int availableReadPermit() {
+        // TODO: implement limiter
+        return Integer.MAX_VALUE;
+    }
+
+    CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
+        ByteBufAllocator alloc = ByteBufAlloc.ALLOC;
+        end = end - 1;
+        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        ByteBuf buf = alloc.directBuffer((int) (end - start));
+        mergedRangeRead0(path, start, end, buf, cf);
+        return cf;
+    }
+
+    void mergedRangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         s3.getObject(request, AsyncResponseTransformer.toPublisher())
@@ -144,7 +216,7 @@ public class DefaultS3Operator implements S3Operator {
                         cf.completeExceptionally(ex);
                     } else {
                         LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
-                        scheduler.schedule(() -> rangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
+                        scheduler.schedule(() -> mergedRangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
                     }
                     return null;
                 });
@@ -290,8 +362,6 @@ public class DefaultS3Operator implements S3Operator {
         private ObjectPart objectPart = null;
         private final TimerUtil timerUtil = new TimerUtil();
         private final AsyncTokenBucketThrottle readThrottle;
-        private final AtomicInteger totalParts = new AtomicInteger(0);
-        private final AtomicLong totalUploadPartTime = new AtomicLong(0L);
         private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
         public DefaultWriter(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
@@ -363,8 +433,6 @@ public class DefaultS3Operator implements S3Operator {
             uploadPartCf.thenAccept(uploadPartResponse -> {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART).operationCount.inc();
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART).operationTime.update(timerUtil.elapsed());
-                totalParts.incrementAndGet();
-                totalUploadPartTime.addAndGet(timerUtil.elapsed());
                 CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
                 partCf.complete(completedPart);
             }).exceptionally(ex -> {
@@ -413,8 +481,6 @@ public class DefaultS3Operator implements S3Operator {
             s3.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY).operationCount.inc();
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY).operationTime.update(timerUtil.elapsed());
-                totalParts.incrementAndGet();
-                totalUploadPartTime.addAndGet(timerUtil.elapsed());
                 CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber)
                         .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
                 partCf.complete(completedPart);
@@ -440,7 +506,6 @@ public class DefaultS3Operator implements S3Operator {
             }
 
             S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.READY_CLOSE).update(timerUtil.elapsed());
-            long readyCloseTime = timerUtil.elapsed();
             closeCf = new CompletableFuture<>();
             CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
             uploadDoneCf.thenAccept(nil -> {
@@ -452,18 +517,6 @@ public class DefaultS3Operator implements S3Operator {
                 S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.TOTAL).update(timerUtil.elapsed());
                 S3ObjectMetricsStats.S3_OBJECT_COUNT.inc();
                 S3ObjectMetricsStats.S3_OBJECT_SIZE.update(totalWriteSize.get());
-                long totalUploadTime = timerUtil.elapsed();
-                long now = System.currentTimeMillis();
-                if (now - LAST_LOG_TIMESTAMP.get() > 10000) {
-                    LAST_LOG_TIMESTAMP.set(now);
-                    LOGGER.info("{} upload s3 metrics: total_parts: {}, upload_part_time_avg: {}, ready_close_time {}, total_upload_time {}, total_upload_size {}",
-                            logIdent,
-                            totalParts.get(),
-                            (double) totalUploadPartTime.get() / totalParts.get(),
-                            readyCloseTime,
-                            totalUploadTime,
-                            totalWriteSize.get());
-                }
             });
             return closeCf;
         }
@@ -530,10 +583,10 @@ public class DefaultS3Operator implements S3Operator {
                 size += end - start;
                 // TODO: parallel read and sequence add.
                 this.lastRangeReadCf = lastRangeReadCf
-                    .thenCompose(nil -> readThrottle == null ?
-                        CompletableFuture.completedFuture(null) : readThrottle.throttle(end - start))
-                    .thenCompose(nil -> rangeRead(sourcePath, start, end, ByteBufAlloc.ALLOC))
-                    .thenAccept(buf -> partBuf.addComponent(true, buf));
+                        .thenCompose(nil -> readThrottle == null ?
+                                CompletableFuture.completedFuture(null) : readThrottle.throttle(end - start))
+                        .thenCompose(nil -> rangeRead(sourcePath, start, end))
+                        .thenAccept(buf -> partBuf.addComponent(true, buf));
             }
 
             public void upload() {
@@ -581,6 +634,61 @@ public class DefaultS3Operator implements S3Operator {
             public CompletableFuture<Void> getFuture() {
                 return partCf.thenApply(nil -> null);
             }
+        }
+    }
+
+    static class MergedReadTask {
+        static final int MAX_MERGE_READ_SIZE = 16 * 1024 * 1024;
+        final String path;
+        final List<ReadTask> readTasks = new ArrayList<>();
+        long start;
+        long end;
+
+        MergedReadTask(ReadTask readTask) {
+            this.path = readTask.path;
+            this.start = readTask.start;
+            this.end = readTask.end;
+            this.readTasks.add(readTask);
+        }
+
+        boolean tryMerge(ReadTask readTask) {
+            if (!path.equals(readTask.path)) {
+                return false;
+            }
+            long newStart = Math.min(start, readTask.start);
+            long newEnd = Math.max(end, readTask.end);
+            boolean merge = newEnd - newStart <= MAX_MERGE_READ_SIZE;
+            if (merge) {
+                readTasks.add(readTask);
+                start = newStart;
+                end = newEnd;
+            }
+            return merge;
+        }
+
+        void handleReadCompleted(ByteBuf rst, Throwable ex) {
+            if (ex != null) {
+                readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
+            } else {
+                for (ReadTask readTask: readTasks) {
+                    readTask.cf.complete(rst.retainedSlice((int) (readTask.start - start), (int) (readTask.end - readTask.start)));
+                }
+                rst.release();
+            }
+        }
+    }
+
+    static class ReadTask {
+        final String path;
+        final long start;
+        final long end;
+        final CompletableFuture<ByteBuf> cf;
+
+        public ReadTask(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
+            this.path = path;
+            this.start = start;
+            this.end = end;
+            this.cf = cf;
         }
     }
 }
