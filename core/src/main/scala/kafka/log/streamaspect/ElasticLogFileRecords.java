@@ -57,7 +57,7 @@ public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     protected final AtomicInteger size;
     protected final Iterable<RecordBatch> batches;
-    private final ElasticStreamSlice streamSegment;
+    private final ElasticStreamSlice streamSlice;
     // This is The base offset of the corresponding segment.
     private final long baseOffset;
     private final AtomicLong nextOffset;
@@ -67,10 +67,10 @@ public class ElasticLogFileRecords {
     private volatile ElasticResourceStatus status;
 
 
-    public ElasticLogFileRecords(ElasticStreamSlice streamSegment, long baseOffset, int size) {
+    public ElasticLogFileRecords(ElasticStreamSlice streamSlice, long baseOffset, int size) {
         this.baseOffset = baseOffset;
-        this.streamSegment = streamSegment;
-        long nextOffset = streamSegment.nextOffset();
+        this.streamSlice = streamSlice;
+        long nextOffset = streamSlice.nextOffset();
         // Note that size is generally used to
         // 1) show the physical size of a segment. In these cases, size is refered to decide whether to roll a new
         // segment, or calculate the cleaned size in a cleaning task, etc. If size is not correctly recorded for any
@@ -84,7 +84,6 @@ public class ElasticLogFileRecords {
 
         batches = batchesFrom(baseOffset);
         status = ElasticResourceStatus.OK;
-
     }
 
     public int sizeInBytes() {
@@ -117,7 +116,7 @@ public class ElasticLogFileRecords {
         }
         List<FetchResult> fetchResults = new LinkedList<>();
         while (readSize <= maxSize && nextFetchOffset < endOffset) {
-            FetchResult rst = streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
+            FetchResult rst = streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
             fetchResults.add(rst);
             for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
                 if (recordBatchWithContext.lastOffset() > nextFetchOffset) {
@@ -154,7 +153,7 @@ public class ElasticLogFileRecords {
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset.get());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
-        CompletableFuture<?> cf = streamSegment.append(batch);
+        CompletableFuture<?> cf = streamSlice.append(batch);
         nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
         cf.whenComplete((rst, e) -> {
@@ -162,7 +161,7 @@ public class ElasticLogFileRecords {
                 updateCommittedOffset(lastOffset);
             } else if (e instanceof IOException) {
                 status = ElasticResourceStatus.FENCED;
-                LOGGER.error("ElasticLogFileRecords[stream={}, baseOffset={}] fencing with ex: {}", streamSegment.stream().streamId(), baseOffset, e.getMessage());
+                LOGGER.error("ElasticLogFileRecords[stream={}, baseOffset={}] fencing with ex: {}", streamSlice.stream().streamId(), baseOffset, e.getMessage());
             }
         });
         lastAppend = cf;
@@ -193,7 +192,7 @@ public class ElasticLogFileRecords {
     }
 
     public void seal() {
-
+        streamSlice.seal();
     }
 
     public void close() {
@@ -248,7 +247,7 @@ public class ElasticLogFileRecords {
     }
 
     public ElasticStreamSlice streamSegment() {
-        return streamSegment;
+        return streamSlice;
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
@@ -340,7 +339,7 @@ public class ElasticLogFileRecords {
                     return null;
                 }
                 try {
-                    FetchResult rst = elasticLogFileRecords.streamSegment.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE));
+                    FetchResult rst = elasticLogFileRecords.streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE));
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
                             ByteBuffer buf = streamRecord.rawPayload();
@@ -356,7 +355,7 @@ public class ElasticLogFileRecords {
                                 nextFetchOffset = r.lastOffset() - elasticLogFileRecords.baseOffset + 1;
                             }
                         } catch (Throwable e) {
-                            ElasticStreamSlice slice = elasticLogFileRecords.streamSegment;
+                            ElasticStreamSlice slice = elasticLogFileRecords.streamSlice;
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
                             LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
