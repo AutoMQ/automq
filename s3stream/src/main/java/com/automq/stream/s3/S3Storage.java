@@ -47,7 +47,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -425,7 +424,7 @@ public class S3Storage implements Storage {
     static class WALCallbackSequencer {
         public static final long NOOP_OFFSET = -1L;
         private final Map<Long, Queue<WalWriteRequest>> stream2requests = new HashMap<>();
-        private final BlockingQueue<WalWriteRequest> walRequests = new ArrayBlockingQueue<>(4096);
+        private final BlockingQueue<WalWriteRequest> walRequests = new LinkedBlockingQueue<>();
         private long walConfirmOffset = NOOP_OFFSET;
 
         /**
