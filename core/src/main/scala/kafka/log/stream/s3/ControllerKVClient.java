@@ -44,6 +44,7 @@ import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
 public class ControllerKVClient implements KVClient {
@@ -59,8 +60,8 @@ public class ControllerKVClient implements KVClient {
     public CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue) {
         LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}", keyValue);
         PutKVRequest request = new PutKVRequest()
-            .setKey(keyValue.key().get())
-            .setValue(keyValue.value().get().array());
+                .setKey(keyValue.key().get())
+                .setValue(keyValue.value().get().array());
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -76,7 +77,7 @@ public class ControllerKVClient implements KVClient {
             @Override
             public Builder toRequestBuilder() {
                 return new PutKVsRequest.Builder(
-                    new PutKVsRequestData()
+                        new PutKVsRequestData()
                 ).addSubRequest(request);
             }
         };
@@ -103,9 +104,9 @@ public class ControllerKVClient implements KVClient {
     public CompletableFuture<Value> putKV(KeyValue keyValue) {
         LOGGER.trace("[ControllerKVClient]: Put KV: {}", keyValue);
         PutKVRequest request = new PutKVRequest()
-            .setKey(keyValue.key().get())
-            .setValue(keyValue.value().get().array())
-            .setOverwrite(true);
+                .setKey(keyValue.key().get())
+                .setValue(keyValue.value().get().array())
+                .setOverwrite(true);
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -121,7 +122,7 @@ public class ControllerKVClient implements KVClient {
             @Override
             public Builder toRequestBuilder() {
                 return new PutKVsRequest.Builder(
-                    new PutKVsRequestData()
+                        new PutKVsRequestData()
                 ).addSubRequest(request);
             }
         };
@@ -145,7 +146,7 @@ public class ControllerKVClient implements KVClient {
     public CompletableFuture<Value> getKV(Key key) {
         LOGGER.trace("[ControllerKVClient]: Get KV: {}", key);
         GetKVRequest request = new GetKVRequest()
-            .setKey(key.get());
+                .setKey(key.get());
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -161,7 +162,7 @@ public class ControllerKVClient implements KVClient {
             @Override
             public Builder toRequestBuilder() {
                 return new GetKVsRequest.Builder(
-                    new GetKVsRequestData()
+                        new GetKVsRequestData()
                 ).addSubRequest(request);
             }
         };
@@ -186,7 +187,7 @@ public class ControllerKVClient implements KVClient {
     public CompletableFuture<Value> delKV(Key key) {
         LOGGER.trace("[ControllerKVClient]: Delete KV: {}", key);
         DeleteKVRequest request = new DeleteKVRequest()
-            .setKey(key.get());
+                .setKey(key.get());
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -202,7 +203,7 @@ public class ControllerKVClient implements KVClient {
             @Override
             public Builder toRequestBuilder() {
                 return new DeleteKVsRequest.Builder(
-                    new DeleteKVsRequestData()
+                        new DeleteKVsRequestData()
                 ).addSubRequest(request);
             }
         };
@@ -214,6 +215,9 @@ public class ControllerKVClient implements KVClient {
                 case NONE:
                     LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", key, response);
                     return ResponseHandleResult.withSuccess(Value.of(response.value()));
+                case KEY_NOT_EXIST:
+                    LOGGER.info("[ControllerKVClient]: Delete KV: {}, result: KEY_NOT_EXIST", key);
+                    return ResponseHandleResult.withSuccess(Value.of((ByteBuffer) null));
                 default:
                     LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}, retry later", key, code);
                     return ResponseHandleResult.withRetry();
