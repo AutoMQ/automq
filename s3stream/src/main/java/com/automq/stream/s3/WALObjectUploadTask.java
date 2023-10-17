@@ -91,7 +91,7 @@ public class WALObjectUploadTask {
         } else {
             objectManager
                     .prepareObject(1, TimeUnit.MINUTES.toMillis(30))
-                    .thenAcceptAsync(prepareCf::complete)
+                    .thenAcceptAsync(prepareCf::complete, executor)
                     .exceptionally(ex -> {
                         prepareCf.completeExceptionally(ex);
                         return null;
@@ -152,7 +152,7 @@ public class WALObjectUploadTask {
 
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> {
-            LOGGER.debug("Commit WAL object {}", commitWALObjectRequest);
+            LOGGER.info("Commit WAL object {}", commitWALObjectRequest);
             if (s3ObjectLogEnable) {
                 s3ObjectLogger.trace("{}", commitWALObjectRequest);
             }
