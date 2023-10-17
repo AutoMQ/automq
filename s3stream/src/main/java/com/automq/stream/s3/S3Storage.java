@@ -343,7 +343,7 @@ public class S3Storage implements Storage {
     }
 
     private void uploadWALObject0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
-        WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(config, logCacheBlock.records(), objectManager, s3Operator, uploadWALExecutor);
+        WALObjectUploadTask walObjectUploadTask = WALObjectUploadTask.of(config, logCacheBlock.records(), objectManager, s3Operator, uploadWALExecutor);
         WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
         context.task = walObjectUploadTask;
         context.cache = logCacheBlock;

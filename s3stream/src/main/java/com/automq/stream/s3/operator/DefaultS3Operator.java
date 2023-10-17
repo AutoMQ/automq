@@ -114,6 +114,7 @@ public class DefaultS3Operator implements S3Operator {
     DefaultS3Operator(S3AsyncClient s3, String bucket) {
         this(s3, bucket, false);
     }
+
     // used for test only.
     DefaultS3Operator(S3AsyncClient s3, String bucket, boolean manualMergeRead) {
         this.s3 = s3;
@@ -316,9 +317,14 @@ public class DefaultS3Operator implements S3Operator {
 
     private static boolean isUnrecoverable(Throwable ex) {
         ex = cause(ex);
-        return ex instanceof NoSuchKeyException
-                || ex instanceof NoSuchBucketException
-                || (ex instanceof S3Exception && ((S3Exception) ex).statusCode() == 403);
+        if (ex instanceof NoSuchKeyException || ex instanceof NoSuchBucketException) {
+            return true;
+        }
+        if (ex instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) ex;
+            return s3Ex.statusCode() == 403 || s3Ex.statusCode() == 404;
+        }
+        return false;
     }
 
     private void checkAvailable() {
@@ -487,8 +493,13 @@ public class DefaultS3Operator implements S3Operator {
             }).exceptionally(ex -> {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY_FAIL).operationCount.inc();
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_PART_COPY_FAIL).operationTime.update(timerUtil.elapsed());
-                LOGGER.warn("{} UploadPartCopy for object {}-{} fail, retry later", logIdent, path, partNumber, ex);
-                scheduler.schedule(() -> copyWrite0(partNumber, request, partCf), 100, TimeUnit.MILLISECONDS);
+                if (isUnrecoverable(ex)) {
+                    LOGGER.warn("{} UploadPartCopy for object {}-{} fail", logIdent, path, partNumber, ex);
+                    partCf.completeExceptionally(ex);
+                } else {
+                    LOGGER.warn("{} UploadPartCopy for object {}-{} fail, retry later", logIdent, path, partNumber, ex);
+                    scheduler.schedule(() -> copyWrite0(partNumber, request, partCf), 100, TimeUnit.MILLISECONDS);
+                }
                 return null;
             });
         }
@@ -670,7 +681,7 @@ public class DefaultS3Operator implements S3Operator {
             if (ex != null) {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
-                for (ReadTask readTask: readTasks) {
+                for (ReadTask readTask : readTasks) {
                     readTask.cf.complete(rst.retainedSlice((int) (readTask.start - start), (int) (readTask.end - readTask.start)));
                 }
                 rst.release();
