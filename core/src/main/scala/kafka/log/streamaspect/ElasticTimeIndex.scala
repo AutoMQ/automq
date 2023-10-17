@@ -165,6 +165,6 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   }
 
   def seal(): Unit = {
-
+    stream.seal()
   }
 }

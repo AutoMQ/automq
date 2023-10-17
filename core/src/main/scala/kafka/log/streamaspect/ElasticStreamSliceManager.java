@@ -40,10 +40,10 @@ public class ElasticStreamSliceManager {
     }
 
     public ElasticStreamSlice newSlice(String streamName) throws IOException {
-        // seal last segment with the same stream name when create new segment
-        ElasticStreamSlice lastSegment = lastSlices.get(streamName);
-        if (lastSegment != null) {
-            lastSegment.seal();
+        // seal last slice with the same stream name when create new segment
+        ElasticStreamSlice lastSlice = lastSlices.get(streamName);
+        if (lastSlice != null) {
+            lastSlice.seal();
         }
         Stream stream = streamManager.getStream(streamName);
         ElasticStreamSlice streamSlice = new DefaultElasticStreamSlice(stream, SliceRange.of(Offsets.NOOP_OFFSET, Offsets.NOOP_OFFSET));

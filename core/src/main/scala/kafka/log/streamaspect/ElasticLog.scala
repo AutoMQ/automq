@@ -145,7 +145,8 @@ class ElasticLog(val metaStream: MetaStream,
   def newSegment(baseOffset: Long, time: Time, suffix: String = ""): ElasticLogSegment = {
     // In roll, before new segment, last segment will be inactive by #onBecomeInactiveSegment
     val rst = createAndSaveSegment(logSegmentManager, suffix, logIdent = logIdent)(baseOffset, _dir, config, streamSliceManager, time)
-    rst._2.thenAccept(_ => confirmOffsetChangeListener.foreach(_.apply()))
+    // sync await segment meta persist, cause of if not, when append and node crash, the data will be treated as the previous segment data.
+    rst._2.get()
     rst._1
   }
 
