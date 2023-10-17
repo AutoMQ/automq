@@ -25,10 +25,12 @@ import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -41,8 +43,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
@@ -54,6 +54,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
     private final ExecutorService mainExecutor;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
+    private final DataBlockReadAccumulator dataBlockReadAccumulator;
 
     public DefaultS3BlockCache(long cacheBytesSize, ObjectManager objectManager, S3Operator s3Operator) {
         this.cache = new BlockCache(cacheBytesSize);
@@ -63,6 +64,14 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 LOGGER);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
+        dataBlockReadAccumulator = new DataBlockReadAccumulator(dataBlockRecords -> {
+            List<StreamRecordBatch> records = dataBlockRecords.records();
+            if (!records.isEmpty()) {
+                long streamId = records.get(0).getStreamId();
+                records.forEach(StreamRecordBatch::retain);
+                cache.put(streamId, records);
+            }
+        });
     }
 
     @Override
@@ -168,11 +177,13 @@ public class DefaultS3BlockCache implements S3BlockCache {
             context.reader = reader;
             return reader.find(streamId, context.nextStartOffset, endOffset, context.nextMaxBytes);
         });
-        CompletableFuture<List<CompletableFuture<ObjectReader.DataBlock>>> getDataCf = findIndexCf.thenCompose(blockIndexes -> {
+        CompletableFuture<List<CompletableFuture<DataBlockRecords>>> getDataCf = findIndexCf.thenCompose(blockIndexes -> {
             if (blockIndexes.isEmpty()) {
                 return CompletableFuture.completedFuture(Collections.emptyList());
             }
-            List<CompletableFuture<ObjectReader.DataBlock>> blockCfList = blockIndexes.stream().map(context.reader::read).collect(Collectors.toList());
+            List<CompletableFuture<DataBlockRecords>> blockCfList = blockIndexes.stream()
+                    .map(i -> dataBlockReadAccumulator.readDataBlock(context.reader, i))
+                    .collect(Collectors.toList());
             CompletableFuture<Void> allBlockCf = CompletableFuture.allOf(blockCfList.toArray(new CompletableFuture[0]));
             return allBlockCf.thenApply(nil -> blockCfList);
         });
@@ -190,32 +201,27 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 long nextStartOffset = context.nextStartOffset;
                 int nextMaxBytes = context.nextMaxBytes;
                 boolean fulfill = false;
-                List<StreamRecordBatch> remaining = new ArrayList<>();
-                for (CompletableFuture<ObjectReader.DataBlock> blockCf : blockCfList) {
-                    ObjectReader.DataBlock dataBlock = blockCf.get();
-                    try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
-                        while (it.hasNext()) {
-                            StreamRecordBatch recordBatch = it.next();
+                for (CompletableFuture<DataBlockRecords> blockCf : blockCfList) {
+                    DataBlockRecords dataBlock = blockCf.get();
+                    // TODO: add #getRecords to DataBlockRecords, use binary search to get the records we need.
+                    if (!fulfill) {
+                        for (StreamRecordBatch recordBatch : dataBlock.records()) {
+                            if (fulfill) {
+                                break;
+                            }
                             if (recordBatch.getLastOffset() <= nextStartOffset) {
-                                recordBatch.release();
                                 continue;
                             }
-                            if (fulfill) {
-                                remaining.add(recordBatch);
-                            } else {
-                                context.records.add(recordBatch);
-                                nextStartOffset = recordBatch.getLastOffset();
-                                nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.size());
-                                if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
-                                    fulfill = true;
-                                }
+                            recordBatch.retain();
+                            context.records.add(recordBatch);
+                            nextStartOffset = recordBatch.getLastOffset();
+                            nextMaxBytes -= Math.min(nextMaxBytes, recordBatch.size());
+                            if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
+                                fulfill = true;
                             }
                         }
                     }
-                    dataBlock.close();
-                }
-                if (!remaining.isEmpty()) {
-                    cache.put(streamId, remaining);
+                    dataBlock.release();
                 }
                 context.nextStartOffset = nextStartOffset;
                 context.nextMaxBytes = nextMaxBytes;
@@ -242,7 +248,6 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 ReadingTaskKey readingTaskKey = new ReadingTaskKey(streamId, readahead.getStartOffset());
                 readaheadTasks.put(readingTaskKey, readaheadCf);
                 readaheadCf
-                        .thenAccept(readDataBlock -> cache.put(streamId, readDataBlock.getRecords()))
                         .whenComplete((nil, ex) -> {
                             if (ex != null) {
                                 LOGGER.error("background readahead {} fail", readahead, ex);
