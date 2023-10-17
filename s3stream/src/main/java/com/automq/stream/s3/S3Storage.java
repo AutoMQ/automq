@@ -17,13 +17,13 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -90,7 +90,8 @@ public class S3Storage implements Storage {
         this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
         this.blockCache = blockCache;
-        this.logCache = new LogCache(config.s3WALObjectSize(), block -> blockCache.put(block.records()));
+        this.logCache = new LogCache(config.s3WALObjectSize(), block -> {
+        });
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
