@@ -56,6 +56,10 @@ public class ObjectReader implements AutoCloseable {
         asyncGetBasicObjectInfo();
     }
 
+    public String objectKey() {
+        return objectKey;
+    }
+
     public CompletableFuture<BasicObjectInfo> basicObjectInfo() {
         return basicObjectInfoCf;
     }
@@ -340,6 +344,10 @@ public class ObjectReader implements AutoCloseable {
                     }
                 }
             };
+        }
+
+        public int recordCount() {
+            return recordCount;
         }
 
         @Override

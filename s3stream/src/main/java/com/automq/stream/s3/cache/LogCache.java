@@ -186,6 +186,7 @@ public class LogCache {
             if (b.free) {
                 size.addAndGet(-b.size);
                 blockFreeListener.accept(b);
+                b.free();
             }
             return b.free;
         });
@@ -276,6 +277,11 @@ public class LogCache {
 
         public long size() {
             return size;
+        }
+
+        public void free() {
+            map.forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            map.clear();
         }
     }
 
