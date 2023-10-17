@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +48,7 @@ public class WALObjectUploadTask {
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
-    private final boolean forceSplit;
+    final boolean forceSplit;
     private final boolean s3ObjectLogEnable;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private volatile CommitWALObjectRequest commitWALObjectRequest;
@@ -68,9 +69,20 @@ public class WALObjectUploadTask {
         this.executor = executor;
     }
 
-    public WALObjectUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                               ExecutorService executor) {
-        this(config, streamRecordsMap, objectManager, s3Operator, executor, streamRecordsMap.size() == 1);
+    public static WALObjectUploadTask of(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
+                                         ExecutorService executor) {
+        boolean forceSplit = streamRecordsMap.size() == 1;
+        if (!forceSplit) {
+            Optional<Boolean> hasWALData = streamRecordsMap.values()
+                    .stream()
+                    .map(records -> records.stream().mapToLong(StreamRecordBatch::size).sum() >= config.s3StreamSplitSize())
+                    .filter(split -> !split)
+                    .findAny();
+            if (hasWALData.isEmpty()) {
+                forceSplit = true;
+            }
+        }
+        return new WALObjectUploadTask(config, streamRecordsMap, objectManager, s3Operator, executor, forceSplit);
     }
 
     public CompletableFuture<Long> prepare() {
