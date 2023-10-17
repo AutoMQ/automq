@@ -482,7 +482,9 @@ object ElasticLog extends Logging {
           if (logStreamManager != null) {
             logStreamManager.close().get()
           }
-          client.kvClient().delKV(KeyValue.Key.of(key)).get()
+          if (metaNotExists) {
+            client.kvClient().delKV(KeyValue.Key.of(key)).get()
+          }
         }, this)
         error(s"${logIdent}failed to open elastic log, trying to close streams and delete key. Error msg: ${e.getMessage}")
         throw e
