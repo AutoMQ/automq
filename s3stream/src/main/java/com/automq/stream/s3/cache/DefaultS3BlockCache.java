@@ -17,11 +17,11 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -29,9 +29,6 @@ import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -44,6 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
@@ -75,16 +74,18 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, true), readCf), readCf, LOGGER, "read")
         );
         readCf.whenComplete((ret, ex) -> {
+            if (ex != null) {
+                LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
+                // TODO: release read records memory
+                return;
+            }
+
             if (ret.isCacheHit()) {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE).operationCount.inc();
             } else {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE_MISS).operationCount.inc();
             }
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_BLOCK_CACHE).operationTime.update(timerUtil.elapsedAndReset());
-        }).exceptionally(ex -> {
-            LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
-            // TODO: release read records memory
-            return null;
         });
         return readCf;
     }
