@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3.compact.operator;
 
-import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
@@ -91,7 +91,7 @@ public class DataBlockWriter {
     }
 
     private void uploadWaitingList() {
-        CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+        CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             partBuf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);
@@ -114,7 +114,7 @@ public class DataBlockWriter {
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
+        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             buf.addComponent(true, block.getDataCf().join());
             completedBlocks.add(block);
@@ -144,7 +144,7 @@ public class DataBlockWriter {
 
         public IndexBlock() {
             position = nextDataBlockPosition;
-            buf = ByteBufAlloc.ALLOC.directBuffer(calculateIndexBlockSize());
+            buf = DirectByteBufAlloc.byteBuffer(calculateIndexBlockSize());
             buf.writeInt(completedBlocks.size()); // block count
             long nextPosition = 0;
             // block index
@@ -188,7 +188,7 @@ public class DataBlockWriter {
         private final ByteBuf buf;
 
         public Footer() {
-            buf = ByteBufAlloc.ALLOC.directBuffer(FOOTER_SIZE);
+            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE);
             buf.writeLong(indexBlock.position());
             buf.writeInt(indexBlock.size());
             buf.writeZero(40 - 8 - 4);
