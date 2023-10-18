@@ -61,7 +61,6 @@ public class DataBlockReader {
                 .thenAccept(buf -> {
                     try {
                         indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
-                        buf.release();
                     } catch (IndexBlockParseException ex) {
                         parseDataBlockIndex(ex.indexBlockPosition);
                     }
@@ -197,37 +196,40 @@ public class DataBlockReader {
 
     static class IndexBlock {
         static List<StreamDataBlock> parse(ByteBuf objectTailBuf, long objectSize, long objectId) throws IndexBlockParseException {
-            long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
-            int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
-                throw new IndexBlockParseException(indexBlockPosition);
-            } else {
-                int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
-                ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
-                int blockCount = indexBlockBuf.readInt();
-                ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
-                List<DataBlockIndex> dataBlockIndices = new ArrayList<>();
-                for (int i = 0; i < blockCount; i++) {
-                    long blockPosition = blocks.readLong();
-                    int blockSize = blocks.readInt();
-                    int recordCount = blocks.readInt();
-                    dataBlockIndices.add(new DataBlockIndex(blockPosition, blockSize, recordCount));
+            try {
+                long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
+                int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
+                if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
+                    throw new IndexBlockParseException(indexBlockPosition);
+                } else {
+                    int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
+                    ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
+                    int blockCount = indexBlockBuf.readInt();
+                    ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
+                    List<DataBlockIndex> dataBlockIndices = new ArrayList<>();
+                    for (int i = 0; i < blockCount; i++) {
+                        long blockPosition = blocks.readLong();
+                        int blockSize = blocks.readInt();
+                        int recordCount = blocks.readInt();
+                        dataBlockIndices.add(new DataBlockIndex(blockPosition, blockSize, recordCount));
+                    }
+                    indexBlockBuf.skipBytes(blockCount * 16);
+                    ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
+                    List<StreamDataBlock> streamDataBlocks = new ArrayList<>();
+                    for (int i = 0; i < blockCount; i++) {
+                        long streamId = streamRanges.readLong();
+                        long startOffset = streamRanges.readLong();
+                        int rangeSize = streamRanges.readInt();
+                        int blockIndex = streamRanges.readInt();
+                        streamDataBlocks.add(new StreamDataBlock(streamId, startOffset, startOffset + rangeSize, blockIndex,
+                                objectId, dataBlockIndices.get(i).startPosition, dataBlockIndices.get(i).size, dataBlockIndices.get(i).recordCount));
+                    }
+                    return streamDataBlocks;
                 }
-                indexBlockBuf.skipBytes(blockCount * 16);
-                ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
-                List<StreamDataBlock> streamDataBlocks = new ArrayList<>();
-                for (int i = 0; i < blockCount; i++) {
-                    long streamId = streamRanges.readLong();
-                    long startOffset = streamRanges.readLong();
-                    int rangeSize = streamRanges.readInt();
-                    int blockIndex = streamRanges.readInt();
-                    streamDataBlocks.add(new StreamDataBlock(streamId, startOffset, startOffset + rangeSize, blockIndex,
-                            objectId, dataBlockIndices.get(i).startPosition, dataBlockIndices.get(i).size, dataBlockIndices.get(i).recordCount));
-                }
-                return streamDataBlocks;
+            } finally {
+                objectTailBuf.release();
             }
         }
-
     }
 
     static class IndexBlockParseException extends Exception {

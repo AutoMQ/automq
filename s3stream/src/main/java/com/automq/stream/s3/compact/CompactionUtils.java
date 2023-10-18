@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.objects.ObjectStreamRange;
@@ -108,5 +109,13 @@ public class CompactionUtils {
             groupedStreamDataBlocks.add(currGroup);
         }
         return groupedStreamDataBlocks;
+    }
+
+    public static int getTotalObjectStats(CompactedObjectBuilder o, Map<Long, Integer> objectStatsMap) {
+        int totalCompactedObjects = 0;
+        for (Long objectId : o.uniqueObjectIds()) {
+            totalCompactedObjects += objectStatsMap.get(objectId);
+        }
+        return totalCompactedObjects;
     }
 }

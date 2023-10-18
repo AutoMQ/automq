@@ -54,6 +54,8 @@ public class CompactionTestBase {
     protected static final long CACHE_SIZE = 1024;
     protected static final double EXECUTION_SCORE_THRESHOLD = 0.5;
     protected static final long STREAM_SPLIT_SIZE = 30;
+    protected static final int MAX_STREAM_NUM_IN_WAL = 100;
+    protected static final int MAX_STREAM_OBJECT_NUM = 100;
     protected static final List<S3ObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
     protected MemoryMetadataManager objectManager;
     protected S3Operator s3Operator;
