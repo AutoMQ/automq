@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3.compact.operator;
 
-import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.TokenBucketThrottle;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
@@ -136,7 +136,7 @@ public class DataBlockReader {
                     final int finalEnd = end + 1; // include current block
                     CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
                             .thenAccept(v -> {
-                                CompositeByteBuf compositeByteBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+                                CompositeByteBuf compositeByteBuf = DirectByteBufAlloc.compositeByteBuffer();
                                 for (int j = 0; j < iterations; j++) {
                                     compositeByteBuf.addComponent(true, bufferMap.get(j));
                                 }

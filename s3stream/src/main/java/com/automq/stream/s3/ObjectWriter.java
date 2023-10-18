@@ -138,7 +138,7 @@ public interface ObjectWriter {
                     }
                 }
                 if (partFull) {
-                    CompositeByteBuf partBuf = ByteBufAlloc.ALLOC.compositeBuffer();
+                    CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
                     for (DataBlock block : uploadBlocks) {
                         partBuf.addComponent(true, block.buffer());
                     }
@@ -154,7 +154,7 @@ public interface ObjectWriter {
         public CompletableFuture<Void> close() {
             CompletableFuture<Void> waitBlocksCloseCf = CompletableFuture.allOf(waitingUploadBlocks.stream().map(DataBlock::close).toArray(CompletableFuture[]::new));
             return waitBlocksCloseCf.thenCompose(nil -> {
-                CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
+                CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
                 for (DataBlock block : waitingUploadBlocks) {
                     buf.addComponent(true, block.buffer());
                     completedBlocks.add(block);
@@ -207,7 +207,7 @@ public interface ObjectWriter {
 
             public IndexBlock() {
                 long nextPosition = 0;
-                buf = ByteBufAlloc.ALLOC.directBuffer(1024 * 1024);
+                buf = DirectByteBufAlloc.byteBuffer(1024 * 1024);
                 buf.writeInt(completedBlocks.size()); // block count
                 // block index
                 for (DataBlock block : completedBlocks) {
@@ -259,7 +259,7 @@ public interface ObjectWriter {
             this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset());
             this.recordCount = records.size();
             int dataSize = records.stream().mapToInt(r -> r.encoded().readableBytes()).sum();
-            this.encodedBuf = ByteBufAlloc.ALLOC.directBuffer(2 + 2 + dataSize);
+            this.encodedBuf = DirectByteBufAlloc.byteBuffer(2 + 2 + dataSize);
             encodedBuf.writeByte(DATA_BLOCK_MAGIC);
             encodedBuf.writeByte(DATA_BLOCK_DEFAULT_FLAG);
             records.forEach(r -> encodedBuf.writeBytes(r.encoded()));
@@ -293,7 +293,7 @@ public interface ObjectWriter {
         private final ByteBuf buf;
 
         public Footer(long indexStartPosition, int indexBlockLength) {
-            buf = ByteBufAlloc.ALLOC.directBuffer(FOOTER_SIZE);
+            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE);
             // start position of index block
             buf.writeLong(indexStartPosition);
             // size of index block

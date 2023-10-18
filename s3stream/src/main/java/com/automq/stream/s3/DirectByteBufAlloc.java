@@ -17,10 +17,20 @@
 
 package com.automq.stream.s3;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 
-public class ByteBufAlloc {
+public class DirectByteBufAlloc {
 
-    public static final PooledByteBufAllocator ALLOC = PooledByteBufAllocator.DEFAULT;
+    private static final PooledByteBufAllocator ALLOC = PooledByteBufAllocator.DEFAULT;
+
+    public static CompositeByteBuf compositeByteBuffer() {
+        return ALLOC.compositeDirectBuffer(Integer.MAX_VALUE);
+    }
+
+    public static ByteBuf byteBuffer(int initCapacity) {
+        return ALLOC.directBuffer(initCapacity);
+    }
 
 }
