@@ -321,6 +321,7 @@ object Defaults {
   val S3ObjectCompactionForceSplitPeriod: Int = 120 // 120min
   val S3ObjectCompactionMaxObjectNum: Int = 500
   val S3ObjectRetentionTimeInSecond: Long = 10 * 60 // 10min
+  val S3StreamObjectsCompactionNWInBandwidth: Long = 10 * 1024 * 1024 // 10MB/s
 }
 
 object KafkaConfig {
@@ -705,6 +706,7 @@ object KafkaConfig {
   val S3StreamObjectCompactionTaskIntervalMinutesProp = "s3.stream.object.compaction.task.interval.minutes"
   val S3StreamObjectCompactionMaxSizeBytesProp = "s3.stream.object.compaction.max.size.bytes"
   val S3StreamObjectCompactionLivingTimeMinutesProp = "s3.stream.object.compaction.living.time.minutes"
+  val S3StreamObjectsCompactionNWInBandwidthProp = "s3.stream.object.compaction.network.in.bandwidth"
   val S3ControllerRequestRetryMaxCountProp = "s3.controller.request.retry.max.count"
   val S3ControllerRequestRetryBaseDelayMsProp = "s3.controller.request.retry.base.delay.ms"
   val S3ObjectCompactionIntervalProp = "s3.object.compaction.interval.minutes"
@@ -740,6 +742,7 @@ object KafkaConfig {
   val S3CacheSizeDoc = "The S3 block cache size in MiB."
   val S3StreamObjectCompactionTaskIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
   val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
+  val S3StreamObjectsCompactionNWInBandwidthDoc = "The S3 stream object compaction network in bandwidth limit in Bytes/s."
   val S3StreamObjectCompactionLivingTimeMinutesDoc = "The S3 stream object compaction living time threshold in minutes."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
   val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
@@ -1572,6 +1575,7 @@ object KafkaConfig {
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3CacheSizeProp, LONG, 104857600L, MEDIUM, S3CacheSizeDoc)
       .define(S3StreamObjectCompactionTaskIntervalMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionTaskIntervalMinutesDoc)
+      .define(S3StreamObjectsCompactionNWInBandwidthProp, LONG, Defaults.S3StreamObjectsCompactionNWInBandwidth, MEDIUM, S3StreamObjectsCompactionNWInBandwidthDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 10737418240L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3StreamObjectCompactionLivingTimeMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionLivingTimeMinutesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
@@ -2142,6 +2146,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionTaskIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
   val s3StreamObjectCompactionLivingTimeMinutes = getInt(KafkaConfig.S3StreamObjectCompactionLivingTimeMinutesProp)
+  val s3StreamObjectsCompactionNWInBandwidth = getLong(KafkaConfig.S3StreamObjectsCompactionNWInBandwidthProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
   val s3ControllerRequestRetryBaseDelayMs = getLong(KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp)
   // TODO: ensure incremental epoch => Store epoch in disk, if timestamp flip back, we could use disk epoch to keep the incremental epoch.
