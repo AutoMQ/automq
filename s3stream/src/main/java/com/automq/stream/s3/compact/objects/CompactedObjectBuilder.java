@@ -19,6 +19,8 @@ package com.automq.stream.s3.compact.objects;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class CompactedObjectBuilder {
     private CompactionType type;
@@ -110,8 +112,16 @@ public class CompactedObjectBuilder {
         return this.streamDataBlocks;
     }
 
+    public int totalStreamNum() {
+        return this.streamDataBlocks.stream().map(StreamDataBlock::getStreamId).collect(Collectors.toSet()).size();
+    }
+
     public long currStreamBlockSize() {
         return getCurrentStreamRangePositions().stream().mapToLong(StreamDataBlock::getBlockSize).sum();
+    }
+
+    public Set<Long> uniqueObjectIds() {
+        return this.streamDataBlocks.stream().map(StreamDataBlock::getObjectId).collect(Collectors.toSet());
     }
 
     public long totalBlockSize() {

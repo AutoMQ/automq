@@ -66,13 +66,23 @@ public class DataBlockWriter {
         }
     }
 
-    public void copyWrite(StreamDataBlock dataBlock) {
+    /**
+     * Copy write a list of adjacent data blocks from same object.
+     *
+     * @param dataBlock list of adjacent data blocks from same object
+     */
+    public void copyWrite(List<StreamDataBlock> dataBlock) {
+        if (dataBlock.isEmpty()) {
+            return;
+        }
+        StreamDataBlock first = dataBlock.get(0);
+        StreamDataBlock end = dataBlock.get(dataBlock.size() - 1);
         // size of data block is always smaller than MAX_PART_SIZE, no need to split into multiple parts
-        String originObjectKey = ObjectUtils.genKey(0, dataBlock.getObjectId());
+        String originObjectKey = ObjectUtils.genKey(0, first.getObjectId());
         writer.copyWrite(originObjectKey,
-                dataBlock.getBlockStartPosition(), dataBlock.getBlockStartPosition() + dataBlock.getBlockSize());
-        completedBlocks.add(dataBlock);
-        nextDataBlockPosition += dataBlock.getBlockSize();
+                first.getBlockStartPosition(), end.getBlockStartPosition() + end.getBlockSize());
+        completedBlocks.addAll(dataBlock);
+        nextDataBlockPosition += dataBlock.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
     }
 
     public CompletableFuture<Void> forceUpload() {
