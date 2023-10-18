@@ -29,9 +29,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -152,8 +154,9 @@ public class MetaStream implements Stream {
         if (trimFuture != null) {
             trimFuture.cancel(true);
         }
-        return innerStream.close()
-                .thenAccept(result -> fenced = true);
+        return doCompaction()
+                .thenRun(innerStream::close)
+                .thenRun(() -> fenced = true);
     }
 
     public boolean isFenced() {
@@ -263,11 +266,12 @@ public class MetaStream implements Stream {
         trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
     }
 
-    private void doCompaction() {
+    private CompletableFuture<Void> doCompaction() {
         if (metaCache.size() <= 1) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
 
+        List<CompletableFuture<AppendResult>> futures = new ArrayList<>();
         Set<Long> validSnapshots = metaCache.get(PRODUCER_SNAPSHOTS_META_KEY) == null ? Collections.emptySet() :
                 ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate()).getSnapshots();
 
@@ -276,17 +280,30 @@ public class MetaStream implements Stream {
         while (iterator.hasNext()) {
             Map.Entry<String, Pair<Long, ByteBuffer>> entry = iterator.next();
             // remove invalid producer snapshots
-            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX) && !validSnapshots.contains(entry.getValue().getLeft())) {
-                iterator.remove();
-                continue;
+            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
+                long offset = parseProducerSnapshotOffset(entry.getKey());
+                if (!validSnapshots.contains(offset)) {
+                    iterator.remove();
+                    continue;
+                }
             }
             if (lastOffset < entry.getValue().getLeft()) {
                 lastOffset = entry.getValue().getLeft();
             }
-            append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate()));
+            futures.add(append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate())));
         }
 
-        trim(lastOffset + 1);
-        LOGGER.debug("{} streamId {}: compact before {}", logIdent, streamId(), lastOffset);
+        long finalLastOffset = lastOffset;
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenCompose(result -> trim(finalLastOffset + 1))
+                .thenRun(() -> LOGGER.debug("{} streamId {}: compact before {}", logIdent, streamId(), finalLastOffset));
+    }
+
+    private long parseProducerSnapshotOffset(String key) {
+        if (!key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
+            throw new IllegalArgumentException("Invalid producer snapshot key: " + key);
+        }
+        String[] split = key.split("_");
+        return Long.parseLong(split[split.length - 1]);
     }
 }

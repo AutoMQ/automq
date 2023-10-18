@@ -27,10 +27,18 @@ import java.io.{File, IOException}
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 
-class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1)
+class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1, _initLastEntry: TimestampOffset = TimestampOffset.Unknown)
   extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
-  @volatile private var _lastEntry = lastEntryFromIndexFile
+  @volatile private var _lastEntry = {
+    inLock(lock) {
+      _entries match {
+        case 0 => TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset)
+        case _ => _initLastEntry
+      }
+    }
+  }
+
   @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
   private var closed = false
 

@@ -18,6 +18,7 @@
 package kafka.log.streamaspect;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import kafka.log.TimestampOffset;
 
 public class ElasticStreamSegmentMeta {
     /**
@@ -52,6 +53,9 @@ public class ElasticStreamSegmentMeta {
      */
     @JsonProperty("txs")
     private SliceRange txn = new SliceRange();
+
+    @JsonProperty("tle")
+    private TimestampOffsetData timeIndexLastEntry = new TimestampOffsetData();
 
     public ElasticStreamSegmentMeta() {
     }
@@ -122,6 +126,18 @@ public class ElasticStreamSegmentMeta {
         this.txn = txn;
     }
 
+    public TimestampOffsetData timeIndexLastEntry() {
+        return timeIndexLastEntry;
+    }
+
+    public void timeIndexLastEntry(TimestampOffsetData timeIndexLastEntry) {
+        this.timeIndexLastEntry = timeIndexLastEntry;
+    }
+
+    public void timeIndexLastEntry(TimestampOffset timeIndexLastEntry) {
+        this.timeIndexLastEntry = TimestampOffsetData.of(timeIndexLastEntry);
+    }
+
     @Override
     public String toString() {
         return "ElasticStreamSegmentMeta{" +
@@ -133,7 +149,57 @@ public class ElasticStreamSegmentMeta {
                 ", log=" + log +
                 ", time=" + time +
                 ", txn=" + txn +
+                ", timeIndexLastEntry=" + timeIndexLastEntry +
                 '}';
+    }
+
+    public static class TimestampOffsetData {
+        @JsonProperty("t")
+        private long timestamp;
+        @JsonProperty("o")
+        private long offset;
+
+        public TimestampOffsetData() {
+        }
+
+        public static TimestampOffsetData of(long timestamp, long offset) {
+            TimestampOffsetData timestampOffsetData = new TimestampOffsetData();
+            timestampOffsetData.timestamp(timestamp);
+            timestampOffsetData.offset(offset);
+            return timestampOffsetData;
+        }
+
+        public static TimestampOffsetData of(TimestampOffset timestampOffset) {
+            return of(timestampOffset.timestamp(), timestampOffset.offset());
+        }
+
+        public TimestampOffset toTimestampOffset() {
+            return new TimestampOffset(timestamp, offset);
+        }
+
+        public long timestamp() {
+            return timestamp;
+        }
+
+        public void timestamp(long timestamp) {
+            this.timestamp = timestamp;
+        }
+
+        public long offset() {
+            return offset;
+        }
+
+        public void offset(long offset) {
+            this.offset = offset;
+        }
+
+        @Override
+        public String toString() {
+            return "TimestampOffsetData{" +
+                    "timestamp=" + timestamp +
+                    ", offset=" + offset +
+                    '}';
+        }
     }
 
 }
