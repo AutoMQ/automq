@@ -65,6 +65,9 @@
     <allow pkg="org.apache.kafka.raft" />
     <allow pkg="org.apache.kafka.server" />
     <allow pkg="moe.cnkirito.kdio" />
+    <subpackage name="streamaspect">
+      <allow pkg="kafka.log" />
+    </subpackage>
   </subpackage>
 
   <subpackage name="testkit">
