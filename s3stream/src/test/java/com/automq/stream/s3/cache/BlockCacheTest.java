@@ -31,8 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class BlockCacheTest {
 
-    @Test
-    public void testPutGet() {
+    private BlockCache createBlockCache() {
         BlockCache blockCache = new BlockCache(1024 * 1024 * 1024);
 
         blockCache.put(233L, List.of(
@@ -55,6 +54,12 @@ public class BlockCacheTest {
                 newRecord(233L, 22L, 1, 1),
                 newRecord(233L, 23L, 1, 1)
         ));
+        return blockCache;
+    }
+
+    @Test
+    public void testPutGet() {
+        BlockCache blockCache = createBlockCache();
 
         BlockCache.GetCacheResult rst = blockCache.get(233L, 10L, 24L, BlockCache.BLOCK_SIZE * 2);
         List<StreamRecordBatch> records = rst.getRecords();
@@ -67,6 +72,17 @@ public class BlockCacheTest {
         assertEquals(20L, records.get(5).getBaseOffset());
         assertEquals(22L, records.get(6).getBaseOffset());
         assertEquals(23L, records.get(7).getBaseOffset());
+    }
+
+    @Test
+    public void testPutGet2() {
+        BlockCache blockCache = createBlockCache();
+
+        BlockCache.GetCacheResult rst = blockCache.get(233L, 18L, 22L, BlockCache.BLOCK_SIZE * 2);
+        List<StreamRecordBatch> records = rst.getRecords();
+        assertEquals(2, records.size());
+        assertEquals(16L, records.get(0).getBaseOffset());
+        assertEquals(20L, records.get(1).getBaseOffset());
     }
 
     @Test

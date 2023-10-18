@@ -19,6 +19,7 @@ package com.automq.stream.s3.cache;
 
 
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -184,7 +185,14 @@ public class BlockCache {
     private int readFromCacheBlock(LinkedList<StreamRecordBatch> records, CacheBlock cacheBlock,
                                    long nextStartOffset, long endOffset, int nextMaxBytes) {
         boolean matched = false;
-        for (StreamRecordBatch record : cacheBlock.records) {
+        StreamRecordBatchList streamRecordBatchList = new StreamRecordBatchList(cacheBlock.records);
+        int startIndex = streamRecordBatchList.search(nextStartOffset);
+        if (startIndex == -1) {
+            // mismatched
+            return nextMaxBytes;
+        }
+        for (int i = startIndex; i < cacheBlock.records.size(); i++) {
+            StreamRecordBatch record = cacheBlock.records.get(i);
             if (record.getBaseOffset() <= nextStartOffset && record.getLastOffset() > nextStartOffset) {
                 records.add(record);
                 nextStartOffset = record.getLastOffset();
