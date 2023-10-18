@@ -93,8 +93,8 @@ public class DefaultS3Client implements Client {
     @Override
     public void shutdown() {
         this.compactionManager.shutdown();
-        this.storage.shutdown();
         this.streamClient.shutdown();
+        this.storage.shutdown();
         LOGGER.info("S3Client shutdown successfully");
     }
 
