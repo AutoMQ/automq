@@ -133,6 +133,12 @@ public class DefaultS3Operator implements S3Operator {
     @Override
     public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        if (start >= end) {
+            IllegalArgumentException ex = new IllegalArgumentException();
+            LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
+            cf.completeExceptionally(ex);
+            return cf;
+        }
         synchronized (waitingReadTasks) {
             waitingReadTasks.add(new ReadTask(path, start, end, cf));
         }
@@ -194,7 +200,7 @@ public class DefaultS3Operator implements S3Operator {
         ByteBufAllocator alloc = ByteBufAlloc.ALLOC;
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        ByteBuf buf = alloc.directBuffer((int) (end - start));
+        ByteBuf buf = alloc.directBuffer((int) (end - start + 1));
         mergedRangeRead0(path, start, end, buf, cf);
         return cf;
     }
