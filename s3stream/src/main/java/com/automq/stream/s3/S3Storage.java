@@ -37,6 +37,7 @@ import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +52,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -79,6 +82,9 @@ public class S3Storage implements Storage {
     private final ScheduledExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
             4, ThreadUtils.createThreadFactory("s3-storage-upload-wal", true), LOGGER);
 
+    private final Queue<BackoffRecord> backoffRecords = new LinkedBlockingQueue<>();
+    private final ScheduledFuture<?> drainBackoffTask;
+
     private final StreamManager streamManager;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
@@ -95,6 +101,8 @@ public class S3Storage implements Storage {
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
+
+        this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -188,35 +196,44 @@ public class S3Storage implements Storage {
 
     @Override
     public void shutdown() {
+        drainBackoffTask.cancel(false);
+        FutureUtil.suppress(drainBackoffTask::get, LOGGER);
+        for (BackoffRecord backoffRecord : backoffRecords) {
+            backoffRecord.appendCf.completeExceptionally(new IOException("S3Storage is shutdown"));
+        }
         log.shutdownGracefully();
         backgroundExecutor.shutdown();
         mainReadExecutor.shutdown();
         mainWriteExecutor.shutdown();
     }
 
+
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        TimerUtil timerUtil = new TimerUtil();
+
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        acquirePermit();
+        append0(streamRecord, cf);
+        return cf;
+    }
+
+    public void append0(StreamRecordBatch streamRecord, CompletableFuture<Void> cf) {
+        // TODO: storage status check, fast fail the request when storage closed.
+        TimerUtil timerUtil = new TimerUtil();
+        if (!tryAcquirePermit()) {
+            backoffRecords.offer(new BackoffRecord(streamRecord, cf));
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
+            LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
+            return;
+        }
         WriteAheadLog.AppendResult appendResult;
         try {
-            // fast path
             appendResult = log.append(streamRecord.encoded());
         } catch (WriteAheadLog.OverCapacityException e) {
             // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
             forceUpload(LogCache.MATCH_ALL_STREAMS);
-            // slow path
-            for (; ; ) {
-                // TODO: check close.
-                try {
-                    appendResult = log.append(streamRecord.encoded());
-                    break;
-                } catch (WriteAheadLog.OverCapacityException e2) {
-                    LOGGER.warn("log over capacity", e);
-                    Threads.sleep(100);
-                }
-            }
+            backoffRecords.offer(new BackoffRecord(streamRecord, cf));
+            LOGGER.warn("[BACKOFF] log over capacity", e);
+            return;
         }
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordOffset(), cf);
         handleAppendRequest(writeRequest);
@@ -225,24 +242,29 @@ public class S3Storage implements Storage {
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
         });
-        return cf;
     }
 
-    private void acquirePermit() {
-        for (; ; ) {
-            if (logCache.size() < maxWALCacheSize) {
-                break;
-            } else {
-                // TODO: log limit
-                LOGGER.warn("log cache size {} is larger than {}, wait 100ms", logCache.size(), maxWALCacheSize);
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
-                try {
-                    //noinspection BusyWait
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    private boolean tryAcquirePermit() {
+        return logCache.size() < maxWALCacheSize;
+    }
+
+    private void tryDrainBackoffRecords() {
+        try {
+            for (; ; ) {
+                BackoffRecord backoffRecord = backoffRecords.peek();
+                if (backoffRecord == null) {
                     break;
                 }
+                if (!tryAcquirePermit()) {
+                    LOGGER.warn("try drain backoff record fail, log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
+                    break;
+                }
+                append0(backoffRecord.record, backoffRecord.appendCf);
+                backoffRecords.poll();
             }
+        } catch (Throwable e) {
+            LOGGER.error("[UNEXPECTED] tryDrainBackoffRecords fail", e);
         }
     }
 
@@ -417,6 +439,16 @@ public class S3Storage implements Storage {
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
         mainReadExecutor.execute(() -> logCache.markFree(cacheBlock));
+    }
+
+    static class BackoffRecord {
+        final StreamRecordBatch record;
+        final CompletableFuture<Void> appendCf;
+
+        public BackoffRecord(StreamRecordBatch record, CompletableFuture<Void> appendCf) {
+            this.record = record;
+            this.appendCf = appendCf;
+        }
     }
 
     /**

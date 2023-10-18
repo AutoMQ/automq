@@ -31,7 +31,7 @@ public class FutureUtil {
         return cf;
     }
 
-    public static void suppress(Runnable run, Logger logger) {
+    public static void suppress(ThrowableRunnable run, Logger logger) {
         try {
             run.run();
         } catch (Throwable t) {
@@ -92,4 +92,5 @@ public class FutureUtil {
         }
         return ex;
     }
+
 }
