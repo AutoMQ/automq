@@ -272,8 +272,9 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> close0() {
         streamObjectsCompactionTask.close();
-        closeHook.apply(streamId);
-        return storage.forceUpload(streamId).thenCompose(nil -> streamManager.closeStream(streamId, epoch));
+        return storage.forceUpload(streamId)
+                .thenCompose(nil -> streamManager.closeStream(streamId, epoch))
+                .whenComplete((nil, ex) -> closeHook.apply(streamId));
     }
 
     @Override
