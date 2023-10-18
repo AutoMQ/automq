@@ -99,7 +99,7 @@ public class StreamObjectCopier {
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = ByteBufAlloc.ALLOC.compositeBuffer();
+        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
         IndexBlock indexBlock = new IndexBlock();
         buf.addComponent(true, indexBlock.buffer());
         ObjectWriter.Footer footer = new ObjectWriter.Footer(indexBlock.position(), indexBlock.size());
@@ -123,9 +123,9 @@ public class StreamObjectCopier {
 
         public IndexBlock() {
             position = nextObjectDataStartPosition;
-            buf = ByteBufAlloc.ALLOC.compositeBuffer();
+            buf = DirectByteBufAlloc.compositeByteBuffer();
             // block count
-            buf.addComponent(true, ByteBufAlloc.ALLOC.buffer(4).writeInt(blockCount));
+            buf.addComponent(true, DirectByteBufAlloc.byteBuffer(4).writeInt(blockCount));
             // block index
             for (StreamObjectIndexData indexData : completedObjects) {
                 buf.addComponent(true, indexData.blockBuf());
