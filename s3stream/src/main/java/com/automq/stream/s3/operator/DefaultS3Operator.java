@@ -198,18 +198,18 @@ public class DefaultS3Operator implements S3Operator {
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) (end - start + 1));
-        mergedRangeRead0(path, start, end, buf, cf);
+        mergedRangeRead0(path, start, end, cf);
         return cf;
     }
 
-    void mergedRangeRead0(String path, long start, long end, ByteBuf buf, CompletableFuture<ByteBuf> cf) {
+    void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         s3.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationCount.inc();
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationTime.update(timerUtil.elapsed());
+                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) (end - start + 1));
                     responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
                 })
                 .exceptionally(ex -> {
@@ -220,7 +220,7 @@ public class DefaultS3Operator implements S3Operator {
                         cf.completeExceptionally(ex);
                     } else {
                         LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
-                        scheduler.schedule(() -> mergedRangeRead0(path, start, end, buf, cf), 100, TimeUnit.MILLISECONDS);
+                        scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
                     }
                     return null;
                 });
