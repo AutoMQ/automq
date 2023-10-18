@@ -52,10 +52,11 @@ public class Config {
     private long s3ObjectCompactionNWOutBandwidth = 50 * 1024 * 1024;
     private long s3StreamObjectsCompactionNWInBandwidth = 10L * 1024 * 1024;
     private int s3ObjectCompactionUploadConcurrency = 8;
-    private double s3ObjectCompactionExecutionScoreThreshold = 0.5;
     private long s3ObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
     private int s3ObjectCompactionForceSplitPeriod = 120;
     private int s3ObjectCompactionMaxObjectNum = 500;
+    private int s3ObjectMaxStreamNumPerWAL = 10000;
+    private int s3ObjectMaxStreamObjectNumPerCommit = 10000;
     private boolean s3MockEnable = false;
     private boolean s3ObjectLogEnable = false;
 
@@ -183,10 +184,6 @@ public class Config {
         return s3ObjectCompactionUploadConcurrency;
     }
 
-    public double s3ObjectCompactionExecutionScoreThreshold() {
-        return s3ObjectCompactionExecutionScoreThreshold;
-    }
-
     public long s3ObjectCompactionStreamSplitSize() {
         return s3ObjectCompactionStreamSplitSize;
     }
@@ -197,6 +194,14 @@ public class Config {
 
     public int s3ObjectCompactionMaxObjectNum() {
         return s3ObjectCompactionMaxObjectNum;
+    }
+
+    public int s3ObjectMaxStreamNumPerWAL() {
+        return s3ObjectMaxStreamNumPerWAL;
+    }
+
+    public int s3ObjectMaxStreamObjectNumPerCommit() {
+        return s3ObjectMaxStreamObjectNumPerCommit;
     }
 
     public boolean s3MockEnable() {
@@ -365,11 +370,6 @@ public class Config {
         return this;
     }
 
-    public Config s3ObjectCompactionExecutionScoreThreshold(double s3ObjectCompactionExecutionScoreThreshold) {
-        this.s3ObjectCompactionExecutionScoreThreshold = s3ObjectCompactionExecutionScoreThreshold;
-        return this;
-    }
-
     public Config s3ObjectCompactionStreamSplitSize(long s3ObjectCompactionStreamSplitSize) {
         this.s3ObjectCompactionStreamSplitSize = s3ObjectCompactionStreamSplitSize;
         return this;
@@ -382,6 +382,16 @@ public class Config {
 
     public Config s3ObjectCompactionMaxObjectNum(int s3ObjectCompactionMaxObjectNum) {
         this.s3ObjectCompactionMaxObjectNum = s3ObjectCompactionMaxObjectNum;
+        return this;
+    }
+
+    public Config s3ObjectMaxStreamNumPerWAL(int s3ObjectCompactionMaxStreamNumInWAL) {
+        this.s3ObjectMaxStreamNumPerWAL = s3ObjectCompactionMaxStreamNumInWAL;
+        return this;
+    }
+
+    public Config s3ObjectMaxStreamObjectNumPerCommit(int s3ObjectCompactionMaxStreamObjectNum) {
+        this.s3ObjectMaxStreamObjectNumPerCommit = s3ObjectCompactionMaxStreamObjectNum;
         return this;
     }
 

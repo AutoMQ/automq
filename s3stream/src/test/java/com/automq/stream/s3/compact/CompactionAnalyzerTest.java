@@ -32,8 +32,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -98,7 +100,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testFilterBlocksToCompact() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> filteredMap = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
         assertTrue(compare(filteredMap, streamDataBlocksMap));
@@ -106,7 +108,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testFilterBlocksToCompact2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1),
@@ -131,7 +133,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testSortStreamRangePositions() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, STREAM_SPLIT_SIZE);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
@@ -149,10 +151,12 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     }
 
     @Test
-    public void testBuildCompactedObject1() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100);
+    public void testGroupObjectWithLimit() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(streamDataBlocksMap);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
+        Assertions.assertTrue(objectsToRemove.isEmpty());
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.COMPACT)
@@ -178,10 +182,12 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     }
 
     @Test
-    public void testBuildCompactedObject2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 30);
+    public void testGroupObjectWithLimit2() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 30, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.buildCompactedObjects(streamDataBlocksMap);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
+        Assertions.assertTrue(objectsToRemove.isEmpty());
         List<CompactedObjectBuilder> expectedCompactedObject = List.of(
                 new CompactedObjectBuilder()
                         .setType(CompactionType.SPLIT)
@@ -199,18 +205,122 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                         .setType(CompactionType.SPLIT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)),
                 new CompactedObjectBuilder()
-                        .setType(CompactionType.COMPACT)
+                        .setType(CompactionType.SPLIT)
                         .addStreamDataBlock(new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, -1, 1)));
         for (int i = 0; i < compactedObjectBuilders.size(); i++) {
             assertTrue(compare(compactedObjectBuilders.get(i), expectedCompactedObject.get(i)));
         }
+    }
+
+    @Test
+    public void testGroupObjectWithLimit3() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 70, MAX_STREAM_NUM_IN_WAL, 2);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
+        Assertions.assertEquals(Set.of(OBJECT_2), objectsToRemove);
+        List<CompactedObjectBuilder> expectedCompactedObject = List.of(
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.SPLIT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 15, 20, 0, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.SPLIT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 2, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.COMPACT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)));
+        for (int i = 0; i < compactedObjectBuilders.size(); i++) {
+            assertTrue(compare(compactedObjectBuilders.get(i), expectedCompactedObject.get(i)));
+        }
+    }
+
+    @Test
+    public void testGroupObjectWithLimit4() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 50, MAX_STREAM_NUM_IN_WAL, 1);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(generateStreamDataBlocks(), objectsToRemove);
+        Assertions.assertEquals(Set.of(OBJECT_2), objectsToRemove);
+        List<CompactedObjectBuilder> expectedCompactedObject = List.of(
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.COMPACT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.SPLIT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.COMPACT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)));
+        for (int i = 0; i < compactedObjectBuilders.size(); i++) {
+            assertTrue(compare(compactedObjectBuilders.get(i), expectedCompactedObject.get(i)));
+        }
+    }
+
+    @Test
+    public void testGroupObjectWithLimit5() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 50, 1, MAX_STREAM_OBJECT_NUM);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(generateStreamDataBlocks(), objectsToRemove);
+        Assertions.assertEquals(Set.of(OBJECT_0, OBJECT_2), objectsToRemove);
+        Assertions.assertTrue(compactedObjectBuilders.isEmpty());
+    }
+
+    @Test
+    public void testGroupObjectWithLimit6() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 29, MAX_STREAM_NUM_IN_WAL, 2);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(generateStreamDataBlocks(), objectsToRemove);
+        Assertions.assertEquals(Set.of(OBJECT_2), objectsToRemove);
+        List<CompactedObjectBuilder> expectedCompactedObject = List.of(
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.COMPACT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.SPLIT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, -1, 1))
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, -1, 1)),
+                new CompactedObjectBuilder()
+                        .setType(CompactionType.SPLIT)
+                        .addStreamDataBlock(new StreamDataBlock(STREAM_2, 30, 60, 3, OBJECT_0, -1, -1, 1)));
+        for (int i = 0; i < compactedObjectBuilders.size(); i++) {
+            assertTrue(compare(compactedObjectBuilders.get(i), expectedCompactedObject.get(i)));
+        }
+    }
+
+    @Test
+    public void testGroupObjectWithLimit7() {
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 29, MAX_STREAM_NUM_IN_WAL, 1);
+        Set<Long> objectsToRemove = new HashSet<>();
+        List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(generateStreamDataBlocks(), objectsToRemove);
+        Assertions.assertEquals(Set.of(OBJECT_0, OBJECT_2), objectsToRemove);
+        Assertions.assertTrue(compactedObjectBuilders.isEmpty());
+    }
+
+    private static Map<Long, List<StreamDataBlock>> generateStreamDataBlocks() {
+        return Map.of(
+                OBJECT_0, List.of(
+                        new StreamDataBlock(STREAM_0, 0, 20, 0, OBJECT_0, -1, 20, 1),
+                        new StreamDataBlock(STREAM_1, 30, 60, 1, OBJECT_0, -1, 30, 1),
+                        new StreamDataBlock(STREAM_2, 30, 60, 2, OBJECT_0, -1, 30, 1)),
+                OBJECT_1, List.of(
+                        new StreamDataBlock(STREAM_0, 20, 25, 0, OBJECT_1, -1, 5, 1),
+                        new StreamDataBlock(STREAM_1, 60, 120, 1, OBJECT_1, -1, 60, 1)),
+                OBJECT_2, List.of(
+                        new StreamDataBlock(STREAM_1, 400, 500, 0, OBJECT_2, -1, 100, 1),
+                        new StreamDataBlock(STREAM_2, 230, 270, 1, OBJECT_2, -1, 40, 1))
+                );
     }
 
     @Test
     public void testCompactionPlans1() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, EXECUTION_SCORE_THRESHOLD, 100);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         Assertions.assertEquals(1, compactionPlans.size());
         List<CompactedObject> expectCompactedObjects = List.of(
                 new CompactedObjectBuilder()
@@ -317,22 +427,22 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testCompactionPlans2() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         checkCompactionPlan2(compactionPlans);
     }
 
     @Test
     public void testCompactionPlansWithInvalidObject() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, EXECUTION_SCORE_THRESHOLD, 100);
+        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         List<S3ObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
         s3ObjectMetadata.add(
                 new S3ObjectMetadata(100, S3ObjectType.WAL,
                         List.of(new StreamOffsetRange(STREAM_2, 1000, 1200)), System.currentTimeMillis(),
                         System.currentTimeMillis(), 512, 100));
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator);
-        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap);
+        List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         checkCompactionPlan2(compactionPlans);
     }
 }

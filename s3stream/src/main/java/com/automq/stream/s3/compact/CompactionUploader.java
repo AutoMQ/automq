@@ -84,7 +84,7 @@ public class CompactionUploader {
 
     private CompletableFuture<Void> prepareObjectAndWrite(CompactedObject compactedObject) {
         if (walObjectIdCf == null) {
-            walObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30));
+            walObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
         }
         return walObjectIdCf.thenAcceptAsync(objectId -> {
             if (walObjectWriter == null) {
@@ -107,7 +107,7 @@ public class CompactionUploader {
                         .stream()
                         .map(StreamDataBlock::getDataCf)
                         .toArray(CompletableFuture[]::new))
-                .thenComposeAsync(v -> objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
+                .thenComposeAsync(v -> objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60))
                                 .thenComposeAsync(objectId -> {
                                     DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
                                     for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
