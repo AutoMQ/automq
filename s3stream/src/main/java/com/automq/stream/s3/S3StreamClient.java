@@ -21,10 +21,10 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
     private final ScheduledThreadPoolExecutor streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER, true);
+            ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER, true);
     private ScheduledFuture<?> scheduledCompactionTaskFuture;
     private final Map<Long, S3Stream> openedStreams;
 
@@ -133,9 +133,9 @@ public class S3StreamClient implements StreamClient {
                             .withS3ObjectLogEnabled(config.s3ObjectLogEnable())
                             .withReadThrottle(readThrottle);
                     S3Stream stream = new S3Stream(
-                        metadata.getStreamId(), metadata.getEpoch(),
-                        metadata.getStartOffset(), metadata.getEndOffset(),
-                        storage, streamManager, builder, id -> {
+                            metadata.getStreamId(), metadata.getEpoch(),
+                            metadata.getStartOffset(), metadata.getEndOffset(),
+                            storage, streamManager, builder, id -> {
                         openedStreams.remove(id);
                         return null;
                     });
@@ -151,9 +151,29 @@ public class S3StreamClient implements StreamClient {
             scheduledCompactionTaskFuture.cancel(false);
         }
         streamObjectCompactionExecutor.shutdown();
+        try {
+            if (streamObjectCompactionExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                LOGGER.warn("await streamObjectCompactionExecutor timeout 10s");
+            }
+        } catch (InterruptedException e) {
+            LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
+        }
         if (readThrottle != null) {
             readThrottle.stop();
         }
+
+        TimerUtil timerUtil = new TimerUtil();
+        Map<Long, CompletableFuture<Void>> streamCloseFutures = new ConcurrentHashMap<>();
+        openedStreams.forEach((streamId, stream) -> streamCloseFutures.put(streamId, stream.close()));
+        for (; ; ) {
+            Threads.sleep(1000);
+            List<Long> closingStreams = streamCloseFutures.entrySet().stream().filter(e -> !e.getValue().isDone()).map(Map.Entry::getKey).toList();
+            LOGGER.info("waiting streams close, closed {} / all {}, closing[{}]", streamCloseFutures.size() - closingStreams.size(), streamCloseFutures.size(), closingStreams);
+            if (closingStreams.isEmpty()) {
+                break;
+            }
+        }
+        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsed());
     }
 
     private static class CompactionTasksSummary {
@@ -165,7 +185,7 @@ public class S3StreamClient implements StreamClient {
         private final long timeCostInMs;
 
         private CompactionTasksSummary(long involvedStreamCount, long sourceObjectsTotalSize, long sourceObjectsCount, long targetObjectsCount, long smallSizeCopyWriteCount,
-            long timeCostInMs) {
+                                       long timeCostInMs) {
             this.involvedStreamCount = involvedStreamCount;
             this.sourceObjectsTotalSize = sourceObjectsTotalSize;
             this.sourceObjectsCount = sourceObjectsCount;
@@ -181,13 +201,13 @@ public class S3StreamClient implements StreamClient {
         @Override
         public String toString() {
             return "CompactionTasksSummary{" +
-                "involvedStreamCount=" + involvedStreamCount +
-                ", sourceObjectsTotalSize=" + sourceObjectsTotalSize +
-                ", sourceObjectsCount=" + sourceObjectsCount +
-                ", targetObjectsCount=" + targetObjectsCount +
-                ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
-                ", timeCostInMs=" + timeCostInMs +
-                '}';
+                    "involvedStreamCount=" + involvedStreamCount +
+                    ", sourceObjectsTotalSize=" + sourceObjectsTotalSize +
+                    ", sourceObjectsCount=" + sourceObjectsCount +
+                    ", targetObjectsCount=" + targetObjectsCount +
+                    ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
+                    ", timeCostInMs=" + timeCostInMs +
+                    '}';
         }
 
         public static class Builder {
