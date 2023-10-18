@@ -21,6 +21,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -234,21 +235,20 @@ public class LogCache {
             if (streamRecords.get(0).getBaseOffset() > startOffset || streamRecords.get(streamRecords.size() - 1).getLastOffset() <= startOffset) {
                 return Collections.emptyList();
             }
-            int startIndex = -1;
+            StreamRecordBatchList records = new StreamRecordBatchList(streamRecords);
+            int startIndex = records.search(startOffset);
+            if (startIndex == -1) {
+                // mismatched
+                return Collections.emptyList();
+            }
             int endIndex = -1;
             int remainingBytesSize = maxBytes;
-            // TODO: binary search the startOffset.
-            for (int i = 0; i < streamRecords.size(); i++) {
+            for (int i = startIndex; i < streamRecords.size(); i++) {
                 StreamRecordBatch record = streamRecords.get(i);
-                if (startIndex == -1 && record.getBaseOffset() <= startOffset && record.getLastOffset() > startOffset) {
-                    startIndex = i;
-                }
-                if (startIndex != -1) {
-                    endIndex = i + 1;
-                    remainingBytesSize -= Math.min(remainingBytesSize, record.size());
-                    if (record.getLastOffset() >= endOffset || remainingBytesSize == 0) {
-                        break;
-                    }
+                endIndex = i + 1;
+                remainingBytesSize -= Math.min(remainingBytesSize, record.size());
+                if (record.getLastOffset() >= endOffset || remainingBytesSize == 0) {
+                    break;
                 }
             }
             return streamRecords.subList(startIndex, endIndex);

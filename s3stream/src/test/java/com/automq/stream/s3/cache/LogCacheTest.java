@@ -50,7 +50,13 @@ public class LogCacheTest {
         assertEquals(3, records.size());
         assertEquals(10L, records.get(0).getBaseOffset());
 
+        records = logCache.get(233L, 0L, 9L, 1000);
+        assertEquals(0, records.size());
+
         records = logCache.get(233L, 10L, 16L, 1000);
+        assertEquals(0, records.size());
+
+        records = logCache.get(233L, 12L, 16L, 1000);
         assertEquals(0, records.size());
     }
 

@@ -23,6 +23,7 @@ import com.automq.stream.api.StreamClientException;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.ByteBufferInputStream;
+import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
@@ -205,12 +206,17 @@ public class ObjectReader implements AutoCloseable {
         }
 
         public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset, int maxBytes) {
-            // TODO: binary search
             long nextStartOffset = startOffset;
             int nextMaxBytes = maxBytes;
             boolean matched = false;
             List<DataBlockIndex> rst = new LinkedList<>();
-            for (int i = 0; i < streamRanges.readableBytes(); i += 24) {
+            IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(streamRanges);
+            int startIndex = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, startOffset));
+            if (startIndex == -1) {
+                // mismatched
+                return rst;
+            }
+            for (int i = startIndex * 24; i < streamRanges.readableBytes(); i += 24) {
                 long rangeStreamId = streamRanges.getLong(i);
                 long rangeStartOffset = streamRanges.getLong(i + 8);
                 long rangeEndOffset = rangeStartOffset + streamRanges.getInt(i + 16);
