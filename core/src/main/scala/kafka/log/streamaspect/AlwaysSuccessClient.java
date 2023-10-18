@@ -124,7 +124,6 @@ public class AlwaysSuccessClient implements Client {
     @Override
     public void shutdown() {
         innerClient.shutdown();
-        streamClient.shutdown();
         streamManagerRetryScheduler.shutdownNow();
         streamManagerCallbackExecutors.shutdownNow();
         appendRetryScheduler.shutdownNow();
