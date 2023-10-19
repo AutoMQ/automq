@@ -31,24 +31,23 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
     private final ScheduledThreadPoolExecutor streamObjectCompactionExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER, true);
+        ThreadUtils.createThreadFactory("stream-object-compaction-background", true), LOGGER, true);
     private ScheduledFuture<?> scheduledCompactionTaskFuture;
     private final Map<Long, S3Stream> openedStreams;
 
@@ -59,7 +58,8 @@ public class S3StreamClient implements StreamClient {
     private final Config config;
     private final AsyncTokenBucketThrottle readThrottle;
 
-    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager, S3Operator s3Operator, Config config) {
+    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
+        S3Operator s3Operator, Config config) {
         this.streamManager = streamManager;
         this.storage = storage;
         this.openedStreams = new ConcurrentHashMap<>();
@@ -83,6 +83,11 @@ public class S3StreamClient implements StreamClient {
     @Override
     public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
         return FutureUtil.exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
+    }
+
+    @Override
+    public Optional<Stream> getStream(long streamId) {
+        return Optional.ofNullable(openedStreams.get(streamId));
     }
 
     /**
@@ -124,24 +129,24 @@ public class S3StreamClient implements StreamClient {
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
-                thenApply(metadata -> {
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
-                    StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
-                            .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
-                            .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
-                            .withS3ObjectLogEnabled(config.s3ObjectLogEnable())
-                            .withReadThrottle(readThrottle);
-                    S3Stream stream = new S3Stream(
-                            metadata.getStreamId(), metadata.getEpoch(),
-                            metadata.getStartOffset(), metadata.getEndOffset(),
-                            storage, streamManager, builder, id -> {
-                        openedStreams.remove(id);
-                        return null;
-                    });
-                    openedStreams.put(streamId, stream);
-                    return stream;
+            thenApply(metadata -> {
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
+                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
+                StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
+                    .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
+                    .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
+                    .withS3ObjectLogEnabled(config.s3ObjectLogEnable())
+                    .withReadThrottle(readThrottle);
+                S3Stream stream = new S3Stream(
+                    metadata.getStreamId(), metadata.getEpoch(),
+                    metadata.getStartOffset(), metadata.getEndOffset(),
+                    storage, streamManager, builder, id -> {
+                    openedStreams.remove(id);
+                    return null;
                 });
+                openedStreams.put(streamId, stream);
+                return stream;
+            });
     }
 
     @Override
@@ -184,8 +189,9 @@ public class S3StreamClient implements StreamClient {
         private final long smallSizeCopyWriteCount;
         private final long timeCostInMs;
 
-        private CompactionTasksSummary(long involvedStreamCount, long sourceObjectsTotalSize, long sourceObjectsCount, long targetObjectsCount, long smallSizeCopyWriteCount,
-                                       long timeCostInMs) {
+        private CompactionTasksSummary(long involvedStreamCount, long sourceObjectsTotalSize, long sourceObjectsCount,
+            long targetObjectsCount, long smallSizeCopyWriteCount,
+            long timeCostInMs) {
             this.involvedStreamCount = involvedStreamCount;
             this.sourceObjectsTotalSize = sourceObjectsTotalSize;
             this.sourceObjectsCount = sourceObjectsCount;
@@ -201,13 +207,13 @@ public class S3StreamClient implements StreamClient {
         @Override
         public String toString() {
             return "CompactionTasksSummary{" +
-                    "involvedStreamCount=" + involvedStreamCount +
-                    ", sourceObjectsTotalSize=" + sourceObjectsTotalSize +
-                    ", sourceObjectsCount=" + sourceObjectsCount +
-                    ", targetObjectsCount=" + targetObjectsCount +
-                    ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
-                    ", timeCostInMs=" + timeCostInMs +
-                    '}';
+                "involvedStreamCount=" + involvedStreamCount +
+                ", sourceObjectsTotalSize=" + sourceObjectsTotalSize +
+                ", sourceObjectsCount=" + sourceObjectsCount +
+                ", targetObjectsCount=" + targetObjectsCount +
+                ", smallSizeCopyWriteCount=" + smallSizeCopyWriteCount +
+                ", timeCostInMs=" + timeCostInMs +
+                '}';
         }
 
         public static class Builder {
