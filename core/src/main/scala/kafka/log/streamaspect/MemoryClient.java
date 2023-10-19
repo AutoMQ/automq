@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -141,6 +142,11 @@ public class MemoryClient implements Client {
         @Override
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
             return CompletableFuture.completedFuture(new StreamImpl(streamId));
+        }
+
+        @Override
+        public Optional<Stream> getStream(long streamId) {
+            throw new UnsupportedOperationException();
         }
 
         @Override

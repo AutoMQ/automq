@@ -866,7 +866,7 @@ public class StreamControlManagerTest {
 
         // 5. commit wal object with stream0-[70, 100)
         CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
-            .setNodeId(BROKER0)
+            .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(4)
             .setOrderId(4)
