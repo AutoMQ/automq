@@ -54,13 +54,15 @@ public class DataBlockReadAccumulator {
                 records.registerListener(listener);
                 inflightDataBlockReads.put(key, records);
                 DataBlockRecords finalRecords = records;
-                reader.read(blockIndex).whenComplete((rst, ex) -> {
-                    synchronized (inflightDataBlockReads) {
-                        inflightDataBlockReads.remove(key, finalRecords);
+                reader.read(blockIndex).whenComplete((dataBlock, ex) -> {
+                    try (dataBlock) {
+                        synchronized (inflightDataBlockReads) {
+                            inflightDataBlockReads.remove(key, finalRecords);
+                        }
+                        finalRecords.complete(dataBlock, ex);
+                        dataBlockConsumer.accept(finalRecords);
+                        finalRecords.release();
                     }
-                    finalRecords.complete(rst, ex);
-                    dataBlockConsumer.accept(finalRecords);
-                    finalRecords.release();
                 });
             } else {
                 records.registerListener(listener);

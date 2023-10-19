@@ -42,6 +42,7 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
     }
 
     public ByteBuf encoded() {
+        // TODO: keep the ref count
         if (encoded == null) {
             encoded = StreamRecordBatchCodec.encode(this);
             ByteBuf oldPayload = payload;
