@@ -295,6 +295,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     timeIndex.trimToValidSize()
     timeIdx.seal()
     _meta.time(timeIdx.stream.sliceRange)
+    _meta.timeIndexLastEntry(timeIndex.lastEntry)
     txnIndex.seal()
     _meta.txn(txnIndex.stream.sliceRange)
   }
@@ -375,6 +376,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     _meta.logSize(_log.sizeInBytes())
     _meta.time(timeIdx.stream.sliceRange)
     _meta.txn(txnIndex.stream.sliceRange)
+    _meta.timeIndexLastEntry(timeIndex.lastEntry)
     _meta.streamSuffix(_meta.streamSuffix())
     _meta
   }
@@ -398,7 +400,8 @@ object ElasticLogSegment {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset, meta.logSize())
-    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize)
+    val lastTimeIndexEntry = meta.timeIndexLastEntry().toTimestampOffset
+    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 
     new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener)
