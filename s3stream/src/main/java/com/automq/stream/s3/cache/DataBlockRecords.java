@@ -50,6 +50,7 @@ public class DataBlockRecords {
                 }
             } catch (Throwable e) {
                 LOGGER.error("parse data block fail", e);
+                records.forEach(StreamRecordBatch::release);
                 ex = e;
             }
         }
