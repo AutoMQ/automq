@@ -386,7 +386,7 @@ object ElasticLog extends Logging {
       } else {
         partitionMeta = partitionMetaOpt.get
       }
-      info(s"${logIdent}loaded partition meta: $partitionMeta")
+      debug(s"${logIdent}loaded partition meta: $partitionMeta")
 
       def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
         metaMap.filter(kv => kv._1.startsWith(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX))
@@ -402,9 +402,9 @@ object ElasticLog extends Logging {
         (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
       }
       if (snapshotsMap.nonEmpty) {
-        info(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
+        debug(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
       } else {
-        info(s"${logIdent}loaded no producer snapshots")
+        debug(s"${logIdent}loaded no producer snapshots")
       }
 
       def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
@@ -446,7 +446,7 @@ object ElasticLog extends Logging {
         producerStateManager = producerStateManager,
         numRemainingSegments = numRemainingSegments,
         createAndSaveSegmentFunc = createAndSaveSegment(logSegmentManager, logIdent = logIdent)).load()
-      info(s"${logIdent}loaded log meta: $logMeta")
+      debug(s"${logIdent}loaded log meta: $logMeta")
 
       // load leader epoch checkpoint
       val leaderEpochCheckpointMetaOpt = metaMap.get(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY).map(m => m.asInstanceOf[ElasticLeaderEpochCheckpointMeta])
@@ -458,7 +458,7 @@ object ElasticLog extends Logging {
       } else {
         leaderEpochCheckpointMetaOpt.get
       }
-      info(s"${logIdent}loaded leader epoch checkpoint with ${leaderEpochCheckpointMeta.entries.size} entries")
+      debug(s"${logIdent}loaded leader epoch checkpoint with ${leaderEpochCheckpointMeta.entries.size} entries")
       if (!leaderEpochCheckpointMeta.entries.isEmpty) {
         val lastEntry = leaderEpochCheckpointMeta.entries.get(leaderEpochCheckpointMeta.entries.size - 1)
         info(s"${logIdent}last leaderEpoch entry is: $lastEntry")

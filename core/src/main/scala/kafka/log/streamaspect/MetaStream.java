@@ -155,6 +155,7 @@ public class MetaStream implements Stream {
             trimFuture.cancel(true);
         }
         return doCompaction()
+                .thenAccept(sb -> LOGGER.debug(sb.toString()))
                 .thenRun(innerStream::close)
                 .thenRun(() -> fenced = true);
     }
@@ -178,26 +179,30 @@ public class MetaStream implements Stream {
      */
     public Map<String, Object> replay() throws IOException {
         metaCache.clear();
+        StringBuilder sb = new StringBuilder(logIdent)
+                .append("metaStream replay summary:")
+                .append(" id: ")
+                .append(streamId())
+                .append(", ");
+        long totalValueSize = 0L;
 
         long startOffset = startOffset();
         long endOffset = nextOffset();
         long pos = startOffset;
-        boolean done = false;
 
         try {
-            while (!done) {
+            while (pos < endOffset) {
                 FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());
                         metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
+                        totalValueSize += kv.getValue().remaining();
+                        sb.append("(key: ").append(kv.getKey()).append(", offset: ").append(context.baseOffset()).append(", value size: ").append(kv.getValue().remaining()).append("); ");
                     } catch (Exception e) {
                         LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
                     }
                     pos = context.lastOffset();
-                }
-                if (pos >= endOffset) {
-                    done = true;
                 }
                 fetchRst.free();
             }
@@ -212,6 +217,9 @@ public class MetaStream implements Stream {
             throw new RuntimeException(e);
         }
 
+        if (totalValueSize > 0) {
+            LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
+        }
         return getValidMetaMap();
     }
 
@@ -266,7 +274,7 @@ public class MetaStream implements Stream {
         trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
     }
 
-    private CompletableFuture<Void> doCompaction() {
+    private CompletableFuture<StringBuilder> doCompaction() {
         if (metaCache.size() <= 1) {
             return CompletableFuture.completedFuture(null);
         }
@@ -276,6 +284,13 @@ public class MetaStream implements Stream {
                 ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate()).getSnapshots();
 
         long lastOffset = 0L;
+        StringBuilder sb = new StringBuilder(logIdent)
+                .append("metaStream compaction summary:")
+                .append(" id: ")
+                .append(streamId())
+                .append(", ");
+        long totalValueSize = 0L;
+
         Iterator<Map.Entry<String, Pair<Long, ByteBuffer>>> iterator = metaCache.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<String, Pair<Long, ByteBuffer>> entry = iterator.next();
@@ -290,13 +305,16 @@ public class MetaStream implements Stream {
             if (lastOffset < entry.getValue().getLeft()) {
                 lastOffset = entry.getValue().getLeft();
             }
+            totalValueSize += entry.getValue().getRight().remaining();
+            sb.append("(key: ").append(entry.getKey()).append(", offset: ").append(entry.getValue().getLeft()).append(", value size: ").append(entry.getValue().getRight().remaining()).append("); ");
             futures.add(append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate())));
         }
 
-        long finalLastOffset = lastOffset;
+        final long finalLastOffset = lastOffset;
+        sb.append("compact before: ").append(finalLastOffset + 1).append(", total value size: ").append(totalValueSize);
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .thenCompose(result -> trim(finalLastOffset + 1))
-                .thenRun(() -> LOGGER.debug("{} streamId {}: compact before {}", logIdent, streamId(), finalLastOffset));
+                .thenApply(result -> sb);
     }
 
     private long parseProducerSnapshotOffset(String key) {
