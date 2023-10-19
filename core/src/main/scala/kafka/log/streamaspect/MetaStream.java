@@ -155,7 +155,12 @@ public class MetaStream implements Stream {
             trimFuture.cancel(true);
         }
         return doCompaction()
-                .thenAccept(sb -> LOGGER.debug(sb.toString()))
+                .thenAccept(sb -> {
+                            if (LOGGER.isDebugEnabled()) {
+                                LOGGER.debug(sb.toString());
+                            }
+                        }
+                )
                 .thenRun(innerStream::close)
                 .thenRun(() -> fenced = true);
     }
@@ -217,7 +222,7 @@ public class MetaStream implements Stream {
             throw new RuntimeException(e);
         }
 
-        if (totalValueSize > 0) {
+        if (totalValueSize > 0 && LOGGER.isDebugEnabled()) {
             LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
         }
         return getValidMetaMap();

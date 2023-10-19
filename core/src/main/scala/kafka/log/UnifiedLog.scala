@@ -1906,7 +1906,7 @@ object UnifiedLog extends Logging {
         localLog.producerStateManager,
         topicId)
       val timeCost = System.currentTimeMillis() - start
-      info(s"ElasticUnifiedLog opened time cost: $timeCost ms")
+      info(s"ElasticUnifiedLog $topicPartition opened time cost: $timeCost ms")
       elasticUnifiedLog
     }
   }
