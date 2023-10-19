@@ -316,10 +316,11 @@ object Defaults {
   val S3ObjectCompactionNWInBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionNWOutBandwidth: Long = 50 * 1024 * 1024 // 50MB/s
   val S3ObjectCompactionUploadConcurrency: Int = 8
-  val S3ObjectCompactionExecutionScoreThreshold: Double = 0.5
   val S3ObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
   val S3ObjectCompactionForceSplitPeriod: Int = 120 // 120min
   val S3ObjectCompactionMaxObjectNum: Int = 500
+  val S3ObjectMaxStreamNumPerWAL: Int = 10000
+  val S3ObjectMaxStreamObjectNumPerCommit: Int = 10000
   val S3ObjectRetentionTimeInSecond: Long = 10 * 60 // 10min
 }
 
@@ -712,10 +713,11 @@ object KafkaConfig {
   val S3ObjectCompactionNWInBandwidthProp = "s3.object.compaction.network.in.bandwidth"
   val S3ObjectCompactionNWOutBandwidthProp = "s3.object.compaction.network.out.bandwidth"
   val S3ObjectCompactionUploadConcurrencyProp = "s3.object.compaction.upload.concurrency"
-  val S3ObjectCompactionExecutionScoreThresholdProp = "s3.object.compaction.execution.score.threshold"
   val S3ObjectCompactionStreamSplitSizeProp = "s3.object.compaction.stream.split.size"
   val S3ObjectCompactionForceSplitPeriodProp = "s3.object.compaction.force.split.time"
   val S3ObjectCompactionMaxObjectNumProp = "s3.object.compaction.max.num"
+  val S3ObjectMaxStreamNumPerWAL = "s3.object.max.stream.num.per.wal"
+  val S3ObjectMaxStreamObjectNumPerCommit = "s3.object.max.stream.object.num.per.commit"
   val S3MockEnableProp = "s3.mock.enable"
   val S3ObjectRetentionTimeInSecondProp = "s3.object.retention.time.in.second"
   val S3ObjectLogEnableProp = "s3.object.log.enable"
@@ -748,10 +750,11 @@ object KafkaConfig {
   val S3ObjectCompactionNWInBandwidthDoc = "The S3 object compaction network in bandwidth in Bytes/s."
   val S3ObjectCompactionNWOutBandwidthDoc = "The S3 object compaction network out bandwidth in Bytes/s."
   val S3ObjectCompactionUploadConcurrencyDoc = "The S3 object compaction upload concurrency."
-  val S3ObjectCompactionExecutionScoreThresholdDoc = "The S3 object compaction execution score threshold."
   val S3ObjectCompactionStreamSplitSizeDoc = "The S3 object compaction stream split size threshold in Bytes."
   val S3ObjectCompactionForceSplitPeriodDoc = "The S3 object compaction force split period in minutes."
   val S3ObjectCompactionMaxObjectNumDoc = "The maximum num of WAL objects to be compact at one time"
+  val S3ObjectMaxStreamNumPerWALDoc = "The maximum number of streams allowed in single WAL object"
+  val S3ObjectMaxStreamObjectNumPerCommitDoc = "The maximum number of stream objects in single commit request"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
   val S3ObjectRetentionTimeInSecondDoc = "The S3 object retention time in second, default is 10 minutes (600s)."
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
@@ -1581,10 +1584,11 @@ object KafkaConfig {
       .define(S3ObjectCompactionNWInBandwidthProp, LONG, Defaults.S3ObjectCompactionNWInBandwidth, MEDIUM, S3ObjectCompactionNWInBandwidthDoc)
       .define(S3ObjectCompactionNWOutBandwidthProp, LONG, Defaults.S3ObjectCompactionNWOutBandwidth, MEDIUM, S3ObjectCompactionNWOutBandwidthDoc)
       .define(S3ObjectCompactionUploadConcurrencyProp, INT, Defaults.S3ObjectCompactionUploadConcurrency, MEDIUM, S3ObjectCompactionUploadConcurrencyDoc)
-      .define(S3ObjectCompactionExecutionScoreThresholdProp, DOUBLE, Defaults.S3ObjectCompactionExecutionScoreThreshold, MEDIUM, S3ObjectCompactionExecutionScoreThresholdDoc)
       .define(S3ObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3ObjectCompactionStreamSplitSize, MEDIUM, S3ObjectCompactionStreamSplitSizeDoc)
       .define(S3ObjectCompactionForceSplitPeriodProp, INT, Defaults.S3ObjectCompactionForceSplitPeriod, MEDIUM, S3ObjectCompactionForceSplitPeriodDoc)
       .define(S3ObjectCompactionMaxObjectNumProp, INT, Defaults.S3ObjectCompactionMaxObjectNum, MEDIUM, S3ObjectCompactionMaxObjectNumDoc)
+      .define(S3ObjectMaxStreamNumPerWAL, INT, Defaults.S3ObjectMaxStreamNumPerWAL, MEDIUM, S3ObjectMaxStreamNumPerWALDoc)
+      .define(S3ObjectMaxStreamObjectNumPerCommit, INT, Defaults.S3ObjectMaxStreamObjectNumPerCommit, MEDIUM, S3ObjectMaxStreamObjectNumPerCommitDoc)
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
       .define(S3ObjectRetentionTimeInSecondProp, LONG, Defaults.S3ObjectRetentionTimeInSecond, MEDIUM, S3ObjectRetentionTimeInSecondDoc)
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
@@ -2151,10 +2155,11 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectCompactionNWInBandwidth = getLong(KafkaConfig.S3ObjectCompactionNWInBandwidthProp)
   val s3ObjectCompactionNWOutBandwidth = getLong(KafkaConfig.S3ObjectCompactionNWInBandwidthProp)
   val s3ObjectCompactionUploadConcurrency = getInt(KafkaConfig.S3ObjectCompactionUploadConcurrencyProp)
-  val s3ObjectCompactionExecutionScoreThreshold = getDouble(KafkaConfig.S3ObjectCompactionExecutionScoreThresholdProp)
   val s3ObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3ObjectCompactionStreamSplitSizeProp)
   val s3ObjectCompactionForceSplitPeriod = getInt(KafkaConfig.S3ObjectCompactionForceSplitPeriodProp)
   val s3ObjectCompactionMaxObjectNum = getInt(KafkaConfig.S3ObjectCompactionMaxObjectNumProp)
+  val s3ObjectMaxStreamNumPerWAL = getInt(KafkaConfig.S3ObjectMaxStreamNumPerWAL)
+  val s3ObjectMaxStreamObjectNumPerCommit = getInt(KafkaConfig.S3ObjectMaxStreamObjectNumPerCommit)
   val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
   val s3ObjectRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectRetentionTimeInSecondProp)
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
