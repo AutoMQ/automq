@@ -37,26 +37,30 @@ import static com.automq.stream.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
 
 public class LogCache {
     public static final long MATCH_ALL_STREAMS = -1L;
-    private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> block
-            .records().forEach(
-                    (streamId, records) -> records.forEach(StreamRecordBatch::release)
-            );
+    private static final int DEFAULT_MAX_BLOCK_STREAM_COUNT = 10000;
+    private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
+    };
     private final long cacheBlockMaxSize;
+    private final int maxCacheBlockStreamCount;
     private final List<LogCacheBlock> blocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
     private final AtomicLong size = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
 
-    public LogCache(long cacheBlockMaxSize, Consumer<LogCacheBlock> blockFreeListener) {
+    public LogCache(long cacheBlockMaxSize, int maxCacheBlockStreamCount, Consumer<LogCacheBlock> blockFreeListener) {
         this.cacheBlockMaxSize = cacheBlockMaxSize;
-        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize);
+        this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
+        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
     }
 
     public LogCache(long cacheBlockMaxSize) {
-        this(cacheBlockMaxSize, DEFAULT_BLOCK_FREE_LISTENER);
+        this(cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
+    }
+    public LogCache(long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
+        this(cacheBlockMaxSize, maxCacheBlockStreamCount, DEFAULT_BLOCK_FREE_LISTENER);
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
@@ -152,7 +156,7 @@ public class LogCache {
     public LogCacheBlock archiveCurrentBlock() {
         LogCacheBlock block = activeBlock;
         block.confirmOffset = confirmOffset;
-        activeBlock = new LogCacheBlock(cacheBlockMaxSize);
+        activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         blocks.add(activeBlock);
         return block;
     }
@@ -205,15 +209,22 @@ public class LogCache {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
         private final long blockId;
         private final long maxSize;
+        private final int maxStreamCount;
         private final Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         private long size = 0;
         private long confirmOffset;
         boolean free;
 
-        public LogCacheBlock(long maxSize) {
+        public LogCacheBlock(long maxSize, int maxStreamCount) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
             this.maxSize = maxSize;
+            this.maxStreamCount = maxStreamCount;
         }
+
+        public LogCacheBlock(long maxSize) {
+            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT);
+        }
+
 
         public long blockId() {
             return blockId;
@@ -224,7 +235,7 @@ public class LogCache {
             streamCache.add(recordBatch);
             int recordSize = recordBatch.size();
             size += recordSize;
-            return size >= maxSize;
+            return size >= maxSize || map.size() >= maxStreamCount;
         }
 
         public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
