@@ -722,7 +722,7 @@ public class StreamControlManager {
                         .stream()
                         .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
                 .collect(Collectors.toList());
-            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges);
+            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
             if (continuityCheckResult != Errors.NONE) {
                 log.error("[CommitWALObject]: stream: {} advance check failed, error: {}", offsetRanges, continuityCheckResult);
                 resp.setErrorCode(continuityCheckResult.code());
@@ -810,8 +810,8 @@ public class StreamControlManager {
                     .setNodeId(nodeId)
                     .setObjectId(id), (short) 0)));
         }
-        log.info("[CommitWALObject]: node: {} commit wal object: {} success, compacted objects: {}, stream objects: {}", nodeId, objectId,
-                compactedObjectIds, streamObjects);
+        log.info("[CommitWALObject]: node: {} commit wal object: {} success, compacted objects: {}, WAL stream range: {}, stream objects: {}",
+                nodeId, objectId, compactedObjectIds, data.objectStreamRanges(), streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -1003,7 +1003,7 @@ public class StreamControlManager {
      *      </li>
      * <ul/>
      */
-    private Errors streamAdvanceCheck(List<StreamOffsetRange> ranges) {
+    private Errors streamAdvanceCheck(List<StreamOffsetRange> ranges, int nodeId) {
         if (ranges == null || ranges.isEmpty()) {
             return Errors.NONE;
         }
@@ -1023,6 +1023,11 @@ public class StreamControlManager {
                 // should not happen
                 log.error("[streamAdvanceCheck]: stream {}'s current range {} not exist when stream has been ",
                     range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex());
+                return Errors.STREAM_INNER_ERROR;
+            } else if (rangeMetadata.nodeId() != nodeId) {
+                // should not happen
+                log.error("[streamAdvanceCheck]: stream {}'s current range node id not match expected {} but {}",
+                        range.getStreamId(), rangeMetadata.nodeId(), nodeId);
                 return Errors.STREAM_INNER_ERROR;
             }
             if (rangeMetadata.endOffset() != range.getStartOffset()) {
