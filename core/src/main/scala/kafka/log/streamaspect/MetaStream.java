@@ -156,11 +156,10 @@ public class MetaStream implements Stream {
         }
         return doCompaction()
                 .thenAccept(sb -> {
-                            if (LOGGER.isDebugEnabled()) {
-                                LOGGER.debug(sb.toString());
-                            }
-                        }
-                )
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug(sb.toString());
+                    }
+                })
                 .thenRun(innerStream::close)
                 .thenRun(() -> fenced = true);
     }
