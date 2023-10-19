@@ -17,6 +17,7 @@
 
 package com.automq.stream.api;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -39,6 +40,14 @@ public interface StreamClient {
      * @return {@link Stream}.
      */
     CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
+
+    /**
+     * Retrive an opened stream.
+     *
+     * @param streamId stream id.
+     * @return {@link Optional<Stream>}.
+     */
+    Optional<Stream> getStream(long streamId);
 
     void shutdown();
 }
