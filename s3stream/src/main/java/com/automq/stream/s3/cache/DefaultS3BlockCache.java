@@ -248,9 +248,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 ReadingTaskKey readingTaskKey = new ReadingTaskKey(streamId, readahead.getStartOffset());
                 readaheadTasks.put(readingTaskKey, readaheadCf);
                 readaheadCf
-                        .whenComplete((nil, ex) -> {
+                        .whenComplete((rst, ex) -> {
                             if (ex != null) {
                                 LOGGER.error("background readahead {} fail", readahead, ex);
+                            } else {
+                                rst.getRecords().forEach(StreamRecordBatch::release);
                             }
                             readaheadTasks.remove(readingTaskKey, readaheadCf);
                         });
