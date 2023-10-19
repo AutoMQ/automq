@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -203,6 +204,11 @@ public class AlwaysSuccessClient implements Client {
             CompletableFuture<Stream> cf = new CompletableFuture<>();
             openStream0(streamId, options, cf);
             return cf;
+        }
+
+        @Override
+        public Optional<Stream> getStream(long streamId) {
+            return streamClient.getStream(streamId);
         }
 
         public void shutdown() {

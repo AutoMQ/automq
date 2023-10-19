@@ -38,6 +38,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -327,6 +328,11 @@ class AlwaysSuccessClientTest {
                     return CompletableFuture.failedFuture(new StreamClientException(HALT_ERROR_CODES.iterator().next(), "halt opening stream"));
                 }
                 return CompletableFuture.completedFuture(new TestStreamImpl(streamId, delayMillis, exceptionHint));
+            }
+
+            @Override
+            public Optional<Stream> getStream(long streamId) {
+                throw new UnsupportedOperationException();
             }
 
             @Override
