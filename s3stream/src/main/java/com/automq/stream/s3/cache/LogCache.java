@@ -59,6 +59,7 @@ public class LogCache {
     public LogCache(long cacheBlockMaxSize) {
         this(cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
     }
+
     public LogCache(long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
         this(cacheBlockMaxSize, maxCacheBlockStreamCount, DEFAULT_BLOCK_FREE_LISTENER);
     }
@@ -188,6 +189,9 @@ public class LogCache {
             return;
         }
         blocks.removeIf(b -> {
+            if (size.get() <= cacheBlockMaxSize * 0.9) {
+                return false;
+            }
             if (b.free) {
                 size.addAndGet(-b.size);
                 blockFreeListener.accept(b);
