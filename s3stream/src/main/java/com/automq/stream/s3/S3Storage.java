@@ -211,7 +211,6 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-
         CompletableFuture<Void> cf = new CompletableFuture<>();
         append0(streamRecord, cf);
         return cf;
@@ -240,6 +239,7 @@ public class S3Storage implements Storage {
         handleAppendRequest(writeRequest);
         appendResult.future().thenAccept(nil -> handleAppendCallback(writeRequest));
         cf.whenComplete((nil, ex) -> {
+            streamRecord.release();
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
         });
@@ -305,7 +305,11 @@ public class S3Storage implements Storage {
             }
             continuousCheck(rst);
             return new ReadDataBlock(rst);
-        }, mainReadExecutor);
+        }, mainReadExecutor).whenComplete((rst, ex) -> {
+            if (ex != null) {
+                logCacheRecords.forEach(StreamRecordBatch::release);
+            }
+        });
     }
 
     private void continuousCheck(List<StreamRecordBatch> records) {
@@ -350,6 +354,7 @@ public class S3Storage implements Storage {
     private void handleAppendCallback0(WalWriteRequest request) {
         List<WalWriteRequest> waitingAckRequests = callbackSequencer.after(request);
         long walConfirmOffset = callbackSequencer.getWALConfirmOffset();
+        waitingAckRequests.forEach(r -> r.record.retain());
         mainReadExecutor.execute(() -> {
             for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
                 if (logCache.put(waitingAckRequest.record)) {
