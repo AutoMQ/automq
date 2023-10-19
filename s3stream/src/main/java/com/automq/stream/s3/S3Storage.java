@@ -50,6 +50,7 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -72,7 +73,8 @@ public class S3Storage implements Storage {
     private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
     private final Queue<WALObjectUploadTaskContext> walObjectPrepareQueue = new LinkedList<>();
     private final Queue<WALObjectUploadTaskContext> walObjectCommitQueue = new LinkedList<>();
-    private CompletableFuture<Void> lastForceUploadCf = CompletableFuture.completedFuture(null);
+    private final List<CompletableFuture<Void>> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
+
     private final ScheduledExecutorService mainWriteExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-main-write", false), LOGGER);
     private final ScheduledExecutorService mainReadExecutor = Threads.newSingleThreadScheduledExecutor(
@@ -319,22 +321,22 @@ public class S3Storage implements Storage {
     }
 
     /**
-     * Force upload stream WAL cache to S3. Use sequence&group upload to avoid generate too many S3 objects when broker shutdown.
+     * Force upload stream WAL cache to S3. Use group upload to avoid generate too many S3 objects when broker shutdown.
      */
     @Override
     public synchronized CompletableFuture<Void> forceUpload(long streamId) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        lastForceUploadCf.whenComplete((nil, ex) -> mainReadExecutor.execute(() -> {
+        List<CompletableFuture<Void>> inflightWALUploadTasks = new ArrayList<>(this.inflightWALUploadTasks);
+        // await inflight WAL upload tasks to group force upload tasks.
+        CompletableFuture.allOf(inflightWALUploadTasks.toArray(new CompletableFuture[0])).whenCompleteAsync((nil, ex) -> {
             logCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
             Optional<LogCache.LogCacheBlock> blockOpt = logCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
-                blockOpt.ifPresent(logCacheBlock -> FutureUtil.propagate(uploadWALObject(logCacheBlock), cf));
-            } else {
-                cf.complete(null);
+                blockOpt.ifPresent(this::uploadWALObject);
             }
+            FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.toArray(new CompletableFuture[0])), cf);
             mainWriteExecutor.execute(() -> callbackSequencer.tryFree(streamId));
-        }));
-        this.lastForceUploadCf = cf;
+        }, mainReadExecutor);
         return cf;
     }
 
@@ -370,10 +372,15 @@ public class S3Storage implements Storage {
     CompletableFuture<Void> uploadWALObject(LogCache.LogCacheBlock logCacheBlock) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        inflightWALUploadTasks.add(cf);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadWALObject0(logCacheBlock, cf), cf, LOGGER, "uploadWALObject"));
         cf.whenComplete((nil, ex) -> {
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationCount.inc();
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationTime.update(timerUtil.elapsed());
+            inflightWALUploadTasks.remove(cf);
+            if (ex != null) {
+                LOGGER.error("upload WAL object fail", ex);
+            }
         });
         return cf;
     }
