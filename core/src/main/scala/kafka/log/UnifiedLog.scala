@@ -1893,17 +1893,21 @@ object UnifiedLog extends Logging {
                              topicId: Option[Uuid],
                              leaderEpoch: Long = 0): UnifiedLog = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
+      val start = System.currentTimeMillis()
       val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, topicId = topicId.get, leaderEpoch = leaderEpoch)
       val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
       // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
       // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
-      new ElasticUnifiedLog(localLog.logStartOffset,
+      val elasticUnifiedLog = new ElasticUnifiedLog(localLog.logStartOffset,
         localLog,
         brokerTopicStats,
         producerIdExpirationCheckIntervalMs,
         _leaderEpochCache = leaderEpochFileCache,
         localLog.producerStateManager,
         topicId)
+      val timeCost = System.currentTimeMillis() - start
+      info(s"ElasticUnifiedLog $topicPartition opened time cost: $timeCost ms")
+      elasticUnifiedLog
     }
   }
 

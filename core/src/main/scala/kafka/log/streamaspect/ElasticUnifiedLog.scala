@@ -83,7 +83,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   override def close(): CompletableFuture[Void] = {
-    info("Closing log")
     val closeFuture = lock synchronized {
       maybeFlushMetadataFile()
       elasticLog.checkIfMemoryMappedBufferClosed()

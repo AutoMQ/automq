@@ -99,7 +99,6 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
    * consistent with raw Apache Kafka.
    */
   def resize(newSize: Int): Boolean = {
-    // noop implementation
     inLock(lock) {
       val roundedNewMaxEntries = roundDownToExactMultiple(newSize, entrySize) / entrySize
 

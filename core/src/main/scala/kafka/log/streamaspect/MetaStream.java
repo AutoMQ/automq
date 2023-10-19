@@ -29,9 +29,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -152,8 +154,14 @@ public class MetaStream implements Stream {
         if (trimFuture != null) {
             trimFuture.cancel(true);
         }
-        return innerStream.close()
-                .thenAccept(result -> fenced = true);
+        return doCompaction()
+                .thenAccept(sb -> {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug(sb.toString());
+                    }
+                })
+                .thenRun(innerStream::close)
+                .thenRun(() -> fenced = true);
     }
 
     public boolean isFenced() {
@@ -175,26 +183,30 @@ public class MetaStream implements Stream {
      */
     public Map<String, Object> replay() throws IOException {
         metaCache.clear();
+        StringBuilder sb = new StringBuilder(logIdent)
+                .append("metaStream replay summary:")
+                .append(" id: ")
+                .append(streamId())
+                .append(", ");
+        long totalValueSize = 0L;
 
         long startOffset = startOffset();
         long endOffset = nextOffset();
         long pos = startOffset;
-        boolean done = false;
 
         try {
-            while (!done) {
+            while (pos < endOffset) {
                 FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());
                         metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
+                        totalValueSize += kv.getValue().remaining();
+                        sb.append("(key: ").append(kv.getKey()).append(", offset: ").append(context.baseOffset()).append(", value size: ").append(kv.getValue().remaining()).append("); ");
                     } catch (Exception e) {
                         LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
                     }
                     pos = context.lastOffset();
-                }
-                if (pos >= endOffset) {
-                    done = true;
                 }
                 fetchRst.free();
             }
@@ -209,6 +221,9 @@ public class MetaStream implements Stream {
             throw new RuntimeException(e);
         }
 
+        if (totalValueSize > 0 && LOGGER.isDebugEnabled()) {
+            LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
+        }
         return getValidMetaMap();
     }
 
@@ -263,30 +278,54 @@ public class MetaStream implements Stream {
         trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
     }
 
-    private void doCompaction() {
+    private CompletableFuture<StringBuilder> doCompaction() {
         if (metaCache.size() <= 1) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
 
+        List<CompletableFuture<AppendResult>> futures = new ArrayList<>();
         Set<Long> validSnapshots = metaCache.get(PRODUCER_SNAPSHOTS_META_KEY) == null ? Collections.emptySet() :
                 ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate()).getSnapshots();
 
         long lastOffset = 0L;
+        StringBuilder sb = new StringBuilder(logIdent)
+                .append("metaStream compaction summary:")
+                .append(" id: ")
+                .append(streamId())
+                .append(", ");
+        long totalValueSize = 0L;
+
         Iterator<Map.Entry<String, Pair<Long, ByteBuffer>>> iterator = metaCache.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<String, Pair<Long, ByteBuffer>> entry = iterator.next();
             // remove invalid producer snapshots
-            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX) && !validSnapshots.contains(entry.getValue().getLeft())) {
-                iterator.remove();
-                continue;
+            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
+                long offset = parseProducerSnapshotOffset(entry.getKey());
+                if (!validSnapshots.contains(offset)) {
+                    iterator.remove();
+                    continue;
+                }
             }
             if (lastOffset < entry.getValue().getLeft()) {
                 lastOffset = entry.getValue().getLeft();
             }
-            append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate()));
+            totalValueSize += entry.getValue().getRight().remaining();
+            sb.append("(key: ").append(entry.getKey()).append(", offset: ").append(entry.getValue().getLeft()).append(", value size: ").append(entry.getValue().getRight().remaining()).append("); ");
+            futures.add(append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate())));
         }
 
-        trim(lastOffset + 1);
-        LOGGER.debug("{} streamId {}: compact before {}", logIdent, streamId(), lastOffset);
+        final long finalLastOffset = lastOffset;
+        sb.append("compact before: ").append(finalLastOffset + 1).append(", total value size: ").append(totalValueSize);
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenCompose(result -> trim(finalLastOffset + 1))
+                .thenApply(result -> sb);
+    }
+
+    private long parseProducerSnapshotOffset(String key) {
+        if (!key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
+            throw new IllegalArgumentException("Invalid producer snapshot key: " + key);
+        }
+        String[] split = key.split("_");
+        return Long.parseLong(split[split.length - 1]);
     }
 }

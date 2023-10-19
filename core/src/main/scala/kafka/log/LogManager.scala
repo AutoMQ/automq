@@ -662,6 +662,10 @@ class LogManager(logDirs: Seq[File],
 
       val logs = logsInDir(localLogsByDir, dir).values
 
+      // Kafka on S3 inject start
+      // Ideally, if this broker is in controlled shutdown mode, all logs should be closed by ReplicaManager#applyDelta due to leader change.
+      // However, there may be some logs due to some corner cases, e.g. network errors. Then we need to close them here.
+      // Kafka on S3 inject end
       val jobsForDir = logs.map { log =>
         val runnable: Runnable = () => {
           // flush the log to ensure latest possible recovery point
