@@ -354,8 +354,9 @@ public class AlwaysSuccessClient implements Client {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             // If this thread is not marked, then just fetch data.
             if (!SeparateSlowAndQuickFetchHint.isMarked()) {
-                if (holdUpFetchingFutureMap.containsKey(holdUpKey)) {
-                    holdUpFetchingFutureMap.remove(holdUpKey).thenAccept(cf::complete);
+                CompletableFuture<FetchResult> holdUpCf = holdUpFetchingFutureMap.remove(holdUpKey);
+                if (holdUpCf != null) {
+                    holdUpCf.thenAccept(cf::complete);
                 } else {
                     fetch0(startOffset, endOffset, maxBytesHint, cf);
                 }
