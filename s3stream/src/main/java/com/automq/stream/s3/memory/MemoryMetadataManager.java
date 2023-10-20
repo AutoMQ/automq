@@ -106,6 +106,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
+    public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
     public synchronized CompletableFuture<Long> createStream() {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
