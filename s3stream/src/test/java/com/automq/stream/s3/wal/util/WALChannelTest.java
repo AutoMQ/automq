@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.TestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -31,7 +32,7 @@ class WALChannelTest {
 
     @BeforeEach
     void setUp() {
-        walChannel = WALChannel.builder(String.format("%s/WALChannelUnitTest.data", System.getenv("HOME")), 1024 * 1024 * 20).build();
+        walChannel = WALChannel.builder(String.format("%s/WALChannelUnitTest.data", TestUtils.tempFilePath()), 1024 * 1024 * 20).build();
         try {
             walChannel.open();
         } catch (IOException e) {
