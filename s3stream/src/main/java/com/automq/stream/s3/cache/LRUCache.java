@@ -31,21 +31,21 @@ public class LRUCache<K, V> {
         cacheEntrySet = cache.entrySet();
     }
 
-    public boolean touch(K key) {
+    public synchronized boolean touch(K key) {
         return cache.get(key) != null;
     }
 
-    public void put(K key, V value) {
+    public synchronized void put(K key, V value) {
         if (cache.put(key, value) != null) {
             touch(key);
         }
     }
 
-    public V get(K key) {
+    public synchronized V get(K key) {
         return cache.get(key);
     }
 
-    public Map.Entry<K, V> pop() {
+    public synchronized Map.Entry<K, V> pop() {
         Iterator<Map.Entry<K, V>> it = cacheEntrySet.iterator();
         if (!it.hasNext()) {
             return null;
@@ -58,11 +58,11 @@ public class LRUCache<K, V> {
         return entry;
     }
 
-    public boolean remove(K key) {
+    public synchronized boolean remove(K key) {
         return cache.remove(key) != null;
     }
 
-    public int size() {
+    public synchronized int size() {
         return cache.size();
     }
 }

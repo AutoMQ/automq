@@ -224,9 +224,13 @@ public class BlockCache {
                     continue;
                 }
                 CacheBlock cacheBlock = streamCache.blocks.remove(entry.getKey().startOffset);
-                cacheBlock.free();
-                if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
-                    return;
+                if (cacheBlock == null) {
+                    LOGGER.error("[BUG] Cannot find stream cache block: {} {}", entry.getKey().streamId, entry.getKey().startOffset);
+                } else {
+                    cacheBlock.free();
+                    if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
+                        return;
+                    }
                 }
             }
         }
