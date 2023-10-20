@@ -25,7 +25,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint, SeparateSlowAndQuickFetchHint}
+import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.network.RequestChannel
@@ -1102,9 +1102,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         fetchingExecutors.submit(new Runnable {
           override def run(): Unit = {
             ReadManualReleaseHint.mark()
-            SeparateSlowAndQuickFetchHint.mark()
+            // FIXME: Buggy, replace quick slow fetch to async fetch
+//            SeparateSlowAndQuickFetchHint.mark()
             doFetchingRecords()
-            SeparateSlowAndQuickFetchHint.reset()
+//            SeparateSlowAndQuickFetchHint.reset()
             ReadManualReleaseHint.reset()
           }
         })
