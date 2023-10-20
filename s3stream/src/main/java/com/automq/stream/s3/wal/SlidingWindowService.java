@@ -73,9 +73,9 @@ public class SlidingWindowService {
     }
 
     public void resetWindowWhenRecoverOver(long startOffset, long nextWriteOffset, long maxLength) {
-        windowCoreData.getWindowStartOffset().set(startOffset);
-        windowCoreData.getWindowNextWriteOffset().set(nextWriteOffset);
-        windowCoreData.getWindowMaxLength().set(maxLength);
+        windowCoreData.setWindowStartOffset(startOffset);
+        windowCoreData.setWindowNextWriteOffset(nextWriteOffset);
+        windowCoreData.setWindowMaxLength(maxLength);
     }
 
     public WindowCoreData getWindowCoreData() {
@@ -103,7 +103,7 @@ public class SlidingWindowService {
         long newWriteOffset;
         long expectedWriteOffset;
         do {
-            lastWriteOffset = windowCoreData.getWindowNextWriteOffset().get();
+            lastWriteOffset = windowCoreData.getWindowNextWriteOffset();
 
             expectedWriteOffset = WALUtil.alignLargeByBlockSize(lastWriteOffset);
 
@@ -121,7 +121,7 @@ public class SlidingWindowService {
             }
 
             newWriteOffset = WALUtil.alignLargeByBlockSize(expectedWriteOffset + totalWriteSize);
-        } while (!windowCoreData.getWindowNextWriteOffset().compareAndSet(lastWriteOffset, newWriteOffset));
+        } while (!windowCoreData.compareAndSetWindowNextWriteOffset(lastWriteOffset, newWriteOffset));
 
         return expectedWriteOffset;
     }
@@ -150,8 +150,8 @@ public class SlidingWindowService {
         long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
-        long windowStartOffset = windowCoreData.getWindowStartOffset().get();
-        long windowMaxLength = windowCoreData.getWindowMaxLength().get();
+        long windowStartOffset = windowCoreData.getWindowStartOffset();
+        long windowMaxLength = windowCoreData.getWindowMaxLength();
         if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
             long newWindowMaxLength = newWindowEndOffset - windowStartOffset + scaleUnit;
             if (newWindowMaxLength > upperLimit) {
@@ -277,16 +277,32 @@ public class SlidingWindowService {
          */
         private final AtomicLong windowStartOffset = new AtomicLong(0);
 
-        public AtomicLong getWindowMaxLength() {
-            return windowMaxLength;
+        public long getWindowMaxLength() {
+            return windowMaxLength.get();
         }
 
-        public AtomicLong getWindowNextWriteOffset() {
-            return windowNextWriteOffset;
+        public void setWindowMaxLength(long windowMaxLength) {
+            this.windowMaxLength.set(windowMaxLength);
         }
 
-        public AtomicLong getWindowStartOffset() {
-            return windowStartOffset;
+        public long getWindowNextWriteOffset() {
+            return windowNextWriteOffset.get();
+        }
+
+        public void setWindowNextWriteOffset(long windowNextWriteOffset) {
+            this.windowNextWriteOffset.set(windowNextWriteOffset);
+        }
+
+        public boolean compareAndSetWindowNextWriteOffset(long expect, long update) {
+            return this.windowNextWriteOffset.compareAndSet(expect, update);
+        }
+
+        public long getWindowStartOffset() {
+            return windowStartOffset.get();
+        }
+
+        public void setWindowStartOffset(long windowStartOffset) {
+            this.windowStartOffset.set(windowStartOffset);
         }
 
         public void putWriteRecordTask(WriteRecordTask writeRecordTask) {
@@ -304,9 +320,9 @@ public class SlidingWindowService {
                 treeMapWriteRecordTask.remove(wroteOffset);
 
                 if (treeMapWriteRecordTask.isEmpty()) {
-                    windowStartOffset.set(windowNextWriteOffset.get());
+                    setWindowStartOffset(getWindowNextWriteOffset());
                 } else {
-                    windowStartOffset.set(treeMapWriteRecordTask.firstKey());
+                    setWindowStartOffset(treeMapWriteRecordTask.firstKey());
                 }
             } finally {
                 this.treeMapIOTaskRequestLock.unlock();
@@ -323,7 +339,7 @@ public class SlidingWindowService {
                 }
 
                 writeRecordTask.flushWALHeader(newWindowMaxLength);
-                windowMaxLength.set(newWindowMaxLength);
+                setWindowMaxLength(newWindowMaxLength);
                 scaleWindowHappened = true;
             } finally {
                 treeMapIOTaskRequestLock.unlock();
@@ -358,7 +374,7 @@ public class SlidingWindowService {
                     writeRecordTask.future().complete(new AppendResult.CallbackResult() {
                         @Override
                         public long flushedOffset() {
-                            return windowCoreData.getWindowStartOffset().get();
+                            return windowCoreData.getWindowStartOffset();
                         }
 
                         @Override
