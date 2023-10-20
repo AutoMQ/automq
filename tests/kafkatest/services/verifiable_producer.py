@@ -216,6 +216,8 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin, Backgrou
 
     def start_cmd(self, node, idx):
         cmd  = "export LOG_DIR=%s;" % VerifiableProducer.LOG_DIR
+        # adjust heap size from 256m to 512m to avoid OOM
+        cmd += " export KAFKA_HEAP_OPTS=\"-Xmx512m\";"
         if self.kafka_opts_override:
             cmd += " export KAFKA_OPTS=\"%s\";" % self.kafka_opts_override
         else:
