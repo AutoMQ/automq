@@ -18,7 +18,10 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.utils.FutureUtil;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +33,7 @@ import java.util.function.Consumer;
  * Accumulate inflight data block read requests to one real read request.
  */
 public class DataBlockReadAccumulator {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReadAccumulator.class);
     private final Map<Pair<String, Integer>, DataBlockRecords> inflightDataBlockReads = new ConcurrentHashMap<>();
     private final Consumer<DataBlockRecords> dataBlockConsumer;
 
@@ -60,7 +64,10 @@ public class DataBlockReadAccumulator {
                             inflightDataBlockReads.remove(key, finalRecords);
                         }
                         finalRecords.complete(dataBlock, ex);
-                        dataBlockConsumer.accept(finalRecords);
+                        FutureUtil.suppress(() -> dataBlockConsumer.accept(finalRecords), LOGGER);
+                    } catch (Throwable e) {
+                        LOGGER.error("[UNEXPECTED] DataBlockRecords fail to notify listener {}", listener, e);
+                    } finally {
                         finalRecords.release();
                     }
                 });
