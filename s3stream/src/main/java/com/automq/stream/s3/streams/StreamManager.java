@@ -32,6 +32,14 @@ public interface StreamManager {
      * @return list of {@link StreamMetadata}
      */
     CompletableFuture<List<StreamMetadata>> getOpeningStreams();
+
+    /**
+     * Get streams metadata by stream id.
+     *
+     * @param streamIds stream ids.
+     * @return list of {@link StreamMetadata}
+     */
+    CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds);
     
     
     /**
