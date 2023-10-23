@@ -65,6 +65,8 @@ class BlockWALServiceTest {
                 .slidingWindowScaleUnit(4096)
                 .build()
                 .start();
+        AtomicLong maxFlushedOffset = new AtomicLong(-1);
+        AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
             for (int i = 0; i < recordCount; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
@@ -74,14 +76,22 @@ class BlockWALServiceTest {
                 final long expectedOffset = i * WALUtil.alignLargeByBlockSize(recordSize);
                 assertEquals(expectedOffset, appendResult.recordOffset());
                 assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
-                appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                appendResult.future().whenComplete((callbackResult, throwable) -> {
                     assertNull(throwable);
-                    assertTrue(callbackResult.flushedOffset() > expectedOffset, "flushedOffset: " + callbackResult.flushedOffset() + ", expectedOffset: " + expectedOffset);
+                    maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
+                    maxRecordOffset.accumulateAndGet(expectedOffset, Math::max);
                     assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                }).whenComplete((callbackResult, throwable) -> {
+                    if (null != throwable) {
+                        throwable.printStackTrace();
+                        System.exit(1);
+                    }
                 });
             }
         } finally {
             wal.shutdownGracefully();
+            assertTrue(maxFlushedOffset.get() > maxRecordOffset.get(),
+                    "maxFlushedOffset should be greater than maxRecordOffset. maxFlushedOffset: " + maxFlushedOffset.get() + ", maxRecordOffset: " + maxRecordOffset.get());
         }
     }
 
@@ -96,8 +106,10 @@ class BlockWALServiceTest {
                 .slidingWindowScaleUnit(4096)
                 .build()
                 .start();
+        AtomicLong maxFlushedOffset = new AtomicLong(-1);
+        AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
-            AtomicLong appendedOffset = new AtomicLong(-1);
+            AtomicLong flushedOffset = new AtomicLong(-1);
             for (int i = 0; i < recordCount; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
                 AppendResult appendResult;
@@ -107,12 +119,12 @@ class BlockWALServiceTest {
                         appendResult = wal.append(data);
                     } catch (OverCapacityException e) {
                         Thread.yield();
-                        long appendedOffsetValue = appendedOffset.get();
-                        if (appendedOffsetValue < 0) {
+                        long flushedOffsetValue = flushedOffset.get();
+                        if (flushedOffsetValue < 0) {
                             Thread.sleep(100);
                             continue;
                         }
-                        wal.trim(appendedOffsetValue).join();
+                        wal.trim(flushedOffsetValue).join();
                         continue;
                     }
                     break;
@@ -120,23 +132,24 @@ class BlockWALServiceTest {
 
                 final long recordOffset = appendResult.recordOffset();
                 assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
-                appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                appendResult.future().whenComplete((callbackResult, throwable) -> {
                     assertNull(throwable);
-                    assertTrue(callbackResult.flushedOffset() > recordOffset, "flushedOffset: " + callbackResult.flushedOffset() + ", recordOffset: " + recordOffset);
+                    maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
+                    maxRecordOffset.accumulateAndGet(recordOffset, Math::max);
                     assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
 
-                    // Update the appended offset.
-                    long old;
-                    do {
-                        old = appendedOffset.get();
-                        if (old >= recordOffset) {
-                            break;
-                        }
-                    } while (!appendedOffset.compareAndSet(old, recordOffset));
+                    flushedOffset.accumulateAndGet(recordOffset, Math::max);
+                }).whenComplete((callbackResult, throwable) -> {
+                    if (null != throwable) {
+                        throwable.printStackTrace();
+                        System.exit(1);
+                    }
                 });
             }
         } finally {
             wal.shutdownGracefully();
+            assertTrue(maxFlushedOffset.get() > maxRecordOffset.get(),
+                    "maxFlushedOffset should be greater than maxRecordOffset. maxFlushedOffset: " + maxFlushedOffset.get() + ", maxRecordOffset: " + maxRecordOffset.get());
         }
     }
 
@@ -151,6 +164,8 @@ class BlockWALServiceTest {
                 .build()
                 .start();
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        AtomicLong maxFlushedOffset = new AtomicLong(-1);
+        AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
             for (int t = 0; t < threadCount; t++) {
                 executorService.submit(() -> Assertions.assertDoesNotThrow(() -> {
@@ -159,11 +174,17 @@ class BlockWALServiceTest {
 
                         final AppendResult appendResult = wal.append(data);
 
-                        appendResult.future().whenCompleteAsync((callbackResult, throwable) -> {
+                        appendResult.future().whenComplete((callbackResult, throwable) -> {
                             assertNull(throwable);
                             assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
-                            assertTrue(callbackResult.flushedOffset() > appendResult.recordOffset(), "flushedOffset: " + callbackResult.flushedOffset() + ", recordOffset: " + appendResult.recordOffset());
+                            maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
+                            maxRecordOffset.accumulateAndGet(appendResult.recordOffset(), Math::max);
                             assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                        }).whenComplete((callbackResult, throwable) -> {
+                            if (null != throwable) {
+                                throwable.printStackTrace();
+                                System.exit(1);
+                            }
                         });
                     }
                 }));
@@ -172,6 +193,8 @@ class BlockWALServiceTest {
             executorService.shutdown();
             assertTrue(executorService.awaitTermination(15, TimeUnit.SECONDS));
             wal.shutdownGracefully();
+            assertTrue(maxFlushedOffset.get() > maxRecordOffset.get(),
+                    "maxFlushedOffset should be greater than maxRecordOffset. maxFlushedOffset: " + maxFlushedOffset.get() + ", maxRecordOffset: " + maxRecordOffset.get());
         }
     }
 

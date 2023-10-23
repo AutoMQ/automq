@@ -31,7 +31,6 @@ public class Config {
     private long s3WALCapacity = 1024L * 1024 * 1024;
     private int s3WALHeaderFlushIntervalSeconds = 10;
     private int s3WALThread = 8;
-    private int s3WALQueue = 10000;
     private long s3WALWindowInitial = 1048576L;
     private long s3WALWindowIncrement = 4194304L;
     private long s3WALWindowMax = 536870912L;
@@ -98,10 +97,6 @@ public class Config {
 
     public int s3WALThread() {
         return s3WALThread;
-    }
-
-    public int s3WALQueue() {
-        return s3WALQueue;
     }
 
     public long s3WALWindowInitial() {
@@ -267,11 +262,6 @@ public class Config {
 
     public Config s3WALThread(int s3WALThread) {
         this.s3WALThread = s3WALThread;
-        return this;
-    }
-
-    public Config s3WALQueue(int s3WALQueue) {
-        this.s3WALQueue = s3WALQueue;
         return this;
     }
 

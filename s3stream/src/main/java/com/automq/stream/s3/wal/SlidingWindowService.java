@@ -17,19 +17,21 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.wal.util.ThreadFactoryImpl;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.TreeMap;
-import java.util.concurrent.BlockingQueue;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -53,23 +55,38 @@ public class SlidingWindowService {
     private final int ioThreadNums;
     private final long upperLimit;
     private final long scaleUnit;
-    private final int writeRecordTaskWorkQueueCapacity;
     private final WALChannel walChannel;
+    private final WALHeaderFlusher walHeaderFlusher;
     private final WindowCoreData windowCoreData = new WindowCoreData();
     private ExecutorService executorService;
+    private Semaphore semaphore;
 
-    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, int queueCapacity) {
+    /**
+     * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
+     */
+    private final Lock blockLock = new ReentrantLock();
+
+    /**
+     * Blocks that are waiting to be written.
+     */
+    private final Queue<Block> pendingBlocks = new LinkedList<>();
+
+    /**
+     * Blocks that are being written.
+     */
+    private final TreeSet<Long> writingBlocks = new TreeSet<>();
+
+    /**
+     * The current block, records are added to this block.
+     */
+    private Block currentBlock;
+
+    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
         this.ioThreadNums = ioThreadNums;
         this.upperLimit = upperLimit;
         this.scaleUnit = scaleUnit;
-        this.writeRecordTaskWorkQueueCapacity = queueCapacity;
-    }
-
-    private ExecutorService newCachedThreadPool(int nThreads) {
-        BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(writeRecordTaskWorkQueueCapacity);
-        ThreadFactoryImpl threadFactory = new ThreadFactoryImpl("block-wal-io-thread-");
-        return new ThreadPoolExecutor(1, nThreads, 1L, TimeUnit.MINUTES, workQueue, threadFactory);
+        this.walHeaderFlusher = flusher;
     }
 
     public void resetWindowWhenRecoverOver(long startOffset, long nextWriteOffset, long maxLength) {
@@ -78,76 +95,194 @@ public class SlidingWindowService {
         windowCoreData.setWindowMaxLength(maxLength);
     }
 
+    public void resetWindow(long offset) {
+        windowCoreData.setWindowStartOffset(offset);
+        windowCoreData.setWindowNextWriteOffset(offset);
+    }
+
     public WindowCoreData getWindowCoreData() {
         return windowCoreData;
     }
 
     public void start() throws IOException {
-        this.executorService = newCachedThreadPool(ioThreadNums);
+        this.executorService = Threads.newFixedThreadPool(ioThreadNums,
+                ThreadUtils.createThreadFactory("block-wal-io-thread-%d", false), LOGGER);
+        this.semaphore = new Semaphore(ioThreadNums);
     }
 
     public boolean shutdown(long timeout, TimeUnit unit) {
+        boolean gracefulShutdown;
+
         this.executorService.shutdown();
         try {
-            return this.executorService.awaitTermination(timeout, unit);
+            gracefulShutdown = this.executorService.awaitTermination(timeout, unit);
         } catch (InterruptedException e) {
             this.executorService.shutdownNow();
-            return false;
+            gracefulShutdown = false;
+        }
+
+        if (gracefulShutdown) {
+            this.getWindowCoreData().setWindowNextWriteOffset(this.getWindowCoreData().getWindowStartOffset());
+        }
+
+        return gracefulShutdown;
+    }
+
+    /**
+     * Try to write a block. If the semaphore is not available, it will return immediately.
+     */
+    public void tryWriteBlock() {
+        if (semaphore.tryAcquire()) {
+            Block block = pollBlock();
+            if (block != null) {
+                executorService.submit(new WriteBlockProcessor(block));
+            } else {
+                semaphore.release();
+            }
         }
     }
 
-    public long allocateWriteOffset(final int recordBodyLength, final long trimOffset, final long recordSectionCapacity) throws OverCapacityException {
-        int totalWriteSize = RECORD_HEADER_SIZE + recordBodyLength;
-
-        long lastWriteOffset;
-        long newWriteOffset;
-        long expectedWriteOffset;
-        do {
-            lastWriteOffset = windowCoreData.getWindowNextWriteOffset();
-
-            expectedWriteOffset = WALUtil.alignLargeByBlockSize(lastWriteOffset);
-
-            // If the end of the physical device is insufficient for this write, jump to the start of the physical device
-            if ((recordSectionCapacity - expectedWriteOffset % recordSectionCapacity) < totalWriteSize) {
-                expectedWriteOffset = expectedWriteOffset + recordSectionCapacity - expectedWriteOffset % recordSectionCapacity;
-            }
-
-            if (expectedWriteOffset + totalWriteSize - trimOffset > recordSectionCapacity) {
-                // Not enough space for this write
-                LOGGER.error("failed to allocate write offset as the ring buffer is full: expectedWriteOffset: {}, totalWriteSize: {}, trimOffset: {}, recordSectionCapacity: {}",
-                        expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity);
-                throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: expectedWriteOffset: %d, totalWriteSize: %d, trimOffset: %d, recordSectionCapacity: %d",
-                        expectedWriteOffset, totalWriteSize, trimOffset, recordSectionCapacity));
-            }
-
-            newWriteOffset = WALUtil.alignLargeByBlockSize(expectedWriteOffset + totalWriteSize);
-        } while (!windowCoreData.compareAndSetWindowNextWriteOffset(lastWriteOffset, newWriteOffset));
-
-        return expectedWriteOffset;
+    public Lock getBlockLock() {
+        return blockLock;
     }
 
-    public void submitWriteRecordTask(WriteRecordTask ioTask) {
-        executorService.submit(new WriteRecordTaskProcessor(ioTask));
+    /**
+     * Seal and create a new block. It
+     * - puts the previous block to the write queue
+     * - creates a new block, sets it as the current block and returns it
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    public Block sealAndNewBlockLocked(Block previousBlock, long minSize, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        long startOffset = nextBlockStartOffset(previousBlock);
+
+        // If the end of the physical device is insufficient for this block, jump to the start of the physical device
+        if ((recordSectionCapacity - startOffset % recordSectionCapacity) < minSize) {
+            startOffset = startOffset + recordSectionCapacity - startOffset % recordSectionCapacity;
+        }
+
+        // Not enough space for this block
+        if (startOffset + minSize - trimOffset > recordSectionCapacity) {
+            LOGGER.error("failed to allocate write offset as the ring buffer is full: startOffset: {}, minSize: {}, trimOffset: {}, recordSectionCapacity: {}",
+                    startOffset, minSize, trimOffset, recordSectionCapacity);
+            throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: startOffset: %d, minSize: %d, trimOffset: %d, recordSectionCapacity: %d",
+                    startOffset, minSize, trimOffset, recordSectionCapacity));
+        }
+
+        // The size of the block should not be larger than the end of the physical device
+        long maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, upperLimit);
+
+        Block newBlock = new BlockImpl(startOffset, maxSize);
+        if (!previousBlock.isEmpty()) {
+            // There are some records to be written in the previous block
+            pendingBlocks.add(previousBlock);
+        }
+        setCurrentBlockLocked(newBlock);
+        return newBlock;
     }
 
+    /**
+     * Get the current block.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    public Block getCurrentBlockLocked() {
+        // The current block is null only when no record has been written
+        if (null == currentBlock) {
+            currentBlock = nextBlock(windowCoreData.getWindowNextWriteOffset());
+        }
+        return currentBlock;
+    }
 
-    private void writeRecord(WriteRecordTask ioTask) throws IOException {
-        final ByteBuffer totalRecord = ByteBuffer.allocate(ioTask.recordHeader().limit() + ioTask.recordBody().limit());
+    /**
+     * Set the current block.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    private void setCurrentBlockLocked(Block block) {
+        this.currentBlock = block;
+    }
 
-        totalRecord.put(ioTask.recordHeader());
+    /**
+     * Get the start offset of the next block.
+     */
+    private long nextBlockStartOffset(Block block) {
+        return block.startOffset() + WALUtil.alignLargeByBlockSize(block.data().limit());
+    }
 
-        totalRecord.put(ioTask.recordBody());
+    /**
+     * Create a new block with the given start offset.
+     * This method is only used when we don't know the maximum length of the new block.
+     */
+    private Block nextBlock(long startOffset) {
+        // Trick: we cannot determine the maximum length of the block here, so we set it to 0 first.
+        // When we try to write a record, this block will be found full, and then a new block will be created.
+        return new BlockImpl(startOffset, 0);
+    }
 
-        totalRecord.position(0);
+    /**
+     * Get the first block to be written. If there is no non-empty block, return null.
+     */
+    private Block pollBlock() {
+        blockLock.lock();
+        try {
+            return pollBlockLocked();
+        } finally {
+            blockLock.unlock();
+        }
+    }
 
+    /**
+     * Get the first block to be written. If there is no non-empty block, return null.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    private Block pollBlockLocked() {
+        Block pendingBlock = pendingBlocks.poll();
+        if (null != pendingBlock) {
+            writingBlocks.add(pendingBlock.startOffset());
+            return pendingBlock;
+        }
+
+        Block currentBlock = getCurrentBlockLocked();
+        if (currentBlock.isEmpty()) {
+            // No record to be written
+            return null;
+        }
+
+        setCurrentBlockLocked(nextBlock(nextBlockStartOffset(currentBlock)));
+        return currentBlock;
+    }
+
+    /**
+     * Calculate the start offset of the first block which has not been flushed yet.
+     */
+    private long calculateStartOffset(Block wroteBlock) {
+        blockLock.lock();
+        try {
+            return calculateStartOffsetLocked(wroteBlock);
+        } finally {
+            blockLock.unlock();
+        }
+    }
+
+    /**
+     * Calculate the start offset of the first block which has not been flushed yet.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    private long calculateStartOffsetLocked(Block wroteBlock) {
+        writingBlocks.remove(wroteBlock.startOffset());
+        if (writingBlocks.isEmpty()) {
+            return getCurrentBlockLocked().startOffset();
+        }
+        return writingBlocks.first();
+    }
+
+    private void writeBlockData(Block block) throws IOException {
         // TODO: make this beautiful
-        long position = WALUtil.recordOffsetToPosition(ioTask.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
+        long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
 
-        walChannel.write(totalRecord, position);
+        walChannel.write(block.data(), position);
     }
 
-    public boolean makeWriteOffsetMatchWindow(final WriteRecordTask writeRecordTask) throws IOException {
-        long newWindowEndOffset = writeRecordTask.startOffset() + writeRecordTask.recordHeader().limit() + writeRecordTask.recordBody().limit();
+    private boolean makeWriteOffsetMatchWindow(final Block block) throws IOException {
+        long newWindowEndOffset = block.startOffset() + block.data().limit();
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getWindowStartOffset();
@@ -163,13 +298,12 @@ public class SlidingWindowService {
                     // the new window length is bigger than upper limit, reject this write request
                     LOGGER.error("new windows size {} exceeds upper limit {}, reject this write request, window start offset: {}, new window end offset: {}",
                             newWindowMaxLength, upperLimit, windowStartOffset, newWindowEndOffset);
-                    writeRecordTask.future().completeExceptionally(
-                            new OverCapacityException(String.format("new windows size exceeds upper limit %d", upperLimit))
-                    );
+                    FutureUtil.completeExceptionally(block.futures(),
+                            new OverCapacityException(String.format("new windows size exceeds upper limit %d", upperLimit)));
                     return false;
                 }
             }
-            windowCoreData.scaleOutWindow(writeRecordTask, newWindowMaxLength);
+            windowCoreData.scaleOutWindow(walHeaderFlusher, newWindowMaxLength);
         }
         return true;
     }
@@ -264,8 +398,7 @@ public class SlidingWindowService {
     }
 
     public static class WindowCoreData {
-        private final Lock treeMapIOTaskRequestLock = new ReentrantLock();
-        private final TreeMap<Long, WriteRecordTask> treeMapWriteRecordTask = new TreeMap<>();
+        private final Lock scaleOutLock = new ReentrantLock();
         private final AtomicLong windowMaxLength = new AtomicLong(0);
         /**
          * Next write offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
@@ -305,44 +438,20 @@ public class SlidingWindowService {
             this.windowStartOffset.set(windowStartOffset);
         }
 
-        public void putWriteRecordTask(WriteRecordTask writeRecordTask) {
-            this.treeMapIOTaskRequestLock.lock();
-            try {
-                this.treeMapWriteRecordTask.put(writeRecordTask.startOffset(), writeRecordTask);
-            } finally {
-                this.treeMapIOTaskRequestLock.unlock();
-            }
-        }
-
-        public void calculateStartOffset(long wroteOffset) {
-            this.treeMapIOTaskRequestLock.lock();
-            try {
-                treeMapWriteRecordTask.remove(wroteOffset);
-
-                if (treeMapWriteRecordTask.isEmpty()) {
-                    setWindowStartOffset(getWindowNextWriteOffset());
-                } else {
-                    setWindowStartOffset(treeMapWriteRecordTask.firstKey());
-                }
-            } finally {
-                this.treeMapIOTaskRequestLock.unlock();
-            }
-        }
-
-        public void scaleOutWindow(WriteRecordTask writeRecordTask, long newWindowMaxLength) throws IOException {
+        public void scaleOutWindow(WALHeaderFlusher flusher, long newWindowMaxLength) throws IOException {
             boolean scaleWindowHappened = false;
-            treeMapIOTaskRequestLock.lock();
+            scaleOutLock.lock();
             try {
-                if (newWindowMaxLength < windowMaxLength.get()) {
+                if (newWindowMaxLength < getWindowMaxLength()) {
                     // Another thread has already scaled out the window.
                     return;
                 }
 
-                writeRecordTask.flushWALHeader(newWindowMaxLength);
+                flusher.flush(newWindowMaxLength);
                 setWindowMaxLength(newWindowMaxLength);
                 scaleWindowHappened = true;
             } finally {
-                treeMapIOTaskRequestLock.unlock();
+                scaleOutLock.unlock();
                 if (scaleWindowHappened) {
                     LOGGER.info("window scale out to {}", newWindowMaxLength);
                 } else {
@@ -352,26 +461,32 @@ public class SlidingWindowService {
         }
     }
 
-    class WriteRecordTaskProcessor implements Runnable {
-        private final WriteRecordTask writeRecordTask;
+    class WriteBlockProcessor implements Runnable {
+        private final Block block;
 
-        public WriteRecordTaskProcessor(WriteRecordTask writeRecordTask) {
-            this.writeRecordTask = writeRecordTask;
+        public WriteBlockProcessor(Block block) {
+            this.block = block;
         }
 
         @Override
         public void run() {
+            Block block = this.block;
+            do {
+                writeBlock(block);
+                block = pollBlock();
+            } while (block != null);
+            semaphore.release();
+        }
+
+        private void writeBlock(Block block) {
             try {
-                if (makeWriteOffsetMatchWindow(writeRecordTask)) {
-
-                    windowCoreData.putWriteRecordTask(writeRecordTask);
-
-                    writeRecord(writeRecordTask);
+                if (makeWriteOffsetMatchWindow(block)) {
+                    writeBlockData(block);
 
                     // Update the start offset of the sliding window after finishing writing the record.
-                    windowCoreData.calculateStartOffset(writeRecordTask.startOffset());
+                    windowCoreData.setWindowStartOffset(calculateStartOffset(block));
 
-                    writeRecordTask.future().complete(new AppendResult.CallbackResult() {
+                    FutureUtil.complete(block.futures(), new AppendResult.CallbackResult() {
                         @Override
                         public long flushedOffset() {
                             return windowCoreData.getWindowStartOffset();
@@ -383,11 +498,14 @@ public class SlidingWindowService {
                         }
                     });
                 }
-
-            } catch (IOException e) {
-                writeRecordTask.future().completeExceptionally(e);
-                LOGGER.error(String.format("failed to write record, offset: %s", writeRecordTask.startOffset()), e);
+            } catch (Exception e) {
+                FutureUtil.completeExceptionally(block.futures(), e);
+                LOGGER.error(String.format("failed to write record, offset: %s", block.startOffset()), e);
             }
         }
+    }
+
+    interface WALHeaderFlusher {
+        void flush(long windowMaxLength) throws IOException;
     }
 }
