@@ -18,6 +18,7 @@
 package kafka.log.stream.s3.streams;
 
 import com.automq.stream.s3.streams.StreamManager;
+import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
@@ -63,12 +64,14 @@ import java.util.stream.Collectors;
 public class ControllerStreamManager implements StreamManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerStreamManager.class);
+    private final StreamMetadataManager streamMetadataManager;
     private final KafkaConfig config;
     private final ControllerRequestSender requestSender;
     private final int nodeId;
     private final long nodeEpoch;
 
-    public ControllerStreamManager(ControllerRequestSender requestSender, KafkaConfig config) {
+    public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender, KafkaConfig config) {
+        this.streamMetadataManager = streamMetadataManager;
         this.config = config;
         this.requestSender = requestSender;
         this.nodeId = config.brokerId();
@@ -112,6 +115,11 @@ public class ControllerStreamManager implements StreamManager {
             });
         this.requestSender.send(task);
         return future;
+    }
+
+    @Override
+    public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
+        return CompletableFuture.completedFuture(this.streamMetadataManager.getStreamMetadataList(streamIds));
     }
 
     @Override
