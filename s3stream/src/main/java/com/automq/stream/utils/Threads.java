@@ -19,17 +19,17 @@ package com.automq.stream.utils;
 
 import org.slf4j.Logger;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class Threads {
 
-    public static ScheduledThreadPoolExecutor newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger) {
-        return newFixedThreadPool(nThreads, threadFactory, logger, false);
-    }
-
-    public static ScheduledThreadPoolExecutor newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger, boolean removeOnCancelPolicy) {
-        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(nThreads, threadFactory) {
+    public static ExecutorService newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger) {
+        return new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), threadFactory) {
             @Override
             protected void afterExecute(Runnable r, Throwable t) {
                 super.afterExecute(r, t);
@@ -38,8 +38,6 @@ public class Threads {
                 }
             }
         };
-        executor.setRemoveOnCancelPolicy(removeOnCancelPolicy);
-        return executor;
     }
 
     public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {

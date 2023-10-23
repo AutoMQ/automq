@@ -51,6 +51,7 @@ import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -81,7 +82,7 @@ public class S3Storage implements Storage {
             ThreadUtils.createThreadFactory("s3-storage-main-read", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
-    private final ScheduledExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
+    private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
             4, ThreadUtils.createThreadFactory("s3-storage-upload-wal", true), LOGGER);
 
     private final Queue<BackoffRecord> backoffRecords = new LinkedBlockingQueue<>();
