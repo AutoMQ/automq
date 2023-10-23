@@ -17,13 +17,14 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
-import com.automq.stream.s3.Config;
-import com.automq.stream.s3.wal.util.ThreadFactoryImpl;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import org.apache.commons.lang3.time.StopWatch;
 import org.slf4j.Logger;
@@ -35,11 +36,11 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
 
 /**
  * /**
@@ -143,7 +144,8 @@ public class BlockWALService implements WriteAheadLog {
     private WALHeaderCoreData walHeaderCoreData;
 
     private void startFlushWALHeaderScheduler() {
-        this.flushWALHeaderScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("flush-wal-header-thread-"));
+        this.flushWALHeaderScheduler = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("flush-wal-header-thread-%d", true), LOGGER);
         this.flushWALHeaderScheduler.scheduleAtFixedRate(() -> {
             try {
                 BlockWALService.this.flushWALHeader(
@@ -401,58 +403,50 @@ public class BlockWALService implements WriteAheadLog {
         TimerUtil timerUtil = new TimerUtil();
         checkReadyToServe();
 
-        ByteBuffer record = buf.nioBuffer();
-
-        final int recordBodyCRC = 0 == crc ? WALUtil.crc32(record) : crc;
-        final long expectedWriteOffset = slidingWindowService.allocateWriteOffset(record.limit(), walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
+        ByteBuffer body = buf.nioBuffer();
+        final long recordSize = RECORD_HEADER_SIZE + body.limit();
+        final int recordBodyCRC = 0 == crc ? WALUtil.crc32(body) : crc;
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
+        long expectedWriteOffset;
+
+        Lock lock = slidingWindowService.getBlockLock();
+        lock.lock();
+        try {
+            Block block = slidingWindowService.getCurrentBlockLocked();
+            expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, recordBodyCRC, offset), appendResultFuture);
+            if (expectedWriteOffset < 0) {
+                // this block is full, create a new one
+                block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
+                expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, recordBodyCRC, offset), appendResultFuture);
+            }
+        } finally {
+            lock.unlock();
+        }
+        slidingWindowService.tryWriteBlock();
+
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-
-        // submit write task
-        slidingWindowService.submitWriteRecordTask(new WriteRecordTask() {
-            @Override
-            public long startOffset() {
-                return expectedWriteOffset;
-            }
-
-            @Override
-            public CompletableFuture<AppendResult.CallbackResult> future() {
-                return appendResultFuture;
-            }
-
-            @Override
-            public ByteBuffer recordHeader() {
-                SlidingWindowService.RecordHeaderCoreData recordHeaderCoreData = new SlidingWindowService.RecordHeaderCoreData();
-                recordHeaderCoreData
-                        .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-                        .setRecordBodyLength(record.limit())
-                        .setRecordBodyOffset(expectedWriteOffset + RECORD_HEADER_SIZE)
-                        .setRecordBodyCRC(recordBodyCRC);
-                return recordHeaderCoreData.marshal();
-            }
-
-            @Override
-            public ByteBuffer recordBody() {
-                return record;
-            }
-
-            @Override
-            public void flushWALHeader(long windowMaxLength) throws IOException {
-                BlockWALService.this.flushWALHeader(
-                        slidingWindowService.getWindowCoreData().getWindowStartOffset(),
-                        windowMaxLength,
-                        slidingWindowService.getWindowCoreData().getWindowNextWriteOffset(),
-                        ShutdownType.UNGRACEFULLY
-                );
-            }
-        });
-
         appendResult.future().whenComplete((nil, ex) -> {
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_WAL).operationCount.inc();
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_WAL).operationTime.update(timerUtil.elapsed());
         });
-
         return appendResult;
+    }
+
+    private static ByteBuffer recordHeader(ByteBuffer body, int crc, long start) {
+        return new SlidingWindowService.RecordHeaderCoreData()
+                .setMagicCode(RECORD_HEADER_MAGIC_CODE)
+                .setRecordBodyLength(body.limit())
+                .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
+                .setRecordBodyCRC(crc)
+                .marshal();
+    }
+
+    private static ByteBuffer record(ByteBuffer body, int crc, long start) {
+        ByteBuffer record = ByteBuffer.allocate(RECORD_HEADER_SIZE + body.limit());
+        record.put(recordHeader(body, crc, start));
+        record.put(body);
+        record.flip();
+        return record;
     }
 
     @Override
@@ -482,8 +476,7 @@ public class BlockWALService implements WriteAheadLog {
         checkReadyToServe();
 
         long previousNextWriteOffset = slidingWindowService.getWindowCoreData().getWindowNextWriteOffset();
-        slidingWindowService.getWindowCoreData().setWindowStartOffset(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
-        slidingWindowService.getWindowCoreData().setWindowNextWriteOffset(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
+        slidingWindowService.resetWindow(previousNextWriteOffset + WALUtil.BLOCK_SIZE);
         LOGGER.info("reset sliding window and trim WAL to offset: {}", previousNextWriteOffset);
         return trim(previousNextWriteOffset);
     }
@@ -514,6 +507,15 @@ public class BlockWALService implements WriteAheadLog {
         if (!readyToServe.get()) {
             throw new IllegalStateException("WriteAheadLog is not ready to serve");
         }
+    }
+
+    private SlidingWindowService.WALHeaderFlusher flusher() {
+        return windowMaxLength -> flushWALHeader(
+                slidingWindowService.getWindowCoreData().getWindowStartOffset(),
+                windowMaxLength,
+                slidingWindowService.getWindowCoreData().getWindowNextWriteOffset(),
+                ShutdownType.UNGRACEFULLY
+        );
     }
 
     static class WALHeaderCoreData {
@@ -684,7 +686,6 @@ public class BlockWALService implements WriteAheadLog {
         private long slidingWindowInitialSize = 1 << 20;
         private long slidingWindowUpperLimit = 512 << 20;
         private long slidingWindowScaleUnit = 4 << 20;
-        private int writeQueueCapacity = 10000;
 
         BlockWALServiceBuilder(String blockDevicePath, long capacity) {
             this.blockDevicePath = blockDevicePath;
@@ -697,8 +698,7 @@ public class BlockWALService implements WriteAheadLog {
                     .ioThreadNums(config.s3WALThread())
                     .slidingWindowInitialSize(config.s3WALWindowInitial())
                     .slidingWindowScaleUnit(config.s3WALWindowIncrement())
-                    .slidingWindowUpperLimit(config.s3WALWindowMax())
-                    .writeQueueCapacity(config.s3WALQueue());
+                    .slidingWindowUpperLimit(config.s3WALWindowMax());
         }
 
         public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {
@@ -726,11 +726,6 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
-        public BlockWALServiceBuilder writeQueueCapacity(int writeQueueCapacity) {
-            this.writeQueueCapacity = writeQueueCapacity;
-            return this;
-        }
-
         public BlockWALService build() {
             BlockWALService blockWALService = new BlockWALService();
 
@@ -751,7 +746,7 @@ public class BlockWALService implements WriteAheadLog {
                     ioThreadNums,
                     slidingWindowUpperLimit,
                     slidingWindowScaleUnit,
-                    writeQueueCapacity
+                    blockWALService.flusher()
             );
 
             LOGGER.info("build BlockWALService: {}", this);
@@ -769,7 +764,6 @@ public class BlockWALService implements WriteAheadLog {
                     + ", slidingWindowInitialSize=" + slidingWindowInitialSize
                     + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
                     + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
-                    + ", writeQueueCapacity=" + writeQueueCapacity
                     + '}';
         }
     }
