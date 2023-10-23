@@ -82,13 +82,12 @@ public interface ObjectWriter {
          */
         public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
             this.objectId = objectId;
-            // TODO: use a better clusterName
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
             completedBlocks = new LinkedList<>();
-            writer = s3Operator.writer(objectKey, "[DefaultObjectWriter objId=" + objectId + "]");
+            writer = s3Operator.writer(objectKey);
         }
 
         public void write(long streamId, List<StreamRecordBatch> records) {
