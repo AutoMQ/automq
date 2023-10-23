@@ -50,7 +50,7 @@ public class DataBlockWriter {
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
-        writer = s3Operator.writer(objectKey, "[DataBlockWriter objId=" + objectId + "]");
+        writer = s3Operator.writer(objectKey);
     }
 
     public long getObjectId() {
@@ -104,7 +104,7 @@ public class DataBlockWriter {
                 waitingUploadBlockCfs.remove(block);
             }
         });
-        if (writer.hashBatchingPart()) {
+        if (writer.hasBatchingPart()) {
             // prevent blocking on part that's waiting for batch when force upload waiting list
             for (StreamDataBlock block : blocks) {
                 waitingUploadBlockCfs.remove(block);

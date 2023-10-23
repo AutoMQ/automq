@@ -20,6 +20,7 @@ import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 import java.util.List;
 import java.util.Map;
@@ -52,7 +53,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, String logIdent, AsyncTokenBucketThrottle readThrottle) {
+    public Writer writer(String path, AsyncTokenBucketThrottle readThrottle) {
         ByteBuf buf = Unpooled.buffer();
         storage.put(path, buf);
         return new Writer() {
@@ -66,7 +67,7 @@ public class MemoryS3Operator implements S3Operator {
             }
 
             @Override
-            public boolean hashBatchingPart() {
+            public boolean hasBatchingPart() {
                 return false;
             }
 
@@ -96,5 +97,25 @@ public class MemoryS3Operator implements S3Operator {
     public CompletableFuture<List<String>> delete(List<String> objectKeys) {
         objectKeys.forEach(storage::remove);
         return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<String> createMultipartUpload(String path) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
+    }
+
+    @Override
+    public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<CompletedPart> parts) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 }

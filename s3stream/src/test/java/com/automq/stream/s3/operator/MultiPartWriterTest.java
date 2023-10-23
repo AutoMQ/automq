@@ -51,25 +51,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
-class DefaultWriterTest {
+class MultiPartWriterTest {
     private S3AsyncClient s3;
     private DefaultS3Operator operator;
     private Writer writer;
 
     @BeforeEach
-    void setUp() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+    void setUp() {
         s3 = mock(S3AsyncClient.class);
         operator = new DefaultS3Operator(s3, "unit-test-bucket");
         CreateMultipartUploadResponse.Builder builder = CreateMultipartUploadResponse.builder();
-        Method method = builder.getClass().getDeclaredMethod("setUploadId", String.class);
-        method.setAccessible(true);
-        method.invoke(builder, "unit-test-upload-id");
         when(s3.createMultipartUpload(any(CreateMultipartUploadRequest.class))).thenReturn(CompletableFuture.completedFuture(builder.build()));
     }
 
     @Test
     void testWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = operator.writer("test-path", "testWrite", 100, null);
+        writer = new MultiPartWriter(operator, "test-path", 100, null);
 
         List<UploadPartRequest> requests = new ArrayList<>();
         List<Long> contentLengths = new ArrayList<>();
@@ -119,7 +116,7 @@ class DefaultWriterTest {
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = operator.writer("test-path-2", "testCopyWrite", 100, null);
+        writer = new MultiPartWriter(operator, "test-path-2", 100, null);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();
