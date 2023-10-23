@@ -17,6 +17,7 @@
 
 package kafka.log.stream.s3.metadata;
 
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import kafka.server.BrokerServer;
@@ -206,6 +207,23 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                         streamId, startOffset, endOffset, limit, e.getMessage());
                 return CompletableFuture.failedFuture(e);
             }
+        }
+    }
+
+    public List<StreamMetadata> getStreamMetadataList(List<Long> streamIds) {
+        synchronized (StreamMetadataManager.this) {
+            List<StreamMetadata> streamMetadataList = new ArrayList<>();
+            for (Long streamId : streamIds) {
+                S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
+                if (streamImage == null) {
+                    LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
+                    continue;
+                }
+                StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
+                        streamImage.getStartOffset(), streamImage.getEndOffset(), streamImage.state());
+                streamMetadataList.add(streamMetadata);
+            }
+            return streamMetadataList;
         }
     }
 
