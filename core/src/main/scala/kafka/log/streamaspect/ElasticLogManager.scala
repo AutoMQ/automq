@@ -146,6 +146,7 @@ object ElasticLogManager {
     context.brokerServer = broker
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
     INSTANCE.foreach(_.startup())
+    ElasticTimeIndex.setupCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)
     true
   }
 
