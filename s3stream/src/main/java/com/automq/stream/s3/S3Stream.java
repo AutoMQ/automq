@@ -29,6 +29,7 @@ import com.automq.stream.api.StreamClientException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.Unpooled;
@@ -70,11 +71,18 @@ public class S3Stream implements Stream {
 
     private final Set<CompletableFuture<?>> pendingAppends = ConcurrentHashMap.newKeySet();
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
+    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-                    StreamManager streamManager, StreamObjectsCompactionTask.Builder compactionTaskBuilder,
-                    Function<Long, Void> closeHook) {
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager,
+                    StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook) {
+        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, compactionTaskBuilder, closeHook, null, null);
+    }
+
+    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage, StreamManager streamManager,
+                    StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook,
+                    AsyncNetworkBandwidthLimiter networkInboundLimiter, AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -86,6 +94,8 @@ public class S3Stream implements Stream {
         this.streamManager = streamManager;
         this.streamObjectsCompactionTask = compactionTaskBuilder.withStream(this).build();
         this.closeHook = closeHook;
+        this.networkInboundLimiter = networkInboundLimiter;
+        this.networkOutboundLimiter = networkOutboundLimiter;
     }
 
     public StreamObjectsCompactionTask.CompactionSummary triggerCompactionTask() throws ExecutionException, InterruptedException {
@@ -123,7 +133,12 @@ public class S3Stream implements Stream {
         writeLock.lock();
         try {
             long start = System.currentTimeMillis();
-            CompletableFuture<AppendResult> cf = exec(() -> append0(recordBatch), LOGGER, "append");
+            CompletableFuture<AppendResult> cf = exec(() -> {
+                if (networkInboundLimiter != null) {
+                    networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
+                }
+                return append0(recordBatch);
+            }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STREAM).operationCount.inc();
@@ -167,11 +182,14 @@ public class S3Stream implements Stream {
             long start = System.currentTimeMillis();
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
-            cf.whenComplete((nil, ex) -> {
+            cf.whenComplete((rs, ex) -> {
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.FETCH_STREAM).operationCount.inc();
                 OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.FETCH_STREAM).operationTime.update(System.currentTimeMillis() - start);
                 if (ex != null) {
                     LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
+                } else if (networkOutboundLimiter != null) {
+                    long totalSize = rs.recordBatchList().stream().mapToLong(record -> record.rawPayload().remaining()).sum();
+                    networkOutboundLimiter.forceConsume(totalSize);
                 }
                 pendingFetches.remove(cf);
             });

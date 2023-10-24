@@ -18,6 +18,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,19 +57,20 @@ public class ProxyWriterTest {
     public void testWrite_onePart() {
         writer.write(TestUtils.random(15 * 1024 * 1024));
         writer.write(TestUtils.random(1024 * 1024));
-        when(operator.write(eq("testpath"), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(operator.write(eq("testpath"), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         assertTrue(writer.hasBatchingPart());
         assertTrue(writer.close().isDone());
         ArgumentCaptor<ByteBuf> captor = ArgumentCaptor.forClass(ByteBuf.class);
-        verify(operator, times(1)).write(eq("testpath"), captor.capture());
+        ArgumentCaptor<ThrottleStrategy> captor2 = ArgumentCaptor.forClass(ThrottleStrategy.class);
+        verify(operator, times(1)).write(eq("testpath"), captor.capture(), captor2.capture());
         Assertions.assertEquals(16 * 1024 * 1024, captor.getValue().readableBytes());
     }
 
     @Test
     public void testWrite_dataLargerThanMaxUploadSize() {
         when(operator.createMultipartUpload(eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
-        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(1), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
-        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(2), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag2").build()));
+        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(1), any(), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
+        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(2), any(), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag2").build()));
         when(operator.completeMultipartUpload(eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
         writer.write(TestUtils.random(17 * 1024 * 1024));
         assertTrue(writer.hasBatchingPart());
@@ -79,7 +81,7 @@ public class ProxyWriterTest {
         assertNotNull(writer.multiPartWriter);
         assertFalse(writer.hasBatchingPart());
         writer.close();
-        verify(operator, times(2)).uploadPart(any(), any(), anyInt(), any());
+        verify(operator, times(2)).uploadPart(any(), any(), anyInt(), any(), any());
     }
 
     @Test

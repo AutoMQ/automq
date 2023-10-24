@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -61,7 +60,6 @@ public class StreamObjectsCompactionTask {
     private final S3Operator s3Operator;
     private List<CompactionResult> compactionResults;
     private final String logIdent;
-    private final AsyncTokenBucketThrottle readThrottle;
 
     /**
      * Constructor of StreamObjectsCompactionTask.
@@ -74,9 +72,8 @@ public class StreamObjectsCompactionTask {
      * @param eligibleStreamObjectLivingTimeInMs eligible stream object living time in ms.
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-                                       long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs,
-        AsyncTokenBucketThrottle readThrottle) {
-        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, readThrottle, false);
+                                       long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs) {
+        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, false);
     }
 
     /**
@@ -88,12 +85,11 @@ public class StreamObjectsCompactionTask {
      * If it is bigger than {@link Writer#MAX_OBJECT_SIZE},
      * it will be set to {@link Writer#MAX_OBJECT_SIZE}.
      * @param eligibleStreamObjectLivingTimeInMs eligible stream object living time in ms.
-     * @param readThrottle read throttle in compaction task.
      * @param s3ObjectLogEnabled is s3 object log enabled.
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
                                        long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs,
-        AsyncTokenBucketThrottle readThrottle, boolean s3ObjectLogEnabled) {
+                                       boolean s3ObjectLogEnabled) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
@@ -104,7 +100,6 @@ public class StreamObjectsCompactionTask {
         this.compactionResults = Collections.emptyList();
         this.logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
-        this.readThrottle = readThrottle;
     }
 
     private CompletableFuture<CompactionResult> doCompaction(List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList) {
@@ -126,7 +121,7 @@ public class StreamObjectsCompactionTask {
         AtomicInteger smallSizeCopyWriteCount = new AtomicInteger(0);
         return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
             .thenCompose(objId -> {
-                StreamObjectCopier objectCopier = new StreamObjectCopier(objId, s3Operator, readThrottle);
+                StreamObjectCopier objectCopier = new StreamObjectCopier(objId, s3Operator);
                 streamObjectMetadataList.forEach(metadataWrapper -> {
                     S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(metadataWrapper.s3StreamObjectMetadata().objectId(),
                         metadataWrapper.s3StreamObjectMetadata().objectSize(),
@@ -592,7 +587,6 @@ public class StreamObjectsCompactionTask {
         private long compactedStreamObjectMaxSizeInBytes;
         private long eligibleStreamObjectLivingTimeInMs;
         private boolean s3ObjectLogEnabled;
-        private AsyncTokenBucketThrottle readThrottle;
 
         public Builder(ObjectManager objectManager, S3Operator s3Operator) {
             this.objectManager = objectManager;
@@ -623,14 +617,9 @@ public class StreamObjectsCompactionTask {
             return this;
         }
 
-        public Builder withReadThrottle(AsyncTokenBucketThrottle readThrottle) {
-            this.readThrottle = readThrottle;
-            return this;
-        }
-
         public StreamObjectsCompactionTask build() {
             return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes,
-                eligibleStreamObjectLivingTimeInMs, readThrottle, s3ObjectLogEnabled);
+                eligibleStreamObjectLivingTimeInMs, s3ObjectLogEnabled);
         }
     }
 }
