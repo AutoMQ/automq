@@ -19,6 +19,7 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
@@ -110,7 +111,7 @@ class BlockWALServiceTest {
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
-            AtomicLong flushedOffset = new AtomicLong(-1);
+            WriteBench.FlushedOffset flushedOffset = new WriteBench.FlushedOffset();
             for (int i = 0; i < recordCount; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
                 AppendResult appendResult;
@@ -120,12 +121,7 @@ class BlockWALServiceTest {
                         appendResult = wal.append(data.retainedDuplicate());
                     } catch (OverCapacityException e) {
                         Thread.yield();
-                        long flushedOffsetValue = flushedOffset.get();
-                        if (flushedOffsetValue < 0) {
-                            Thread.sleep(100);
-                            continue;
-                        }
-                        wal.trim(flushedOffsetValue).join();
+                        wal.trim(flushedOffset.get()).join();
                         continue;
                     }
                     break;
@@ -139,7 +135,7 @@ class BlockWALServiceTest {
                     maxRecordOffset.accumulateAndGet(recordOffset, Math::max);
                     assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
 
-                    flushedOffset.accumulateAndGet(recordOffset, Math::max);
+                    flushedOffset.update(callbackResult.flushedOffset());
                 }).whenComplete((callbackResult, throwable) -> {
                     if (null != throwable) {
                         throwable.printStackTrace();

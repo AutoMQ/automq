@@ -65,6 +65,7 @@ public class SlidingWindowService {
     private final Lock blockLock = new ReentrantLock();
     /**
      * Blocks that are waiting to be written.
+     * All blocks in this queue are ordered by the start offset.
      */
     private final Queue<Block> pendingBlocks = new LinkedList<>();
     /**
@@ -167,7 +168,7 @@ public class SlidingWindowService {
 
         long maxSize = upperLimit;
         // The size of the block should not be larger than writable size of the ring buffer
-        // Let capacity=100, start=198, trim=99, then maxSize=100-198+99=1
+        // Let capacity=100, start=148, trim=49, then maxSize=100-148+49=1
         maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, maxSize);
         // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
         // The size of the block should not be larger than the end of the physical device
@@ -223,6 +224,14 @@ public class SlidingWindowService {
     }
 
     /**
+     * Create a new block with the given previous block.
+     * This method is only used when we don't know the maximum length of the new block.
+     */
+    private Block nextBlock(Block previousBlock) {
+        return nextBlock(nextBlockStartOffset(previousBlock));
+    }
+
+    /**
      * Get the first block to be written. If there is no non-empty block, return null.
      */
     private Block pollBlock() {
@@ -251,7 +260,9 @@ public class SlidingWindowService {
             return null;
         }
 
-        setCurrentBlockLocked(nextBlock(nextBlockStartOffset(currentBlock)));
+        Block newCurrentBlock = nextBlock(currentBlock);
+        setCurrentBlockLocked(newCurrentBlock);
+        writingBlocks.add(currentBlock.startOffset());
         return currentBlock;
     }
 
@@ -272,7 +283,8 @@ public class SlidingWindowService {
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
     private long calculateStartOffsetLocked(Block wroteBlock) {
-        writingBlocks.remove(wroteBlock.startOffset());
+        boolean removed = writingBlocks.remove(wroteBlock.startOffset());
+        assert removed;
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
         }
@@ -440,6 +452,10 @@ public class SlidingWindowService {
             this.windowStartOffset.set(windowStartOffset);
         }
 
+        public void updateWindowStartOffset(long offset) {
+            this.windowStartOffset.accumulateAndGet(offset, Math::max);
+        }
+
         public void scaleOutWindow(WALHeaderFlusher flusher, long newWindowMaxLength) throws IOException {
             boolean scaleWindowHappened = false;
             scaleOutLock.lock();
@@ -486,7 +502,7 @@ public class SlidingWindowService {
                     writeBlockData(block);
 
                     // Update the start offset of the sliding window after finishing writing the record.
-                    windowCoreData.setWindowStartOffset(calculateStartOffset(block));
+                    windowCoreData.updateWindowStartOffset(calculateStartOffset(block));
 
                     FutureUtil.complete(block.futures(), new AppendResult.CallbackResult() {
                         @Override
