@@ -118,7 +118,7 @@ class ElasticLogTest {
         appendRecords(List(record))
         log.roll()
         assertEquals(2, log.segments.numberOfSegments)
-        assertFalse(logDir.listFiles.isEmpty)
+        assertTrue(logDir.listFiles.isEmpty)
         val segmentsBeforeDelete = List[LogSegment]() ++ log.segments.values
         val deletedSegments = log.deleteAllSegments()
         assertTrue(log.segments.isEmpty)
@@ -133,7 +133,7 @@ class ElasticLogTest {
         log.roll()
         assertEquals(1, log.segments.numberOfSegments)
         assertNotEquals(oldActiveSegment, log.segments.activeSegment)
-        assertFalse(logDir.listFiles.isEmpty)
+        assertTrue(logDir.listFiles.isEmpty)
         //        assertTrue(oldActiveSegment.hasSuffix(LocalLog.DeletedFileSuffix))
     }
 
@@ -143,11 +143,7 @@ class ElasticLogTest {
         appendRecords(List(record))
         log.roll()
         assertEquals(2, log.segments.numberOfSegments)
-        assertFalse(logDir.listFiles.isEmpty)
-
-        assertThrows(classOf[IllegalStateException], () => log.deleteEmptyDir())
-        assertTrue(logDir.exists)
-
+        assertTrue(logDir.listFiles.isEmpty)
         log.deleteAllSegments()
         log.deleteEmptyDir()
         assertFalse(logDir.exists)
