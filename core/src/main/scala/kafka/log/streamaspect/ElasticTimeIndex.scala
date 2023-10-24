@@ -181,5 +181,5 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
 }
 
 object ElasticTimeIndex {
-  var cache: FileCache = new FileCache("/tmp/kafka-time-index-cache", 100 * 1024 * 1024)
+  var cache: FileCache = new FileCache("/tmp/kafka-time-index-cache-" + ProcessHandle.current().pid(), 100 * 1024 * 1024)
 }
