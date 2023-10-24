@@ -69,17 +69,8 @@ public class WALFileChannel implements WALChannel {
     @Override
     public void close() {
         try {
-            if (randomAccessFile != null) {
-                randomAccessFile.close();
-            }
-        } catch (IOException ignored) {
-        }
-
-        try {
-            if (fileChannel != null) {
-                fileChannel.force(true);
-                fileChannel.close();
-            }
+            fileChannel.close();
+            randomAccessFile.close();
         } catch (IOException ignored) {
         }
     }
@@ -97,6 +88,7 @@ public class WALFileChannel implements WALChannel {
             int bytesWritten = write(nioBuffer, position);
             position += bytesWritten;
         }
+        fileChannel.force(false);
     }
 
     @Override
