@@ -93,6 +93,7 @@ class ProxyWriter implements Writer {
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
         } else {
+            objectWriter.data.release();
             objectWriter.cf.complete(null);
         }
     }
