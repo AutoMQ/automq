@@ -18,6 +18,7 @@
 package org.apache.kafka.server.metrics.s3stream;
 
 import com.automq.stream.s3.metrics.Counter;
+import com.automq.stream.s3.metrics.Gauge;
 import com.automq.stream.s3.metrics.Histogram;
 import com.automq.stream.s3.metrics.S3StreamMetricsGroup;
 import com.yammer.metrics.core.MetricName;
@@ -35,6 +36,16 @@ public class KafkaS3StreamMetricsGroup implements S3StreamMetricsGroup {
     @Override
     public Histogram newHistogram(String type, String name, Map<String, String> tags) {
         return new KafkaS3Histogram(metricName(type, name, tags));
+    }
+
+    @Override
+    public void newGauge(String type, String name, Map<String, String> tags, Gauge gauge) {
+        KafkaYammerMetrics.defaultRegistry().newGauge(metricName(type, name, tags), new com.yammer.metrics.core.Gauge<>() {
+            @Override
+            public Long value() {
+                return gauge.value();
+            }
+        });
     }
 
     private MetricName metricName(String type, String name, Map<String, String> tags) {

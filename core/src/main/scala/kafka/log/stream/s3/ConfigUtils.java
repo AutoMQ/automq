@@ -57,7 +57,13 @@ public class ConfigUtils {
                 .s3ObjectCompactionForceSplitPeriod(s.s3ObjectCompactionForceSplitPeriod())
                 .s3ObjectCompactionMaxObjectNum(s.s3ObjectCompactionMaxObjectNum())
                 .s3MockEnable(s.s3MockEnable())
-                .s3ObjectLogEnable(s.s3ObjectLogEnable());
+                .s3ObjectLogEnable(s.s3ObjectLogEnable())
+                .networkInboundBaselineBandwidth(s.s3NetworkInboundBaselineBandwidthProp())
+                .networkInboundBurstBandwidth(s.s3NetworkInboundBurstBandwidthProp())
+                .networkOutboundBaselineBandwidth(s.s3NetworkOutboundBaselineBandwidthProp())
+                .networkOutboundBurstBandwidth(s.s3NetworkOutboundBurstBandwidthProp())
+                .refillPeriodMs(s.s3RefillPeriodMsProp());
+
     }
 
 }
