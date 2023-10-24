@@ -17,13 +17,13 @@
 
 package org.apache.kafka.server.metrics.s3stream;
 
-import com.automq.stream.s3.wal.util.ThreadFactoryImpl;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.slf4j.Logger;
 
@@ -39,7 +39,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     private static final String S3_METRICS_LOGGER_INTERVAL_MS = "s3.metrics.logger.interval.ms";
     private final Map<String, Map<MetricName, Metric>> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
-    private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("s3-metrics-logger"));
+    private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("s3-metrics-logger-%d", true));
     private final S3MetricsLoggerProcessor processor = new S3MetricsLoggerProcessor();
     private final S3MetricsLoggerProcessor.Context context = new S3MetricsLoggerProcessor.Context();
     private long loggerIntervalMs = 10000;
@@ -54,7 +54,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     }
 
     private boolean isS3Metrics(MetricName name) {
-        return name.getGroup().equals("org.apache.kafka.server.metrics.s3stream") && name.getName().startsWith("S3");
+        return "org.apache.kafka.server.metrics.s3stream".equals(name.getGroup()) && name.getName().startsWith("S3");
     }
 
     @Override
