@@ -193,6 +193,11 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
+    /**
+     * Try to read a record at the given offset.
+     * The returned record should be released by the caller.
+     * @throws ReadRecordException if the record is not found or the record is corrupted
+     */
     private ByteBuf readRecord(WALHeaderCoreData paramWALHeader, long recoverStartOffset) throws ReadRecordException {
         final ByteBuf recordHeader = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         SlidingWindowService.RecordHeaderCoreData readRecordHeader;
@@ -206,8 +211,9 @@ public class BlockWALService implements WriteAheadLog {
         ByteBuf recordBody = DirectByteBufAlloc.byteBuffer(recordBodyLength);
         try {
             parseRecordBody(paramWALHeader, recoverStartOffset, readRecordHeader, recordBody);
-        } finally {
+        } catch (ReadRecordException e) {
             recordBody.release();
+            throw e;
         }
 
         return recordBody;
@@ -317,6 +323,7 @@ public class BlockWALService implements WriteAheadLog {
             try {
                 ByteBuf body = readRecord(paramWALHeader, recoverStartOffset);
                 nextRecoverStartOffset = WALUtil.alignLargeByBlockSize(recoverStartOffset + RECORD_HEADER_SIZE + body.readableBytes());
+                body.release();
             } catch (ReadRecordException e) {
                 nextRecoverStartOffset = e.getJumpNextRecoverOffset();
                 LOGGER.debug("failed to read record, try next, recoverStartOffset: {}, meetIllegalRecordTimes: {}, recoverRemainingBytes: {}, error: {}",
