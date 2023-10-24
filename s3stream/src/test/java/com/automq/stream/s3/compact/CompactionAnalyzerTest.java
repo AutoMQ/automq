@@ -23,7 +23,9 @@ import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,12 +34,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 @Timeout(30)
 @Tag("S3Unit")
@@ -55,7 +60,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testReadObjectIndices() {
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
@@ -73,17 +79,12 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testReadObjectIndicesWithTrimmedData() {
-        List<S3ObjectMetadata> objectMetadataList = new ArrayList<>();
-        for (int i = 0; i < S3_WAL_OBJECT_METADATA_LIST.size(); i++) {
-            S3ObjectMetadata s3ObjectMetadata = S3_WAL_OBJECT_METADATA_LIST.get(i);
-            if (i == 0) {
-                s3ObjectMetadata = new S3ObjectMetadata(s3ObjectMetadata.objectId(), s3ObjectMetadata.getType()
-                        , new ArrayList<>(s3ObjectMetadata.getOffsetRanges().subList(1, s3ObjectMetadata.getOffsetRanges().size())),
-                        s3ObjectMetadata.dataTimeInMs(), s3ObjectMetadata.committedTimestamp(), s3ObjectMetadata.objectSize(), s3ObjectMetadata.getOrderId());
-            }
-            objectMetadataList.add(s3ObjectMetadata);
-        }
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, s3Operator);
+        when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
+                List.of(new StreamMetadata(STREAM_0, 0, 15, 20, StreamState.OPENED),
+                        new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
+                        new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_1, 25, 30, 1, OBJECT_0, -1, -1, 1),
@@ -101,7 +102,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testFilterBlocksToCompact() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Map<Long, List<StreamDataBlock>> filteredMap = compactionAnalyzer.filterBlocksToCompact(streamDataBlocksMap);
         assertTrue(compare(filteredMap, streamDataBlocksMap));
     }
@@ -134,7 +136,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testSortStreamRangePositions() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
                 new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),
@@ -153,7 +156,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testGroupObjectWithLimit() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Set<Long> objectsToRemove = new HashSet<>();
         List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
         Assertions.assertTrue(objectsToRemove.isEmpty());
@@ -184,7 +188,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testGroupObjectWithLimit2() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 30, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Set<Long> objectsToRemove = new HashSet<>();
         List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
         Assertions.assertTrue(objectsToRemove.isEmpty());
@@ -215,7 +220,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testGroupObjectWithLimit3() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 70, MAX_STREAM_NUM_IN_WAL, 2);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         Set<Long> objectsToRemove = new HashSet<>();
         List<CompactedObjectBuilder> compactedObjectBuilders = compactionAnalyzer.groupObjectWithLimits(streamDataBlocksMap, objectsToRemove);
         Assertions.assertEquals(Set.of(OBJECT_2), objectsToRemove);
@@ -319,7 +325,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testCompactionPlans1() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         Assertions.assertEquals(1, compactionPlans.size());
         List<CompactedObject> expectCompactedObjects = List.of(
@@ -428,7 +435,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testCompactionPlans2() {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
         List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         checkCompactionPlan2(compactionPlans);
     }
@@ -441,7 +449,8 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
                 new S3ObjectMetadata(100, S3ObjectType.WAL,
                         List.of(new StreamOffsetRange(STREAM_2, 1000, 1200)), System.currentTimeMillis(),
                         System.currentTimeMillis(), 512, 100));
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(s3ObjectMetadata, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, s3ObjectMetadata, s3Operator);
         List<CompactionPlan> compactionPlans = compactionAnalyzer.analyze(streamDataBlocksMap, new HashSet<>());
         checkCompactionPlan2(compactionPlans);
     }
