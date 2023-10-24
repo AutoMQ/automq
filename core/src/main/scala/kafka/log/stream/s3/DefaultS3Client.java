@@ -28,6 +28,8 @@ import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.compact.CompactionManager;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
@@ -41,14 +43,15 @@ import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.kafka.metadata.stream.S3Config.ACCESS_KEY_NAME;
+import static org.apache.kafka.metadata.stream.S3Config.SECRET_KEY_NAME;
+
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     private final Config config;
     private final StreamMetadataManager metadataManager;
 
     private final ControllerRequestSender requestSender;
-
-    private final S3Operator operator;
 
     private final WriteAheadLog writeAheadLog;
     private final Storage storage;
@@ -65,21 +68,34 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, S3Operator operator, S3Operator compactionOperator) {
+    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+
+    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
         this.config = ConfigUtils.to(kafkaConfig);
         this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
-        this.operator = operator;
+        String endpoint = kafkaConfig.s3Endpoint();
+        String region = kafkaConfig.s3Region();
+        String bucket = kafkaConfig.s3Bucket();
+        networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
+                config.networkInboundBaselineBandwidth(), config.refillPeriodMs(), config.networkInboundBurstBandwidth());
+        networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
+                config.networkOutboundBaselineBandwidth(), config.refillPeriodMs(), config.networkOutboundBurstBandwidth());
+        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket, false,
+                System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME), networkInboundLimiter, networkOutboundLimiter);
+        S3Operator compactionS3Operator = new DefaultS3Operator(endpoint, region, bucket, false,
+                System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME), networkInboundLimiter, networkOutboundLimiter);
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
                 kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
-        this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, operator);
-        this.compactionManager = new CompactionManager(this.config, this.objectManager, compactionOperator);
+        this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, s3Operator);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath(), this.config.s3WALCapacity()).config(this.config).build();
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, operator);
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, s3Operator);
         // stream object compactions share the same s3Operator with wal object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionOperator, this.config);
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionS3Operator, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
     }
 
@@ -95,6 +111,8 @@ public class DefaultS3Client implements Client {
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
         this.storage.shutdown();
+        this.networkInboundLimiter.shutdown();
+        this.networkOutboundLimiter.shutdown();
         LOGGER.info("S3Client shutdown successfully");
     }
 

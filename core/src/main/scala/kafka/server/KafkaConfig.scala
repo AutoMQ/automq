@@ -322,6 +322,11 @@ object Defaults {
   val S3ObjectMaxStreamNumPerWAL: Int = 10000
   val S3ObjectMaxStreamObjectNumPerCommit: Int = 10000
   val S3ObjectRetentionTimeInSecond: Long = 10 * 60 // 10min
+  val S3NetworkInboundBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
+  val S3NetworkInboundBurstBandwidth: Long = 500 * 1024 * 1024 // 500MB/s
+  val S3NetworkOutboundBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
+  val S3NetworkOutboundBurstBandwidth: Long = 500 * 1024 * 1024 // 500MB/s
+  val S3RefillPeriodMs: Int = 1000 // 1s
 }
 
 object KafkaConfig {
@@ -721,6 +726,11 @@ object KafkaConfig {
   val S3MockEnableProp = "s3.mock.enable"
   val S3ObjectRetentionTimeInSecondProp = "s3.object.retention.time.in.second"
   val S3ObjectLogEnableProp = "s3.object.log.enable"
+  val S3NetworkInboundBaselineBandwidthProp = "s3.network.inbound.baseline.bandwidth"
+  val S3NetworkInboundBurstBandwidthProp = "s3.network.inbound.burst.bandwidth"
+  val S3NetworkOutboundBaselineBandwidthProp = "s3.network.outbound.baseline.bandwidth"
+  val S3NetworkOutboundBurstBandwidthProp = "s3.network.outbound.burst.bandwidth"
+  val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -758,6 +768,11 @@ object KafkaConfig {
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
   val S3ObjectRetentionTimeInSecondDoc = "The S3 object retention time in second, default is 10 minutes (600s)."
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
+  val S3NetworkInboundBaselineBandwidthDoc = "The total network inbound baseline bandwidth in Bytes/s."
+  val S3NetworkInboundBurstBandwidthDoc = "The total network inbound burst bandwidth in Bytes/s."
+  val S3NetworkOutboundBaselineBandwidthDoc = "The total network outbound baseline bandwidth in Bytes/s."
+  val S3NetworkOutboundBurstBandwidthDoc = "The total network outbound burst bandwidth in Bytes/s."
+  val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
 
   // Kafka on S3 inject end
 
@@ -1592,6 +1607,11 @@ object KafkaConfig {
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
       .define(S3ObjectRetentionTimeInSecondProp, LONG, Defaults.S3ObjectRetentionTimeInSecond, MEDIUM, S3ObjectRetentionTimeInSecondDoc)
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
+      .define(S3NetworkInboundBaselineBandwidthProp, LONG, Defaults.S3NetworkInboundBaselineBandwidth, MEDIUM, S3NetworkInboundBaselineBandwidthDoc)
+      .define(S3NetworkInboundBurstBandwidthProp, LONG, Defaults.S3NetworkInboundBurstBandwidth, MEDIUM, S3NetworkInboundBurstBandwidthDoc)
+      .define(S3NetworkOutboundBaselineBandwidthProp, LONG, Defaults.S3NetworkOutboundBaselineBandwidth, MEDIUM, S3NetworkOutboundBaselineBandwidthDoc)
+      .define(S3NetworkOutboundBurstBandwidthProp, LONG, Defaults.S3NetworkOutboundBurstBandwidth, MEDIUM, S3NetworkOutboundBurstBandwidthDoc)
+      .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
     // Kafka on S3 inject end
   }
 
@@ -2163,6 +2183,11 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
   val s3ObjectRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectRetentionTimeInSecondProp)
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
+  val s3NetworkInboundBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkInboundBaselineBandwidthProp)
+  val s3NetworkInboundBurstBandwidthProp = getLong(KafkaConfig.S3NetworkInboundBurstBandwidthProp)
+  val s3NetworkOutboundBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkOutboundBaselineBandwidthProp)
+  val s3NetworkOutboundBurstBandwidthProp = getLong(KafkaConfig.S3NetworkOutboundBurstBandwidthProp)
+  val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
   // Kafka on S3 inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
