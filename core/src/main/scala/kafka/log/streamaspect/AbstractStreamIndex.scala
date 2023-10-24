@@ -19,16 +19,14 @@
 package kafka.log.streamaspect
 
 import kafka.common.IndexOffsetOverflowException
-import kafka.log.AbstractIndex.{debug, error}
+import kafka.log.AbstractIndex.debug
 import kafka.log.{Index, IndexEntry, IndexSearchType}
 import kafka.utils.CoreUtils.inLock
-import kafka.utils.{CoreUtils, Logging}
-import org.apache.kafka.common.utils.{ByteBufferUnmapper, OperatingSystem, Utils}
+import kafka.utils.Logging
+import org.apache.kafka.common.utils.{OperatingSystem, Utils}
 
-import java.io.{File, RandomAccessFile}
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
-import java.nio.file.{Files, NoSuchFileException}
+import java.io.File
+import java.nio.file.NoSuchFileException
 import java.util.concurrent.locks.{Lock, ReentrantLock}
 
 /**
@@ -53,29 +51,6 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
    */
   @volatile
   protected var _entries: Int = (stream.nextOffset() / entrySize).toInt
-
-  @volatile
-  protected var cache: MappedByteBuffer = {
-    Files.deleteIfExists(file.toPath)
-    val newlyCreated = file.createNewFile()
-    val raf = new RandomAccessFile(file, "rw")
-    try {
-      /* pre-allocate the file if necessary */
-      if (newlyCreated) {
-        if (maxIndexSize < entrySize)
-          throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize)
-        // LogSegment#onBecomeInactiveSegment will append one more record to index.
-        raf.setLength(adjustedMaxIndexSize + entrySize)
-      }
-
-      /* memory-map the file */
-      val idx = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, adjustedMaxIndexSize + entrySize)
-      /* set the position in the index for the next entry */
-      idx
-    } finally {
-      CoreUtils.swallow(raf.close(), AbstractStreamIndex)
-    }
-  }
 
   /**
    * True iff there are no more slots available in this index
@@ -135,13 +110,6 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
   def sizeInBytes: Int = entrySize * _entries
 
   def close(): Unit = {
-    if (cache != null) {
-      try forceUnmap()
-      catch {
-        case t: Throwable => error(s"Error unmapping index $file", t)
-      }
-      Files.deleteIfExists(file.toPath)
-    }
   }
 
   def closeHandler(): Unit = {
@@ -235,8 +203,6 @@ abstract class AbstractStreamIndex(@volatile private var _file: File, val stream
   def roundDownToExactMultiple(number: Int, factor: Int): Int = factor * (number / factor)
 
   protected[log] def forceUnmap(): Unit = {
-    try ByteBufferUnmapper.unmap(file.getAbsolutePath, cache)
-    finally cache = null // Accessing unmapped mmap crashes JVM by SEGV so we null it out to be safe
   }
 }
 

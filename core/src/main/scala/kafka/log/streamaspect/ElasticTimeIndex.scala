@@ -17,7 +17,9 @@
 
 package kafka.log.streamaspect
 
+import io.netty.buffer.Unpooled
 import kafka.Kafka.trace
+import kafka.log.streamaspect.cache.FileCache
 import kafka.log.{IndexSearchType, TimeIndex, TimestampOffset}
 import kafka.utils.CoreUtils.inLock
 import org.apache.kafka.common.errors.InvalidOffsetException
@@ -66,29 +68,35 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
     }
   }
 
+  private def tryGetEntryFromCache(n: Int): TimestampOffset = {
+    val rst = ElasticTimeIndex.cache.get(file.getPath, n * entrySize.toLong, entrySize)
+    if (rst.isPresent) {
+      val buffer = rst.get()
+      TimestampOffset(buffer.readLong(), buffer.readInt())
+    } else {
+      TimestampOffset.Unknown
+    }
+  }
+
   def parseEntry(n: Int): TimestampOffset = {
     val startOffset = n * entrySize
     // try get from cache
-    var timestampOffset = TimestampOffset(cache.getLong(startOffset), cache.getInt(startOffset + 8))
-    if (timestampOffset.timestamp == 0 && timestampOffset.offset == 0) {
+    var timestampOffset = tryGetEntryFromCache(n)
+    if (timestampOffset == TimestampOffset.Unknown) {
       // cache missing, try read from remote and put it to cache.
       val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024))
-      if (rst.recordBatchList().size() == 0) {
+      val records = rst.recordBatchList()
+      if (records.size() == 0) {
         throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")
       }
-      rst.recordBatchList().forEach(record => {
-        cache synchronized {
-          cache.position(record.baseOffset().toInt)
-          cache.put(record.rawPayload())
-        }
+      val buf = Unpooled.buffer(records.size() * entrySize)
+      records.forEach(record => {
+        buf.writeBytes(record.rawPayload())
       })
+      ElasticTimeIndex.cache.put(file.getPath, startOffset, buf)
+      val indexEntry = Unpooled.wrappedBuffer(records.get(0).rawPayload());
+      timestampOffset = TimestampOffset(indexEntry.readLong(), indexEntry.readInt())
       rst.free()
-    } else {
-      return timestampOffset
-    }
-    timestampOffset = TimestampOffset(cache.getLong(startOffset), cache.getInt(startOffset + 8))
-    if (timestampOffset.timestamp == 0 && timestampOffset.offset == 0) {
-      throw new IllegalStateException(s"expect offset $startOffset already in cache")
     }
     timestampOffset
   }
@@ -123,11 +131,6 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
         buffer.putInt(relatedOffset)
         buffer.flip()
         lastAppend = stream.append(RawPayloadRecordBatch.of(buffer))
-
-        // put time index to cache
-        cache.putLong(_entries * entrySize, timestamp)
-        cache.putInt(_entries * entrySize + 8, relatedOffset)
-
         _entries += 1
         _lastEntry = TimestampOffset(timestamp, offset)
       }
@@ -175,4 +178,8 @@ class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, 
   def seal(): Unit = {
     stream.seal()
   }
+}
+
+object ElasticTimeIndex {
+  var cache: FileCache = new FileCache("/tmp/kafka-time-index-cache", 100 * 1024 * 1024)
 }
