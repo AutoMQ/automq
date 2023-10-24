@@ -17,10 +17,12 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -71,7 +72,7 @@ class BlockWALServiceTest {
             for (int i = 0; i < recordCount; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
 
-                final AppendResult appendResult = wal.append(data);
+                final AppendResult appendResult = wal.append(data.retainedDuplicate());
 
                 final long expectedOffset = i * WALUtil.alignLargeByBlockSize(recordSize);
                 assertEquals(expectedOffset, appendResult.recordOffset());
@@ -116,7 +117,7 @@ class BlockWALServiceTest {
 
                 while (true) {
                     try {
-                        appendResult = wal.append(data);
+                        appendResult = wal.append(data.retainedDuplicate());
                     } catch (OverCapacityException e) {
                         Thread.yield();
                         long flushedOffsetValue = flushedOffset.get();
@@ -172,7 +173,7 @@ class BlockWALServiceTest {
                     for (int i = 0; i < recordCount; i++) {
                         ByteBuf data = TestUtils.random(recordSize);
 
-                        final AppendResult appendResult = wal.append(data);
+                        final AppendResult appendResult = wal.append(data.retainedDuplicate());
 
                         appendResult.future().whenComplete((callbackResult, throwable) -> {
                             assertNull(throwable);
@@ -334,23 +335,21 @@ class BlockWALServiceTest {
     }
 
 
-    private ByteBuffer recordHeader(ByteBuffer body, long offset) {
+    private ByteBuf recordHeader(ByteBuf body, long offset) {
         return new SlidingWindowService.RecordHeaderCoreData()
                 .setMagicCode(BlockWALService.RECORD_HEADER_MAGIC_CODE)
-                .setRecordBodyLength(body.limit())
+                .setRecordBodyLength(body.readableBytes())
                 .setRecordBodyOffset(offset + BlockWALService.RECORD_HEADER_SIZE)
                 .setRecordBodyCRC(WALUtil.crc32(body))
                 .marshal();
     }
 
     private void write(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
-        ByteBuffer recordBody = TestUtils.random(recordSize).nioBuffer();
-        ByteBuffer recordHeader = recordHeader(recordBody, logicOffset);
+        ByteBuf recordBody = TestUtils.random(recordSize);
+        ByteBuf recordHeader = recordHeader(recordBody, logicOffset);
 
-        ByteBuffer record = ByteBuffer.allocate(recordHeader.limit() + recordBody.limit());
-        record.put(recordHeader);
-        record.put(recordBody);
-        record.position(0);
+        CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
+        record.addComponents(true, recordHeader, recordBody);
 
         // TODO: make this beautiful
         long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
@@ -358,7 +357,7 @@ class BlockWALServiceTest {
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long startOffset, long nextOffset, long maxLength) throws IOException {
-        ByteBuffer header = new BlockWALService.WALHeaderCoreData()
+        ByteBuf header = new BlockWALService.WALHeaderCoreData()
                 .setCapacity(walChannel.capacity())
                 .updateTrimOffset(trimOffset)
                 .setSlidingWindowStartOffset(startOffset)

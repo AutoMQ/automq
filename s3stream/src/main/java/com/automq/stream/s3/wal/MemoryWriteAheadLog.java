@@ -41,6 +41,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
 
     @Override
     public AppendResult append(ByteBuf data, int crc) {
+        data.release();
         long offset = offsetAlloc.getAndIncrement();
         return new AppendResult() {
             @Override

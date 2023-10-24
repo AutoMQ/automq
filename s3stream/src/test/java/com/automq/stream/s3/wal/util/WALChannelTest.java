@@ -18,6 +18,8 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.TestUtils;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -57,19 +59,19 @@ class WALChannelTest {
 
     @Test
     void testWriteAndRead() throws IOException {
-        ByteBuffer byteBuffer = createRandomTextByteBuffer(1024 * 3);
+        ByteBuf data = TestUtils.random(1024 * 3);
         for (int i = 0; i < 100; i++) {
             try {
-                walChannel.write(byteBuffer, (long) i * byteBuffer.limit());
+                walChannel.write(data, (long) i * data.readableBytes());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
 
         final String content = "Hello World";
-        walChannel.write(ByteBuffer.wrap(content.getBytes()), 100);
+        walChannel.write(Unpooled.wrappedBuffer(content.getBytes()), 100);
 
-        ByteBuffer readBuffer = ByteBuffer.allocate(content.length());
+        ByteBuf readBuffer = Unpooled.buffer(content.length());
         int read = walChannel.read(readBuffer, 100);
 
         String readString = new String(readBuffer.array());

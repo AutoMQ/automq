@@ -17,7 +17,8 @@
 
 package com.automq.stream.s3.wal.util;
 
-import java.nio.ByteBuffer;
+import io.netty.buffer.ByteBuf;
+
 import java.util.zip.CRC32;
 
 public class WALUtil {
@@ -26,20 +27,25 @@ public class WALUtil {
             "4096"
     ));
 
-    public static int crc32(ByteBuffer buf) {
-        return crc32(buf, 0, buf.limit());
+    /**
+     * Get CRC32 of the given ByteBuf from current reader index to the end.
+     * This method will not change the reader index of the given ByteBuf.
+     */
+    public static int crc32(ByteBuf buf) {
+        return crc32(buf, buf.readableBytes());
     }
 
-    public static int crc32(ByteBuffer buf, int length) {
-        return crc32(buf, 0, length);
-    }
-
-    public static int crc32(ByteBuffer buf, int start, int end) {
+    /**
+     * Get CRC32 of the given ByteBuf from current reader index to the given length.
+     * This method will not change the reader index of the given ByteBuf.
+     */
+    public static int crc32(ByteBuf buf, int length) {
         CRC32 crc32 = new CRC32();
-        ByteBuffer dup = buf.duplicate();
-        dup.position(start);
-        dup.limit(end);
-        crc32.update(dup);
+        buf.markReaderIndex();
+        for (int i = 0; i < length; i++) {
+            crc32.update(buf.readByte());
+        }
+        buf.resetReaderIndex();
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 

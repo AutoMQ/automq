@@ -17,16 +17,17 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import io.netty.buffer.ByteBuf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.TreeSet;
@@ -58,24 +59,20 @@ public class SlidingWindowService {
     private final WALChannel walChannel;
     private final WALHeaderFlusher walHeaderFlusher;
     private final WindowCoreData windowCoreData = new WindowCoreData();
-    private ExecutorService executorService;
-    private Semaphore semaphore;
-
     /**
      * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
      */
     private final Lock blockLock = new ReentrantLock();
-
     /**
      * Blocks that are waiting to be written.
      */
     private final Queue<Block> pendingBlocks = new LinkedList<>();
-
     /**
      * Blocks that are being written.
      */
     private final TreeSet<Long> writingBlocks = new TreeSet<>();
-
+    private ExecutorService executorService;
+    private Semaphore semaphore;
     /**
      * The current block, records are added to this block.
      */
@@ -168,13 +165,21 @@ public class SlidingWindowService {
                     startOffset, minSize, trimOffset, recordSectionCapacity));
         }
 
+        long maxSize = upperLimit;
+        // The size of the block should not be larger than writable size of the ring buffer
+        // Let capacity=100, start=198, trim=99, then maxSize=100-198+99=1
+        maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, maxSize);
+        // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
         // The size of the block should not be larger than the end of the physical device
-        long maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, upperLimit);
+        maxSize = Math.min(recordSectionCapacity - startOffset % recordSectionCapacity, maxSize);
 
         Block newBlock = new BlockImpl(startOffset, maxSize);
         if (!previousBlock.isEmpty()) {
             // There are some records to be written in the previous block
             pendingBlocks.add(previousBlock);
+        } else {
+            // The previous block is empty, so it can be released directly
+            previousBlock.release();
         }
         setCurrentBlockLocked(newBlock);
         return newBlock;
@@ -204,7 +209,7 @@ public class SlidingWindowService {
      * Get the start offset of the next block.
      */
     private long nextBlockStartOffset(Block block) {
-        return block.startOffset() + WALUtil.alignLargeByBlockSize(block.data().limit());
+        return block.startOffset() + WALUtil.alignLargeByBlockSize(block.data().readableBytes());
     }
 
     /**
@@ -282,7 +287,7 @@ public class SlidingWindowService {
     }
 
     private boolean makeWriteOffsetMatchWindow(final Block block) throws IOException {
-        long newWindowEndOffset = block.startOffset() + block.data().limit();
+        long newWindowEndOffset = block.startOffset() + block.data().readableBytes();
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getWindowStartOffset();
@@ -308,6 +313,10 @@ public class SlidingWindowService {
         return true;
     }
 
+    public interface WALHeaderFlusher {
+        void flush(long windowMaxLength) throws IOException;
+    }
+
     public static class RecordHeaderCoreData {
         private int magicCode0 = RECORD_HEADER_MAGIC_CODE;
         private int recordBodyLength1;
@@ -315,13 +324,15 @@ public class SlidingWindowService {
         private int recordBodyCRC3;
         private int recordHeaderCRC4;
 
-        public static RecordHeaderCoreData unmarshal(ByteBuffer byteBuffer) {
+        public static RecordHeaderCoreData unmarshal(ByteBuf byteBuf) {
             RecordHeaderCoreData recordHeaderCoreData = new RecordHeaderCoreData();
-            recordHeaderCoreData.magicCode0 = byteBuffer.getInt();
-            recordHeaderCoreData.recordBodyLength1 = byteBuffer.getInt();
-            recordHeaderCoreData.recordBodyOffset2 = byteBuffer.getLong();
-            recordHeaderCoreData.recordBodyCRC3 = byteBuffer.getInt();
-            recordHeaderCoreData.recordHeaderCRC4 = byteBuffer.getInt();
+            byteBuf.markReaderIndex();
+            recordHeaderCoreData.magicCode0 = byteBuf.readInt();
+            recordHeaderCoreData.recordBodyLength1 = byteBuf.readInt();
+            recordHeaderCoreData.recordBodyOffset2 = byteBuf.readLong();
+            recordHeaderCoreData.recordBodyCRC3 = byteBuf.readInt();
+            recordHeaderCoreData.recordHeaderCRC4 = byteBuf.readInt();
+            byteBuf.resetReaderIndex();
             return recordHeaderCoreData;
         }
 
@@ -365,11 +376,6 @@ public class SlidingWindowService {
             return recordHeaderCRC4;
         }
 
-        public RecordHeaderCoreData setRecordHeaderCRC(int recordHeaderCRC) {
-            this.recordHeaderCRC4 = recordHeaderCRC;
-            return this;
-        }
-
         @Override
         public String toString() {
             return "RecordHeaderCoreData{" +
@@ -381,19 +387,19 @@ public class SlidingWindowService {
                     '}';
         }
 
-        private ByteBuffer marshalHeaderExceptCRC() {
-            ByteBuffer byteBuffer = ByteBuffer.allocate(RECORD_HEADER_SIZE);
-            byteBuffer.putInt(magicCode0);
-            byteBuffer.putInt(recordBodyLength1);
-            byteBuffer.putLong(recordBodyOffset2);
-            byteBuffer.putInt(recordBodyCRC3);
-            return byteBuffer;
+        private ByteBuf marshalHeaderExceptCRC() {
+            ByteBuf buf = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+            buf.writeInt(magicCode0);
+            buf.writeInt(recordBodyLength1);
+            buf.writeLong(recordBodyOffset2);
+            buf.writeInt(recordBodyCRC3);
+            return buf;
         }
 
-        public ByteBuffer marshal() {
-            ByteBuffer byteBuffer = marshalHeaderExceptCRC();
-            byteBuffer.putInt(WALUtil.crc32(byteBuffer, RECORD_HEADER_WITHOUT_CRC_SIZE));
-            return byteBuffer.position(0);
+        public ByteBuf marshal() {
+            ByteBuf buf = marshalHeaderExceptCRC();
+            buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
+            return buf;
         }
     }
 
@@ -424,10 +430,6 @@ public class SlidingWindowService {
 
         public void setWindowNextWriteOffset(long windowNextWriteOffset) {
             this.windowNextWriteOffset.set(windowNextWriteOffset);
-        }
-
-        public boolean compareAndSetWindowNextWriteOffset(long expect, long update) {
-            return this.windowNextWriteOffset.compareAndSet(expect, update);
         }
 
         public long getWindowStartOffset() {
@@ -501,11 +503,9 @@ public class SlidingWindowService {
             } catch (Exception e) {
                 FutureUtil.completeExceptionally(block.futures(), e);
                 LOGGER.error(String.format("failed to write record, offset: %s", block.startOffset()), e);
+            } finally {
+                block.release();
             }
         }
-    }
-
-    interface WALHeaderFlusher {
-        void flush(long windowMaxLength) throws IOException;
     }
 }

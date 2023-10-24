@@ -34,7 +34,9 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * WriteBench is a tool for benchmarking write performance of {@link BlockWALService}
@@ -43,6 +45,7 @@ public class WriteBench implements AutoCloseable {
     private static final int LOG_INTERVAL_SECONDS = 1;
 
     private final WriteAheadLog log;
+    private final FlushedOffset flushedOffset = new FlushedOffset();
 
     public WriteBench(Config config) throws IOException {
         BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(config.path, config.capacity);
@@ -115,7 +118,6 @@ public class WriteBench implements AutoCloseable {
         AtomicLong count = new AtomicLong();
         AtomicLong costNanos = new AtomicLong();
         AtomicLong maxCostNanos = new AtomicLong();
-        long offset = 0;
 
         while (true) {
             while (true) {
@@ -151,21 +153,31 @@ public class WriteBench implements AutoCloseable {
             long appendStartTimeNanos = System.nanoTime();
             WriteAheadLog.AppendResult result;
             try {
-                result = log.append(payload);
+                result = log.append(payload.retainedDuplicate());
             } catch (WriteAheadLog.OverCapacityException e) {
-                log.trim(offset);
+                log.trim(flushedOffset.get());
                 continue;
             }
-            offset = result.recordOffset();
             result.future().thenAccept(v -> {
                 long costNanosValue = System.nanoTime() - appendStartTimeNanos;
                 count.incrementAndGet();
                 costNanos.addAndGet(costNanosValue);
                 maxCostNanos.accumulateAndGet(costNanosValue, Math::max);
+                flushedOffset.update(v.flushedOffset());
+            }).whenComplete((v, e) -> {
+                if (e != null) {
+                    System.err.printf("Append task %d failed, %s\n", index, e.getMessage());
+                    e.printStackTrace();
+                }
             });
         }
 
         System.out.printf("Append task %d finished\n", index);
+    }
+
+    @Override
+    public void close() {
+        log.shutdownGracefully();
     }
 
     static class Config {
@@ -239,8 +251,32 @@ public class WriteBench implements AutoCloseable {
         }
     }
 
-    @Override
-    public void close() {
-        log.shutdownGracefully();
+    static class FlushedOffset {
+        private final Lock lock = new ReentrantLock();
+        // Offset before which all data has been flushed to disk
+        private long flushedOffset = 0;
+        // Offset at which all data has been flushed to disk
+        private long committedOffset = 0;
+
+        public void update(long offset) {
+            lock.lock();
+            try {
+                if (offset > flushedOffset) {
+                    committedOffset = flushedOffset;
+                    flushedOffset = offset;
+                }
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        public long get() {
+            lock.lock();
+            try {
+                return committedOffset;
+            } finally {
+                lock.unlock();
+            }
+        }
     }
 }

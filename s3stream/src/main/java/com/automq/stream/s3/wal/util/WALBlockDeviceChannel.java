@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.wal.util;
 
+import io.netty.buffer.ByteBuf;
 import moe.cnkirito.kdio.DirectIOLib;
 import moe.cnkirito.kdio.DirectRandomAccessFile;
 
@@ -93,13 +94,9 @@ public class WALBlockDeviceChannel implements WALChannel {
         }
     }
 
-    /**
-     * @param src
-     * @param position
-     * @throws IOException
-     */
     @Override
-    public void write(ByteBuffer src, long position) throws IOException {
+    public void write(ByteBuf buf, long position) throws IOException {
+        ByteBuffer src = buf.nioBuffer();
         int bufferDirectIOAlignedSize = (int) WALUtil.alignLargeByBlockSize(src.limit());
 
         makeThreadLocalBytebufferMatchDirectIO(bufferDirectIOAlignedSize);
@@ -127,7 +124,8 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     @Override
-    public int read(ByteBuffer dst, long position) throws IOException {
+    public int read(ByteBuf buf, long position) throws IOException {
+        ByteBuffer dst = buf.nioBuffer();
         // FIXME: a small dst will lead to a zero size read
         int bufferDirectIOAlignedSize = (int) WALUtil.alignSmallByBlockSize(dst.capacity());
 
