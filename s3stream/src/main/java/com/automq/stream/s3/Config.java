@@ -58,6 +58,15 @@ public class Config {
     private int s3ObjectMaxStreamObjectNumPerCommit = 10000;
     private boolean s3MockEnable = false;
     private boolean s3ObjectLogEnable = false;
+    // 100MB/s
+    private long networkInboundBaselineBandwidth = 100 * 1024 * 1024;
+    // 10 Times burst
+    private long networkInboundBurstBandwidth = 10 * networkInboundBaselineBandwidth;
+    // 100MB/s
+    private long networkOutboundBaselineBandwidth = 100 * 1024 * 1024;
+    // 10 Times burst
+    private long networkOutboundBurstBandwidth = 10 * networkOutboundBaselineBandwidth;
+    private int refillPeriodMs = 1000;
 
     public int brokerId() {
         return brokerId;
@@ -213,6 +222,26 @@ public class Config {
 
     public String s3SecretKey() {
         return s3SecretKey;
+    }
+
+    public long networkInboundBaselineBandwidth() {
+        return networkInboundBaselineBandwidth;
+    }
+
+    public long networkInboundBurstBandwidth() {
+        return networkInboundBurstBandwidth;
+    }
+
+    public long networkOutboundBaselineBandwidth() {
+        return networkOutboundBaselineBandwidth;
+    }
+
+    public long networkOutboundBurstBandwidth() {
+        return networkOutboundBurstBandwidth;
+    }
+
+    public int refillPeriodMs() {
+        return refillPeriodMs;
     }
 
     public Config brokerId(int brokerId) {
@@ -407,6 +436,31 @@ public class Config {
 
     public Config s3StreamObjectsCompactionNWInBandwidth(long s3StreamObjectsCompactionNWInBandwidth) {
         this.s3StreamObjectsCompactionNWInBandwidth = s3StreamObjectsCompactionNWInBandwidth;
+        return this;
+    }
+
+    public Config networkInboundBaselineBandwidth(long networkInboundBaselineBandwidth) {
+        this.networkInboundBaselineBandwidth = networkInboundBaselineBandwidth;
+        return this;
+    }
+
+    public Config networkInboundBurstBandwidth(long networkInboundBurstBandwidth) {
+        this.networkInboundBurstBandwidth = networkInboundBurstBandwidth;
+        return this;
+    }
+
+    public Config networkOutboundBaselineBandwidth(long networkOutboundBaselineBandwidth) {
+        this.networkOutboundBaselineBandwidth = networkOutboundBaselineBandwidth;
+        return this;
+    }
+
+    public Config networkOutboundBurstBandwidth(long networkOutboundBurstBandwidth) {
+        this.networkOutboundBurstBandwidth = networkOutboundBurstBandwidth;
+        return this;
+    }
+
+    public Config refillPeriodMs(int refillPeriodMs) {
+        this.refillPeriodMs = refillPeriodMs;
         return this;
     }
 }

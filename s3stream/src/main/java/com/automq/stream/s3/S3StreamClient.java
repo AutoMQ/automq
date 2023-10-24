@@ -21,11 +21,11 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
@@ -56,17 +56,23 @@ public class S3StreamClient implements StreamClient {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final Config config;
-    private final AsyncTokenBucketThrottle readThrottle;
+    private final AsyncNetworkBandwidthLimiter networkInboundBucket;
+    private final AsyncNetworkBandwidthLimiter networkOutboundBucket;
 
-    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
-        S3Operator s3Operator, Config config) {
+    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager, S3Operator s3Operator, Config config) {
+        this(streamManager, storage, objectManager, s3Operator, config, null, null);
+    }
+
+    public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager, S3Operator s3Operator, Config config,
+                          AsyncNetworkBandwidthLimiter networkInboundBucket, AsyncNetworkBandwidthLimiter networkOutboundBucket) {
         this.streamManager = streamManager;
         this.storage = storage;
         this.openedStreams = new ConcurrentHashMap<>();
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.config = config;
-        this.readThrottle = new AsyncTokenBucketThrottle(config.s3StreamObjectsCompactionNWInBandwidth(), 1, "s3-stream-objects-compaction");
+        this.networkInboundBucket = networkInboundBucket;
+        this.networkOutboundBucket = networkOutboundBucket;
         startStreamObjectsCompactions();
     }
 
@@ -129,24 +135,23 @@ public class S3StreamClient implements StreamClient {
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
         TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
-            thenApply(metadata -> {
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
-                StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
-                    .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
-                    .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
-                    .withS3ObjectLogEnabled(config.s3ObjectLogEnable())
-                    .withReadThrottle(readThrottle);
-                S3Stream stream = new S3Stream(
-                    metadata.getStreamId(), metadata.getEpoch(),
-                    metadata.getStartOffset(), metadata.getEndOffset(),
-                    storage, streamManager, builder, id -> {
-                    openedStreams.remove(id);
-                    return null;
+                thenApply(metadata -> {
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
+                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
+                    StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
+                            .withCompactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
+                            .withEligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
+                            .withS3ObjectLogEnabled(config.s3ObjectLogEnable());
+                    S3Stream stream = new S3Stream(
+                            metadata.getStreamId(), metadata.getEpoch(),
+                            metadata.getStartOffset(), metadata.getEndOffset(),
+                            storage, streamManager, builder, id -> {
+                        openedStreams.remove(id);
+                        return null;
+                    }, networkInboundBucket, networkOutboundBucket);
+                    openedStreams.put(streamId, stream);
+                    return stream;
                 });
-                openedStreams.put(streamId, stream);
-                return stream;
-            });
     }
 
     @Override
@@ -162,9 +167,6 @@ public class S3StreamClient implements StreamClient {
             }
         } catch (InterruptedException e) {
             LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
-        }
-        if (readThrottle != null) {
-            readThrottle.stop();
         }
 
         TimerUtil timerUtil = new TimerUtil();

@@ -56,7 +56,7 @@ public class StreamObjectCopierTest {
         S3ObjectMetadata metadata1 = new S3ObjectMetadata(1, objectWriter1.size(), S3ObjectType.STREAM);
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(2, objectWriter2.size(), S3ObjectType.STREAM);
 
-        StreamObjectCopier streamObjectCopyer = new StreamObjectCopier(targetObjectId, s3Operator, null);
+        StreamObjectCopier streamObjectCopyer = new StreamObjectCopier(targetObjectId, s3Operator);
         streamObjectCopyer.copy(metadata1);
         streamObjectCopyer.copy(metadata2);
         streamObjectCopyer.close().get();

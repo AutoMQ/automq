@@ -18,10 +18,10 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -49,21 +49,18 @@ public class MultiPartWriter implements Writer {
     private final long minPartSize;
     private ObjectPart objectPart = null;
     private final TimerUtil timerUtil = new TimerUtil();
-    private final AsyncTokenBucketThrottle readThrottle;
+    private final ThrottleStrategy throttleStrategy;
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
-    public MultiPartWriter(S3Operator operator, String path, long minPartSize, AsyncTokenBucketThrottle readThrottle) {
+    public MultiPartWriter(S3Operator operator, String path, long minPartSize, ThrottleStrategy throttleStrategy) {
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
-        this.readThrottle = readThrottle;
+        this.throttleStrategy = throttleStrategy;
         init();
     }
 
     private void init() {
-        if (readThrottle != null && readThrottle.getTokenSize() < minPartSize) {
-            throw new IllegalArgumentException("Read throttle token size should be larger than minPartSize");
-        }
         FutureUtil.propagate(
                 operator.createMultipartUpload(path).thenApply(uploadId -> {
                     this.uploadId = uploadId;
@@ -78,7 +75,7 @@ public class MultiPartWriter implements Writer {
         totalWriteSize.addAndGet(data.readableBytes());
 
         if (objectPart == null) {
-            objectPart = new ObjectPart(readThrottle);
+            objectPart = new ObjectPart(throttleStrategy);
         }
         ObjectPart objectPart = this.objectPart;
 
@@ -101,7 +98,7 @@ public class MultiPartWriter implements Writer {
         long targetSize = end - start;
         if (objectPart == null) {
             if (targetSize < minPartSize) {
-                this.objectPart = new ObjectPart(readThrottle);
+                this.objectPart = new ObjectPart(throttleStrategy);
                 objectPart.readAndWrite(sourcePath, start, end);
             } else {
                 new CopyObjectPart(sourcePath, start, end);
@@ -164,10 +161,10 @@ public class MultiPartWriter implements Writer {
         private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
         private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
         private long size;
-        private final AsyncTokenBucketThrottle readThrottle;
+        private final ThrottleStrategy throttleStrategy;
 
-        public ObjectPart(AsyncTokenBucketThrottle readThrottle) {
-            this.readThrottle = readThrottle;
+        public ObjectPart(ThrottleStrategy throttleStrategy) {
+            this.throttleStrategy = throttleStrategy;
             parts.add(partCf);
         }
 
@@ -181,9 +178,7 @@ public class MultiPartWriter implements Writer {
             size += end - start;
             // TODO: parallel read and sequence add.
             this.lastRangeReadCf = lastRangeReadCf
-                    .thenCompose(nil -> readThrottle == null ?
-                            CompletableFuture.completedFuture(null) : readThrottle.throttle(end - start))
-                    .thenCompose(nil -> operator.rangeRead(sourcePath, start, end))
+                    .thenCompose(nil -> operator.rangeRead(sourcePath, start, end, throttleStrategy))
                     .thenAccept(buf -> partBuf.addComponent(true, buf));
         }
 
@@ -199,7 +194,7 @@ public class MultiPartWriter implements Writer {
 
         private void upload0() {
             TimerUtil timerUtil = new TimerUtil();
-            FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf)), partCf);
+            FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsed()));
         }
 

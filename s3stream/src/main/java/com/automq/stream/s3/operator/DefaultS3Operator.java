@@ -18,10 +18,11 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.ThreadUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -66,6 +67,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -78,11 +80,23 @@ public class DefaultS3Operator implements S3Operator {
     private final String bucket;
     private final S3AsyncClient s3;
     private final List<ReadTask> waitingReadTasks = new LinkedList<>();
+    private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
+    private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
+    private final ExecutorService s3ReadCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-read-cb-executor", true));
+    private final ExecutorService s3WriteCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-write-cb-executor", true));
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
-                             String accessKey, String secretKey) {
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
+        this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null);
+    }
+
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey,
+                             AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter, AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter) {
+        this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
+        this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
@@ -99,6 +113,7 @@ public class DefaultS3Operator implements S3Operator {
         this.s3 = builder.build();
         this.bucket = bucket;
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        checkConfig();
         checkAvailable();
         LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
     }
@@ -112,6 +127,8 @@ public class DefaultS3Operator implements S3Operator {
     DefaultS3Operator(S3AsyncClient s3, String bucket, boolean manualMergeRead) {
         this.s3 = s3;
         this.bucket = bucket;
+        this.networkInboundBandwidthLimiter = null;
+        this.networkOutboundBandwidthLimiter = null;
         if (!manualMergeRead) {
             scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         }
@@ -125,7 +142,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ThrottleStrategy throttleStrategy) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         if (start >= end) {
             IllegalArgumentException ex = new IllegalArgumentException();
@@ -133,10 +150,25 @@ public class DefaultS3Operator implements S3Operator {
             cf.completeExceptionally(ex);
             return cf;
         }
+        if (networkInboundBandwidthLimiter != null) {
+            networkInboundBandwidthLimiter.consume(throttleStrategy, end - start).whenCompleteAsync((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    rangeRead0(path, start, end, cf);
+                }
+            }, s3ReadCallbackExecutor);
+        } else {
+            rangeRead0(path, start, end, cf);
+        }
+
+        return cf;
+    }
+
+    private void rangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
         synchronized (waitingReadTasks) {
             waitingReadTasks.add(new ReadTask(path, start, end, cf));
         }
-        return cf;
     }
 
     void tryMergeRead() {
@@ -222,9 +254,19 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<Void> write(String path, ByteBuf data) {
+    public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        write0(path, data, cf);
+        if (networkOutboundBandwidthLimiter != null) {
+            networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    write0(path, data, cf);
+                }
+            }, s3WriteCallbackExecutor);
+        } else {
+            write0(path, data, cf);
+        }
         return cf;
     }
 
@@ -255,8 +297,8 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, AsyncTokenBucketThrottle readThrottle) {
-        return new ProxyWriter(this, path, readThrottle);
+    public Writer writer(String path, ThrottleStrategy throttleStrategy) {
+        return new ProxyWriter(this, path, throttleStrategy);
     }
 
     @Override
@@ -330,9 +372,19 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data) {
+    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
         CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
-        uploadPart0(path, uploadId, partNumber, data, cf);
+        if (networkOutboundBandwidthLimiter != null) {
+            networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    uploadPart0(path, uploadId, partNumber, data, cf);
+                }
+            }, s3WriteCallbackExecutor);
+        } else {
+            uploadPart0(path, uploadId, partNumber, data, cf);
+        }
         cf.whenComplete((rst, ex) -> data.release());
         return cf;
     }
@@ -445,6 +497,21 @@ public class DefaultS3Operator implements S3Operator {
             return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
         }
         return false;
+    }
+
+    private void checkConfig() {
+        if (this.networkInboundBandwidthLimiter != null) {
+            if (this.networkInboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
+                throw new IllegalArgumentException(String.format("Network inbound bandwidth limit %d must be no less than min part size %d",
+                        this.networkInboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
+            }
+        }
+        if (this.networkOutboundBandwidthLimiter != null) {
+            if (this.networkOutboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
+                throw new IllegalArgumentException(String.format("Network outbound bandwidth limit %d must be no less than min part size %d",
+                        this.networkOutboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
+            }
+        }
     }
 
     private void checkAvailable() {

@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
@@ -34,30 +34,39 @@ public interface S3Operator {
      * @param path  object path.
      * @param start range start.
      * @param end   range end.
+     * @param throttleStrategy throttle strategy.
      * @return data.
      */
-    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end);
+    CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ThrottleStrategy throttleStrategy);
+
+    default CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+        return rangeRead(path, start, end, ThrottleStrategy.BYPASS);
+    }
 
     /**
      * Write data to object.
      *
      * @param path object path.
      * @param data data.
+     * @param throttleStrategy throttle strategy.
      */
-    CompletableFuture<Void> write(String path, ByteBuf data);
+    CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy);
+
+    default CompletableFuture<Void> write(String path, ByteBuf data) {
+        return write(path, data, ThrottleStrategy.BYPASS);
+    }
 
     /**
-     * New multi-part object writer.
+     * New multipart object writer.
      *
      * @param path         object path
-     * @param readThrottle read throttle. null means no throttle.
-     *                     It is used to throttle reading in copy-write.
+     * @param throttleStrategy throttle strategy.
      * @return {@link Writer}
      */
-    Writer writer(String path, AsyncTokenBucketThrottle readThrottle);
+    Writer writer(String path, ThrottleStrategy throttleStrategy);
 
     default Writer writer(String path) {
-        return writer(path, null);
+        return writer(path,  ThrottleStrategy.BYPASS);
     }
 
     CompletableFuture<Void> delete(String path);
@@ -82,7 +91,11 @@ public interface S3Operator {
      * Upload part.
      * @return {@link CompletedPart}
      */
-    CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data);
+    CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy);
+
+    default CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data) {
+        return uploadPart(path, uploadId, partNumber, data, ThrottleStrategy.BYPASS);
+    }
 
     /**
      * Upload part copy

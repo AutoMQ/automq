@@ -16,7 +16,7 @@
  */
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.compact.AsyncTokenBucketThrottle;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -35,7 +35,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+    public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ThrottleStrategy throttleStrategy) {
         ByteBuf value = storage.get(path);
         if (value == null) {
             return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
@@ -45,7 +45,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<Void> write(String path, ByteBuf data) {
+    public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
         ByteBuf buf = Unpooled.buffer(data.readableBytes());
         buf.writeBytes(data.duplicate());
         storage.put(path, buf);
@@ -53,7 +53,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, AsyncTokenBucketThrottle readThrottle) {
+    public Writer writer(String path, ThrottleStrategy throttleStrategy) {
         ByteBuf buf = Unpooled.buffer();
         storage.put(path, buf);
         return new Writer() {
@@ -105,7 +105,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data) {
+    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
