@@ -33,7 +33,6 @@ public class ConfigUtils {
                 .s3WALCapacity(s.s3WALCapacity())
                 .s3WALHeaderFlushIntervalSeconds(s.s3WALHeaderFlushIntervalSeconds())
                 .s3WALThread(s.s3WALThread())
-                .s3WALQueue(s.s3WALQueue())
                 .s3WALWindowInitial(s.s3WALWindowInitial())
                 .s3WALWindowIncrement(s.s3WALWindowIncrement())
                 .s3WALWindowMax(s.s3WALWindowMax())
