@@ -59,4 +59,11 @@ public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
             }
         };
     }
+
+    @Override
+    public void newGauge(String type, String name, Map<String, String> tags, Gauge gauge) {
+
+    }
+
+
 }

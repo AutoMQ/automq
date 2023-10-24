@@ -19,6 +19,7 @@ package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
@@ -50,7 +51,7 @@ public class DataBlockWriter {
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
-        writer = s3Operator.writer(objectKey);
+        writer = s3Operator.writer(objectKey, ThrottleStrategy.THROTTLE);
     }
 
     public long getObjectId() {

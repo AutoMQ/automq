@@ -15,14 +15,9 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.metrics;
+package com.automq.stream.s3.network;
 
-import java.util.Map;
-
-public interface S3StreamMetricsGroup {
-    Counter newCounter(String type, String name, Map<String, String> tags);
-
-    Histogram newHistogram(String type, String name, Map<String, String> tags);
-
-    void newGauge(String type, String name, Map<String, String> tags, Gauge gauge);
+public enum ThrottleStrategy {
+    BYPASS,
+    THROTTLE
 }

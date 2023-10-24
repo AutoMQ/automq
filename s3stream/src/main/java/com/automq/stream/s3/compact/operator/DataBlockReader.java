@@ -19,8 +19,8 @@ package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.compact.TokenBucketThrottle;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -57,7 +57,7 @@ public class DataBlockReader {
     }
 
     public void parseDataBlockIndex(long startPosition) {
-        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize())
+        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize(), ThrottleStrategy.THROTTLE)
                 .thenAccept(buf -> {
                     try {
                         indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
@@ -70,13 +70,14 @@ public class DataBlockReader {
                     indexBlockCf.completeExceptionally(ex);
                     return null;
                 });
+
     }
 
     public void readBlocks(List<StreamDataBlock> streamDataBlocks) {
-        readBlocks(streamDataBlocks, null);
+        readBlocks(streamDataBlocks, -1);
     }
 
-    public void readBlocks(List<StreamDataBlock> streamDataBlocks, TokenBucketThrottle networkThrottle) {
+    public void readBlocks(List<StreamDataBlock> streamDataBlocks, long networkInboundBandwidth) {
         if (streamDataBlocks.isEmpty()) {
             return;
         }
@@ -86,31 +87,30 @@ public class DataBlockReader {
         // split streamDataBlocks to blocks with continuous offset
         while (end < streamDataBlocks.size()) {
             if (offset != -1 && streamDataBlocks.get(end).getBlockStartPosition() != offset) {
-                readContinuousBlocks(streamDataBlocks.subList(start, end), networkThrottle);
+                readContinuousBlocks(streamDataBlocks.subList(start, end), networkInboundBandwidth);
                 start = end;
             }
             offset = streamDataBlocks.get(end).getBlockEndPosition();
             end++;
         }
         if (end > start) {
-            readContinuousBlocks(streamDataBlocks.subList(start, end), networkThrottle);
+            readContinuousBlocks(streamDataBlocks.subList(start, end), networkInboundBandwidth);
         }
     }
 
-    public void readContinuousBlocks(List<StreamDataBlock> streamDataBlocks, TokenBucketThrottle networkThrottle) {
+    public void readContinuousBlocks(List<StreamDataBlock> streamDataBlocks, long networkInboundBandwidth) {
         long objectId = metadata.objectId();
-        if (networkThrottle == null) {
+        if (networkInboundBandwidth <= 0) {
             readContinuousBlocks0(streamDataBlocks);
             return;
         }
 
-        long readRangeLimit = networkThrottle.getTokenSize();
         long currentReadSize = 0;
         int start = 0;
         int end = 0;
         while (end < streamDataBlocks.size()) {
             currentReadSize += streamDataBlocks.get(end).getBlockSize();
-            if (currentReadSize >= readRangeLimit) {
+            if (currentReadSize >= networkInboundBandwidth) {
                 final int finalStart = start;
                 if (start == end) {
                     // split single data block to multiple read
@@ -121,11 +121,10 @@ public class DataBlockReader {
                     Map<Integer, ByteBuf> bufferMap = new ConcurrentHashMap<>();
                     int cnt = 0;
                     while (remainBytes > 0) {
-                        long readSize = Math.min(remainBytes, readRangeLimit);
+                        long readSize = Math.min(remainBytes, networkInboundBandwidth);
                         endPosition = startPosition + readSize;
-                        networkThrottle.throttle(readSize);
                         final int finalCnt = cnt;
-                        cfList.add(s3Operator.rangeRead(objectKey, startPosition, endPosition)
+                        cfList.add(s3Operator.rangeRead(objectKey, startPosition, endPosition, ThrottleStrategy.THROTTLE)
                                 .thenAccept(buf -> bufferMap.put(finalCnt, buf))
                         );
                         remainBytes -= readSize;
@@ -150,8 +149,6 @@ public class DataBlockReader {
                     end++;
                 } else {
                     // read before current block
-                    currentReadSize -= streamDataBlocks.get(end).getBlockSize();
-                    networkThrottle.throttle(currentReadSize);
                     readContinuousBlocks0(streamDataBlocks.subList(start, end));
                 }
                 start = end;
@@ -161,7 +158,6 @@ public class DataBlockReader {
             }
         }
         if (start < end) {
-            networkThrottle.throttle(currentReadSize);
             readContinuousBlocks0(streamDataBlocks.subList(start, end));
         }
     }
@@ -169,7 +165,7 @@ public class DataBlockReader {
     private void readContinuousBlocks0(List<StreamDataBlock> streamDataBlocks) {
         s3Operator.rangeRead(objectKey,
                         streamDataBlocks.get(0).getBlockStartPosition(),
-                        streamDataBlocks.get(streamDataBlocks.size() - 1).getBlockEndPosition())
+                        streamDataBlocks.get(streamDataBlocks.size() - 1).getBlockEndPosition(), ThrottleStrategy.THROTTLE)
                 .thenAccept(buf -> parseDataBlocks(buf, streamDataBlocks))
                 .exceptionally(ex -> {
                     LOGGER.error("read data from object {} failed", metadata.objectId(), ex);
