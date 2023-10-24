@@ -282,6 +282,7 @@ class BlockWALServiceTest {
             List<Long> recovered = new ArrayList<>(recordCount);
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
+                next.record().release();
                 recovered.add(next.recordOffset());
             }
             assertEquals(appended, recovered);
@@ -318,6 +319,7 @@ class BlockWALServiceTest {
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
+                next.record().release();
                 recovered.add(next.recordOffset());
             }
             assertEquals(Arrays.asList(appended0, appended1), recovered);
@@ -513,6 +515,7 @@ class BlockWALServiceTest {
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
+                next.record().release();
                 recovered.add(next.recordOffset());
             }
             assertEquals(recoveredOffsets, recovered, name);
@@ -546,6 +549,7 @@ class BlockWALServiceTest {
         List<Long> recovered1 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
             RecoverResult next = recover.next();
+            next.record().release();
             recovered1.add(next.recordOffset());
         }
         assertEquals(appended1, recovered1);
@@ -564,6 +568,7 @@ class BlockWALServiceTest {
         List<Long> recovered2 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
             RecoverResult next = recover.next();
+            next.record().release();
             recovered2.add(next.recordOffset());
         }
         assertEquals(appended2, recovered2);
