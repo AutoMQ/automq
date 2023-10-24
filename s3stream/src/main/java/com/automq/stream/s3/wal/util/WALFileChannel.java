@@ -17,6 +17,8 @@
 
 package com.automq.stream.s3.wal.util;
 
+import io.netty.buffer.ByteBuf;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -88,26 +90,41 @@ public class WALFileChannel implements WALChannel {
     }
 
     @Override
-    public void write(ByteBuffer src, long position) throws IOException {
-        int remaining = src.limit();
-        int writen = 0;
-        do {
-            ByteBuffer slice = src.slice().position(writen).limit(remaining);
-            int write = fileChannel.write(slice, position + writen);
-            if (write == -1) {
-                throw new IOException("write -1");
-            }
-            remaining = remaining - write;
-            writen = writen + write;
-        } while (remaining > 0);
+    public void write(ByteBuf src, long position) throws IOException {
+        assert src.readableBytes() + position <= fileCapacityFact;
+        ByteBuffer[] nioBuffers = src.nioBuffers();
+        for (ByteBuffer nioBuffer : nioBuffers) {
+            int bytesWritten = write(nioBuffer, position);
+            position += bytesWritten;
+        }
     }
 
     @Override
-    public int read(ByteBuffer dst, long position) throws IOException {
+    public int read(ByteBuf dst, long position) throws IOException {
+        ByteBuffer nioBuffer = dst.nioBuffer(dst.writerIndex(), dst.writableBytes());
+        int bytesRead = read(nioBuffer, position);
+        dst.writerIndex(dst.writerIndex() + bytesRead);
+        return bytesRead;
+    }
+
+    private int write(ByteBuffer src, long position) throws IOException {
+        int bytesWritten = 0;
+        while (src.hasRemaining()) {
+            int written = fileChannel.write(src, position + bytesWritten);
+            if (written == -1) {
+                throw new IOException("write -1");
+            }
+            bytesWritten += written;
+        }
+        return bytesWritten;
+    }
+
+    private int read(ByteBuffer dst, long position) throws IOException {
         int bytesRead = 0;
         while (dst.hasRemaining()) {
             int read = fileChannel.read(dst, position + bytesRead);
             if (read == -1) {
+                // EOF
                 break;
             }
             bytesRead += read;

@@ -17,8 +17,9 @@
 
 package com.automq.stream.s3.wal.util;
 
+import io.netty.buffer.ByteBuf;
+
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 /**
  * There are two implementations of WALChannel:
@@ -26,6 +27,10 @@ import java.nio.ByteBuffer;
  * 2. WALBlockDeviceChannel based on block device, which uses O_DIRECT to bypass page cache.
  */
 public interface WALChannel {
+    static WALChannelBuilder builder(String path, long capacity) {
+        return new WALChannelBuilder(path, capacity);
+    }
+
     void open() throws IOException;
 
     void close();
@@ -33,19 +38,20 @@ public interface WALChannel {
     long capacity();
 
     /**
-     * Write the remaining bytes in the given buffer to the given position.
-     * It only returns when all bytes are written successfully.
+     * Write bytes from the given buffer to the given position of the channel from the current reader index
+     * to the end of the buffer. It only returns when all bytes are written successfully.
+     * This method will change the reader index of the given buffer to the end of the written bytes.
+     * This method will not change the writer index of the given buffer.
      */
-    void write(ByteBuffer src, long position) throws IOException;
+    void write(ByteBuf src, long position) throws IOException;
 
     /**
-     * Read bytes into the given buffer from the given position until the buffer is full or the end of the file.
+     * Read bytes from the given position of the channel to the given buffer from the current writer index
+     * until reaching the capacity of the buffer or the end of the channel.
+     * This method will change the writer index of the given buffer to the end of the read bytes.
+     * This method will not change the reader index of the given buffer.
      */
-    int read(ByteBuffer dst, long position) throws IOException;
-
-    static WALChannelBuilder builder(String path, long capacity) {
-        return new WALChannelBuilder(path, capacity);
-    }
+    int read(ByteBuf dst, long position) throws IOException;
 
     class WALChannelBuilder {
         private final String path;
