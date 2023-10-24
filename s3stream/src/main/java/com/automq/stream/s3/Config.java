@@ -34,6 +34,7 @@ public class Config {
     private long s3WALWindowInitial = 1048576L;
     private long s3WALWindowIncrement = 4194304L;
     private long s3WALWindowMax = 536870912L;
+    private long s3WALBlockSoftLimit = 128 * 1024;
     private long s3WALObjectSize = 100 * 1024 * 1024;
     private int s3StreamSplitSize = 16777216;
     private int s3ObjectBlockSize = 8388608;
@@ -118,6 +119,10 @@ public class Config {
 
     public long s3WALWindowMax() {
         return s3WALWindowMax;
+    }
+
+    public long s3WALBlockSoftLimit() {
+        return s3WALBlockSoftLimit;
     }
 
     public long s3WALObjectSize() {
@@ -306,6 +311,11 @@ public class Config {
 
     public Config s3WALWindowMax(long s3WALWindowMax) {
         this.s3WALWindowMax = s3WALWindowMax;
+        return this;
+    }
+
+    public Config s3WALBlockSoftLimit(long s3WALBlockSoftLimit) {
+        this.s3WALBlockSoftLimit = s3WALBlockSoftLimit;
         return this;
     }
 

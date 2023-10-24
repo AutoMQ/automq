@@ -31,12 +31,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -56,17 +59,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 class BlockWALServiceTest {
 
-    @Test
-    public void testSingleThreadAppendBasic() throws IOException, OverCapacityException {
+    @ParameterizedTest(name = "Test {index}: mergeWrite={0}")
+    @ValueSource(booleans = {false, true})
+    public void testSingleThreadAppendBasic(boolean mergeWrite) throws IOException, OverCapacityException {
         final int recordSize = 4096 + 1;
-        final int recordCount = 10;
+        final int recordCount = 100;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount + WAL_HEADER_TOTAL_CAPACITY;
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
                 .slidingWindowInitialSize(0)
-                .slidingWindowScaleUnit(4096)
-                .build()
-                .start();
+                .slidingWindowScaleUnit(4096);
+        if (!mergeWrite) {
+            builder.blockSoftLimit(0);
+        }
+        final WriteAheadLog wal = builder.build().start();
+
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
@@ -75,14 +82,19 @@ class BlockWALServiceTest {
 
                 final AppendResult appendResult = wal.append(data.retainedDuplicate());
 
-                final long expectedOffset = i * WALUtil.alignLargeByBlockSize(recordSize);
-                assertEquals(expectedOffset, appendResult.recordOffset());
-                assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
+                if (!mergeWrite) {
+                    assertEquals(i * WALUtil.alignLargeByBlockSize(recordSize), appendResult.recordOffset());
+                    assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
+                }
                 appendResult.future().whenComplete((callbackResult, throwable) -> {
                     assertNull(throwable);
                     maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
-                    maxRecordOffset.accumulateAndGet(expectedOffset, Math::max);
-                    assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                    maxRecordOffset.accumulateAndGet(appendResult.recordOffset(), Math::max);
+                    if (!mergeWrite) {
+                        assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                    } else {
+                        assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
+                    }
                 }).whenComplete((callbackResult, throwable) -> {
                     if (null != throwable) {
                         throwable.printStackTrace();
@@ -97,17 +109,26 @@ class BlockWALServiceTest {
         }
     }
 
-    @Test
-    public void testSingleThreadAppendWhenOverCapacity() throws IOException, InterruptedException {
+    @ParameterizedTest(name = "Test {index}: mergeWrite={0}")
+    @ValueSource(booleans = {false, true})
+    public void testSingleThreadAppendWhenOverCapacity(boolean mergeWrite) throws IOException {
         final int recordSize = 4096 + 1;
-        final int recordCount = 10;
-        final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount / 3 + WAL_HEADER_TOTAL_CAPACITY;
+        final int recordCount = 100;
+        long blockDeviceCapacity;
+        if (!mergeWrite) {
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount / 3 + WAL_HEADER_TOTAL_CAPACITY;
+        } else {
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize * recordCount / 3) + WAL_HEADER_TOTAL_CAPACITY;
+        }
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
                 .slidingWindowInitialSize(0)
-                .slidingWindowScaleUnit(4096)
-                .build()
-                .start();
+                .slidingWindowScaleUnit(4096);
+        if (!mergeWrite) {
+            builder.blockSoftLimit(0);
+        }
+        final WriteAheadLog wal = builder.build().start();
+
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
@@ -128,12 +149,18 @@ class BlockWALServiceTest {
                 }
 
                 final long recordOffset = appendResult.recordOffset();
-                assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
+                if (!mergeWrite) {
+                    assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
+                }
                 appendResult.future().whenComplete((callbackResult, throwable) -> {
                     assertNull(throwable);
                     maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
                     maxRecordOffset.accumulateAndGet(recordOffset, Math::max);
-                    assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                    if (!mergeWrite) {
+                        assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                    } else {
+                        assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
+                    }
 
                     flushedOffset.update(callbackResult.flushedOffset());
                 }).whenComplete((callbackResult, throwable) -> {
@@ -150,16 +177,20 @@ class BlockWALServiceTest {
         }
     }
 
-    @Test
-    public void testMultiThreadAppend() throws InterruptedException, IOException {
+    @ParameterizedTest(name = "Test {index}: mergeWrite={0}")
+    @ValueSource(booleans = {false, true})
+    public void testMultiThreadAppend(boolean mergeWrite) throws InterruptedException, IOException {
         final int recordSize = 4096 + 1;
         final int recordCount = 10;
         final int threadCount = 8;
         final long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount * threadCount + WAL_HEADER_TOTAL_CAPACITY;
 
-        final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity)
-                .build()
-                .start();
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(TestUtils.tempFilePath(), blockDeviceCapacity);
+        if (!mergeWrite) {
+            builder.blockSoftLimit(0);
+        }
+        final WriteAheadLog wal = builder.build().start();
+
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
@@ -173,10 +204,16 @@ class BlockWALServiceTest {
 
                         appendResult.future().whenComplete((callbackResult, throwable) -> {
                             assertNull(throwable);
-                            assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
+                            if (!mergeWrite) {
+                                assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
+                            }
                             maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
                             maxRecordOffset.accumulateAndGet(appendResult.recordOffset(), Math::max);
-                            assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                            if (!mergeWrite) {
+                                assertEquals(0, callbackResult.flushedOffset() % WALUtil.alignLargeByBlockSize(recordSize));
+                            } else {
+                                assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
+                            }
                         }).whenComplete((callbackResult, throwable) -> {
                             if (null != throwable) {
                                 throwable.printStackTrace();
@@ -286,6 +323,89 @@ class BlockWALServiceTest {
         } finally {
             wal.shutdownGracefully();
         }
+    }
+
+    @ParameterizedTest(name = "Test {index}: shutdown={0}, overCapacity={1}")
+    @CsvSource({
+        "true, false",
+        "true, true",
+        "false, false",
+        "false, true",
+    })
+    public void testRecoverAfterMergeWrite(boolean shutdown, boolean overCapacity) throws IOException {
+        final int recordSize = 1024 + 1;
+        final int recordCount = 100;
+        long blockDeviceCapacity;
+        if (overCapacity) {
+            blockDeviceCapacity = recordSize * recordCount + WAL_HEADER_TOTAL_CAPACITY;
+        } else {
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount + WAL_HEADER_TOTAL_CAPACITY;
+        }
+        final String tempFilePath = TestUtils.tempFilePath();
+
+        // Append records
+        final WriteAheadLog previousWAL = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
+                .flushHeaderIntervalSeconds(1 << 20)
+                .build()
+                .start();
+        List<Long> appended = appendAsync(previousWAL, recordSize, recordCount);
+        if (shutdown) {
+            previousWAL.shutdownGracefully();
+        }
+
+        // Recover records
+        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, blockDeviceCapacity)
+                .build()
+                .start();
+        try {
+            Iterator<RecoverResult> recover = wal.recover();
+            assertNotNull(recover);
+
+            List<Long> recovered = new ArrayList<>(recordCount);
+            while (recover.hasNext()) {
+                RecoverResult next = recover.next();
+                next.record().release();
+                recovered.add(next.recordOffset());
+            }
+            assertEquals(appended, recovered);
+            wal.reset().join();
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    private static List<Long> appendAsync(WriteAheadLog wal, int recordSize, int recordCount) {
+        List<Long> appended = new ArrayList<>(recordCount);
+        List<CompletableFuture<Void>> appendFutures = new LinkedList<>();
+        WriteBench.FlushedOffset flushedOffset = new WriteBench.FlushedOffset();
+        for (int i = 0; i < recordCount; i++) {
+            ByteBuf data = TestUtils.random(recordSize);
+            AppendResult appendResult;
+            try {
+                appendResult = wal.append(data.retainedDuplicate());
+            } catch (OverCapacityException e) {
+                long offset = flushedOffset.get();
+                wal.trim(offset).join();
+                appended = appended.stream()
+                        .filter(recordOffset -> recordOffset > offset)
+                        .collect(Collectors.toList());
+                i--;
+                continue;
+            }
+            appended.add(appendResult.recordOffset());
+            appendFutures.add(appendResult.future().whenComplete((callbackResult, throwable) -> {
+                assertNull(throwable);
+                assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
+                flushedOffset.update(callbackResult.flushedOffset());
+            }).whenComplete((callbackResult, throwable) -> {
+                if (null != throwable) {
+                    throwable.printStackTrace();
+                    System.exit(1);
+                }
+            }).thenApply(ignored -> null));
+        }
+        CompletableFuture.allOf(appendFutures.toArray(new CompletableFuture[0])).join();
+        return appended;
     }
 
     @Test
