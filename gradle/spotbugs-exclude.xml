@@ -228,6 +228,13 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     </Match>
 
     <Match>
+        <!-- Suppress warnings about class too big for KafkaConfig -->
+        <Source name="KafkaConfig.scala"/>
+        <Package name="kafka.server"/>
+        <Bug pattern="SKIPPED_CLASS_TOO_BIG"/>
+    </Match>
+
+    <Match>
         <!-- Keeping this class for compatibility. It's deprecated and will be removed in the next major release -->
         <Source name="MessageFormatter.scala"/>
         <Package name="kafka.common"/>
