@@ -20,6 +20,7 @@ package com.automq.stream.s3.compact;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -55,9 +56,10 @@ public class CompactionUtils {
         return objectStreamRanges;
     }
 
-    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3ObjectMetadata> objectMetadataList, S3Operator s3Operator) {
-        Map<Long, S3ObjectMetadata> objectMetadataMap = objectMetadataList.stream()
-                .collect(Collectors.toMap(S3ObjectMetadata::objectId, o -> o));
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
+                                                                          List<S3ObjectMetadata> objectMetadataList, S3Operator s3Operator) {
+        Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
+                .collect(Collectors.toMap(StreamMetadata::getStreamId, s -> s));
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
         for (S3ObjectMetadata objectMetadata : objectMetadataList) {
             DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, s3Operator);
@@ -69,12 +71,17 @@ public class CompactionUtils {
                     try {
                         List<StreamDataBlock> streamDataBlocks = f.getValue().join();
                         List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
-                        S3ObjectMetadata objectMetadata = objectMetadataMap.get(streamDataBlocks.get(0).getObjectId());
                         // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
                         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                            if (objectMetadata.intersect(streamDataBlock.getStreamId(), streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset())) {
-                                validStreamDataBlocks.add(streamDataBlock);
+                            if (!streamMetadataMap.containsKey(streamDataBlock.getStreamId())) {
+                                // non-exist stream
+                                continue;
                             }
+                            if (streamDataBlock.getEndOffset() <= streamMetadataMap.get(streamDataBlock.getStreamId()).getStartOffset()) {
+                                // trimmed stream data block
+                                continue;
+                            }
+                            validStreamDataBlocks.add(streamDataBlock);
                         }
                         return new AbstractMap.SimpleEntry<>(f.getKey(), validStreamDataBlocks);
                     } catch (Exception ex) {
