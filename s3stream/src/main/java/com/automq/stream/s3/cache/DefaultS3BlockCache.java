@@ -41,6 +41,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -50,6 +51,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3BlockCache.class);
     private final LRUCache<Long, ObjectReader> objectReaderLRU = new LRUCache<>();
     private final Map<ReadingTaskKey, CompletableFuture<?>> readaheadTasks = new ConcurrentHashMap<>();
+    private final Semaphore readaheadLimiter = new Semaphore(16);
     private final BlockCache cache;
     private final ExecutorService mainExecutor;
     private final ObjectManager objectManager;
@@ -243,12 +245,18 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 if (objects.isEmpty()) {
                     return;
                 }
+                if (!readaheadLimiter.tryAcquire()) {
+                    // if inflight readahead tasks exceed limit, skip this readahead.
+                    return;
+                }
+
                 CompletableFuture<ReadDataBlock> readaheadCf = readFromS3(streamId, NOOP_OFFSET,
                         new ReadContext(objects, readahead.getStartOffset(), readahead.getSize()));
                 ReadingTaskKey readingTaskKey = new ReadingTaskKey(streamId, readahead.getStartOffset());
                 readaheadTasks.put(readingTaskKey, readaheadCf);
                 readaheadCf
                         .whenComplete((rst, ex) -> {
+                            readaheadLimiter.release();
                             if (ex != null) {
                                 LOGGER.error("background readahead {} fail", readahead, ex);
                             } else {
