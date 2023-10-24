@@ -17,9 +17,11 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.wal.util.WALUtil;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -36,19 +38,21 @@ public class BlockImpl implements Block {
     private final long startOffset;
     /**
      * The max size of this block.
-     * Any try to add a record to this block will fail and throw {@link BlockFullException} if the size of this block
-     * exceeds this limit.
+     * Any try to add a record to this block will fail if the size of this block exceeds this limit.
      */
     private final long maxSize;
-
+    private final CompositeByteBuf data = DirectByteBufAlloc.compositeByteBuffer();
+    private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
     /**
      * The next offset to write in this block.
      * Align to {@link WALUtil#BLOCK_SIZE}
      */
     private long nextOffset = 0;
-    private ByteBuffer data = ByteBuffer.allocate(0);
-    private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
 
+    /**
+     * Create a block.
+     * {@link #release()} must be called when this block is no longer used.
+     */
     public BlockImpl(long startOffset, long maxSize) {
         this.startOffset = startOffset;
         this.maxSize = maxSize;
@@ -63,7 +67,7 @@ public class BlockImpl implements Block {
      * Note: this method is NOT thread safe.
      */
     @Override
-    public long addRecord(long recordSize, Function<Long, ByteBuffer> recordSupplier, CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
+    public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier, CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
         // TODO no need to align to block size
         long requiredSize = WALUtil.alignLargeByBlockSize(recordSize);
         long requiredCapacity = nextOffset + requiredSize;
@@ -76,21 +80,17 @@ public class BlockImpl implements Block {
             return -1;
         }
 
-        // scale up the buffer
-        // TODO use composite buffer
-        if (requiredCapacity > data.capacity()) {
-            int newCapacity = Math.max(data.capacity() * 2, (int) requiredCapacity);
-            ByteBuffer newData = ByteBuffer.allocate(newCapacity);
-            data.flip();
-            newData.put(data);
-            data = newData;
+        long recordOffset = startOffset + nextOffset;
+        ByteBuf record = recordSupplier.apply(recordOffset);
+        // padding record to required size
+        // TODO no need to align to block size
+        if (record.readableBytes() < requiredSize) {
+            ByteBuf padding = DirectByteBufAlloc.byteBuffer((int) (requiredSize - record.readableBytes()));
+            padding.writeZero(padding.capacity());
+            record = DirectByteBufAlloc.compositeByteBuffer().addComponents(true, record, padding);
         }
-
-        long offsetInBlock = nextOffset;
-        long recordOffset = startOffset + offsetInBlock;
+        data.addComponent(true, record);
         nextOffset += requiredSize;
-        data.position((int) offsetInBlock);
-        data.put(recordSupplier.apply(recordOffset));
         futures.add(future);
 
         return recordOffset;
@@ -102,7 +102,7 @@ public class BlockImpl implements Block {
     }
 
     @Override
-    public ByteBuffer data() {
-        return data.duplicate().flip();
+    public ByteBuf data() {
+        return data;
     }
 }

@@ -32,6 +32,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -40,7 +41,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
-import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -178,11 +178,11 @@ public class S3StorageTest {
     @Test
     public void testRecoverContinuousRecords() {
         List<WriteAheadLog.RecoverResult> recoverResults = List.of(
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L)).nioBuffer()),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L)).nioBuffer()),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L)).nioBuffer()),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L)).nioBuffer()),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)).nioBuffer())
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L))),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L))),
+                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)))
         );
 
         List<StreamMetadata> openingStreams = List.of(new StreamMetadata(233L, 0L, 0L, 11L, StreamState.OPENED));
@@ -212,14 +212,14 @@ public class S3StorageTest {
     }
 
     static class TestRecoverResult implements WriteAheadLog.RecoverResult {
-        private final ByteBuffer record;
+        private final ByteBuf record;
 
-        public TestRecoverResult(ByteBuffer record) {
+        public TestRecoverResult(ByteBuf record) {
             this.record = record;
         }
 
         @Override
-        public ByteBuffer record() {
+        public ByteBuf record() {
             return record;
         }
 

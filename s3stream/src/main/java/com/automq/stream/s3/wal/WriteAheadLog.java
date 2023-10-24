@@ -21,7 +21,6 @@ package com.automq.stream.s3.wal;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
@@ -34,6 +33,7 @@ public interface WriteAheadLog {
     /**
      * Append data to log, note append may be out of order.
      * ex. when sequence append R1 R2 , R2 maybe complete before R1.
+     * {@link ByteBuf#release()} will be called whatever append success or not.
      *
      * @return The data position will be written.
      */
@@ -74,7 +74,7 @@ public interface WriteAheadLog {
     }
 
     interface RecoverResult {
-        ByteBuffer record();
+        ByteBuf record();
 
         /**
          * @see AppendResult#recordOffset()
