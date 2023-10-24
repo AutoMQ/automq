@@ -23,6 +23,8 @@ import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.memory.MemoryMetadataManager;
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
@@ -40,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.when;
 
 public class CompactionTestBase {
     protected static final int BROKER_0 = 0;
@@ -57,10 +60,17 @@ public class CompactionTestBase {
     protected static final int MAX_STREAM_NUM_IN_WAL = 100;
     protected static final int MAX_STREAM_OBJECT_NUM = 100;
     protected static final List<S3ObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
+    protected MemoryMetadataManager streamManager;
     protected MemoryMetadataManager objectManager;
     protected S3Operator s3Operator;
 
     public void setUp() throws Exception {
+        streamManager = Mockito.mock(MemoryMetadataManager.class);
+        when(streamManager.getStreams(Mockito.anyList())).thenReturn(CompletableFuture.completedFuture(
+                List.of(new StreamMetadata(STREAM_0, 0, 0, 20, StreamState.OPENED),
+                        new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
+                        new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
+
         objectManager = Mockito.spy(MemoryMetadataManager.class);
         s3Operator = new MemoryS3Operator();
         // stream data for object 0
@@ -111,11 +121,8 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_2, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, s3Operator, 1024, 1024);
-            // redundant record
-            StreamRecordBatch r7 = new StreamRecordBatch(STREAM_1, 0, 260, 20, TestUtils.random(20));
             StreamRecordBatch r8 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(100));
             StreamRecordBatch r9 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(40));
-            objectWriter.write(STREAM_1, List.of(r7));
             objectWriter.write(STREAM_1, List.of(r8));
             objectWriter.write(STREAM_2, List.of(r9));
             objectWriter.close().join();
@@ -126,7 +133,7 @@ public class CompactionTestBase {
             S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_2);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
-            List.of(r7, r8, r9).forEach(StreamRecordBatch::release);
+            List.of(r8, r9).forEach(StreamRecordBatch::release);
         }).join();
         doReturn(CompletableFuture.completedFuture(S3_WAL_OBJECT_METADATA_LIST)).when(objectManager).getServerObjects();
     }
