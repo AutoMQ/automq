@@ -40,7 +40,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     static final int BLOCK_SIZE = 1024 * 1024;
-    static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
+    static final int MAX_READAHEAD_SIZE = 16 * 1024 * 1024;
     private final long maxSize;
     final Map<Long, StreamCache> stream2cache = new HashMap<>();
     private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
@@ -212,6 +212,7 @@ public class BlockCache {
         if (maxSize - this.size.get() >= size) {
             return;
         }
+        boolean evictFromActive = false;
         for (LRUCache<CacheKey, Integer> lru : List.of(inactive, active)) {
             for (; ; ) {
                 Map.Entry<CacheKey, Integer> entry = lru.pop();
@@ -227,12 +228,16 @@ public class BlockCache {
                 if (cacheBlock == null) {
                     LOGGER.error("[BUG] Cannot find stream cache block: {} {}", entry.getKey().streamId, entry.getKey().startOffset);
                 } else {
+                    if (evictFromActive) {
+                        streamCache.evict = true;
+                    }
                     cacheBlock.free();
                     if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
                         return;
                     }
                 }
             }
+            evictFromActive = true;
         }
     }
 
