@@ -616,13 +616,7 @@ public class BlockWALService implements WriteAheadLog {
 
         // Update the trim offset if the given trim offset is larger than the current one.
         public WALHeaderCoreData updateTrimOffset(long trimOffset) {
-            long currentTrimOffset;
-            do {
-                currentTrimOffset = trimOffset2.get();
-                if (trimOffset <= currentTrimOffset) {
-                    return this;
-                }
-            } while (!trimOffset2.compareAndSet(currentTrimOffset, trimOffset));
+            trimOffset2.accumulateAndGet(trimOffset, Math::max);
             return this;
         }
 

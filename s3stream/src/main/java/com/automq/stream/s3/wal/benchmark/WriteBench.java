@@ -251,12 +251,12 @@ public class WriteBench implements AutoCloseable {
         }
     }
 
-    static class FlushedOffset {
+    public static class FlushedOffset {
         private final Lock lock = new ReentrantLock();
         // Offset before which all data has been flushed to disk
         private long flushedOffset = 0;
         // Offset at which all data has been flushed to disk
-        private long committedOffset = 0;
+        private long committedOffset = -1;
 
         public void update(long offset) {
             lock.lock();
@@ -270,6 +270,9 @@ public class WriteBench implements AutoCloseable {
             }
         }
 
+        /**
+         * @return the offset at which all data has been flushed to disk, or -1 if no data has been flushed to disk
+         */
         public long get() {
             lock.lock();
             try {
