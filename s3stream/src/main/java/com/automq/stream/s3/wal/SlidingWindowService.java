@@ -56,6 +56,7 @@ public class SlidingWindowService {
     private final int ioThreadNums;
     private final long upperLimit;
     private final long scaleUnit;
+    private final long blockSoftLimit;
     private final WALChannel walChannel;
     private final WALHeaderFlusher walHeaderFlusher;
     private final WindowCoreData windowCoreData = new WindowCoreData();
@@ -79,11 +80,12 @@ public class SlidingWindowService {
      */
     private Block currentBlock;
 
-    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, WALHeaderFlusher flusher) {
+    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, long blockSoftLimit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
         this.ioThreadNums = ioThreadNums;
         this.upperLimit = upperLimit;
         this.scaleUnit = scaleUnit;
+        this.blockSoftLimit = blockSoftLimit;
         this.walHeaderFlusher = flusher;
     }
 
@@ -174,7 +176,7 @@ public class SlidingWindowService {
         // The size of the block should not be larger than the end of the physical device
         maxSize = Math.min(recordSectionCapacity - startOffset % recordSectionCapacity, maxSize);
 
-        Block newBlock = new BlockImpl(startOffset, maxSize);
+        Block newBlock = new BlockImpl(startOffset, maxSize, blockSoftLimit);
         if (!previousBlock.isEmpty()) {
             // There are some records to be written in the previous block
             pendingBlocks.add(previousBlock);
@@ -220,7 +222,7 @@ public class SlidingWindowService {
     private Block nextBlock(long startOffset) {
         // Trick: we cannot determine the maximum length of the block here, so we set it to 0 first.
         // When we try to write a record, this block will be found full, and then a new block will be created.
-        return new BlockImpl(startOffset, 0);
+        return new BlockImpl(startOffset, 0, 0);
     }
 
     /**

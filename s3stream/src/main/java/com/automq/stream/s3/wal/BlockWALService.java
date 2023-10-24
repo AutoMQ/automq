@@ -198,11 +198,11 @@ public class BlockWALService implements WriteAheadLog {
      * The returned record should be released by the caller.
      * @throws ReadRecordException if the record is not found or the record is corrupted
      */
-    private ByteBuf readRecord(WALHeaderCoreData paramWALHeader, long recoverStartOffset) throws ReadRecordException {
+    private ByteBuf readRecord(long recordSectionCapacity, long recoverStartOffset) throws ReadRecordException {
         final ByteBuf recordHeader = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         SlidingWindowService.RecordHeaderCoreData readRecordHeader;
         try {
-            readRecordHeader = parseRecordHeader(paramWALHeader, recoverStartOffset, recordHeader);
+            readRecordHeader = parseRecordHeader(recordSectionCapacity, recoverStartOffset, recordHeader);
         } finally {
             recordHeader.release();
         }
@@ -210,7 +210,7 @@ public class BlockWALService implements WriteAheadLog {
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
         ByteBuf recordBody = DirectByteBufAlloc.byteBuffer(recordBodyLength);
         try {
-            parseRecordBody(paramWALHeader, recoverStartOffset, readRecordHeader, recordBody);
+            parseRecordBody(recordSectionCapacity, recoverStartOffset, readRecordHeader, recordBody);
         } catch (ReadRecordException e) {
             recordBody.release();
             throw e;
@@ -219,8 +219,8 @@ public class BlockWALService implements WriteAheadLog {
         return recordBody;
     }
 
-    private SlidingWindowService.RecordHeaderCoreData parseRecordHeader(WALHeaderCoreData paramWALHeader, long recoverStartOffset, ByteBuf recordHeader) throws ReadRecordException {
-        final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY);
+    private SlidingWindowService.RecordHeaderCoreData parseRecordHeader(long recordSectionCapacity, long recoverStartOffset, ByteBuf recordHeader) throws ReadRecordException {
+        final long position = WALUtil.recordOffsetToPosition(recoverStartOffset, recordSectionCapacity, WAL_HEADER_TOTAL_CAPACITY);
         try {
             int read = walChannel.read(recordHeader, position);
             if (read != RECORD_HEADER_SIZE) {
@@ -272,11 +272,11 @@ public class BlockWALService implements WriteAheadLog {
         return readRecordHeader;
     }
 
-    private void parseRecordBody(WALHeaderCoreData paramWALHeader, long recoverStartOffset, SlidingWindowService.RecordHeaderCoreData readRecordHeader, ByteBuf recordBody) throws ReadRecordException {
+    private void parseRecordBody(long recordSectionCapacity, long recoverStartOffset, SlidingWindowService.RecordHeaderCoreData readRecordHeader, ByteBuf recordBody) throws ReadRecordException {
         long recordBodyOffset = readRecordHeader.getRecordBodyOffset();
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
         try {
-            int read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, paramWALHeader.recordSectionCapacity(), WAL_HEADER_TOTAL_CAPACITY));
+            int read = walChannel.read(recordBody, WALUtil.recordOffsetToPosition(recordBodyOffset, recordSectionCapacity, WAL_HEADER_TOTAL_CAPACITY));
             if (read != recordBodyLength) {
                 throw new ReadRecordException(
                         WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
@@ -314,15 +314,15 @@ public class BlockWALService implements WriteAheadLog {
         // ungraceful shutdown, need to correct the header
         long recoverStartOffset = WALUtil.alignLargeByBlockSize(paramWALHeader.getSlidingWindowStartOffset());
         long recoverRemainingBytes = paramWALHeader.recordSectionCapacity();
+        final long recordSectionCapacity = paramWALHeader.recordSectionCapacity();
 
+        long nextRecoverStartOffset;
         long meetIllegalRecordTimes = 0;
         LOGGER.info("start to recover from ungraceful shutdown, recoverStartOffset: {}, recoverRemainingBytes: {}", recoverStartOffset, recoverRemainingBytes);
         do {
-            long nextRecoverStartOffset;
-
             try {
-                ByteBuf body = readRecord(paramWALHeader, recoverStartOffset);
-                nextRecoverStartOffset = WALUtil.alignLargeByBlockSize(recoverStartOffset + RECORD_HEADER_SIZE + body.readableBytes());
+                ByteBuf body = readRecord(recordSectionCapacity, recoverStartOffset);
+                nextRecoverStartOffset = recoverStartOffset + RECORD_HEADER_SIZE + body.readableBytes();
                 body.release();
             } catch (ReadRecordException e) {
                 nextRecoverStartOffset = e.getJumpNextRecoverOffset();
@@ -333,8 +333,9 @@ public class BlockWALService implements WriteAheadLog {
 
             recoverRemainingBytes -= nextRecoverStartOffset - recoverStartOffset;
             recoverStartOffset = nextRecoverStartOffset;
-            paramWALHeader.setSlidingWindowStartOffset(nextRecoverStartOffset).setSlidingWindowNextWriteOffset(nextRecoverStartOffset);
         } while (recoverRemainingBytes > 0);
+        long windowInitOffset = WALUtil.alignLargeByBlockSize(nextRecoverStartOffset);
+        paramWALHeader.setSlidingWindowStartOffset(windowInitOffset).setSlidingWindowNextWriteOffset(windowInitOffset);
 
         LOGGER.info("recovered from ungraceful shutdown, WALHeader: {}", paramWALHeader);
         return paramWALHeader;
@@ -705,6 +706,7 @@ public class BlockWALService implements WriteAheadLog {
         private long slidingWindowInitialSize = 1 << 20;
         private long slidingWindowUpperLimit = 512 << 20;
         private long slidingWindowScaleUnit = 4 << 20;
+        private long blockSoftLimit = 1 << 17; // 128KiB
 
         BlockWALServiceBuilder(String blockDevicePath, long capacity) {
             this.blockDevicePath = blockDevicePath;
@@ -717,7 +719,8 @@ public class BlockWALService implements WriteAheadLog {
                     .ioThreadNums(config.s3WALThread())
                     .slidingWindowInitialSize(config.s3WALWindowInitial())
                     .slidingWindowScaleUnit(config.s3WALWindowIncrement())
-                    .slidingWindowUpperLimit(config.s3WALWindowMax());
+                    .slidingWindowUpperLimit(config.s3WALWindowMax())
+                    .blockSoftLimit(config.s3WALBlockSoftLimit());
         }
 
         public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {
@@ -745,6 +748,11 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
+        public BlockWALServiceBuilder blockSoftLimit(long blockSoftLimit) {
+            this.blockSoftLimit = blockSoftLimit;
+            return this;
+        }
+
         public BlockWALService build() {
             BlockWALService blockWALService = new BlockWALService();
 
@@ -765,6 +773,7 @@ public class BlockWALService implements WriteAheadLog {
                     ioThreadNums,
                     slidingWindowUpperLimit,
                     slidingWindowScaleUnit,
+                    blockSoftLimit,
                     blockWALService.flusher()
             );
 
@@ -783,6 +792,7 @@ public class BlockWALService implements WriteAheadLog {
                     + ", slidingWindowInitialSize=" + slidingWindowInitialSize
                     + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
                     + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
+                    + ", blockSoftLimit=" + blockSoftLimit
                     + '}';
         }
     }
@@ -867,9 +877,9 @@ public class BlockWALService implements WriteAheadLog {
             do {
                 try {
                     boolean skip = nextRecoverOffset == skipRecordAtOffset;
-                    ByteBuf nextRecordBody = readRecord(walHeaderCoreData, nextRecoverOffset);
+                    ByteBuf nextRecordBody = readRecord(walHeaderCoreData.recordSectionCapacity(), nextRecoverOffset);
                     RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
-                    nextRecoverOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset + RECORD_HEADER_SIZE + nextRecordBody.readableBytes());
+                    nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
                     if (skip) {
                         continue;
                     }
