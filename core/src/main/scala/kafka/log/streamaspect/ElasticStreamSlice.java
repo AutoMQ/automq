@@ -21,9 +21,7 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
 
-import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 /**

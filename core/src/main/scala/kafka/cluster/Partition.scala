@@ -1557,18 +1557,18 @@ class Partition(val topicPartition: TopicPartition,
       val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
       val error = Errors.forCode(epochEndOffset.errorCode)
       if (error != Errors.NONE) {
-        throw error.exception()
+        return CompletableFuture.failedFuture(error.exception())
       }
 
       if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
-        throw new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
-          s"$lastFetchedEpoch from the request")
+        return CompletableFuture.failedFuture(new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
+          s"$lastFetchedEpoch from the request"))
       }
 
       // If fetch offset is less than log start, fail with OffsetOutOfRangeException, regardless of whether epochs are diverging
       if (fetchOffset < initialLogStartOffset) {
-        throw new OffsetOutOfRangeException(s"Received request for offset $fetchOffset for partition $topicPartition, " +
-          s"but we only have log segments in the range $initialLogStartOffset to $initialLogEndOffset.")
+        return CompletableFuture.failedFuture(throw new OffsetOutOfRangeException(s"Received request for offset $fetchOffset for partition $topicPartition, " +
+          s"but we only have log segments in the range $initialLogStartOffset to $initialLogEndOffset."))
       }
 
       if (epochEndOffset.leaderEpoch < fetchEpoch || epochEndOffset.endOffset < fetchOffset) {

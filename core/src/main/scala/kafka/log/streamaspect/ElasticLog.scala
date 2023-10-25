@@ -290,7 +290,8 @@ class ElasticLog(val metaStream: MetaStream,
       trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
         s"total length ${segments.sizeInBytes} bytes")
 
-      val endOffsetMetadata = nextOffsetMetadata
+      // get LEO from super class
+      val endOffsetMetadata = logEndOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset
       val segmentOpt = segments.floorSegment(startOffset)
 
