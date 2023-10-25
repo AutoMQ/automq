@@ -1379,6 +1379,68 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
+  /**
+   * Asynchronously fetch records from the partition.
+   */
+  def fetchRecordsAsync(
+                         fetchParams: FetchParams,
+                         fetchPartitionData: FetchRequest.PartitionData,
+                         fetchTimeMs: Long,
+                         maxBytes: Int,
+                         minOneMessage: Boolean,
+                         updateFetchState: Boolean): CompletableFuture[LogReadInfo] = {
+    def readFromLocalLog(log: UnifiedLog): CompletableFuture[LogReadInfo] = {
+      readRecordsAsync(
+        log,
+        fetchPartitionData.lastFetchedEpoch,
+        fetchPartitionData.fetchOffset,
+        fetchPartitionData.currentLeaderEpoch,
+        maxBytes,
+        fetchParams.isolation,
+        minOneMessage
+      )
+    }
+
+    if (fetchParams.isFromFollower) {
+      // Check that the request is from a valid replica before doing the read
+      val (replica, logReadInfo) = inReadLock(leaderIsrUpdateLock) {
+        val localLog = localLogWithEpochOrThrow(
+          fetchPartitionData.currentLeaderEpoch,
+          fetchParams.fetchOnlyLeader
+        )
+        val replica = followerReplicaOrThrow(
+          fetchParams.replicaId,
+          fetchPartitionData
+        )
+        val logReadInfo = readFromLocalLog(localLog)
+        (replica, logReadInfo)
+      }
+
+      logReadInfo.thenAccept(rst => {
+        // Update fetch state before returning response
+        if (updateFetchState && rst.divergingEpoch.isEmpty) {
+          updateFollowerFetchState(
+            replica,
+            followerFetchOffsetMetadata = rst.fetchedData.fetchOffsetMetadata,
+            followerStartOffset = fetchPartitionData.logStartOffset,
+            followerFetchTimeMs = fetchTimeMs,
+            leaderEndOffset = rst.logEndOffset
+          )
+        }
+      })
+
+      logReadInfo
+    } else {
+      inReadLock(leaderIsrUpdateLock) {
+        val localLog = localLogWithEpochOrThrow(
+          fetchPartitionData.currentLeaderEpoch,
+          fetchParams.fetchOnlyLeader
+        )
+        readFromLocalLog(localLog)
+      }
+    }
+  }
+
   private def followerReplicaOrThrow(
     replicaId: Int,
     fetchPartitionData: FetchRequest.PartitionData
@@ -1473,6 +1535,71 @@ class Partition(val topicPartition: TopicPartition,
       logStartOffset = initialLogStartOffset,
       logEndOffset = initialLogEndOffset,
       lastStableOffset = initialLastStableOffset
+    )
+  }
+
+  private def readRecordsAsync(
+                                localLog: UnifiedLog,
+                                lastFetchedEpoch: Optional[Integer],
+                                fetchOffset: Long,
+                                currentLeaderEpoch: Optional[Integer],
+                                maxBytes: Int,
+                                fetchIsolation: FetchIsolation,
+                                minOneMessage: Boolean): CompletableFuture[LogReadInfo] = {
+    // Note we use the log end offset prior to the read. This ensures that any appends following
+    // the fetch do not prevent a follower from coming into sync.
+    val initialHighWatermark = localLog.highWatermark
+    val initialLogStartOffset = localLog.logStartOffset
+    val initialLogEndOffset = localLog.logEndOffset
+    val initialLastStableOffset = localLog.lastStableOffset
+
+    lastFetchedEpoch.ifPresent { fetchEpoch =>
+      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
+      val error = Errors.forCode(epochEndOffset.errorCode)
+      if (error != Errors.NONE) {
+        throw error.exception()
+      }
+
+      if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
+        throw new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
+          s"$lastFetchedEpoch from the request")
+      }
+
+      // If fetch offset is less than log start, fail with OffsetOutOfRangeException, regardless of whether epochs are diverging
+      if (fetchOffset < initialLogStartOffset) {
+        throw new OffsetOutOfRangeException(s"Received request for offset $fetchOffset for partition $topicPartition, " +
+          s"but we only have log segments in the range $initialLogStartOffset to $initialLogEndOffset.")
+      }
+
+      if (epochEndOffset.leaderEpoch < fetchEpoch || epochEndOffset.endOffset < fetchOffset) {
+        val divergingEpoch = new FetchResponseData.EpochEndOffset()
+          .setEpoch(epochEndOffset.leaderEpoch)
+          .setEndOffset(epochEndOffset.endOffset)
+
+        return CompletableFuture.completedFuture(LogReadInfo(
+          fetchedData = FetchDataInfo.empty(fetchOffset),
+          divergingEpoch = Some(divergingEpoch),
+          highWatermark = initialHighWatermark,
+          logStartOffset = initialLogStartOffset,
+          logEndOffset = initialLogEndOffset,
+          lastStableOffset = initialLastStableOffset))
+      }
+    }
+
+    localLog.readAsync(
+      fetchOffset,
+      maxBytes,
+      fetchIsolation,
+      minOneMessage
+    ).thenApply(fetchedData =>
+      LogReadInfo(
+        fetchedData = fetchedData,
+        divergingEpoch = None,
+        highWatermark = initialHighWatermark,
+        logStartOffset = initialLogStartOffset,
+        logEndOffset = initialLogEndOffset,
+        lastStableOffset = initialLastStableOffset
+      )
     )
   }
 

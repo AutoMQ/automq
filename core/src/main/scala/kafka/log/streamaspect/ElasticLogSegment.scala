@@ -149,30 +149,38 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     throw new UnsupportedOperationException()
   }
 
+  @threadsafe
+  override def read(startOffset: Long, maxSize: Int, maxPosition: Long, maxOffset: Long, minOneMessage: Boolean): FetchDataInfo = {
+    readAsync(startOffset, maxSize, maxPosition, maxOffset, minOneMessage).get()
+  }
+
   // Compared with LogSegment, null is impossible to be returned anymore.
   @threadsafe
-  override def read(startOffset: Long,
+  override def readAsync(startOffset: Long,
                     maxSize: Int,
                     maxPosition: Long = size,
                     maxOffset: Long = Long.MaxValue,
-                    minOneMessage: Boolean = false): FetchDataInfo = {
+                         minOneMessage: Boolean = false): CompletableFuture[FetchDataInfo] = {
     if (maxSize < 0)
-      throw new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log")
+      return CompletableFuture.failedFuture(new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log"))
     // Note that relativePositionInSegment here is a fake value. There are no 'position' in elastic streams.
     val offsetMetadata = LogOffsetMetadata(startOffset, this.baseOffset, (startOffset - this.baseOffset).toInt)
     if (maxSize == 0) {
-      return FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY, firstEntryIncomplete = true)
+      return CompletableFuture.completedFuture(FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY, firstEntryIncomplete = true))
     }
     // Note that 'maxPosition' and 'minOneMessage' are not used here. 'maxOffset' is a better alternative to 'maxPosition'.
     // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
-    val records = _log.read(startOffset, maxOffset, maxSize)
-    if (records == null) {
-      // After topic compact, the read request might be out of range. Segment should return null and log will retry read next segment.
-      return null
-    }
-    // We keep 'firstEntryIncomplete' false here since real size of records may exceed 'maxSize'. It is some kind of
-    // hack but we don't want to return 'firstEntryIncomplete' as true in that case.
-    FetchDataInfo(offsetMetadata, records)
+    _log.read(startOffset, maxOffset, maxSize)
+      .thenApply(records => {
+        if (records == null) {
+          // After topic compact, the read request might be out of range. Segment should return null and log will retry read next segment.
+          null
+        } else {
+          // We keep 'firstEntryIncomplete' false here since real size of records may exceed 'maxSize'. It is some kind of
+          // hack but we don't want to return 'firstEntryIncomplete' as true in that case.
+          FetchDataInfo(offsetMetadata, records)
+        }
+      })
   }
 
   def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long] = {

@@ -19,8 +19,9 @@ package kafka.log.streamaspect
 
 import kafka.log._
 import kafka.server.epoch.LeaderEpochFileCache
-import kafka.server.{BrokerTopicStats, LogOffsetMetadata}
+import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata}
 import kafka.utils.Logging
+import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -52,6 +53,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     deleteProducerSnapshots(deletedSegments, asyncDelete = true)
   }
 
+  // We only add the partition's path into failureLogDirs instead of the whole logDir.
   override protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, msg) {
       fun
@@ -80,6 +82,34 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   private[log] def removeAndDeleteSegments(segmentsToDelete: Iterable[LogSegment],
                                            asyncDelete: Boolean): Unit = {
     elasticLog.removeAndDeleteSegments(segmentsToDelete, asyncDelete, LogDeletion(elasticLog))
+  }
+
+
+  /**
+   * Asynchronously read messages from the log.
+   *
+   * @param startOffset   The offset to begin reading at
+   * @param maxLength     The maximum number of bytes to read
+   * @param isolation     The fetch isolation, which controls the maximum offset we are allowed to read
+   * @param minOneMessage If this is true, the first message will be returned even if it exceeds `maxLength` (if one exists)
+   * @return The fetch data information including fetch starting offset metadata and messages read.
+   */
+  override def readAsync(startOffset: Long,
+                         maxLength: Int,
+                         isolation: FetchIsolation,
+                         minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
+    try {
+      checkLogStartOffset(startOffset)
+    } catch {
+      case e: OffsetOutOfRangeException =>
+        return CompletableFuture.failedFuture(e);
+    }
+    val maxOffsetMetadata = isolation match {
+      case FetchLogEnd => elasticLog.logEndOffsetMetadata
+      case FetchHighWatermark => fetchHighWatermarkMetadata
+      case FetchTxnCommitted => fetchLastStableOffsetMetadata
+    }
+    elasticLog.readAsync(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchTxnCommitted)
   }
 
   override def close(): CompletableFuture[Void] = {

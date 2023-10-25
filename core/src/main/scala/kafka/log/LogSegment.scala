@@ -21,7 +21,7 @@ import com.yammer.metrics.core.Timer
 import java.io.{File, IOException}
 import java.nio.file.{Files, NoSuchFileException, Path}
 import java.nio.file.attribute.FileTime
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{CompletableFuture, TimeUnit}
 import kafka.common.LogSegmentOffsetOverflowException
 import kafka.log.streamaspect.ElasticLogManager
 import kafka.metrics.KafkaMetricsGroup
@@ -73,6 +73,13 @@ trait LogSegment extends Logging {
            maxPosition: Long = size,
            maxOffset: Long = Long.MaxValue,
            minOneMessage: Boolean = false): FetchDataInfo
+
+  @threadsafe
+  def readAsync(startOffset: Long,
+                maxSize: Int,
+                maxPosition: Long = size,
+                maxOffset: Long = Long.MaxValue,
+                minOneMessage: Boolean = false): CompletableFuture[FetchDataInfo]
   def fetchUpperBoundOffset(startOffsetPosition: OffsetPosition, fetchSize: Int): Option[Long]
   @nonthreadsafe
   def recover(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int
@@ -340,6 +347,16 @@ class LogSegmentKafka private[log] (val log: FileRecords,
     val mapping = offsetIndex.lookup(offset)
     log.searchForOffsetWithSize(offset, max(mapping.position, startingFilePosition))
   }
+
+  // Kafka on S3 inject start
+  def readAsync(startOffset: Long,
+                maxSize: Int,
+                maxPosition: Long = size,
+                maxOffset: Long = Long.MaxValue,
+                minOneMessage: Boolean = false): CompletableFuture[FetchDataInfo] = {
+    CompletableFuture.completedFuture(read(startOffset, maxSize, maxPosition, maxOffset, minOneMessage))
+  }
+  // Kafka on S3 inject end
 
   /**
    * Read a message set from this segment beginning with the first offset >= startOffset. The message set will include

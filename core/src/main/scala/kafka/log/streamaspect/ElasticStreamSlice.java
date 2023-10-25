@@ -48,9 +48,9 @@ public interface ElasticStreamSlice {
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
      * @return {@link FetchResult}
      */
-    FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException, IOException;
+    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint);
 
-    default FetchResult fetch(long startOffset, long endOffset) throws SlowFetchHintException, IOException {
+    default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset) {
         return fetch(startOffset, endOffset, (int) (endOffset - startOffset));
     }
 
