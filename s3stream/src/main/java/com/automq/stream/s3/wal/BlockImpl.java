@@ -26,6 +26,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class BlockImpl implements Block {
 
@@ -41,13 +42,14 @@ public class BlockImpl implements Block {
      * unless the block is empty.
      */
     private final long softLimit;
-    private final CompositeByteBuf data = DirectByteBufAlloc.compositeByteBuffer();
     private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
+    private final List<Supplier<ByteBuf>> records = new LinkedList<>();
     /**
      * The next offset to write in this block.
      * Align to {@link WALUtil#BLOCK_SIZE}
      */
     private long nextOffset = 0;
+    private CompositeByteBuf data = null;
 
     /**
      * Create a block.
@@ -69,6 +71,7 @@ public class BlockImpl implements Block {
      */
     @Override
     public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier, CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
+        assert data == null;
         long requiredCapacity = nextOffset + recordSize;
         if (requiredCapacity > maxSize) {
             return -1;
@@ -79,8 +82,7 @@ public class BlockImpl implements Block {
         }
 
         long recordOffset = startOffset + nextOffset;
-        ByteBuf record = recordSupplier.apply(recordOffset);
-        data.addComponent(true, record);
+        records.add(() -> recordSupplier.apply(recordOffset));
         nextOffset += recordSize;
         futures.add(future);
 
@@ -94,6 +96,22 @@ public class BlockImpl implements Block {
 
     @Override
     public ByteBuf data() {
+        if (null != data) {
+            return data;
+        }
+        if (records.isEmpty()) {
+            return null;
+        }
+
+        data = DirectByteBufAlloc.compositeByteBuffer();
+        for (Supplier<ByteBuf> record : records) {
+            data.addComponent(true, record.get());
+        }
         return data;
+    }
+
+    @Override
+    public long size() {
+        return nextOffset;
     }
 }
