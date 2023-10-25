@@ -212,7 +212,7 @@ public class SlidingWindowService {
      * Get the start offset of the next block.
      */
     private long nextBlockStartOffset(Block block) {
-        return block.startOffset() + WALUtil.alignLargeByBlockSize(block.data().readableBytes());
+        return block.startOffset() + WALUtil.alignLargeByBlockSize(block.size());
     }
 
     /**
@@ -301,7 +301,7 @@ public class SlidingWindowService {
     }
 
     private boolean makeWriteOffsetMatchWindow(final Block block) throws IOException {
-        long newWindowEndOffset = block.startOffset() + block.data().readableBytes();
+        long newWindowEndOffset = block.startOffset() + block.size();
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getWindowStartOffset();

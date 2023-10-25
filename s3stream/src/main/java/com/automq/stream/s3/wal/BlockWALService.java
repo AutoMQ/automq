@@ -196,6 +196,7 @@ public class BlockWALService implements WriteAheadLog {
     /**
      * Try to read a record at the given offset.
      * The returned record should be released by the caller.
+     *
      * @throws ReadRecordException if the record is not found or the record is corrupted
      */
     private ByteBuf readRecord(long recordSectionCapacity, long recoverStartOffset) throws ReadRecordException {
@@ -440,7 +441,6 @@ public class BlockWALService implements WriteAheadLog {
         checkReadyToServe();
 
         final long recordSize = RECORD_HEADER_SIZE + body.readableBytes();
-        final int recordBodyCRC = 0 == crc ? WALUtil.crc32(body) : crc;
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
         long expectedWriteOffset;
 
@@ -448,11 +448,11 @@ public class BlockWALService implements WriteAheadLog {
         lock.lock();
         try {
             Block block = slidingWindowService.getCurrentBlockLocked();
-            expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, recordBodyCRC, offset), appendResultFuture);
+            expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, crc, offset), appendResultFuture);
             if (expectedWriteOffset < 0) {
                 // this block is full, create a new one
                 block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeaderCoreData.getFlushedTrimOffset(), walHeaderCoreData.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-                expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, recordBodyCRC, offset), appendResultFuture);
+                expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, crc, offset), appendResultFuture);
             }
         } finally {
             lock.unlock();
@@ -478,6 +478,7 @@ public class BlockWALService implements WriteAheadLog {
 
     private ByteBuf record(ByteBuf body, int crc, long start) {
         CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
         record.addComponents(true, recordHeader(body, crc, start), body);
         return record;
     }

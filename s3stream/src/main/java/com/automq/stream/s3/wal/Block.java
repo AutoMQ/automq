@@ -39,6 +39,7 @@ public interface Block {
 
     /**
      * Append a record to this block.
+     * Cannot be called after {@link #data()} is called.
      *
      * @param recordSize     The size of this record.
      * @param recordSupplier The supplier of this record which receives the start offset of this record as the parameter.
@@ -58,10 +59,20 @@ public interface Block {
 
     /**
      * The content of this block, which contains multiple records.
+     * The first call of this method will marshal all records in this block to a ByteBuf. It will be cached for later calls.
+     * It returns null if this block is empty.
      */
     ByteBuf data();
 
+    /**
+     * The size of this block.
+     */
+    long size();
+
     default void release() {
-        data().release();
+        ByteBuf data = data();
+        if (null != data) {
+            data.release();
+        }
     }
 }
