@@ -123,7 +123,6 @@ class ProxyWriter implements Writer {
         @Override
         public CompletableFuture<Void> close() {
             FutureUtil.propagate(operator.write(path, data, throttleStrategy), cf);
-            cf.whenComplete((nil, ex) -> data.release());
             return cf;
         }
 
