@@ -22,7 +22,7 @@ import com.yammer.metrics.core.MetricName
 import java.io.{File, IOException}
 import java.nio.file.{Files, Paths}
 import java.util.Optional
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, ExecutionException, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, TimeUnit}
 import kafka.common.{LongRef, OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.AppendOrigin.RaftLeader
 import kafka.log.streamaspect.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticUnifiedLog}
