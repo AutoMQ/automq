@@ -18,6 +18,7 @@
 package com.automq.stream.s3.cache;
 
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 import org.slf4j.Logger;
@@ -37,7 +38,7 @@ import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class BlockCache {
+public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     static final int BLOCK_SIZE = 1024 * 1024;
     static final int MAX_READAHEAD_SIZE = 16 * 1024 * 1024;
@@ -52,6 +53,7 @@ public class BlockCache {
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
+        DirectByteBufAlloc.registerOOMHandlers(this);
     }
 
     public void put(long streamId, List<StreamRecordBatch> records) {
@@ -63,7 +65,7 @@ public class BlockCache {
         }
     }
 
-    public void put0(long streamId, List<StreamRecordBatch> records) {
+    void put0(long streamId, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
             records.forEach(StreamRecordBatch::release);
             return;
@@ -209,9 +211,14 @@ public class BlockCache {
     }
 
     private void ensureCapacity(int size) {
-        if (maxSize - this.size.get() >= size) {
-            return;
+        ensureCapacity0(size, false);
+    }
+
+    private int ensureCapacity0(int size, boolean forceEvict) {
+        if (!forceEvict && (maxSize - this.size.get() >= size)) {
+            return 0;
         }
+        int evictBytes = 0;
         boolean evictFromActive = false;
         for (LRUCache<CacheKey, Integer> lru : List.of(inactive, active)) {
             for (; ; ) {
@@ -232,13 +239,19 @@ public class BlockCache {
                         streamCache.evict = true;
                     }
                     cacheBlock.free();
-                    if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
-                        return;
+                    evictBytes += cacheBlock.size;
+                    if (forceEvict) {
+                        if (evictBytes >= size) {
+                            return evictBytes;
+                        }
+                    } else if (maxSize - this.size.addAndGet(-cacheBlock.size) >= size) {
+                        return evictBytes;
                     }
                 }
             }
             evictFromActive = true;
         }
+        return evictBytes;
     }
 
     private void put(long streamId, StreamCache streamCache, CacheBlock cacheBlock) {
@@ -277,6 +290,16 @@ public class BlockCache {
 
     int alignBlockSize(int size) {
         return (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
+    }
+
+    @Override
+    public int handle(int memoryRequired) {
+        try {
+            return ensureCapacity0(memoryRequired, true);
+        } catch (Throwable e) {
+            LOGGER.error("[UNEXPECTED] handle OOM failed", e);
+            return 0;
+        }
     }
 
     static class StreamCache {
