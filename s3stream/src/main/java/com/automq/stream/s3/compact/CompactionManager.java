@@ -132,7 +132,7 @@ public class CompactionManager {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
                     .map(StreamOffsetRange::getStreamId).distinct().toList();
             return this.streamManager.getStreams(streamIds).thenApplyAsync(streamMetadataList -> {
-                List<S3ObjectMetadata> s3ObjectMetadataList = objectMetadataList;
+                List<S3ObjectMetadata> s3ObjectMetadataList = new ArrayList<>(objectMetadataList);
                 if (s3ObjectMetadataList.isEmpty()) {
                     logger.info("No WAL objects to compact");
                     return CompactResult.SKIPPED;
