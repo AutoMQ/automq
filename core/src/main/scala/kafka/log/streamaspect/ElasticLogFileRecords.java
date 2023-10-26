@@ -17,11 +17,11 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -98,38 +98,52 @@ public class ElasticLogFileRecords {
         return nextOffset.get() - baseOffset;
     }
 
-    public Records read(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException, IOException {
+    public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
         if (ReadManualReleaseHint.isMarked()) {
             return readAll0(startOffset, maxOffset, maxSize);
         } else {
-            return new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize);
+            return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
         }
     }
 
-    private Records readAll0(long startOffset, long maxOffset, int maxSize) throws SlowFetchHintException, IOException {
-        int readSize = 0;
+    private CompletableFuture<Records> readAll0(long startOffset, long maxOffset, int maxSize) {
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         if (nextFetchOffset >= endOffset) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
-        List<FetchResult> fetchResults = new LinkedList<>();
-        while (readSize <= maxSize && nextFetchOffset < endOffset) {
-            FetchResult rst = streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, 1024 * 1024));
-            fetchResults.add(rst);
-            for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
-                if (recordBatchWithContext.lastOffset() > nextFetchOffset) {
-                    nextFetchOffset = recordBatchWithContext.lastOffset();
-                } else {
-                    LOGGER.error("Invalid record batch, last offset {} is less than next offset {}",
-                            recordBatchWithContext.lastOffset(), nextFetchOffset);
-                    throw new IllegalStateException();
-                }
-                readSize += recordBatchWithContext.rawPayload().remaining();
-            }
+        return fetch0(nextFetchOffset, endOffset, maxSize)
+                .thenApply(PooledMemoryRecords::of);
+    }
+
+    private CompletableFuture<LinkedList<FetchResult>> fetch0(long startOffset, long endOffset, int maxSize) {
+        if (startOffset >= endOffset || maxSize <= 0) {
+            return CompletableFuture.completedFuture(new LinkedList<>());
         }
-        return PooledMemoryRecords.of(fetchResults);
+
+        int adjustedMaxSize = Math.min(maxSize, 1024 * 1024);
+        return streamSlice.fetch(startOffset, endOffset, adjustedMaxSize)
+                .thenCompose(rst -> {
+                    long nextFetchOffset = startOffset;
+                    int readSize = 0;
+                    for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
+                        if (recordBatchWithContext.lastOffset() > nextFetchOffset) {
+                            nextFetchOffset = recordBatchWithContext.lastOffset();
+                        } else {
+                            LOGGER.error("Invalid record batch, last offset {} is less than next offset {}",
+                                    recordBatchWithContext.lastOffset(), nextFetchOffset);
+                            throw new IllegalStateException();
+                        }
+                        readSize += recordBatchWithContext.rawPayload().remaining();
+                    }
+                    return fetch0(nextFetchOffset, endOffset, maxSize - readSize)
+                            .thenApply(rstList -> {
+                                // add to first since we need to reverse the order.
+                                rstList.addFirst(rst);
+                                return rstList;
+                            });
+                });
     }
 
     /**
@@ -339,7 +353,7 @@ public class ElasticLogFileRecords {
                     return null;
                 }
                 try {
-                    FetchResult rst = elasticLogFileRecords.streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE));
+                    FetchResult rst = elasticLogFileRecords.streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE)).get();
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
                             ByteBuffer buf = streamRecord.rawPayload();
@@ -438,7 +452,12 @@ public class ElasticLogFileRecords {
             if (sizeInBytes != -1) {
                 return;
             }
-            Records records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize);
+            Records records = null;
+            try {
+                records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize).get();
+            } catch (Throwable t) {
+                throw new IOException(FutureUtil.cause(t));
+            }
             sizeInBytes = 0;
             CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
             RecordBatch lastBatch = null;
