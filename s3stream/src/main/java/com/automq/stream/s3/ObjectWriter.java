@@ -249,7 +249,7 @@ public interface ObjectWriter {
     }
 
     class DataBlock {
-        private final ByteBuf encodedBuf;
+        private final CompositeByteBuf encodedBuf;
         private final ObjectStreamRange streamRange;
         private final int recordCount;
         private final int size;
@@ -257,11 +257,12 @@ public interface ObjectWriter {
         public DataBlock(long streamId, List<StreamRecordBatch> records) {
             this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset());
             this.recordCount = records.size();
-            int dataSize = records.stream().mapToInt(r -> r.encoded().readableBytes()).sum();
-            this.encodedBuf = DirectByteBufAlloc.byteBuffer(2 + 2 + dataSize);
-            encodedBuf.writeByte(DATA_BLOCK_MAGIC);
-            encodedBuf.writeByte(DATA_BLOCK_DEFAULT_FLAG);
-            records.forEach(r -> encodedBuf.writeBytes(r.encoded()));
+            this.encodedBuf = DirectByteBufAlloc.compositeByteBuffer();
+            ByteBuf header = DirectByteBufAlloc.byteBuffer(2);
+            header.writeByte(DATA_BLOCK_MAGIC);
+            header.writeByte(DATA_BLOCK_DEFAULT_FLAG);
+            encodedBuf.addComponent(true, header);
+            records.forEach(r -> encodedBuf.addComponent(true, r.encoded().retain()));
             this.size = encodedBuf.readableBytes();
         }
 
