@@ -459,7 +459,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * Get the offset and metadata for the current high watermark. If offset metadata is not
    * known, this will do a lookup in the index and cache the result.
    */
-  private def fetchHighWatermarkMetadata: LogOffsetMetadata = {
+  protected def fetchHighWatermarkMetadata: LogOffsetMetadata = {
     localLog.checkIfMemoryMappedBufferClosed()
 
     val offsetMetadata = highWatermarkMetadata
@@ -498,7 +498,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   private[log] def firstUnstableOffset: Option[Long] = firstUnstableOffsetMetadata.map(_.messageOffset)
 
-  private def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
+  protected def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
     localLog.checkIfMemoryMappedBufferClosed()
 
     // cache the current high watermark to avoid a concurrent update invalidating the range check
@@ -1216,7 +1216,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     }
   }
 
-  private def checkLogStartOffset(offset: Long): Unit = {
+  protected def checkLogStartOffset(offset: Long): Unit = {
     if (offset < logStartOffset)
       throw new OffsetOutOfRangeException(s"Received request for offset $offset for partition $topicPartition, " +
         s"but we only have log segments starting from offset: $logStartOffset.")
@@ -1243,6 +1243,22 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       case FetchTxnCommitted => fetchLastStableOffsetMetadata
     }
     localLog.read(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchTxnCommitted)
+  }
+
+  /**
+   * Asynchronously read messages from the log.
+   *
+   * @param startOffset   The offset to begin reading at
+   * @param maxLength     The maximum number of bytes to read
+   * @param isolation     The fetch isolation, which controls the maximum offset we are allowed to read
+   * @param minOneMessage If this is true, the first message will be returned even if it exceeds `maxLength` (if one exists)
+   * @return The fetch data information including fetch starting offset metadata and messages read.
+   */
+  def readAsync(startOffset: Long,
+                maxLength: Int,
+                isolation: FetchIsolation,
+                minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
+    CompletableFuture.completedFuture(read(startOffset, maxLength, isolation, minOneMessage))
   }
 
   private[log] def collectAbortedTransactions(startOffset: Long, upperBoundOffset: Long): List[AbortedTxn] = {

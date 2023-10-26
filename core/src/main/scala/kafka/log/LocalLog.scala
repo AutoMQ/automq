@@ -105,6 +105,12 @@ class LocalLog(@volatile private var _dir: File,
     }
   }
 
+  protected def maybeHandleIOExceptionAsync[T](msg: => String)(fun: => CompletableFuture[T]): CompletableFuture[T] = {
+    LocalLog.maybeHandleIOExceptionAsync(logDirFailureChannel, parentDir, msg) {
+      fun
+    }
+  }
+
   private[log] def updateLogStartOffset(offset: Long): Unit = {
     logStartOffset = offset
   }
@@ -458,7 +464,7 @@ class LocalLog(@volatile private var _dir: File,
     updateLogEndOffset(lastOffset + 1)
   }
 
-  private def addAbortedTransactions(startOffset: Long, segment: LogSegment,
+  protected def addAbortedTransactions(startOffset: Long, segment: LogSegment,
                                      fetchInfo: FetchDataInfo, upperBoundOffsetOpt: Option[Long]): FetchDataInfo = {
     val fetchSize = fetchInfo.records.sizeInBytes
     val startOffsetPosition = OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
@@ -820,6 +826,30 @@ object LocalLog extends Logging {
       // elastic stream inject end
     }
   }
+
+  // Kafka on S3 inject start
+  private[log] def maybeHandleIOExceptionAsync[T](logDirFailureChannel: LogDirFailureChannel,
+                                                  logDir: String,
+                                                  errorMsg: => String)(fun: => CompletableFuture[T]): CompletableFuture[T] = {
+    if (logDirFailureChannel.hasOfflineLogDir(logDir)) {
+      return CompletableFuture.failedFuture(new KafkaStorageException(s"The log dir $logDir is already offline due to a previous IO exception."))
+    }
+    val resultCf = new CompletableFuture[T]()
+    fun.whenComplete((result, exception) => {
+      if (exception != null) {
+        exception match {
+          case exception1: IOException =>
+            logDirFailureChannel.maybeAddOfflineLogDir(logDir, errorMsg, exception1)
+            resultCf.completeExceptionally(new KafkaStorageException(errorMsg, exception1))
+          case _ => resultCf.completeExceptionally(exception)
+        }
+      } else {
+        resultCf.complete(result)
+      }
+    })
+    resultCf
+  }
+  // Kafka on S3 inject end
 
   /**
    * Split a segment into one or more segments such that there is no offset overflow in any of them. The

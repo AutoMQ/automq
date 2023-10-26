@@ -20,15 +20,17 @@ package kafka.log.streamaspect
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
+import kafka.log.streamaspect.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
-import kafka.server.{LogDirFailureChannel, LogOffsetMetadata}
+import kafka.server.{FetchDataInfo, LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{CoreUtils, Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.errors.OffsetOutOfRangeException
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -100,8 +102,16 @@ class ElasticLog(val metaStream: MetaStream,
     }
   })
 
+  // We only add the partition's path into failureLogDirs instead of the whole logDir.
   override protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, _dir.getPath, msg) {
+      fun
+    }
+  }
+
+  // We only add the partition's path into failureLogDirs instead of the whole logDir.
+  override protected def maybeHandleIOExceptionAsync[T](msg: => String)(fun: => CompletableFuture[T]): CompletableFuture[T] = {
+    LocalLog.maybeHandleIOExceptionAsync(logDirFailureChannel, _dir.getPath, msg) {
       fun
     }
   }
@@ -262,6 +272,92 @@ class ElasticLog(val metaStream: MetaStream,
   }
 
   /**
+   * Asynchronously read messages from the log.
+   *
+   * @param startOffset        The offset to begin reading at
+   * @param maxLength          The maximum number of bytes to read
+   * @param minOneMessage      If this is true, the first message will be returned even if it exceeds `maxLength` (if one exists)
+   * @param maxOffsetMetadata  The metadata of the maximum offset to be fetched
+   * @param includeAbortedTxns If true, aborted transactions are included
+   * @return The fetch data information including fetch starting offset metadata and messages read.
+   */
+  def readAsync(startOffset: Long,
+                maxLength: Int,
+                minOneMessage: Boolean,
+                maxOffsetMetadata: LogOffsetMetadata,
+                includeAbortedTxns: Boolean): CompletableFuture[FetchDataInfo] = {
+    maybeHandleIOExceptionAsync(s"Exception while reading from $topicPartition in dir ${dir.getParent}") {
+      trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
+        s"total length ${segments.sizeInBytes} bytes")
+
+      // get LEO from super class
+      val endOffsetMetadata = logEndOffsetMetadata
+      val endOffset = endOffsetMetadata.messageOffset
+      val segmentOpt = segments.floorSegment(startOffset)
+
+      var finalSegmentOpt: Option[LogSegment] = None
+
+      def readFromSegment(segOpt: Option[LogSegment]): CompletableFuture[FetchDataInfo] = {
+        if (segOpt.isEmpty) {
+          CompletableFuture.completedFuture(null)
+        } else {
+          val segment = segOpt.get
+          val baseOffset = segment.baseOffset
+
+          val maxPosition =
+          // Use the max offset position if it is on this segment; otherwise, the segment size is the limit.
+            if (maxOffsetMetadata.segmentBaseOffset == segment.baseOffset) maxOffsetMetadata.relativePositionInSegment
+            else segment.size
+
+          segment.readAsync(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
+            .thenCompose(dataInfo => {
+              if (dataInfo != null) {
+                finalSegmentOpt = segOpt
+                CompletableFuture.completedFuture(dataInfo)
+              } else {
+                readFromSegment(segments.higherSegment(baseOffset))
+              }
+            })
+        }
+      }
+
+      // return error on attempt to read beyond the log end offset
+      if (startOffset > endOffset || segmentOpt.isEmpty)
+        CompletableFuture.failedFuture(new OffsetOutOfRangeException(s"Received request for offset $startOffset for partition $topicPartition, " +
+          s"but we only have log segments upto $endOffset."))
+      else if (startOffset == maxOffsetMetadata.messageOffset)
+        CompletableFuture.completedFuture(LocalLog.emptyFetchDataInfo(maxOffsetMetadata, includeAbortedTxns))
+      else if (startOffset > maxOffsetMetadata.messageOffset)
+        CompletableFuture.completedFuture(LocalLog.emptyFetchDataInfo(convertToOffsetMetadataOrThrow(startOffset), includeAbortedTxns))
+      else {
+        // Do the read on the segment with a base offset less than the target offset
+        // but if that segment doesn't contain any messages with an offset greater than that
+        // continue to read from successive segments until we get some messages or we reach the end of the log
+        readFromSegment(segmentOpt).thenApply(fetchDataInfo => {
+          if (fetchDataInfo == null) {
+            // okay we are beyond the end of the last segment with no data fetched although the start offset is in range,
+            // this can happen when all messages with offset larger than start offsets have been deleted.
+            // In this case, we will return the empty set with log end offset metadata
+            FetchDataInfo(nextOffsetMetadata, MemoryRecords.EMPTY)
+          } else {
+            if (includeAbortedTxns) {
+              val upperBoundOpt = fetchDataInfo.records match {
+                case adaptor: BatchIteratorRecordsAdaptor =>
+                  Some(adaptor.lastOffset())
+                case _ =>
+                  None
+              }
+              addAbortedTransactions(startOffset, finalSegmentOpt.get, fetchDataInfo, upperBoundOpt)
+            } else {
+              fetchDataInfo
+            }
+          }
+        })
+      }
+    }
+  }
+
+  /**
    * ref. LocalLog#replcaseSegments
    */
   private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Iterable[LogSegment] = {
@@ -347,7 +443,8 @@ object ElasticLog extends Logging {
             maxTransactionTimeoutMs: Int,
             producerStateManagerConfig: ProducerStateManagerConfig,
             topicId: Uuid,
-            leaderEpoch: Long): ElasticLog = {
+            leaderEpoch: Long,
+            executorService: ExecutorService): ElasticLog = {
     val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
     val key = formatStreamKey(namespace, topicPartition, topicId)
@@ -424,7 +521,7 @@ object ElasticLog extends Logging {
 
       val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
       logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
-      val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
+      val streamSliceManager = new ElasticStreamSliceManager(logStreamManager, executorService)
 
       val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent = logIdent)
 

@@ -23,15 +23,13 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.utils.FutureUtil;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.apache.kafka.common.utils.Utils;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
@@ -45,8 +43,12 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
      */
     private long nextOffset;
     private boolean sealed = false;
+    /**
+     * executor service for async operations.
+     */
+    private final ExecutorService executorService;
 
-    public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange) {
+    public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange, ExecutorService executorService) {
         this.stream = stream;
         long streamNextOffset = stream.nextOffset();
         if (sliceRange.start() == Offsets.NOOP_OFFSET) {
@@ -64,6 +66,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
             this.nextOffset = sliceRange.end() - startOffsetInStream;
             this.sealed = true;
         }
+        this.executorService = executorService;
     }
 
     @Override
@@ -76,21 +79,10 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public FetchResult fetch(long startOffset, long endOffset, int maxBytesHint) throws SlowFetchHintException, IOException {
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
         long fixedStartOffset = Utils.max(startOffset, 0);
-        try {
-            return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint).thenApply(FetchResultWrapper::new).get();
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof SlowFetchHintException) {
-                throw (SlowFetchHintException) (e.getCause());
-            } else if (e.getCause() instanceof IOException) {
-                throw (IOException) (e.getCause());
-            } else {
-                throw new RuntimeException(e.getCause());
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+        return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint)
+                .thenApplyAsync(FetchResultWrapper::new, executorService);
     }
 
     @Override

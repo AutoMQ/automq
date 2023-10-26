@@ -26,16 +26,18 @@ import kafka.log.{LogConfig, ProducerStateManagerConfig}
 import kafka.server.{BrokerServer, KafkaConfig, LogDirFailureChannel}
 import kafka.utils.{Logging, Scheduler}
 import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.Uuid
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ThreadPoolExecutor}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) extends Logging {
   this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
+  private val executorService = new ThreadPoolExecutor(1, 8, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+    new java.util.concurrent.LinkedBlockingQueue[Runnable](), ThreadUtils.createThreadFactory("elastic-log-manager-%d", true))
 
   def getOrCreateLog(dir: File,
                      config: LogConfig,
@@ -59,7 +61,7 @@ class ElasticLogManager(val client: Client) extends Logging {
       override def run(): Unit = {
         // ElasticLog new is a time cost operation.
         elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-          numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
+          numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch, executorService)
       }
     }, s"Failed to create elastic log for $topicPartition", this)
     elasticLogs.putIfAbsent(topicPartition, elasticLog)
