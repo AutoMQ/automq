@@ -30,6 +30,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -199,6 +200,21 @@ public class LogCache {
             }
             return b.free;
         });
+    }
+
+    public int forceFree(int required) {
+        AtomicInteger freedBytes = new AtomicInteger();
+        blocks.removeIf(block -> {
+            if (!block.free || freedBytes.get() >= required) {
+                return false;
+            }
+            size.addAndGet(-block.size);
+            freedBytes.addAndGet((int) block.size);
+            blockFreeListener.accept(block);
+            block.free();
+            return true;
+        });
+        return freedBytes.get();
     }
 
     public void setConfirmOffset(long confirmOffset) {

@@ -67,11 +67,6 @@ public class ObjectStreamRange {
 
     @Override
     public String toString() {
-        return "ObjectStreamRange{" +
-                "streamId=" + streamId +
-                ", epoch=" + epoch +
-                ", startOffset=" + startOffset +
-                ", endOffset=" + endOffset +
-                '}';
+        return "(" + streamId + "-" + epoch + "," + startOffset + "-" + endOffset + ")";
     }
 }

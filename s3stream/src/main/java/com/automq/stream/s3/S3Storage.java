@@ -86,6 +86,7 @@ public class S3Storage implements Storage {
 
     private final Queue<BackoffRecord> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
+    private long lastLogTimestamp = 0L;
 
     private final StreamManager streamManager;
     private final ObjectManager objectManager;
@@ -99,6 +100,7 @@ public class S3Storage implements Storage {
         this.log = log;
         this.blockCache = blockCache;
         this.logCache = new LogCache(config.s3WALObjectSize(), config.s3ObjectMaxStreamNumPerWAL());
+        DirectByteBufAlloc.registerOOMHandlers(new LogCacheEvictOOMHandler());
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -224,7 +226,10 @@ public class S3Storage implements Storage {
         if (!tryAcquirePermit()) {
             backoffRecords.offer(new BackoffRecord(streamRecord, cf));
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
-            LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
+            if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
+                LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
+                lastLogTimestamp = System.currentTimeMillis();
+            }
             return;
         }
         WriteAheadLog.AppendResult appendResult;
@@ -236,7 +241,10 @@ public class S3Storage implements Storage {
             // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
             forceUpload(LogCache.MATCH_ALL_STREAMS);
             backoffRecords.offer(new BackoffRecord(streamRecord, cf));
-            LOGGER.warn("[BACKOFF] log over capacity", e);
+            if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
+                LOGGER.warn("[BACKOFF] log over capacity", e);
+                lastLogTimestamp = System.currentTimeMillis();
+            }
             return;
         }
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordOffset(), cf);
@@ -540,6 +548,19 @@ public class S3Storage implements Storage {
             Queue<?> queue = stream2requests.get(streamId);
             if (queue != null && queue.isEmpty()) {
                 stream2requests.remove(streamId, queue);
+            }
+        }
+    }
+
+    class LogCacheEvictOOMHandler implements DirectByteBufAlloc.OOMHandler {
+        @Override
+        public int handle(int memoryRequired) {
+            try {
+                CompletableFuture<Integer> cf = new CompletableFuture<>();
+                mainReadExecutor.submit(() -> FutureUtil.exec(() -> cf.complete(logCache.forceFree(memoryRequired)), cf, LOGGER, "handleOOM"));
+                return cf.get();
+            } catch (Throwable e) {
+                return 0;
             }
         }
     }
