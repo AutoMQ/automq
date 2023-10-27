@@ -72,6 +72,7 @@ public class S3ObjectControlManagerTest {
             List<String> objectKeys = inv.getArgument(0);
             return CompletableFuture.completedFuture(objectKeys);
         });
+        Mockito.when(controller.isActive()).thenReturn(true);
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
         manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, operator);

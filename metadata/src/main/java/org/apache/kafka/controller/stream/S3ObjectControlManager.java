@@ -119,6 +119,9 @@ public class S3ObjectControlManager {
     }
 
     private void triggerCheckEvent() {
+        if (!quorumController.isActive()) {
+            return;
+        }
         ControllerRequestContext ctx = new ControllerRequestContext(
             null, null, OptionalLong.empty());
         this.quorumController.checkS3ObjectsLifecycle(ctx).whenComplete((ignore, exp) -> {
