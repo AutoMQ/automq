@@ -2364,13 +2364,17 @@ class ReplicaManager(val config: KafkaConfig,
         Some(partition, false)
 
       case HostedPartition.None =>
-        if (delta.image().topicsById().containsKey(topicId)) {
-          stateChangeLogger.error(s"Expected partition $tp with topic id " +
-            s"$topicId to exist, but it was missing. Creating...")
-        } else {
-          stateChangeLogger.info(s"Creating new partition $tp with topic id " +
-            s"$topicId.")
-        }
+        // Kafka on S3 inject start
+        stateChangeLogger.info(s"Creating new partition $tp with topic id " +
+          s"$topicId.")
+//        if (delta.image().topicsById().containsKey(topicId)) {
+//          stateChangeLogger.error(s"Expected partition $tp with topic id " +
+//            s"$topicId to exist, but it was missing. Creating...")
+//        } else {
+//          stateChangeLogger.info(s"Creating new partition $tp with topic id " +
+//            s"$topicId.")
+//        }
+        // Kafka on S3 inject end
         // it's a partition that we don't know about yet, so create it and mark it online
         val partition = Partition(tp, time, this)
         allPartitions.put(tp, HostedPartition.Online(partition))
