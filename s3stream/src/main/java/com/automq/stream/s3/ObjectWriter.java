@@ -206,7 +206,8 @@ public interface ObjectWriter {
 
             public IndexBlock() {
                 long nextPosition = 0;
-                buf = DirectByteBufAlloc.byteBuffer(1024 * 1024);
+                int indexBlockSize = 4 + (8 + 4 + 4 + 8 + 8 + 4 + 4) * completedBlocks.size();
+                buf = DirectByteBufAlloc.byteBuffer(indexBlockSize, "write_index_block");
                 buf.writeInt(completedBlocks.size()); // block count
                 // block index
                 for (DataBlock block : completedBlocks) {
