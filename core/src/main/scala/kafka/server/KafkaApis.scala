@@ -670,7 +670,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
       // elastic stream inject start
       val callbackStartNanos = System.nanoTime()
-      PRODUCE_CALLBACK_TIME_HIST.update(callbackStartNanos - startNanos)
+      PRODUCE_CALLBACK_TIME_HIST.update((callbackStartNanos - startNanos) / 1000)
       // elastic stream inject end
 
 
@@ -732,10 +732,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
 
       // elastic stream inject start
-      PRODUCE_ACK_TIME_HIST.update(System.nanoTime() - callbackStartNanos)
+      PRODUCE_ACK_TIME_HIST.update((System.nanoTime() - callbackStartNanos) / 1000)
       val now = System.currentTimeMillis()
       val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
-      if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+      if (now - lastRecordTimestamp > 60000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
         info(s"produce cost, produce=${KafkaMetricsUtil.histToString(PRODUCE_TIME_HIST)} " +
           s"callback=${KafkaMetricsUtil.histToString(PRODUCE_CALLBACK_TIME_HIST)} " +
           s"ack=${KafkaMetricsUtil.histToString(PRODUCE_ACK_TIME_HIST)}")
@@ -773,7 +773,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
         // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
         produceRequest.clearPartitionRecords()
-        PRODUCE_TIME_HIST.update(System.nanoTime() - startNanos)
+        PRODUCE_TIME_HIST.update((System.nanoTime() - startNanos) / 1000)
       }
 
       if (ElasticLogManager.enabled()) {
