@@ -88,6 +88,7 @@ public class DataBlockWriter {
 
     public CompletableFuture<Void> forceUpload() {
         uploadWaitingList();
+        writer.copyOnWrite();
         return CompletableFuture.allOf(waitingUploadBlockCfs.values().toArray(new CompletableFuture[0]));
     }
 
