@@ -178,12 +178,12 @@ class ElasticLog(val metaStream: MetaStream,
       while (!APPEND_PERMIT_SEMAPHORE.tryAcquire(permit, 1, TimeUnit.SECONDS)) {
         tryAppendStatistics()
       }
-      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
+      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
     }
 
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
-    APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
+    APPEND_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
     val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
@@ -191,7 +191,7 @@ class ElasticLog(val metaStream: MetaStream,
       APPEND_PERMIT_SEMAPHORE.release(permit)
     })
     cf.thenAccept(_ => {
-      APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
+      APPEND_CALLBACK_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       val startNanos = System.nanoTime()
@@ -230,7 +230,7 @@ class ElasticLog(val metaStream: MetaStream,
     }
     appendAckQueue.clear()
     confirmOffsetChangeListener.foreach(_.apply())
-    APPEND_ACK_TIME_HIST.update(System.nanoTime() - startNanos)
+    APPEND_ACK_TIME_HIST.update((System.nanoTime() - startNanos) / 1000)
 
     tryAppendStatistics()
   }
@@ -238,7 +238,7 @@ class ElasticLog(val metaStream: MetaStream,
   private def tryAppendStatistics(): Unit = {
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
-    if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
+    if (now - lastRecordTimestamp > 60000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
       val remainingPermits = APPEND_PERMIT_SEMAPHORE.availablePermits()
       logger.info(s"log append cost, permitAcquireFail=${KafkaMetricsUtil.histToString(APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST)}, " +
         s"remainingPermit=$remainingPermits/$APPEND_PERMIT, " +
@@ -290,6 +290,8 @@ class ElasticLog(val metaStream: MetaStream,
       trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
         s"total length ${segments.sizeInBytes} bytes")
 
+      READ_PERMIT_SEMAPHORE.acquire(maxLength)
+
       // get LEO from super class
       val endOffsetMetadata = logEndOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset
@@ -311,6 +313,7 @@ class ElasticLog(val metaStream: MetaStream,
 
           segment.readAsync(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
             .thenCompose(dataInfo => {
+              READ_PERMIT_SEMAPHORE.release(maxLength)
               if (dataInfo != null) {
                 finalSegmentOpt = segOpt
                 CompletableFuture.completedFuture(dataInfo)
@@ -415,7 +418,7 @@ class ElasticLog(val metaStream: MetaStream,
 }
 
 object ElasticLog extends Logging {
-  private val APPEND_PERMIT = 1024 * 1024 * 1024
+  private val APPEND_PERMIT = 100 * 1024 * 1024
   private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
 
   private val LAST_RECORD_TIMESTAMP = new AtomicLong()
@@ -428,6 +431,9 @@ object ElasticLog extends Logging {
   for (i <- APPEND_CALLBACK_EXECUTOR.indices) {
     APPEND_CALLBACK_EXECUTOR(i) = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-" + i, true))
   }
+
+  private val READ_PERMIT = 1024 * 1024 * 1024
+  private val READ_PERMIT_SEMAPHORE = new Semaphore(READ_PERMIT)
 
   private val META_SCHEDULE_EXECUTOR = Executors.newScheduledThreadPool(1, ThreadUtils.createThreadFactory("log-meta-schedule-executor", true))
 
