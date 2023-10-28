@@ -54,6 +54,12 @@ public interface Writer {
     CompletableFuture<Void> write(ByteBuf part);
 
     /**
+     * Make a copy of all cached buffer and release old one to prevent outside modification to underlying data and
+     * avoid holding buffer reference for too long.
+     */
+    void copyOnWrite();
+
+    /**
      * Copy a part of the object.
      *
      * @param sourcePath source object path.

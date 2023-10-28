@@ -63,6 +63,15 @@ class ProxyWriter implements Writer {
     }
 
     @Override
+    public void copyOnWrite() {
+        if (multiPartWriter != null) {
+            multiPartWriter.copyOnWrite();
+        } else {
+            objectWriter.copyOnWrite();
+        }
+    }
+
+    @Override
     public void copyWrite(String sourcePath, long start, long end) {
         if (multiPartWriter == null) {
             newMultiPartWriter();
@@ -108,6 +117,18 @@ class ProxyWriter implements Writer {
         public CompletableFuture<Void> write(ByteBuf part) {
             data.addComponent(true, part);
             return cf;
+        }
+
+        @Override
+        public void copyOnWrite() {
+            int size = data.readableBytes();
+            if (size > 0) {
+                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size);
+                buf.writeBytes(data.duplicate());
+                CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
+                this.data.release();
+                this.data = copy;
+            }
         }
 
         @Override
