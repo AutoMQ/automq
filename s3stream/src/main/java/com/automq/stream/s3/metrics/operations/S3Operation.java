@@ -67,8 +67,10 @@ public enum S3Operation {
     COMMIT_STREAM_OBJECT(S3MetricsType.S3Object, "commit_stream_object"),
     GET_OBJECTS(S3MetricsType.S3Object, "get_objects"),
     GET_SERVER_OBJECTS(S3MetricsType.S3Object, "get_server_objects"),
-    GET_STREAM_OBJECTS(S3MetricsType.S3Object, "get_stream_objects");
+    GET_STREAM_OBJECTS(S3MetricsType.S3Object, "get_stream_objects"),
     /* S3 object operations end */
+
+    ALLOC_BUFFER(S3MetricsType.S3Storage, "alloc_buffer");
 
     private final S3MetricsType type;
     private final String name;

@@ -217,6 +217,8 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        // encoded before append to free heap ByteBuf.
+        streamRecord.encoded();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf);
         handleAppendRequest(writeRequest);
         append0(writeRequest, false);
@@ -250,7 +252,6 @@ public class S3Storage implements Storage {
         WriteAheadLog.AppendResult appendResult;
         try {
             StreamRecordBatch streamRecord = request.record;
-            streamRecord.encoded();
             streamRecord.retain();
             appendResult = log.append(streamRecord.encoded());
         } catch (WriteAheadLog.OverCapacityException e) {

@@ -236,7 +236,7 @@ public class DefaultS3Operator implements S3Operator {
                 .thenAccept(responsePublisher -> {
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationCount.inc();
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationTime.update(timerUtil.elapsed());
-                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) (end - start + 1));
+                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) (end - start + 1), "merge_read");
                     responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
                 })
                 .exceptionally(ex -> {
