@@ -145,7 +145,7 @@ public class DataBlockWriter {
 
         public IndexBlock() {
             position = nextDataBlockPosition;
-            buf = DirectByteBufAlloc.byteBuffer(calculateIndexBlockSize());
+            buf = DirectByteBufAlloc.byteBuffer(calculateIndexBlockSize(), "write_index_block");
             buf.writeInt(completedBlocks.size()); // block count
             long nextPosition = 0;
             // block index
