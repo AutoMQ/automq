@@ -978,7 +978,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                 s"next offset: ${localLog.logEndOffset}, " +
                 s"and messages: $validRecords")
 
-              if (localLog.unflushedMessages >= config.flushInterval) flush(false)
+              // Kafka on S3 inject start
+              // append will move the high watermark to ack the producer when the async flush success.
+              //  if (localLog.unflushedMessages >= config.flushInterval) flush(false)
+              // Kafka on S3 inject end
           }
           appendInfo
         }
