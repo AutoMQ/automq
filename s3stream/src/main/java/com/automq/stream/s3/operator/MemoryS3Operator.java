@@ -67,6 +67,11 @@ public class MemoryS3Operator implements S3Operator {
             }
 
             @Override
+            public void copyOnWrite() {
+
+            }
+
+            @Override
             public boolean hasBatchingPart() {
                 return false;
             }

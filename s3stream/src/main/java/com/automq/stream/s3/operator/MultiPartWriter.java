@@ -89,6 +89,13 @@ public class MultiPartWriter implements Writer {
     }
 
     @Override
+    public void copyOnWrite() {
+        if (objectPart != null) {
+            objectPart.copyOnWrite();
+        }
+    }
+
+    @Override
     public boolean hasBatchingPart() {
         return objectPart != null;
     }
@@ -157,7 +164,7 @@ public class MultiPartWriter implements Writer {
 
     class ObjectPart {
         private final int partNumber = nextPartNumber.getAndIncrement();
-        private final CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
+        private CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
         private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
         private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
         private long size;
@@ -172,6 +179,17 @@ public class MultiPartWriter implements Writer {
             size += data.readableBytes();
             // ensure addComponent happen before following write or copyWrite.
             this.lastRangeReadCf = lastRangeReadCf.thenAccept(nil -> partBuf.addComponent(true, data));
+        }
+
+        public void copyOnWrite() {
+            int size = partBuf.readableBytes();
+            if (size > 0) {
+                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size);
+                buf.writeBytes(partBuf.duplicate());
+                CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
+                this.partBuf.release();
+                this.partBuf = copy;
+            }
         }
 
         public void readAndWrite(String sourcePath, long start, long end) {
