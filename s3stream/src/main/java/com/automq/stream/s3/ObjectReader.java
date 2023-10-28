@@ -53,7 +53,6 @@ public class ObjectReader implements AutoCloseable {
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
         this.basicObjectInfoCf = new CompletableFuture<>();
-        // TODO: close object reader to release resources such as index block.
         asyncGetBasicObjectInfo();
     }
 
@@ -78,23 +77,27 @@ public class ObjectReader implements AutoCloseable {
         return rangeReadCf.thenApply(buf -> new DataBlock(buf, block.recordCount()));
     }
 
-    private void asyncGetBasicObjectInfo() {
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - 1024 * 1024));
+    void asyncGetBasicObjectInfo() {
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - 1024 * 1024), true);
     }
 
-    private void asyncGetBasicObjectInfo0(long startPosition) {
+    private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt) {
         CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
         cf.thenAccept(buf -> {
             try {
                 BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.objectSize());
                 basicObjectInfoCf.complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
-                asyncGetBasicObjectInfo0(ex.indexBlockPosition);
+                asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
             }
         }).exceptionally(ex -> {
             LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
             // TODO: delay retry.
-            asyncGetBasicObjectInfo0(startPosition);
+            if (firstAttempt) {
+                asyncGetBasicObjectInfo0(startPosition, false);
+            } else {
+                basicObjectInfoCf.completeExceptionally(ex);
+            }
             return null;
         });
     }
@@ -148,7 +151,7 @@ public class ObjectReader implements AutoCloseable {
         public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + indexBlockSize + FOOTER_SIZE < objectSize) {
+            if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
                 objectTailBuf.release();
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
@@ -253,7 +256,7 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
-    static class IndexBlockParseException extends Exception {
+    public static class IndexBlockParseException extends Exception {
         long indexBlockPosition;
 
         public IndexBlockParseException(long indexBlockPosition) {

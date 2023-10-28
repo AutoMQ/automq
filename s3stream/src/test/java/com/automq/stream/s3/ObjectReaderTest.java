@@ -17,12 +17,18 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.operator.MemoryS3Operator;
+import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -90,6 +96,24 @@ public class ObjectReaderTest {
 
         rst = indexBlock.find(1, 10, 400, 10);
         assertEquals(2, rst.size());
+    }
+
+    @Test
+    public void testGetBasicObjectInfo() throws ExecutionException, InterruptedException {
+        S3Operator s3Operator = new MemoryS3Operator();
+        ObjectWriter objectWriter = ObjectWriter.writer(233L, s3Operator, 1024, 1024);
+        // make index block bigger than 1M
+        int streamCount = 2 * 1024 * 1024 / 40;
+        for (int i = 0; i < streamCount; i++) {
+            StreamRecordBatch r = new StreamRecordBatch(i, 0, i, 1, TestUtils.random(1));
+            objectWriter.write(i, List.of(r));
+        }
+        objectWriter.close().get();
+        S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.WAL);
+        try (ObjectReader objectReader = new ObjectReader(metadata, s3Operator)) {
+            ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
+            assertEquals(streamCount, info.blockCount());
+        }
     }
 
 }
