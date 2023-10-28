@@ -289,9 +289,6 @@ class ElasticLog(val metaStream: MetaStream,
     maybeHandleIOExceptionAsync(s"Exception while reading from $topicPartition in dir ${dir.getParent}") {
       trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
         s"total length ${segments.sizeInBytes} bytes")
-
-      READ_PERMIT_SEMAPHORE.acquire(maxLength)
-
       // get LEO from super class
       val endOffsetMetadata = logEndOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset
@@ -313,7 +310,6 @@ class ElasticLog(val metaStream: MetaStream,
 
           segment.readAsync(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
             .thenCompose(dataInfo => {
-              READ_PERMIT_SEMAPHORE.release(maxLength)
               if (dataInfo != null) {
                 finalSegmentOpt = segOpt
                 CompletableFuture.completedFuture(dataInfo)
@@ -431,9 +427,6 @@ object ElasticLog extends Logging {
   for (i <- APPEND_CALLBACK_EXECUTOR.indices) {
     APPEND_CALLBACK_EXECUTOR(i) = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("log-append-callback-executor-" + i, true))
   }
-
-  private val READ_PERMIT = 1024 * 1024 * 1024
-  private val READ_PERMIT_SEMAPHORE = new Semaphore(READ_PERMIT)
 
   private val META_SCHEDULE_EXECUTOR = Executors.newScheduledThreadPool(1, ThreadUtils.createThreadFactory("log-meta-schedule-executor", true))
 
