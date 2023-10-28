@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {
     final StreamRecordBatch record;
-    final long offset;
+    long offset;
     final CompletableFuture<Void> cf;
     boolean persisted;
 
