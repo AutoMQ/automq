@@ -84,7 +84,7 @@ public class S3Storage implements Storage {
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
             4, ThreadUtils.createThreadFactory("s3-storage-upload-wal", true), LOGGER);
 
-    private final Queue<BackoffRecord> backoffRecords = new LinkedBlockingQueue<>();
+    private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     private long lastLogTimestamp = 0L;
 
@@ -203,8 +203,8 @@ public class S3Storage implements Storage {
     public void shutdown() {
         drainBackoffTask.cancel(false);
         FutureUtil.suppress(drainBackoffTask::get, LOGGER);
-        for (BackoffRecord backoffRecord : backoffRecords) {
-            backoffRecord.appendCf.completeExceptionally(new IOException("S3Storage is shutdown"));
+        for (WalWriteRequest request : backoffRecords) {
+            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
         log.shutdownGracefully();
         backgroundExecutor.shutdown();
@@ -215,46 +215,57 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        append0(streamRecord, cf);
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf);
+        handleAppendRequest(writeRequest);
+        append0(writeRequest, false);
+        cf.whenComplete((nil, ex) -> {
+            streamRecord.release();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
+            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
+        });
         return cf;
     }
 
-    public void append0(StreamRecordBatch streamRecord, CompletableFuture<Void> cf) {
+    /**
+     * Append record to WAL.
+     * @return backoff status.
+     */
+    public boolean append0(WalWriteRequest request, boolean fromBackoff) {
         // TODO: storage status check, fast fail the request when storage closed.
-        TimerUtil timerUtil = new TimerUtil();
+        if (!fromBackoff && !backoffRecords.isEmpty()) {
+            backoffRecords.offer(request);
+            return true;
+        }
         if (!tryAcquirePermit()) {
-            backoffRecords.offer(new BackoffRecord(streamRecord, cf));
+            backoffRecords.offer(request);
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
                 lastLogTimestamp = System.currentTimeMillis();
             }
-            return;
+            return true;
         }
         WriteAheadLog.AppendResult appendResult;
         try {
+            StreamRecordBatch streamRecord = request.record;
             streamRecord.encoded();
             streamRecord.retain();
             appendResult = log.append(streamRecord.encoded());
         } catch (WriteAheadLog.OverCapacityException e) {
             // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
             forceUpload(LogCache.MATCH_ALL_STREAMS);
-            backoffRecords.offer(new BackoffRecord(streamRecord, cf));
+            backoffRecords.offer(request);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log over capacity", e);
                 lastLogTimestamp = System.currentTimeMillis();
             }
-            return;
+            return true;
         }
-        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, appendResult.recordOffset(), cf);
-        handleAppendRequest(writeRequest);
-        appendResult.future().thenAccept(nil -> handleAppendCallback(writeRequest));
-        cf.whenComplete((nil, ex) -> {
-            streamRecord.release();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
-        });
+        request.offset = appendResult.recordOffset();
+        appendResult.future().thenAccept(nil -> handleAppendCallback(request));
+        return false;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -265,15 +276,14 @@ public class S3Storage implements Storage {
     private void tryDrainBackoffRecords() {
         try {
             for (; ; ) {
-                BackoffRecord backoffRecord = backoffRecords.peek();
-                if (backoffRecord == null) {
+                WalWriteRequest request = backoffRecords.peek();
+                if (request == null) {
                     break;
                 }
-                if (!tryAcquirePermit()) {
-                    LOGGER.warn("try drain backoff record fail, log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
+                if (append0(request, true)) {
+                    LOGGER.warn("try drain backoff record fail, still backoff");
                     break;
                 }
-                append0(backoffRecord.record, backoffRecord.appendCf);
                 backoffRecords.poll();
             }
         } catch (Throwable e) {
@@ -462,16 +472,6 @@ public class S3Storage implements Storage {
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
         mainReadExecutor.execute(() -> logCache.markFree(cacheBlock));
-    }
-
-    static class BackoffRecord {
-        final StreamRecordBatch record;
-        final CompletableFuture<Void> appendCf;
-
-        public BackoffRecord(StreamRecordBatch record, CompletableFuture<Void> appendCf) {
-            this.record = record;
-            this.appendCf = appendCf;
-        }
     }
 
     /**
