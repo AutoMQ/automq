@@ -81,10 +81,12 @@ public class DefaultS3Client implements Client {
                 config.networkInboundBaselineBandwidth(), config.refillPeriodMs(), config.networkInboundBurstBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
                 config.networkOutboundBaselineBandwidth(), config.refillPeriodMs(), config.networkOutboundBurstBandwidth());
-        S3Operator s3Operator = new DefaultS3Operator(endpoint, region, bucket, false,
-                System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME), networkInboundLimiter, networkOutboundLimiter);
-        S3Operator compactionS3Operator = new DefaultS3Operator(endpoint, region, bucket, false,
-                System.getenv(ACCESS_KEY_NAME), System.getenv(SECRET_KEY_NAME), networkInboundLimiter, networkOutboundLimiter);
+        String accessKey = System.getenv(ACCESS_KEY_NAME);
+        String secretKey = System.getenv(SECRET_KEY_NAME);
+        S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
+                .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
+        S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
+                .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
                 kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
