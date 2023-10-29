@@ -229,9 +229,12 @@ public class DefaultS3Operator implements S3Operator {
 
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
         end = end - 1;
-        CompletableFuture<ByteBuf> cf = acquireReadPermit(new CompletableFuture<>());
+        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        if (!acquireReadPermit(cf)) {
+            return cf;
+        }
         mergedRangeRead0(path, start, end, cf);
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightReadLimiter.release());
     }
 
     void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
@@ -260,7 +263,10 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
-        CompletableFuture<Void> cf = acquireWritePermit(new CompletableFuture<>());
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        if (!acquireWritePermit(cf)) {
+            return cf;
+        }
         if (networkOutboundBandwidthLimiter != null) {
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
@@ -272,7 +278,7 @@ public class DefaultS3Operator implements S3Operator {
         } else {
             write0(path, data, cf);
         }
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
     }
 
     private void write0(String path, ByteBuf data, CompletableFuture<Void> cf) {
@@ -350,9 +356,12 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<String> createMultipartUpload(String path) {
-        CompletableFuture<String> cf = acquireWritePermit(new CompletableFuture<>());
+        CompletableFuture<String> cf = new CompletableFuture<>();
+        if (!acquireWritePermit(cf)) {
+            return cf;
+        }
         createMultipartUpload0(path, cf);
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
     }
 
     void createMultipartUpload0(String path, CompletableFuture<String> cf) {
@@ -378,7 +387,10 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
-        CompletableFuture<CompletedPart> cf = acquireWritePermit(new CompletableFuture<>());
+        CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
+        if (!acquireWritePermit(cf)) {
+            return cf;
+        }
         if (networkOutboundBandwidthLimiter != null) {
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
@@ -391,7 +403,7 @@ public class DefaultS3Operator implements S3Operator {
             uploadPart0(path, uploadId, partNumber, data, cf);
         }
         cf.whenComplete((rst, ex) -> data.release());
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
     }
 
     private void uploadPart0(String path, String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> cf) {
@@ -421,9 +433,12 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber) {
-        CompletableFuture<CompletedPart> cf = acquireWritePermit(new CompletableFuture<>());
+        CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
+        if (!acquireWritePermit(cf)) {
+            return cf;
+        }
         uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf);
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
     }
 
     private void uploadPartCopy0(String sourcePath, String path, long start, long end, String uploadId, int partNumber, CompletableFuture<CompletedPart> cf) {
@@ -453,9 +468,12 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<CompletedPart> parts) {
-        CompletableFuture<Void> cf = acquireWritePermit(new CompletableFuture<>());
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        if (!acquireWritePermit(cf)) {
+            return cf;
+        }
         completeMultipartUpload0(path, uploadId, parts, cf);
-        return cf;
+        return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
     }
 
     public void completeMultipartUpload0(String path, String uploadId, List<CompletedPart> parts, CompletableFuture<Void> cf) {
@@ -560,24 +578,24 @@ public class DefaultS3Operator implements S3Operator {
         return builder.build();
     }
 
-    <T> CompletableFuture<T> acquireReadPermit(CompletableFuture<T> cf) {
+    boolean acquireReadPermit(CompletableFuture<?> cf) {
         // TODO: async acquire?
         try {
             inflightReadLimiter.acquire();
-            return cf.whenComplete((rst, ex) -> inflightReadLimiter.release());
+            return true;
         } catch (InterruptedException e) {
             cf.completeExceptionally(e);
-            return cf;
+            return false;
         }
     }
 
-    <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
+    boolean acquireWritePermit(CompletableFuture<?> cf) {
         try {
             inflightWriteLimiter.acquire();
-            return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
+            return true;
         } catch (InterruptedException e) {
             cf.completeExceptionally(e);
-            return cf;
+            return false;
         }
     }
 
