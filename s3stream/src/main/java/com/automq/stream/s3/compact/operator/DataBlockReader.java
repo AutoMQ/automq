@@ -18,7 +18,6 @@
 package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
@@ -36,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockReader {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReader.class);
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final S3Operator s3Operator;
@@ -66,7 +65,7 @@ public class DataBlockReader {
                     }
                 }).exceptionally(ex -> {
                     // unrecoverable error, possibly read on a deleted object
-                    LOGGER.warn("s3 range read from {} [{}, {}) failed, ex", objectKey, startPosition, metadata.objectSize(), ex);
+                    LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
                     indexBlockCf.completeExceptionally(ex);
                     return null;
                 });

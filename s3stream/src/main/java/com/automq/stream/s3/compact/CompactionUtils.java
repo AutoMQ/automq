@@ -86,6 +86,7 @@ public class CompactionUtils {
                         return new AbstractMap.SimpleEntry<>(f.getKey(), validStreamDataBlocks);
                     } catch (Exception ex) {
                         // continue compaction without invalid object
+                        // TODO: log warn
                         return null;
                     }
                 })
