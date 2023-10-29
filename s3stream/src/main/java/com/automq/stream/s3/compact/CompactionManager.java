@@ -31,6 +31,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.Writer;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -48,6 +49,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -74,6 +76,8 @@ public class CompactionManager {
     private final int maxStreamObjectNumPerCommit;
     private final long networkInboundBandwidth;
     private final boolean s3ObjectLogEnable;
+
+    private final Semaphore forceSplitLimit = new Semaphore(500 * 1024 * 1024);
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager, S3Operator s3Operator) {
         String logPrefix = String.format("[CompactionManager id=%d] ", config.brokerId());
@@ -284,6 +288,11 @@ public class CompactionManager {
             return new ArrayList<>();
         }
 
+        //TODO: temp solution, optimize later
+        // take first object
+        Set<Long> objectIds = objectMetadataList.stream().map(S3ObjectMetadata::objectId).collect(Collectors.toSet());
+        objectMetadataList = Collections.singletonList(objectMetadataList.get(0));
+
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, objectMetadataList, s3Operator);
         List<Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>>> groupedDataBlocks = new ArrayList<>();
         int totalStreamObjectNum = 0;
@@ -312,7 +321,7 @@ public class CompactionManager {
             totalStreamObjectNum += groupedStreamDataBlocks.size();
         }
         // add objects that are excluded from split
-        excludedObjects.addAll(streamDataBlocksMap.keySet().stream().filter(e -> !includedObjects.contains(e)).collect(Collectors.toSet()));
+        excludedObjects.addAll(objectIds.stream().filter(e -> !includedObjects.contains(e)).collect(Collectors.toSet()));
         logger.info("Force split {} WAL objects, expect to generate {} stream objects, max stream objects {}, objects excluded: {}",
                 objectMetadataList.size(), groupedDataBlocks.size(), maxStreamObjectNumPerCommit, excludedObjects);
         if (groupedDataBlocks.isEmpty()) {
@@ -324,6 +333,18 @@ public class CompactionManager {
                     for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : groupedDataBlocks) {
                         List<StreamDataBlock> streamDataBlocks = pair.getKey();
                         DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.s3ObjectPartSize());
+
+                        StreamDataBlock start = streamDataBlocks.get(0);
+                        StreamDataBlock end = streamDataBlocks.get(streamDataBlocks.size() - 1);
+                        final int dataSize = (int) (end.getBlockEndPosition() + end.getBlockSize() - start.getBlockStartPosition());
+                        if (dataSize < Writer.MIN_PART_SIZE) {
+                            try {
+                                forceSplitLimit.acquire(dataSize);
+                            } catch (InterruptedException ignored) {
+
+                            }
+                        }
+
                         writer.copyWrite(streamDataBlocks);
                         final long objectIdFinal = objectId;
                         writer.close().thenAccept(v -> {
@@ -334,6 +355,9 @@ public class CompactionManager {
                             streamObject.setEndOffset(streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset());
                             streamObject.setObjectSize(writer.size());
                             pair.getValue().complete(streamObject);
+                            if (dataSize < Writer.MIN_PART_SIZE) {
+                                forceSplitLimit.release(dataSize);
+                            }
                         });
                         objectId++;
                     }

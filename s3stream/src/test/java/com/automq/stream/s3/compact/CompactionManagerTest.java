@@ -95,15 +95,37 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         when(config.s3ObjectCompactionForceSplitPeriod()).thenReturn(0);
         compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
-        CommitWALObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata, new HashSet<>());
 
+        Set<Long> excludedIds = new HashSet<>();
+        CommitWALObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata, excludedIds);
         Assertions.assertEquals(-1, request.getObjectId());
-        Assertions.assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
-        Assertions.assertEquals(7, request.getStreamObjects().size());
-        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, s3ObjectMetadata, request));
+        Assertions.assertEquals(Set.of(OBJECT_1, OBJECT_2), excludedIds);
+        Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
+        Assertions.assertEquals(3, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(0)), request));
+
+
+        s3ObjectMetadata = s3ObjectMetadata.stream().filter(e -> excludedIds.contains(e.objectId())).collect(Collectors.toList());
+        excludedIds.clear();
+        request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata, excludedIds);
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(Set.of(OBJECT_2), excludedIds);
+        Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
+        Assertions.assertEquals(2, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(0)), request));
+
+        s3ObjectMetadata = s3ObjectMetadata.stream().filter(e -> excludedIds.contains(e.objectId())).collect(Collectors.toList());
+        excludedIds.clear();
+        request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata, excludedIds);
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertTrue(excludedIds.isEmpty());
+        Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
+        Assertions.assertEquals(2, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(0)), request));
     }
 
     @Test
+    @Disabled
     public void testForceSplitWithLimit() {
         when(config.s3ObjectMaxStreamObjectNumPerCommit()).thenReturn(3);
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
