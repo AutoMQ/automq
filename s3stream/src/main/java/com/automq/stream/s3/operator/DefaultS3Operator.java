@@ -243,10 +243,10 @@ public class DefaultS3Operator implements S3Operator {
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT_FAIL).operationCount.inc();
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT_FAIL).operationTime.update(timerUtil.elapsed());
                     if (isUnrecoverable(ex)) {
-                        LOGGER.error("GetObject for object {} [{}, {})fail", path, start, end, ex);
+                        LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                         cf.completeExceptionally(ex);
                     } else {
-                        LOGGER.warn("GetObject for object {} [{}, {})fail, retry later", path, start, end, ex);
+                        LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
                         scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
                     }
                     return null;
