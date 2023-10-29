@@ -241,7 +241,9 @@ public class S3Storage implements Storage {
             return true;
         }
         if (!tryAcquirePermit()) {
-            backoffRecords.offer(request);
+            if (!fromBackoff) {
+                backoffRecords.offer(request);
+            }
             OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
@@ -257,7 +259,9 @@ public class S3Storage implements Storage {
         } catch (WriteAheadLog.OverCapacityException e) {
             // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
             forceUpload(LogCache.MATCH_ALL_STREAMS);
-            backoffRecords.offer(request);
+            if (!fromBackoff) {
+                backoffRecords.offer(request);
+            }
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log over capacity", e);
                 lastLogTimestamp = System.currentTimeMillis();
