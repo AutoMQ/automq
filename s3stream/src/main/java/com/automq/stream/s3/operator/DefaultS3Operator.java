@@ -70,6 +70,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -80,6 +81,9 @@ public class DefaultS3Operator implements S3Operator {
     private final String bucket;
     private final S3AsyncClient writeS3Client;
     private final S3AsyncClient readS3Client;
+    private final Semaphore inflightWriteLimiter;
+    private final Semaphore inflightReadLimiter;
+
     private final List<ReadTask> waitingReadTasks = new LinkedList<>();
     private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
@@ -100,6 +104,8 @@ public class DefaultS3Operator implements S3Operator {
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, accessKey, secretKey);
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, accessKey, secretKey) : writeS3Client;
+        this.inflightWriteLimiter = new Semaphore(50);
+        this.inflightReadLimiter = readWriteIsolate ? new Semaphore(50) : inflightWriteLimiter;
         this.bucket = bucket;
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
@@ -123,6 +129,8 @@ public class DefaultS3Operator implements S3Operator {
         this.bucket = bucket;
         this.networkInboundBandwidthLimiter = null;
         this.networkOutboundBandwidthLimiter = null;
+        this.inflightWriteLimiter = new Semaphore(50);
+        this.inflightReadLimiter = new Semaphore(50);
         if (!manualMergeRead) {
             scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         }
@@ -221,7 +229,7 @@ public class DefaultS3Operator implements S3Operator {
 
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
         end = end - 1;
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> cf = acquireReadPermit(new CompletableFuture<>());
         mergedRangeRead0(path, start, end, cf);
         return cf;
     }
@@ -252,7 +260,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
-        CompletableFuture<Void> cf = new CompletableFuture<>();
+        CompletableFuture<Void> cf = acquireWritePermit(new CompletableFuture<>());
         if (networkOutboundBandwidthLimiter != null) {
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
@@ -342,7 +350,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<String> createMultipartUpload(String path) {
-        CompletableFuture<String> cf = new CompletableFuture<>();
+        CompletableFuture<String> cf = acquireWritePermit(new CompletableFuture<>());
         createMultipartUpload0(path, cf);
         return cf;
     }
@@ -370,7 +378,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
-        CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
+        CompletableFuture<CompletedPart> cf = acquireWritePermit(new CompletableFuture<>());
         if (networkOutboundBandwidthLimiter != null) {
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
@@ -413,7 +421,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber) {
-        CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
+        CompletableFuture<CompletedPart> cf = acquireWritePermit(new CompletableFuture<>());
         uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf);
         return cf;
     }
@@ -445,7 +453,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<CompletedPart> parts) {
-        CompletableFuture<Void> cf = new CompletableFuture<>();
+        CompletableFuture<Void> cf = acquireWritePermit(new CompletableFuture<>());
         completeMultipartUpload0(path, uploadId, parts, cf);
         return cf;
     }
@@ -550,6 +558,27 @@ public class DefaultS3Operator implements S3Operator {
                 ).build()
         );
         return builder.build();
+    }
+
+    <T> CompletableFuture<T> acquireReadPermit(CompletableFuture<T> cf) {
+        // TODO: async acquire?
+        try {
+            inflightReadLimiter.acquire();
+            return cf.whenComplete((rst, ex) -> inflightReadLimiter.release());
+        } catch (InterruptedException e) {
+            cf.completeExceptionally(e);
+            return cf;
+        }
+    }
+
+    <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
+        try {
+            inflightWriteLimiter.acquire();
+            return cf.whenComplete((rst, ex) -> inflightWriteLimiter.release());
+        } catch (InterruptedException e) {
+            cf.completeExceptionally(e);
+            return cf;
+        }
     }
 
     static class MergedReadTask {
