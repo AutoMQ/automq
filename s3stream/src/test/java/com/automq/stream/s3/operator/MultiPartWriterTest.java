@@ -54,7 +54,7 @@ import static org.mockito.Mockito.when;
 class MultiPartWriterTest {
     private S3AsyncClient s3;
     private DefaultS3Operator operator;
-    private Writer writer;
+    private MultiPartWriter writer;
 
     @BeforeEach
     void setUp() {
@@ -84,6 +84,7 @@ class MultiPartWriterTest {
             return CompletableFuture.completedFuture(builder.build());
         });
         when(s3.completeMultipartUpload(any(CompleteMultipartUploadRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
+        writer.uploadIdCf.get();
 
         List<ByteBuf> payloads = List.of(
                 // case 2
