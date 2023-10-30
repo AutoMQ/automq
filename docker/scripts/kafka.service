@@ -19,7 +19,7 @@ After=network.target
 
 [Service]
 ExecStart=/root/program/kafka/bin/kafka-server-start.sh config/kraft/broker.properties
-Environment='KAFKA_HEAP_OPTS=-Xms2g -Xmx2g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=4G'
+Environment='KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G'
 Environment='KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UnlockExperimentalVMOptions -XX:+UseZGC -XX:+ParallelRefProcEnabled -XX:+DoEscapeAnalysis -XX:ParallelGCThreads=12 -XX:ConcGCThreads=12 -XX:+DisableExplicitGC -XX:-ResizePLAB -XX:MinMetaspaceFreeRatio=50 -XX:MaxMetaspaceFreeRatio=80 -Djava.awt.headless=true'
 Environment='KAFKA_S3_ACCESS_KEY=xxx'
 Environment='KAFKA_S3_SECRET_KEY=yyy'

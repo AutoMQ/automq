@@ -73,7 +73,7 @@ services:
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
-      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=4G
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
     command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - kos_net
@@ -89,7 +89,7 @@ services:
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
-      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=4G
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
     command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - kos_net
