@@ -882,6 +882,7 @@ public class BlockWALService implements WriteAheadLog {
                     RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
                     nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
                     if (skip) {
+                        nextRecordBody.release();
                         continue;
                     }
                     next = recoverResult;
