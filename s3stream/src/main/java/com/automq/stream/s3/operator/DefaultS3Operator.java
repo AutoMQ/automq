@@ -83,16 +83,19 @@ public class DefaultS3Operator implements S3Operator {
     private final S3AsyncClient readS3Client;
     private final Semaphore inflightWriteLimiter;
     private final Semaphore inflightReadLimiter;
-
     private final List<ReadTask> waitingReadTasks = new LinkedList<>();
     private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true));
-    private final ExecutorService s3ReadCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-read-cb-executor", true));
-    private final ExecutorService s3WriteCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-write-cb-executor", true));
+    private final ExecutorService readLimiterCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-read-limiter-cb-executor", true));
+    private final ExecutorService writeLimiterCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-write-limiter-cb-executor", true));
+    private final ExecutorService readCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-read-cb-executor-%d", true));
+    private final ExecutorService writeCallbackExecutor = Executors.newSingleThreadExecutor(
+            ThreadUtils.createThreadFactory("s3-write-cb-executor-%d", true));
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
         this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);
@@ -162,7 +165,7 @@ public class DefaultS3Operator implements S3Operator {
                 } else {
                     rangeRead0(path, start, end, cf);
                 }
-            }, s3ReadCallbackExecutor);
+            }, readLimiterCallbackExecutor);
         } else {
             rangeRead0(path, start, end, cf);
         }
@@ -276,7 +279,7 @@ public class DefaultS3Operator implements S3Operator {
                 } else {
                     write0(path, data, cf);
                 }
-            }, s3WriteCallbackExecutor);
+            }, writeLimiterCallbackExecutor);
         } else {
             write0(path, data, cf);
         }
@@ -402,7 +405,7 @@ public class DefaultS3Operator implements S3Operator {
                 } else {
                     uploadPart0(path, uploadId, partNumber, data, cf);
                 }
-            }, s3WriteCallbackExecutor);
+            }, writeLimiterCallbackExecutor);
         } else {
             uploadPart0(path, uploadId, partNumber, data, cf);
         }
@@ -586,6 +589,7 @@ public class DefaultS3Operator implements S3Operator {
 
     /**
      * Acquire read permit, permit will auto release when cf complete.
+     *
      * @return retCf the retCf should be used as method return value to ensure release before following operations.
      */
     <T> CompletableFuture<T> acquireReadPermit(CompletableFuture<T> cf) {
@@ -595,11 +599,13 @@ public class DefaultS3Operator implements S3Operator {
             CompletableFuture<T> newCf = new CompletableFuture<>();
             cf.whenComplete((rst, ex) -> {
                 inflightReadLimiter.release();
-                if (ex != null) {
-                    newCf.completeExceptionally(ex);
-                } else {
-                    newCf.complete(rst);
-                }
+                readCallbackExecutor.execute(() -> {
+                    if (ex != null) {
+                        newCf.completeExceptionally(ex);
+                    } else {
+                        newCf.complete(rst);
+                    }
+                });
             });
             return newCf;
         } catch (InterruptedException e) {
@@ -610,6 +616,7 @@ public class DefaultS3Operator implements S3Operator {
 
     /**
      * Acquire write permit, permit will auto release when cf complete.
+     *
      * @return retCf the retCf should be used as method return value to ensure release before following operations.
      */
     <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
@@ -618,11 +625,13 @@ public class DefaultS3Operator implements S3Operator {
             CompletableFuture<T> newCf = new CompletableFuture<>();
             cf.whenComplete((rst, ex) -> {
                 inflightWriteLimiter.release();
-                if (ex != null) {
-                    newCf.completeExceptionally(ex);
-                } else {
-                    newCf.complete(rst);
-                }
+                writeCallbackExecutor.execute(() -> {
+                    if (ex != null) {
+                        newCf.completeExceptionally(ex);
+                    } else {
+                        newCf.complete(rst);
+                    }
+                });
             });
             return newCf;
         } catch (InterruptedException e) {

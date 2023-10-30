@@ -82,7 +82,7 @@ public class S3Storage implements Storage {
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
-            4, ThreadUtils.createThreadFactory("s3-storage-upload-wal", true), LOGGER);
+            4, ThreadUtils.createThreadFactory("s3-storage-upload-wal-%d", true), LOGGER);
 
     private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
