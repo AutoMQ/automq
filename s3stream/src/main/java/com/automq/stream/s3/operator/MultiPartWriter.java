@@ -38,7 +38,7 @@ public class MultiPartWriter implements Writer {
     private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
     private final S3Operator operator;
     private final String path;
-    private final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
+    final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
     private String uploadId;
     private final List<CompletableFuture<CompletedPart>> parts = new LinkedList<>();
     private final AtomicInteger nextPartNumber = new AtomicInteger(1);
