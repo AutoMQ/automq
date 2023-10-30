@@ -21,7 +21,7 @@ VOLUME ["/opt/kafka-dev"]
 
 # Set mirrors
 ARG general_mirror_url=""
-RUN [[ -z "${general_mirror_url}" ]] || sed -i "s/deb.debian.org/${general_mirror_url}/g" /etc/apt/sources.list && sed -i "s|security.debian.org/debian-security|${general_mirror_url}/debian-security|g" /etc/apt/sources.list
+RUN [ -z "${general_mirror_url}" ] || (sed -i "s/deb.debian.org/${general_mirror_url}/g" /etc/apt/sources.list && sed -i "s|security.debian.org/debian-security|${general_mirror_url}/debian-security|g" /etc/apt/sources.list)
 
 # Do not ask for confirmations when running apt-get, etc.
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -41,7 +41,7 @@ RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl 
 # RUN python3 -m pip install -U pip==21.1.1;
 
 # setting mirrors
-RUN [[ -z "${general_mirror_url}" ]] || pip install -i "https://${general_mirror_url}/pypi/web/simple" pip -U && pip config set global.index-url "https://${general_mirror_url}/pypi/web/simple"
+RUN [ -z "${general_mirror_url}" ] || (pip install -i "https://${general_mirror_url}/pypi/web/simple" pip -U && pip config set global.index-url "https://${general_mirror_url}/pypi/web/simple")
 RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy awscli && pip3 install --upgrade "ducktape>0.8"
 
 # Set up ssh
