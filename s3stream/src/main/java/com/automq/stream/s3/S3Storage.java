@@ -179,6 +179,9 @@ public class S3Storage implements Storage {
             if (expectNextOffset == null || expectNextOffset == streamRecordBatch.getBaseOffset()) {
                 cacheBlock.put(streamRecordBatch);
                 streamNextOffsets.put(streamRecordBatch.getStreamId(), streamRecordBatch.getLastOffset());
+            } else {
+                LOGGER.error("unexpected WAL record, streamId={}, expectNextOffset={}, record={}", streamId, expectNextOffset, streamRecordBatch);
+                streamRecordBatch.release();
             }
         }
         if (logEndOffset >= 0L) {
