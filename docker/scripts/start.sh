@@ -80,7 +80,7 @@ help|-h|--help
     Display this help message
 up [--process.roles ROLE] [--node.id NODE_ID] [--controller.quorum.voters VOTERS]
    [--s3.region REGION] [--s3.bucket BUCKET] [--s3.endpoint ENDPOINT]
-   [--s3.access.key ACCESS_KEY] [--s3.secret.key SECRET_KEY]
+   [--s3.access.key ACCESS_KEY] [--s3.secret.key SECRET_KEY] [--override KEY=VALUE]
     start node.
 EOF
   exit "${exit_status}"
@@ -156,27 +156,12 @@ auto_balancer_setting_for_all() {
 auto_balancer_setting_for_controller_only() {
     file_name=$1
     add_or_setup_value "autobalancer.controller.enable" "true" "${file_name}"
-    add_or_setup_value "autobalancer.controller.anomaly.detect.interval.ms" "60000" "${file_name}"
-    add_or_setup_value "autobalancer.controller.metrics.delay.ms" "20000" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.in.distribution.detect.threshold" "0.2" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.in.distribution.detect.avg.deviation" "0.2" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.out.distribution.detect.threshold" "0.2" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.out.distribution.detect.avg.deviation" "0.2" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.in.utilization.threshold" "0.8" "${file_name}"
-    add_or_setup_value "autobalancer.controller.network.out.utilization.threshold" "0.8" "${file_name}"
-    add_or_setup_value "autobalancer.controller.execution.interval.ms" "100" "${file_name}"
-    add_or_setup_value "autobalancer.controller.load.aggregation" "true" "${file_name}"
     add_or_setup_value "autobalancer.controller.exclude.topics" "__consumer_offsets" "${file_name}"
 }
 
 auto_balancer_setting_for_broker_only() {
     file_name=$1
     add_or_setup_value "metric.reporters" "kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter" "${file_name}"
-    add_or_setup_value "autobalancer.reporter.metrics.reporting.interval.ms" "5000" "${file_name}"
-    # 10MB/s
-    add_or_setup_value "autobalancer.reporter.network.in.capacity" "67109" "${file_name}"
-    # 10MB/s
-    add_or_setup_value "autobalancer.reporter.network.out.capacity" "67109" "${file_name}"
 }
 
 turn_on_auto_balancer() {
@@ -237,6 +222,7 @@ kafka_monitor_ip() {
 
 kafka_up() {
   echo "kafka_up: start"
+  override_settings=()
 
   while [[ $# -ge 1 ]]; do
       case "${1}" in
@@ -249,6 +235,7 @@ kafka_up() {
           --s3.access.key) set_once s3_access_key "${2}" "s3 access key"; shift 2;;
           --s3.secret.key) set_once s3_secret_key "${2}" "s3 secret key"; shift 2;;
           --s3.endpoint) set_once s3_endpoint "${2}" "s3 endpoint"; shift 2;;
+          --override) [[ -n "${2}" ]] && override_settings+=("${2}"); shift 2;;
       esac
   done
 
@@ -285,10 +272,10 @@ kafka_up() {
       add_settings_for_s3 "${role}" "${kafka_dir}/config/kraft/${role}.properties"
   done
 
-  if [[ -z "${KAFKA_HEAP_OPTS}" ]]; then
+  if [[ -n "${KAFKA_HEAP_OPTS}" ]]; then
       kafka_heap_opts="${KAFKA_HEAP_OPTS}"
   elif [[ "${process_role}" == "broker" || "${process_role}" == "server" ]]; then
-      kafka_heap_opts="-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=4G"
+      kafka_heap_opts="-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G"
   elif [[ "${process_role}" == "controller" ]]; then
       kafka_heap_opts="-Xms1g -Xmx1g -XX:MetaspaceSize=96m"
   else
@@ -306,6 +293,13 @@ kafka_up() {
   # change ip settings here
   kafka_monitor_ip
   echo "kafka_up: ip settings changed"
+
+  # override settings
+  for element in "${override_settings[@]}"; do
+      key=$(echo "${element}" | awk -F= '{print $1}')
+      value=$(echo "${element}" | awk -F= '{print $2}')
+      add_or_setup_value "${key}" "${value}" "${kafka_dir}/config/kraft/${process_role}.properties"
+  done
 
   # format the data path
   must_do -v "${kafka_dir}/bin/kafka-storage.sh format -g -t ${cluster_id} -c ${kafka_dir}/config/kraft/${process_role}.properties"

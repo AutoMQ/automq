@@ -74,7 +74,7 @@ services:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
+    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1 --override autobalancer.reporter.network.in.capacity=5120 --override autobalancer.reporter.network.out.capacity=5120 --override autobalancer.reporter.metrics.reporting.interval.ms=5000
     networks:
       - kos_net
     depends_on:
@@ -90,7 +90,7 @@ services:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
+    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1 --override autobalancer.reporter.network.in.capacity=5120 --override autobalancer.reporter.network.out.capacity=5120 --override autobalancer.reporter.metrics.reporting.interval.ms=5000
     networks:
       - kos_net
     depends_on:
