@@ -47,6 +47,10 @@ import scala.util.control.Breaks.{break, breakable}
  *
  * NOTE: this class is not thread-safe, and it relies on the thread safety provided by the Log class.
  *
+ * NOTE2: If you just want to pass an initial value to super class's variable field,
+ * it is better to use another variable to hold the initial value.
+ * See https://stackoverflow.com/questions/6656868/why-cant-i-assign-to-var-in-scala-subclass?rq=3.
+ *
  * @param metaStream                The meta stream
  * @param streamManager             The stream manager
  * @param streamSliceManager        The stream slice manager
@@ -54,10 +58,10 @@ import scala.util.control.Breaks.{break, breakable}
  * @param logSegmentManager         The log segment manager.
  * @param partitionMeta             The partition meta
  * @param leaderEpochCheckpointMeta The leader epoch checkpoint meta
- * @param _dir                      The directory in which log segments are created.
+ * @param __dir                     The directory in which log segments are created.
  * @param _config                   The log configuration settings.
  * @param segments                  The non-empty log segments recovered from disk
- * @param nextOffsetMetadata        The offset where the next message could be appended
+ * @param _nextOffsetMetadata       The offset where the next message could be appended.
  * @param scheduler                 The thread pool scheduler used for background actions
  * @param time                      The time instance used for checking the clock
  * @param topicPartition            The topic partition associated with this log
@@ -71,17 +75,17 @@ class ElasticLog(val metaStream: MetaStream,
                  val logSegmentManager: ElasticLogSegmentManager,
                  val partitionMeta: ElasticPartitionMeta,
                  val leaderEpochCheckpointMeta: ElasticLeaderEpochCheckpointMeta,
-                 _dir: File,
+                 __dir: File,
                  _config: LogConfig,
                  segments: LogSegments,
-                 @volatile private[log] var nextOffsetMetadata: LogOffsetMetadata,
+                 _nextOffsetMetadata: LogOffsetMetadata,
                  scheduler: Scheduler,
                  time: Time,
                  topicPartition: TopicPartition,
                  logDirFailureChannel: LogDirFailureChannel,
                  val _initStartOffset: Long = 0,
                  leaderEpoch: Long
-                ) extends LocalLog(_dir, _config, segments, partitionMeta.getRecoverOffset, nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
+                ) extends LocalLog(__dir, _config, segments, partitionMeta.getRecoverOffset, _nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, _initStartOffset) {
 
   import ElasticLog._
 
@@ -89,7 +93,7 @@ class ElasticLog(val metaStream: MetaStream,
   /**
    * The next valid offset. The records with offset smaller than $confirmOffset has been confirmed by ElasticStream.
    */
-  private val _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(nextOffsetMetadata)
+  private val _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(_nextOffsetMetadata)
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
   private val appendAckQueue = new LinkedBlockingQueue[Long]()
@@ -290,7 +294,7 @@ class ElasticLog(val metaStream: MetaStream,
       trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
         s"total length ${segments.sizeInBytes} bytes")
       // get LEO from super class
-      val endOffsetMetadata = logEndOffsetMetadata
+      val endOffsetMetadata = nextOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset
       val segmentOpt = segments.floorSegment(startOffset)
 

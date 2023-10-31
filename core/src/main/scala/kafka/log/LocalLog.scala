@@ -63,11 +63,11 @@ case class SplitSegmentResult(deletedSegments: Iterable[LogSegment], newSegments
  * @param topicPartition The topic partition associated with this log
  * @param logDirFailureChannel The LogDirFailureChannel instance to asynchronously handle Log dir failure
  */
-class LocalLog(@volatile private var _dir: File,
+class LocalLog(@volatile protected var _dir: File,
                @volatile private[log] var config: LogConfig,
                private[log] val segments: LogSegments,
                @volatile private[log] var recoveryPoint: Long,
-               @volatile private var nextOffsetMetadata: LogOffsetMetadata,
+               @volatile protected var nextOffsetMetadata: LogOffsetMetadata,
                private[log] val scheduler: Scheduler,
                private[log] val time: Time,
                private[log] val topicPartition: TopicPartition,

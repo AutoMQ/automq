@@ -33,13 +33,13 @@ import scala.collection.mutable
  */
 class ElasticProducerStateManager(
                                    override val topicPartition: TopicPartition,
-                                   var logDir: File,
+                                   __logDir: File,
                                    override val maxTransactionTimeoutMs: Int,
                                    override val producerStateManagerConfig: ProducerStateManagerConfig,
                                    override val time: Time,
                                    val snapshotsMap: mutable.Map[Long, ElasticPartitionProducerSnapshotMeta],
                                    val persistFun: ElasticPartitionProducerSnapshotMeta => Unit
-                                 ) extends ProducerStateManager(topicPartition, logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time) {
+                                 ) extends ProducerStateManager(topicPartition, __logDir, maxTransactionTimeoutMs, producerStateManagerConfig, time) {
 
   this.logIdent = s"[ElasticProducerStateManager partition=$topicPartition] "
 

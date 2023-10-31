@@ -64,7 +64,7 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extend
       case RecoveryPointCheckpoint =>
         read0(elasticLog => (elasticLog.topicPartition, elasticLog.recoveryPoint))
       case ReplicationOffsetCheckpoint =>
-        read0(elasticLog => (elasticLog.topicPartition, elasticLog.nextOffsetMetadata.messageOffset))
+        read0(elasticLog => (elasticLog.topicPartition, elasticLog.logEndOffsetMetadata.messageOffset))
       case _ =>
         throw new IllegalArgumentException(s"Unsupported raw kafka meta $rawKafkaMeta for reading")
     }
