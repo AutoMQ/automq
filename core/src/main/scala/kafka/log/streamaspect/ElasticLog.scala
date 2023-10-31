@@ -47,6 +47,10 @@ import scala.util.control.Breaks.{break, breakable}
  *
  * NOTE: this class is not thread-safe, and it relies on the thread safety provided by the Log class.
  *
+ * NOTE2: If you just want to pass an initial value to super class's variable field,
+ * it is better to use another variable to hold the initial value.
+ * See https://stackoverflow.com/questions/6656868/why-cant-i-assign-to-var-in-scala-subclass?rq=3.
+ *
  * @param metaStream                The meta stream
  * @param streamManager             The stream manager
  * @param streamSliceManager        The stream slice manager
@@ -54,10 +58,10 @@ import scala.util.control.Breaks.{break, breakable}
  * @param logSegmentManager         The log segment manager.
  * @param partitionMeta             The partition meta
  * @param leaderEpochCheckpointMeta The leader epoch checkpoint meta
- * @param _dir                      The directory in which log segments are created.
+ * @param __dir                     The directory in which log segments are created.
  * @param _config                   The log configuration settings.
  * @param segments                  The non-empty log segments recovered from disk
- * @param nextOffsetMetadata        The offset where the next message could be appended
+ * @param _nextOffsetMetadata       The offset where the next message could be appended.
  * @param scheduler                 The thread pool scheduler used for background actions
  * @param time                      The time instance used for checking the clock
  * @param topicPartition            The topic partition associated with this log
