@@ -474,6 +474,10 @@ public class S3Storage implements Storage {
         }, backgroundExecutor).exceptionally(ex -> {
             LOGGER.error("Unexpected exception when commit WAL object", ex);
             context.cf.completeExceptionally(ex);
+            System.err.println("Unexpected exception when commit WAL object");
+            //noinspection CallToPrintStackTrace
+            ex.printStackTrace();
+            System.exit(1);
             return null;
         });
     }
