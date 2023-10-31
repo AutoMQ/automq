@@ -41,6 +41,7 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class WALObjectUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALObjectUploadTask.class);
+    private long startTimestamp;
     private final Logger s3ObjectLogger;
     private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
     private final int objectBlockSize;
@@ -86,6 +87,7 @@ public class WALObjectUploadTask {
     }
 
     public CompletableFuture<Long> prepare() {
+        startTimestamp = System.currentTimeMillis();
         if (forceSplit) {
             prepareCf.complete(NOOP_OBJECT_ID);
         } else {
@@ -152,7 +154,7 @@ public class WALObjectUploadTask {
 
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> objectManager.commitWALObject(request).thenApply(resp -> {
-            LOGGER.info("Commit WAL object {}", commitWALObjectRequest);
+            LOGGER.info("Commit WAL object {}, cost {}ms", commitWALObjectRequest, System.currentTimeMillis() - startTimestamp);
             if (s3ObjectLogEnable) {
                 s3ObjectLogger.trace("{}", commitWALObjectRequest);
             }
