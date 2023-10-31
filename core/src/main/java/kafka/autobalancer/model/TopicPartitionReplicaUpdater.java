@@ -165,7 +165,7 @@ public class TopicPartitionReplicaUpdater {
         lock.lock();
         try {
             if (this.replica.timestamp < timeSince) {
-                LOGGER.warn("Topic partition {} metrics is out of sync, expected earliest time: {}, actual: {}",
+                LOGGER.debug("Topic partition {} metrics is out of sync, expected earliest time: {}, actual: {}",
                         this.replica.getTopicPartition(), timeSince, this.replica.timestamp);
                 return null;
             }

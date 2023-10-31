@@ -104,7 +104,9 @@ public class ClusterModel implements BrokerStatusListener, TopicPartitionStatusL
                 for (TopicPartitionReplicaUpdater replicaUpdater : entry.getValue().values()) {
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica = replicaUpdater.get(now - maxToleratedMetricsDelay);
                     if (replica == null) {
-                        continue;
+                        logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, replicaUpdater.topicPartition());
+                        snapshot.removeBroker(brokerIdToRackMap.get(brokerId), brokerId);
+                        break;
                     }
                     if (excludedTopics.contains(replica.getTopicPartition().topic())) {
                         continue;
