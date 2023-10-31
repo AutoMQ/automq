@@ -95,7 +95,11 @@ public class ControllerRequestSender {
 
             @Override
             void onError(Throwable e) {
-                task.completeExceptionally(e);
+                if (e instanceof TimeoutException) {
+                    retryTask(task);
+                } else {
+                    task.completeExceptionally(e);
+                }
             }
         };
         sendRequest(builder, requestCtx);
@@ -206,9 +210,14 @@ public class ControllerRequestSender {
 
                 @Override
                 void onError(Throwable e) {
-                    inflight.forEach(t -> t.future.completeExceptionally(e));
-                    if (RequestAccumulator.this.inflight.compareAndSet(true, false)) {
-                        send(null);
+                    if (e instanceof TimeoutException) {
+                        RequestAccumulator.this.inflight.compareAndSet(true, false);
+                        inflight.forEach(ControllerRequestSender.this::retryTask);
+                    } else {
+                        inflight.forEach(t -> t.future.completeExceptionally(e));
+                        if (RequestAccumulator.this.inflight.compareAndSet(true, false)) {
+                            send(null);
+                        }
                     }
                 }
 
