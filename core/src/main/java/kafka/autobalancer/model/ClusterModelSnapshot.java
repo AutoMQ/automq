@@ -57,6 +57,12 @@ public class ClusterModelSnapshot {
         brokerToReplicaMap.putIfAbsent(broker.getBrokerId(), new HashMap<>());
     }
 
+    public void removeBroker(String rack, int brokerId) {
+        rackToBrokerMap.remove(rack);
+        brokerMap.remove(brokerId);
+        brokerToReplicaMap.remove(brokerId);
+    }
+
     public void addTopicPartition(int brokerId, TopicPartitionReplica replica) {
         brokerToReplicaMap.putIfAbsent(brokerId, new HashMap<>());
         brokerToReplicaMap.get(brokerId).put(replica.getTopicPartition(), replica);
