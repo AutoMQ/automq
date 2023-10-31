@@ -29,8 +29,8 @@ import java.io.{File, IOException}
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 
-class ElasticTimeIndex(_file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1, _initLastEntry: TimestampOffset = TimestampOffset.Unknown)
-  extends AbstractStreamIndex(_file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
+class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1, _initLastEntry: TimestampOffset = TimestampOffset.Unknown)
+  extends AbstractStreamIndex(__file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = {
     inLock(lock) {

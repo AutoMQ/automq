@@ -36,9 +36,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
                         producerIdExpirationCheckIntervalMs: Int,
                         _leaderEpochCache: Option[LeaderEpochFileCache],
                         producerStateManager: ProducerStateManager,
-                        _topicId: Option[Uuid])
+                        __topicId: Option[Uuid])
   extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
-    _leaderEpochCache, producerStateManager, _topicId, false) {
+    _leaderEpochCache, producerStateManager, __topicId, false) {
 
   var confirmOffsetChangeListener: Option[() => Unit] = None
 

@@ -27,8 +27,8 @@ import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
-  extends TransactionIndex(startOffset, _file) {
+class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
+  extends TransactionIndex(startOffset, __file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
   @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
@@ -51,10 +51,6 @@ class ElasticTransactionIndex(@volatile private var _file: File, streamSliceSupp
   }
 
   override def file: File = new File("mock")
-
-  override def updateParentDir(parentDir: File): Unit = {
-    _file = new File(parentDir, file.getName)
-  }
 
   // Deleting index is actually implemented in ElasticLogSegment.deleteIfExists. We implement it here for tests.
   override def deleteIfExists(): Boolean = {
