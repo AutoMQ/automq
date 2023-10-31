@@ -42,7 +42,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("s3-metrics-logger-%d", true));
     private final S3MetricsLoggerProcessor processor = new S3MetricsLoggerProcessor();
     private final S3MetricsLoggerProcessor.Context context = new S3MetricsLoggerProcessor.Context();
-    private long loggerIntervalMs = 10000;
+    private long loggerIntervalMs = 60000;
 
     @Override
     public void onMetricAdded(MetricName name, Metric metric) {
@@ -67,7 +67,9 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     @Override
     public void configure(Map<String, ?> configs) {
         try {
-            loggerIntervalMs = Long.parseLong(String.valueOf(configs.get(S3_METRICS_LOGGER_INTERVAL_MS)));
+            if (configs.containsKey(S3_METRICS_LOGGER_INTERVAL_MS)) {
+                loggerIntervalMs = Long.parseLong(String.valueOf(configs.get(S3_METRICS_LOGGER_INTERVAL_MS)));
+            }
         } catch (Exception ignored) {
 
         }
