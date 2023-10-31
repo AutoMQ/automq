@@ -76,7 +76,7 @@ public class DataBlockReader {
         readBlocks(streamDataBlocks, -1);
     }
 
-    public void readBlocks(List<StreamDataBlock> streamDataBlocks, long networkInboundBandwidth) {
+    public void readBlocks(List<StreamDataBlock> streamDataBlocks, long maxReadBatchSize) {
         if (streamDataBlocks.isEmpty()) {
             return;
         }
@@ -86,20 +86,20 @@ public class DataBlockReader {
         // split streamDataBlocks to blocks with continuous offset
         while (end < streamDataBlocks.size()) {
             if (offset != -1 && streamDataBlocks.get(end).getBlockStartPosition() != offset) {
-                readContinuousBlocks(streamDataBlocks.subList(start, end), networkInboundBandwidth);
+                readContinuousBlocks(streamDataBlocks.subList(start, end), maxReadBatchSize);
                 start = end;
             }
             offset = streamDataBlocks.get(end).getBlockEndPosition();
             end++;
         }
         if (end > start) {
-            readContinuousBlocks(streamDataBlocks.subList(start, end), networkInboundBandwidth);
+            readContinuousBlocks(streamDataBlocks.subList(start, end), maxReadBatchSize);
         }
     }
 
-    public void readContinuousBlocks(List<StreamDataBlock> streamDataBlocks, long networkInboundBandwidth) {
+    public void readContinuousBlocks(List<StreamDataBlock> streamDataBlocks, long maxReadBatchSize) {
         long objectId = metadata.objectId();
-        if (networkInboundBandwidth <= 0) {
+        if (maxReadBatchSize <= 0) {
             readContinuousBlocks0(streamDataBlocks);
             return;
         }
@@ -109,7 +109,7 @@ public class DataBlockReader {
         int end = 0;
         while (end < streamDataBlocks.size()) {
             currentReadSize += streamDataBlocks.get(end).getBlockSize();
-            if (currentReadSize >= networkInboundBandwidth) {
+            if (currentReadSize >= maxReadBatchSize) {
                 final int finalStart = start;
                 if (start == end) {
                     // split single data block to multiple read
@@ -120,7 +120,7 @@ public class DataBlockReader {
                     Map<Integer, ByteBuf> bufferMap = new ConcurrentHashMap<>();
                     int cnt = 0;
                     while (remainBytes > 0) {
-                        long readSize = Math.min(remainBytes, networkInboundBandwidth);
+                        long readSize = Math.min(remainBytes, maxReadBatchSize);
                         endPosition = startPosition + readSize;
                         final int finalCnt = cnt;
                         cfList.add(s3Operator.rangeRead(objectKey, startPosition, endPosition, ThrottleStrategy.THROTTLE)
