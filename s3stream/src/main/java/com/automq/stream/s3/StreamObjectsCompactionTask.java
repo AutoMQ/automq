@@ -23,6 +23,9 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +63,7 @@ public class StreamObjectsCompactionTask {
     private final S3Operator s3Operator;
     private List<CompactionResult> compactionResults;
     private final String logIdent;
+    private final ExecutorService executor;
 
     /**
      * Constructor of StreamObjectsCompactionTask.
@@ -73,7 +77,7 @@ public class StreamObjectsCompactionTask {
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
                                        long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs) {
-        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, false);
+        this(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes, eligibleStreamObjectLivingTimeInMs, false, ForkJoinPool.commonPool());
     }
 
     /**
@@ -89,7 +93,7 @@ public class StreamObjectsCompactionTask {
      */
     public StreamObjectsCompactionTask(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
                                        long compactedStreamObjectMaxSizeInBytes, long eligibleStreamObjectLivingTimeInMs,
-                                       boolean s3ObjectLogEnabled) {
+                                       boolean s3ObjectLogEnabled, ExecutorService executor) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
@@ -100,6 +104,7 @@ public class StreamObjectsCompactionTask {
         this.compactionResults = Collections.emptyList();
         this.logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
+        this.executor = executor;
     }
 
     private CompletableFuture<CompactionResult> doCompaction(List<S3StreamObjectMetadataSplitWrapper> streamObjectMetadataList) {
@@ -120,7 +125,7 @@ public class StreamObjectsCompactionTask {
 
         AtomicInteger smallSizeCopyWriteCount = new AtomicInteger(0);
         return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30))
-            .thenCompose(objId -> {
+            .thenComposeAsync(objId -> {
                 StreamObjectCopier objectCopier = new StreamObjectCopier(objId, s3Operator);
                 streamObjectMetadataList.forEach(metadataWrapper -> {
                     S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(metadataWrapper.s3StreamObjectMetadata().objectId(),
@@ -134,8 +139,8 @@ public class StreamObjectsCompactionTask {
                         smallSizeCopyWriteCount.set(objectCopier.smallSizeCopyWriteCount());
                         return new CommitStreamObjectRequest(objId, objectCopier.size(), stream.streamId(), startOffset, endOffset, sourceObjectIds);
                     });
-            })
-            .thenCompose(request -> {
+            }, executor)
+            .thenComposeAsync(request -> {
                 if (s3ObjectLogEnabled) {
                     s3ObjectLogger.trace("{}", request);
                 }
@@ -145,7 +150,7 @@ public class StreamObjectsCompactionTask {
                     return new CompactionResult(stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(),
                             request.getObjectId(), request.getObjectSize(), System.currentTimeMillis() - startTimestamp, smallSizeCopyWriteCount.get());
                 });
-            });
+            }, executor);
     }
 
     public CompletableFuture<Void> doCompactions() {
@@ -587,6 +592,7 @@ public class StreamObjectsCompactionTask {
         private long compactedStreamObjectMaxSizeInBytes;
         private long eligibleStreamObjectLivingTimeInMs;
         private boolean s3ObjectLogEnabled;
+        private ExecutorService executor;
 
         public Builder(ObjectManager objectManager, S3Operator s3Operator) {
             this.objectManager = objectManager;
@@ -604,22 +610,27 @@ public class StreamObjectsCompactionTask {
          * it will be set to {@link Writer#MAX_OBJECT_SIZE}.
          * @return builder.
          */
-        public Builder withCompactedStreamObjectMaxSizeInBytes(long compactedStreamObjectMaxSizeInBytes) {
+        public Builder compactedStreamObjectMaxSizeInBytes(long compactedStreamObjectMaxSizeInBytes) {
             this.compactedStreamObjectMaxSizeInBytes = compactedStreamObjectMaxSizeInBytes;
             return this;
         }
-        public Builder withEligibleStreamObjectLivingTimeInMs(long eligibleStreamObjectLivingTimeInMs) {
+        public Builder eligibleStreamObjectLivingTimeInMs(long eligibleStreamObjectLivingTimeInMs) {
             this.eligibleStreamObjectLivingTimeInMs = eligibleStreamObjectLivingTimeInMs;
             return this;
         }
-        public Builder withS3ObjectLogEnabled(boolean s3ObjectLogEnabled) {
+        public Builder s3ObjectLogEnabled(boolean s3ObjectLogEnabled) {
             this.s3ObjectLogEnabled = s3ObjectLogEnabled;
+            return this;
+        }
+
+        public Builder executor(ExecutorService executor) {
+            this.executor = executor;
             return this;
         }
 
         public StreamObjectsCompactionTask build() {
             return new StreamObjectsCompactionTask(objectManager, s3Operator, stream, compactedStreamObjectMaxSizeInBytes,
-                eligibleStreamObjectLivingTimeInMs, s3ObjectLogEnabled);
+                eligibleStreamObjectLivingTimeInMs, s3ObjectLogEnabled, executor);
         }
     }
 }
