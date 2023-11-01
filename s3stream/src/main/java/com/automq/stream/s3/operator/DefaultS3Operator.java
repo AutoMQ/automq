@@ -23,7 +23,9 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.StringUtils;
@@ -68,7 +70,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -86,16 +87,16 @@ public class DefaultS3Operator implements S3Operator {
     private final List<ReadTask> waitingReadTasks = new LinkedList<>();
     private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3operator", true));
-    private final ExecutorService readLimiterCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-read-limiter-cb-executor", true));
-    private final ExecutorService writeLimiterCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-write-limiter-cb-executor", true));
-    private final ExecutorService readCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-read-cb-executor-%d", true));
-    private final ExecutorService writeCallbackExecutor = Executors.newSingleThreadExecutor(
-            ThreadUtils.createThreadFactory("s3-write-cb-executor-%d", true));
+    private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory("s3operator", true), LOGGER);
+    private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
+            ThreadUtils.createThreadFactory("s3-read-limiter-cb-executor-%d", true), LOGGER);
+    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
+            ThreadUtils.createThreadFactory("s3-write-limiter-cb-executor-%d", true), LOGGER);
+    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPool(1,
+            ThreadUtils.createThreadFactory("s3-read-cb-executor-%d", true), LOGGER);
+    private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPool(1,
+            ThreadUtils.createThreadFactory("s3-write-cb-executor-%d", true), LOGGER);
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
         this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);
@@ -221,7 +222,7 @@ public class DefaultS3Operator implements S3Operator {
         }
         mergedReadTasks.forEach(
                 mergedReadTask -> mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
-                        .whenComplete(mergedReadTask::handleReadCompleted)
+                        .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), LOGGER))
         );
     }
 
