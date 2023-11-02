@@ -133,6 +133,7 @@ docker_build() {
     prepare
     echo_and_do docker build -t "automqinc/kos:${kos_version}" .
 #        --build-arg "general_mirror_url=mirrors.ustc.edu.cn" .
+
 }
 
 # Parse command-line arguments
