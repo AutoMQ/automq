@@ -39,34 +39,25 @@ public class Config {
     private int s3StreamSplitSize = 16777216;
     private int s3ObjectBlockSize = 8388608;
     private int s3ObjectPartSize = 16777216;
-    private long s3CacheSize = 100 * 1024 * 1024;
-    private int s3StreamObjectCompactionTaskIntervalMinutes = 60;
+    private long s3BlockCacheSize = 100 * 1024 * 1024;
+    private int s3StreamObjectCompactionIntervalMinutes = 60;
     private long s3StreamObjectCompactionMaxSizeBytes = 10737418240L;
     private int s3StreamObjectCompactionLivingTimeMinutes = 60;
     private int s3ControllerRequestRetryMaxCount = 5;
     private long s3ControllerRequestRetryBaseDelayMs = 500;
     private long brokerEpoch = 0L;
-    private int s3ObjectCompactionInterval = 20;
-    private long s3ObjectCompactionCacheSize = 200 * 1024 * 1024;
-    private long s3ObjectCompactionNWInBandwidth = 50 * 1024 * 1024;
-    private long s3ObjectCompactionNWOutBandwidth = 50 * 1024 * 1024;
-    private long s3StreamObjectsCompactionNWInBandwidth = 10L * 1024 * 1024;
-    private int s3ObjectCompactionUploadConcurrency = 8;
-    private long s3ObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
-    private int s3ObjectCompactionForceSplitPeriod = 120;
-    private int s3ObjectCompactionMaxObjectNum = 500;
-    private int s3ObjectMaxStreamNumPerWAL = 10000;
-    private int s3ObjectMaxStreamObjectNumPerCommit = 10000;
+    private int s3WALObjectCompactionInterval = 20;
+    private long s3WALObjectCompactionCacheSize = 200 * 1024 * 1024;
+    private int s3WALObjectCompactionUploadConcurrency = 8;
+    private long s3WALObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
+    private int s3WALObjectCompactionForceSplitPeriod = 120;
+    private int s3WALObjectCompactionMaxObjectNum = 500;
+    private int s3MaxStreamNumPerWALObject = 10000;
+    private int s3MaxStreamObjectNumPerCommit = 10000;
     private boolean s3MockEnable = false;
     private boolean s3ObjectLogEnable = false;
     // 100MB/s
-    private long networkInboundBaselineBandwidth = 100 * 1024 * 1024;
-    // 10 Times burst
-    private long networkInboundBurstBandwidth = 10 * networkInboundBaselineBandwidth;
-    // 100MB/s
-    private long networkOutboundBaselineBandwidth = 100 * 1024 * 1024;
-    // 10 Times burst
-    private long networkOutboundBurstBandwidth = 10 * networkOutboundBaselineBandwidth;
+    private long networkBaselineBandwidth = 100 * 1024 * 1024;
     private int refillPeriodMs = 1000;
 
     public int brokerId() {
@@ -141,12 +132,12 @@ public class Config {
         return s3ObjectPartSize;
     }
 
-    public long s3CacheSize() {
-        return s3CacheSize;
+    public long s3BlockCacheSize() {
+        return s3BlockCacheSize;
     }
 
-    public int s3StreamObjectCompactionTaskIntervalMinutes() {
-        return s3StreamObjectCompactionTaskIntervalMinutes;
+    public int s3StreamObjectCompactionIntervalMinutes() {
+        return s3StreamObjectCompactionIntervalMinutes;
     }
 
     public long s3StreamObjectCompactionMaxSizeBytes() {
@@ -169,48 +160,36 @@ public class Config {
         return brokerEpoch;
     }
 
-    public int s3ObjectCompactionInterval() {
-        return s3ObjectCompactionInterval;
+    public int s3WALObjectCompactionInterval() {
+        return s3WALObjectCompactionInterval;
     }
 
-    public long s3ObjectCompactionCacheSize() {
-        return s3ObjectCompactionCacheSize;
+    public long s3WALObjectCompactionCacheSize() {
+        return s3WALObjectCompactionCacheSize;
     }
 
-    public long s3ObjectCompactionNWInBandwidth() {
-        return s3ObjectCompactionNWInBandwidth;
+    public int s3WALObjectCompactionUploadConcurrency() {
+        return s3WALObjectCompactionUploadConcurrency;
     }
 
-    public long s3ObjectCompactionNWOutBandwidth() {
-        return s3ObjectCompactionNWOutBandwidth;
+    public long s3WALObjectCompactionStreamSplitSize() {
+        return s3WALObjectCompactionStreamSplitSize;
     }
 
-    public long s3StreamObjectsCompactionNWInBandwidth() {
-        return s3StreamObjectsCompactionNWInBandwidth;
+    public int s3WALObjectCompactionForceSplitPeriod() {
+        return s3WALObjectCompactionForceSplitPeriod;
     }
 
-    public int s3ObjectCompactionUploadConcurrency() {
-        return s3ObjectCompactionUploadConcurrency;
+    public int s3WALObjectCompactionMaxObjectNum() {
+        return s3WALObjectCompactionMaxObjectNum;
     }
 
-    public long s3ObjectCompactionStreamSplitSize() {
-        return s3ObjectCompactionStreamSplitSize;
+    public int s3MaxStreamNumPerWALObject() {
+        return s3MaxStreamNumPerWALObject;
     }
 
-    public int s3ObjectCompactionForceSplitPeriod() {
-        return s3ObjectCompactionForceSplitPeriod;
-    }
-
-    public int s3ObjectCompactionMaxObjectNum() {
-        return s3ObjectCompactionMaxObjectNum;
-    }
-
-    public int s3ObjectMaxStreamNumPerWAL() {
-        return s3ObjectMaxStreamNumPerWAL;
-    }
-
-    public int s3ObjectMaxStreamObjectNumPerCommit() {
-        return s3ObjectMaxStreamObjectNumPerCommit;
+    public int s3MaxStreamObjectNumPerCommit() {
+        return s3MaxStreamObjectNumPerCommit;
     }
 
     public boolean s3MockEnable() {
@@ -229,20 +208,8 @@ public class Config {
         return s3SecretKey;
     }
 
-    public long networkInboundBaselineBandwidth() {
-        return networkInboundBaselineBandwidth;
-    }
-
-    public long networkInboundBurstBandwidth() {
-        return networkInboundBurstBandwidth;
-    }
-
-    public long networkOutboundBaselineBandwidth() {
-        return networkOutboundBaselineBandwidth;
-    }
-
-    public long networkOutboundBurstBandwidth() {
-        return networkOutboundBurstBandwidth;
+    public long networkBaselineBandwidth() {
+        return networkBaselineBandwidth;
     }
 
     public int refillPeriodMs() {
@@ -339,13 +306,13 @@ public class Config {
         return this;
     }
 
-    public Config s3CacheSize(long s3CacheSize) {
-        this.s3CacheSize = s3CacheSize;
+    public Config s3BlockCacheSize(long s3CacheSize) {
+        this.s3BlockCacheSize = s3CacheSize;
         return this;
     }
 
-    public Config s3StreamObjectCompactionTaskIntervalMinutes(int s3StreamObjectCompactionTaskIntervalMinutes) {
-        this.s3StreamObjectCompactionTaskIntervalMinutes = s3StreamObjectCompactionTaskIntervalMinutes;
+    public Config s3StreamObjectCompactionIntervalMinutes(int s3StreamObjectCompactionIntervalMinutes) {
+        this.s3StreamObjectCompactionIntervalMinutes = s3StreamObjectCompactionIntervalMinutes;
         return this;
     }
 
@@ -374,53 +341,43 @@ public class Config {
         return this;
     }
 
-    public Config s3ObjectCompactionInterval(int s3ObjectCompactionInterval) {
-        this.s3ObjectCompactionInterval = s3ObjectCompactionInterval;
+    public Config s3WALObjectCompactionInterval(int s3WALObjectCompactionInterval) {
+        this.s3WALObjectCompactionInterval = s3WALObjectCompactionInterval;
         return this;
     }
 
-    public Config s3ObjectCompactionCacheSize(long s3ObjectCompactionCacheSize) {
-        this.s3ObjectCompactionCacheSize = s3ObjectCompactionCacheSize;
+    public Config s3WALObjectCompactionCacheSize(long s3WALObjectCompactionCacheSize) {
+        this.s3WALObjectCompactionCacheSize = s3WALObjectCompactionCacheSize;
         return this;
     }
 
-    public Config s3ObjectCompactionNWInBandwidth(long s3ObjectCompactionNWInBandwidth) {
-        this.s3ObjectCompactionNWInBandwidth = s3ObjectCompactionNWInBandwidth;
+    public Config s3WALObjectCompactionUploadConcurrency(int s3WALObjectCompactionUploadConcurrency) {
+        this.s3WALObjectCompactionUploadConcurrency = s3WALObjectCompactionUploadConcurrency;
         return this;
     }
 
-    public Config s3ObjectCompactionNWOutBandwidth(long s3ObjectCompactionNWOutBandwidth) {
-        this.s3ObjectCompactionNWOutBandwidth = s3ObjectCompactionNWOutBandwidth;
+    public Config s3WALObjectCompactionStreamSplitSize(long s3WALObjectCompactionStreamSplitSize) {
+        this.s3WALObjectCompactionStreamSplitSize = s3WALObjectCompactionStreamSplitSize;
         return this;
     }
 
-    public Config s3ObjectCompactionUploadConcurrency(int s3ObjectCompactionUploadConcurrency) {
-        this.s3ObjectCompactionUploadConcurrency = s3ObjectCompactionUploadConcurrency;
+    public Config s3WALObjectCompactionForceSplitPeriod(int s3WALObjectCompactionForceSplitPeriod) {
+        this.s3WALObjectCompactionForceSplitPeriod = s3WALObjectCompactionForceSplitPeriod;
         return this;
     }
 
-    public Config s3ObjectCompactionStreamSplitSize(long s3ObjectCompactionStreamSplitSize) {
-        this.s3ObjectCompactionStreamSplitSize = s3ObjectCompactionStreamSplitSize;
+    public Config s3WALObjectCompactionMaxObjectNum(int s3WALObjectCompactionMaxObjectNum) {
+        this.s3WALObjectCompactionMaxObjectNum = s3WALObjectCompactionMaxObjectNum;
         return this;
     }
 
-    public Config s3ObjectCompactionForceSplitPeriod(int s3ObjectCompactionForceSplitPeriod) {
-        this.s3ObjectCompactionForceSplitPeriod = s3ObjectCompactionForceSplitPeriod;
+    public Config s3MaxStreamNumPerWALObject(int s3MaxStreamNumPerWALObject) {
+        this.s3MaxStreamNumPerWALObject = s3MaxStreamNumPerWALObject;
         return this;
     }
 
-    public Config s3ObjectCompactionMaxObjectNum(int s3ObjectCompactionMaxObjectNum) {
-        this.s3ObjectCompactionMaxObjectNum = s3ObjectCompactionMaxObjectNum;
-        return this;
-    }
-
-    public Config s3ObjectMaxStreamNumPerWAL(int s3ObjectCompactionMaxStreamNumInWAL) {
-        this.s3ObjectMaxStreamNumPerWAL = s3ObjectCompactionMaxStreamNumInWAL;
-        return this;
-    }
-
-    public Config s3ObjectMaxStreamObjectNumPerCommit(int s3ObjectCompactionMaxStreamObjectNum) {
-        this.s3ObjectMaxStreamObjectNumPerCommit = s3ObjectCompactionMaxStreamObjectNum;
+    public Config s3MaxStreamObjectNumPerCommit(int s3MaxStreamObjectNumPerCommit) {
+        this.s3MaxStreamObjectNumPerCommit = s3MaxStreamObjectNumPerCommit;
         return this;
     }
 
@@ -444,28 +401,8 @@ public class Config {
         return this;
     }
 
-    public Config s3StreamObjectsCompactionNWInBandwidth(long s3StreamObjectsCompactionNWInBandwidth) {
-        this.s3StreamObjectsCompactionNWInBandwidth = s3StreamObjectsCompactionNWInBandwidth;
-        return this;
-    }
-
-    public Config networkInboundBaselineBandwidth(long networkInboundBaselineBandwidth) {
-        this.networkInboundBaselineBandwidth = networkInboundBaselineBandwidth;
-        return this;
-    }
-
-    public Config networkInboundBurstBandwidth(long networkInboundBurstBandwidth) {
-        this.networkInboundBurstBandwidth = networkInboundBurstBandwidth;
-        return this;
-    }
-
-    public Config networkOutboundBaselineBandwidth(long networkOutboundBaselineBandwidth) {
-        this.networkOutboundBaselineBandwidth = networkOutboundBaselineBandwidth;
-        return this;
-    }
-
-    public Config networkOutboundBurstBandwidth(long networkOutboundBurstBandwidth) {
-        this.networkOutboundBurstBandwidth = networkOutboundBurstBandwidth;
+    public Config networkBaselineBandwidth(long networkBaselineBandwidth) {
+        this.networkBaselineBandwidth = networkBaselineBandwidth;
         return this;
     }
 

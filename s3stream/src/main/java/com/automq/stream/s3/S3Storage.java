@@ -99,7 +99,7 @@ public class S3Storage implements Storage {
         this.maxWALCacheSize = config.s3WALCacheSize();
         this.log = log;
         this.blockCache = blockCache;
-        this.logCache = new LogCache(config.s3WALObjectSize(), config.s3ObjectMaxStreamNumPerWAL());
+        this.logCache = new LogCache(config.s3WALObjectSize(), config.s3MaxStreamNumPerWALObject());
         DirectByteBufAlloc.registerOOMHandlers(new LogCacheEvictOOMHandler());
         this.streamManager = streamManager;
         this.objectManager = objectManager;

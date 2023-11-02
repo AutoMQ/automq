@@ -133,7 +133,7 @@ public class S3StreamClient implements StreamClient {
 
             final long totalTimeCostInMs = System.currentTimeMillis() - startTime;
             LOGGER.info("stream objects compaction finished, summary: {}", totalSummaryBuilder.withTimeCostInMs(totalTimeCostInMs).build());
-        }, config.s3StreamObjectCompactionTaskIntervalMinutes(), config.s3StreamObjectCompactionTaskIntervalMinutes(), TimeUnit.MINUTES);
+        }, config.s3StreamObjectCompactionIntervalMinutes(), config.s3StreamObjectCompactionIntervalMinutes(), TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {

@@ -72,7 +72,7 @@ public class CompactionManager {
     private final int forceSplitObjectPeriod;
     private final int maxStreamNumPerWAL;
     private final int maxStreamObjectNumPerCommit;
-    private final long networkInboundBandwidth;
+    private final long networkBandwidth;
     private final boolean s3ObjectLogEnable;
     private final long compactionCacheSize;
 
@@ -84,16 +84,16 @@ public class CompactionManager {
         this.objectManager = objectManager;
         this.streamManager = streamManager;
         this.s3Operator = s3Operator;
-        this.compactionInterval = config.s3ObjectCompactionInterval();
-        this.forceSplitObjectPeriod = config.s3ObjectCompactionForceSplitPeriod();
-        this.maxObjectNumToCompact = config.s3ObjectCompactionMaxObjectNum();
+        this.compactionInterval = config.s3WALObjectCompactionInterval();
+        this.forceSplitObjectPeriod = config.s3WALObjectCompactionForceSplitPeriod();
+        this.maxObjectNumToCompact = config.s3WALObjectCompactionMaxObjectNum();
         this.s3ObjectLogEnable = config.s3ObjectLogEnable();
-        this.networkInboundBandwidth = config.networkInboundBaselineBandwidth();
+        this.networkBandwidth = config.networkBaselineBandwidth();
         this.uploader = new CompactionUploader(objectManager, s3Operator, config);
-        this.compactionCacheSize = config.s3ObjectCompactionCacheSize();
-        long streamSplitSize = config.s3ObjectCompactionStreamSplitSize();
-        maxStreamNumPerWAL = config.s3ObjectMaxStreamNumPerWAL();
-        maxStreamObjectNumPerCommit = config.s3ObjectMaxStreamObjectNumPerCommit();
+        this.compactionCacheSize = config.s3WALObjectCompactionCacheSize();
+        long streamSplitSize = config.s3WALObjectCompactionStreamSplitSize();
+        maxStreamNumPerWAL = config.s3MaxStreamNumPerWALObject();
+        maxStreamObjectNumPerCommit = config.s3MaxStreamObjectNumPerCommit();
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerWAL,
                 maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.brokerId())));
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("schedule-compact-executor"));
@@ -319,7 +319,7 @@ public class CompactionManager {
                         List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).toList();
                         DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator);
                         // batch read
-                        reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkInboundBandwidth));
+                        reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
 
                         List<CompletableFuture<Void>> cfs = new ArrayList<>();
                         for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : batchGroup) {
@@ -505,7 +505,7 @@ public class CompactionManager {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
                 List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
                 DataBlockReader reader = new DataBlockReader(metadata, s3Operator);
-                reader.readBlocks(streamDataBlocks, networkInboundBandwidth);
+                reader.readBlocks(streamDataBlocks, networkBandwidth);
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
             CompletableFuture<Void> walObjectCF = null;
