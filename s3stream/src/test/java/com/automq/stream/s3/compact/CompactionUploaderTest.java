@@ -53,8 +53,8 @@ public class CompactionUploaderTest extends CompactionTestBase {
         s3Operator = new MemoryS3Operator();
         objectManager = new MemoryMetadataManager();
         config = mock(Config.class);
-        when(config.s3ObjectCompactionNWOutBandwidth()).thenReturn(500L);
-        when(config.s3ObjectCompactionUploadConcurrency()).thenReturn(3);
+        when(config.networkBaselineBandwidth()).thenReturn(500L);
+        when(config.s3WALObjectCompactionUploadConcurrency()).thenReturn(3);
         when(config.s3ObjectPartSize()).thenReturn(100);
     }
 

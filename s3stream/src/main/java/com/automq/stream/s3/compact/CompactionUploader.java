@@ -48,7 +48,7 @@ public class CompactionUploader {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
-        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.s3ObjectCompactionUploadConcurrency(),
+        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.s3WALObjectCompactionUploadConcurrency(),
                 ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
         this.walObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
                 ThreadUtils.createThreadFactory("compaction-wal-object-uploader-%d", true), LOGGER);
