@@ -21,6 +21,7 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
+import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
@@ -249,7 +250,9 @@ public class DefaultS3Operator implements S3Operator {
                 .thenAccept(responsePublisher -> {
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationCount.inc();
                     OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.GET_OBJECT).operationTime.update(timerUtil.elapsed());
-                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) (end - start + 1), "merge_read");
+                    long size = end - start + 1;
+                    S3ObjectMetricsStats.S3_OBJECT_DOWNLOAD_SIZE.update(size);
+                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) size, "merge_read");
                     responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
                 })
                 .exceptionally(ex -> {
