@@ -54,7 +54,7 @@ public class KafkaS3MetricsLoggerReporter implements MetricsRegistryListener, Me
     }
 
     private boolean isS3Metrics(MetricName name) {
-        return "org.apache.kafka.server.metrics.s3stream".equals(name.getGroup()) && name.getName().startsWith("S3");
+        return "org.apache.kafka.server.metrics.s3stream".equals(name.getGroup());
     }
 
     @Override
