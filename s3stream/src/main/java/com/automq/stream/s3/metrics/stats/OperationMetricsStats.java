@@ -26,24 +26,30 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class OperationMetricsStats {
-    private static final Map<String, OperationMetrics> OPERATION_METRICS_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, Counter> OPERATION_COUNTER_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, Histogram> OPERATION_HIST_MAP = new ConcurrentHashMap<>();
 
-    public static OperationMetrics getOrCreateOperationMetrics(S3Operation s3Operation) {
-        return OPERATION_METRICS_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id ->
-                new OperationMetrics(s3Operation));
+    public static Counter getCounter(S3Operation s3Operation) {
+        return getOrCreateCounterMetrics(s3Operation);
     }
 
-    public static class OperationMetrics {
-        public final Counter operationCount;
-        public final Histogram operationTime;
+    public static Histogram getHistogram(S3Operation s3Operation) {
+        return getOrCreateHistMetrics(s3Operation);
+    }
 
-        public OperationMetrics(S3Operation s3Operation) {
-            Map<String, String> tags = Map.of(
-                    "operation", s3Operation.getName(),
-                    "op_type", s3Operation.getType().getName());
-            operationCount = S3StreamMetricsRegistry.getMetricsGroup().newCounter("operation_count" + Counter.SUFFIX, tags);
-            operationTime = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("operation_time", tags);
-        }
+    private static Counter getOrCreateCounterMetrics(S3Operation s3Operation) {
+        return OPERATION_COUNTER_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
+                .newCounter("operation_count" + Counter.SUFFIX, tags(s3Operation)));
+    }
 
+    private static Histogram getOrCreateHistMetrics(S3Operation s3Operation) {
+        return OPERATION_HIST_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
+                .newHistogram("operation_time", tags(s3Operation)));
+    }
+
+    private static Map<String, String> tags(S3Operation s3Operation) {
+        return Map.of(
+                "operation", s3Operation.getName(),
+                "op_type", s3Operation.getType().getName());
     }
 }

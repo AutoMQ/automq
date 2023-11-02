@@ -32,7 +32,7 @@ public class S3ObjectMetricsStats {
     public static final Histogram S3_OBJECT_UPLOAD_SIZE = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_upload_size", Collections.emptyMap());
     public static final Histogram S3_OBJECT_DOWNLOAD_SIZE = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_download_size", Collections.emptyMap());
 
-    public static Histogram getOrCreateS3ObjectMetrics(S3ObjectStage stage) {
+    public static Histogram getHistogram(S3ObjectStage stage) {
         return S3_OBJECT_TIME_MAP.computeIfAbsent(stage.getName(), op -> {
             Map<String, String> tags = Map.of("stage", stage.getName());
             return S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_stage_time", tags);
