@@ -24,6 +24,7 @@ start_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 kafka_dir="$(cd "${start_dir}/.." && pwd)"
 
 kos_version="3.4.0"
+skip_pkg="0"
 
 docker_kafka_base_dir="/opt/kafka"
 docker_kafka_data_dir="/data/kafka"
@@ -101,25 +102,37 @@ require_commands() {
 
 prepare() {
   require_commands java docker
-  must_do cd "${kafka_dir}"
-  must_do -v ./gradlew clean releaseTarGz
+  if [[ "${skip_pkg}" -eq "0" ]]; then
+    must_do cd "${kafka_dir}"
+    must_do -v ./gradlew clean releaseTarGz
+  fi
   must_do -v cp "${kafka_dir}/core/build/distributions/kafka_2.13-${kos_version}.tgz" ${start_dir}/
   must_do cd "${start_dir}"
 }
 
 docker_push() {
+    while [[ $# -ge 1 ]]; do
+        case "${1}" in
+            --version) kos_version="${2}"; shift 2;;
+            --skip-pkg) skip_pkg="1"; shift 1;;
+        esac
+    done
     prepare
     echo_and_do docker buildx build --platform linux/amd64,linux/arm64 \
           -t "automqinc/kos:${kos_version}" \
-          --build-arg "kafka_version=${kos_version}" \
           . --push
 }
 
 docker_build() {
+    while [[ $# -ge 1 ]]; do
+        case "${1}" in
+            --version) kos_version="${2}"; shift 2;;
+            --skip-pkg) skip_pkg="1"; shift 1;;
+        esac
+    done
     prepare
-    echo_and_do docker build -t automqinc/kos:3.4.0 \
-        --build-arg "kafka_version=${kos_version}" .
-#        --build-arg "general_mirror_url=mirrors.ustc.edu.cn" .
+    echo_and_do docker build -t "automqinc/kos:${kos_version}" \
+        --build-arg "general_mirror_url=mirrors.ustc.edu.cn" .
 }
 
 # Parse command-line arguments
