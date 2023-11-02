@@ -38,11 +38,11 @@ public class OperationMetricsStats {
         public final Histogram operationTime;
 
         public OperationMetrics(S3Operation s3Operation) {
-            Map<String, String> tags = Map.of("operation", s3Operation.getName());
-            operationCount = S3StreamMetricsRegistry.getMetricsGroup().newCounter(s3Operation.getType().getName(),
-                    s3Operation.getType().getName() + "OperationCount", tags);
-            operationTime = S3StreamMetricsRegistry.getMetricsGroup().newHistogram(s3Operation.getType().getName(),
-                    s3Operation.getType().getName() + "OperationTime", tags);
+            Map<String, String> tags = Map.of(
+                    "operation", s3Operation.getName(),
+                    "type", s3Operation.getType().getName());
+            operationCount = S3StreamMetricsRegistry.getMetricsGroup().newCounter("operation_count" + Counter.SUFFIX, tags);
+            operationTime = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("operation_time", tags);
         }
 
     }
