@@ -21,7 +21,7 @@ import java.util.Map;
 
 public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
     @Override
-    public Counter newCounter(String type, String name, Map<String, String> tags) {
+    public Counter newCounter(String name, Map<String, String> tags) {
         return new Counter() {
             @Override
             public void inc() {
@@ -41,7 +41,7 @@ public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
     }
 
     @Override
-    public Histogram newHistogram(String type, String name, Map<String, String> tags) {
+    public Histogram newHistogram(String name, Map<String, String> tags) {
         return new Histogram() {
             @Override
             public void update(long value) {
@@ -61,7 +61,7 @@ public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
     }
 
     @Override
-    public void newGauge(String type, String name, Map<String, String> tags, Gauge gauge) {
+    public void newGauge(String name, Map<String, String> tags, Gauge gauge) {
 
     }
 

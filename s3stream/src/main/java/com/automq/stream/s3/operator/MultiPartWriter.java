@@ -146,7 +146,7 @@ public class MultiPartWriter implements Writer {
         closeCf.whenComplete((nil, ex) -> {
             S3ObjectMetricsStats.getOrCreateS3ObjectMetrics(S3ObjectStage.TOTAL).update(timerUtil.elapsed());
             S3ObjectMetricsStats.S3_OBJECT_COUNT.inc();
-            S3ObjectMetricsStats.S3_OBJECT_SIZE.update(totalWriteSize.get());
+            S3ObjectMetricsStats.S3_OBJECT_UPLOAD_SIZE.update(totalWriteSize.get());
         });
         return closeCf;
     }

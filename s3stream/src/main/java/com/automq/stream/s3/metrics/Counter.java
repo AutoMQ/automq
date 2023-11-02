@@ -18,6 +18,7 @@
 package com.automq.stream.s3.metrics;
 
 public interface Counter {
+    String SUFFIX = "_total";
     void inc();
     void inc(long n);
     long count();

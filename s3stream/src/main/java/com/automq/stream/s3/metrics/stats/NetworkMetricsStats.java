@@ -20,26 +20,25 @@ package com.automq.stream.s3.metrics.stats;
 import com.automq.stream.s3.metrics.Counter;
 import com.automq.stream.s3.metrics.Gauge;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
-import com.automq.stream.s3.metrics.operations.S3MetricsType;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 
 import java.util.Collections;
 
 public class NetworkMetricsStats {
 
-    public static final Counter NETWORK_INBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup().newCounter(S3MetricsType.S3Network.getName(),
-            S3MetricsType.S3Network.getName() + "InboundUsage", Collections.emptyMap());
+    public static final Counter NETWORK_INBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup()
+            .newCounter("network_inbound_usage" + Counter.SUFFIX, Collections.emptyMap());
 
-    public static final Counter NETWORK_OUTBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup().newCounter(S3MetricsType.S3Network.getName(),
-            S3MetricsType.S3Network.getName() + "OutboundUsage", Collections.emptyMap());
+    public static final Counter NETWORK_OUTBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup()
+            .newCounter("network_outbound_usage" + Counter.SUFFIX, Collections.emptyMap());
 
     public static void registerNetworkInboundAvailableBandwidth(AsyncNetworkBandwidthLimiter.Type type, Gauge gauge) {
-        S3StreamMetricsRegistry.getMetricsGroup().newGauge(S3MetricsType.S3Network.getName(),
-                S3MetricsType.S3Network.getName() + type.getName() + "AvailableBandwidth", Collections.emptyMap(), gauge);
+        String metricName = String.format("network_%s_available_bandwidth", type.getName().toLowerCase());
+        S3StreamMetricsRegistry.getMetricsGroup().newGauge(metricName, Collections.emptyMap(), gauge);
     }
 
     public static void registerNetworkLimiterQueueSize(AsyncNetworkBandwidthLimiter.Type type, Gauge gauge) {
-        S3StreamMetricsRegistry.getMetricsGroup().newGauge(S3MetricsType.S3Network.getName(),
-                S3MetricsType.S3Network.getName() + type.getName() + "QueueSize", Collections.emptyMap(), gauge);
+        String metricName = String.format("network_%s_limiter_queue_size", type.getName().toLowerCase());
+        S3StreamMetricsRegistry.getMetricsGroup().newGauge(metricName, Collections.emptyMap(), gauge);
     }
 }
