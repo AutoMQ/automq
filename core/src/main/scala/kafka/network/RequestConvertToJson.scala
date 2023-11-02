@@ -96,7 +96,7 @@ object RequestConvertToJson {
       case req: DescribeProducersRequest => DescribeProducersRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeTransactionsRequest => DescribeTransactionsRequestDataJsonConverter.write(req.data, request.version)
       case req: ListTransactionsRequest => ListTransactionsRequestDataJsonConverter.write(req.data, request.version)
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       case req: CreateStreamsRequest => CreateStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteStreamsRequest => DeleteStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: OpenStreamsRequest => OpenStreamsRequestDataJsonConverter.write(req.data, request.version)
@@ -110,7 +110,7 @@ object RequestConvertToJson {
       case req: PutKVsRequest => PutKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteKVsRequest => DeleteKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
-      // Kafka on S3 inject end
+      // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.");
     }
@@ -186,7 +186,7 @@ object RequestConvertToJson {
       case res: DescribeProducersResponse => DescribeProducersResponseDataJsonConverter.write(res.data, version)
       case res: DescribeTransactionsResponse => DescribeTransactionsResponseDataJsonConverter.write(res.data, version)
       case res: ListTransactionsResponse => ListTransactionsResponseDataJsonConverter.write(res.data, version)
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       case res: CreateStreamsResponse => CreateStreamsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteStreamsResponse => DeleteStreamsResponseDataJsonConverter.write(res.data, version)
       case res: OpenStreamsResponse => OpenStreamsResponseDataJsonConverter.write(res.data, version)
@@ -200,7 +200,7 @@ object RequestConvertToJson {
       case res: PutKVsResponse => PutKVsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteKVsResponse => DeleteKVsResponseDataJsonConverter.write(res.data, version)
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
-      // Kafka on S3 inject end
+      // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.");
     }

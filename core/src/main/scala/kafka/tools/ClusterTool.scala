@@ -41,7 +41,7 @@ object ClusterTool extends Logging {
         help("Get information about the ID of a cluster.")
       val unregisterParser = subparsers.addParser("unregister").
         help("Unregister a broker.")
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       val nodeIdsParser = subparsers.addParser("next-node-id")
         .help("Get next available node id of the cluster.")
       List(clusterIdParser, unregisterParser, nodeIdsParser).foreach(parser => {
@@ -96,7 +96,7 @@ object ClusterTool extends Logging {
           } finally {
             adminClient.close()
           }
-          // Kafka on S3 inject end
+          // AutoMQ for Kafka inject end
           Exit.exit(0)
         case _ =>
           throw new RuntimeException(s"Unknown command $command")
@@ -108,13 +108,13 @@ object ClusterTool extends Logging {
     }
   }
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   def nextNodeIdCommand(stream: PrintStream,
                         adminClient: Admin): Unit = {
     val nodeIdResult = adminClient.getNextNodeId(new GetNextNodeIdOptions())
     stream.println(s"next node id: ${nodeIdResult.nodeId().get()}")
   }
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   def clusterIdCommand(stream: PrintStream,
                        adminClient: Admin): Unit = {

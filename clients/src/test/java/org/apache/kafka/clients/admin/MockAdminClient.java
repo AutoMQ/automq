@@ -326,7 +326,7 @@ public class MockAdminClient extends AdminClient {
         return new DescribeClusterResult(nodesFuture, controllerFuture, brokerIdFuture, authorizedOperationsFuture);
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     @Override
     synchronized public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
@@ -340,7 +340,7 @@ public class MockAdminClient extends AdminClient {
         nodeIdFuture.complete(maxNodeId + 1);
         return new GetNextNodeIdResult(nodeIdFuture);
     }
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     @Override
     synchronized public CreateTopicsResult createTopics(Collection<NewTopic> newTopics, CreateTopicsOptions options) {

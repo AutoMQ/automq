@@ -239,12 +239,12 @@ public final class QuorumController implements Controller {
         private int maxRecordsPerBatch = MAX_RECORDS_PER_BATCH;
         private boolean zkMigrationEnabled = false;
 
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
 
         private S3Config s3Config;
         private List<String> quorumVoters;
 
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
             this.nodeId = nodeId;
@@ -365,7 +365,7 @@ public final class QuorumController implements Controller {
             return this;
         }
 
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
 
         public Builder setS3Config(S3Config s3Config) {
             this.s3Config = s3Config;
@@ -377,7 +377,7 @@ public final class QuorumController implements Controller {
             return this;
         }
 
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
 
         @SuppressWarnings("unchecked")
         public QuorumController build() throws Exception {
@@ -1499,7 +1499,7 @@ public final class QuorumController implements Controller {
                 // TODO handle this
                 break;
 
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
 
             case S3_STREAM_RECORD:
                 streamControlManager.replay((S3StreamRecord) message);
@@ -1552,7 +1552,7 @@ public final class QuorumController implements Controller {
             case UPDATE_NEXT_NODE_ID_RECORD:
                 clusterControl.replay((UpdateNextNodeIdRecord) message);
                 break;
-            // Kafka on S3 inject end
+            // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
         }
@@ -1782,7 +1782,7 @@ public final class QuorumController implements Controller {
      */
     private final int maxRecordsPerBatch;
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     private final S3Config s3Config;
 
@@ -1804,7 +1804,7 @@ public final class QuorumController implements Controller {
      */
     private final KVControlManager kvControlManager;
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     private QuorumController(
         FaultHandler fatalFaultHandler,
@@ -1877,9 +1877,9 @@ public final class QuorumController implements Controller {
             setReplicaPlacer(replicaPlacer).
             setFeatureControlManager(featureControl).
             setZkMigrationEnabled(zkMigrationEnabled).
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
             setQuorumVoters(quorumVoters).
-            // Kafka on S3 inject end
+            // AutoMQ for Kafka inject end
             build();
         this.producerIdControlManager = new ProducerIdControlManager(clusterControl, snapshotRegistry);
         this.leaderImbalanceCheckIntervalNs = leaderImbalanceCheckIntervalNs;
@@ -1894,9 +1894,9 @@ public final class QuorumController implements Controller {
             setClusterControl(clusterControl).
             setCreateTopicPolicy(createTopicPolicy).
             setFeatureControl(featureControl).
-            // elastic stream inject start
+            // AutoMQ for Kafka inject start
             setQuorumController(this).
-            // elastic stream inject end
+            // AutoMQ for Kafka inject end
             build();
         this.authorizer = authorizer;
         authorizer.ifPresent(a -> a.setAclMutator(this));
@@ -1912,7 +1912,7 @@ public final class QuorumController implements Controller {
         this.needToCompleteAuthorizerLoad = authorizer.isPresent();
         this.zkRecordConsumer = new MigrationRecordConsumer();
 
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         this.s3Config = s3Config;
         S3Operator s3Operator;
         if (s3Config.mock()) {
@@ -1927,7 +1927,7 @@ public final class QuorumController implements Controller {
             this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         updateWriteOffset(-1);
 
         resetToEmptyState();
@@ -2300,7 +2300,7 @@ public final class QuorumController implements Controller {
         controllerMetrics.close();
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     @Override
     public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
         return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
@@ -2448,7 +2448,7 @@ public final class QuorumController implements Controller {
         );
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     // VisibleForTesting
     CountDownLatch pause() {

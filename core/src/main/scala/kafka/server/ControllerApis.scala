@@ -110,7 +110,7 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.DELETE_ACLS => aclApis.handleDeleteAcls(request)
         case ApiKeys.ELECT_LEADERS => handleElectLeaders(request)
         case ApiKeys.UPDATE_FEATURES => handleUpdateFeatures(request)
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         case ApiKeys.CREATE_STREAMS => handleCreateStream(request)
         case ApiKeys.OPEN_STREAMS => handleOpenStream(request)
         case ApiKeys.CLOSE_STREAMS => handleCloseStream(request)
@@ -124,7 +124,7 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -903,7 +903,7 @@ class ControllerApis(val requestChannel: RequestChannel,
       }
   }
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
 
   // TODO: add acl auth for stream related operations
 
@@ -1117,5 +1117,5 @@ class ControllerApis(val requestChannel: RequestChannel,
       }
   }
 
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 }

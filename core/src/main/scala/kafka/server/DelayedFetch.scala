@@ -162,7 +162,7 @@ class DelayedFetch(
       tp -> status.fetchInfo
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     ReadManualReleaseHint.mark()
     val logReadResults = replicaManager.readFromLocalLog(
       params,
@@ -171,7 +171,7 @@ class DelayedFetch(
       readFromPurgatory = true
     )
     ReadManualReleaseHint.reset()
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     val fetchPartitionData = logReadResults.map { case (tp, result) =>
       val isReassignmentFetch = params.isFromFollower &&

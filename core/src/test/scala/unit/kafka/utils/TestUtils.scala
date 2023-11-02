@@ -691,7 +691,7 @@ object TestUtils extends Logging {
     assertEquals(expectedLength, n)
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * Throw an exception if the two iterators are of differing lengths or contain
    * different messages on their Nth element
@@ -705,7 +705,7 @@ object TestUtils extends Logging {
     assertFalse(s1.hasNext, s"Iterators have uneven length--first has more, count > $count")
     assertFalse(s2.hasNext, s"Iterators have uneven length--second has more, count > $count")
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   def stackedIterator[T](s: Iterator[T]*): Iterator[T] = {
     new Iterator[T] {

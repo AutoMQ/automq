@@ -86,7 +86,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         batches = batchesFrom(start);
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     // only for es inherent
     public FileRecords(int start,
                        int end,
@@ -98,7 +98,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
         channel = null;
         batches = batchesFrom(start);
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     @Override
     public int sizeInBytes() {
@@ -121,11 +121,11 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return channel;
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     public long fileSize() throws IOException {
         return channel.size();
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     /**
      * Read log batches into the given buffer until there are no bytes remaining in the buffer or the end of the file

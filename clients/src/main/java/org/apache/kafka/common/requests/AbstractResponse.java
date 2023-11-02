@@ -262,7 +262,7 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
             case ALLOCATE_PRODUCER_IDS:
                 return AllocateProducerIdsResponse.parse(responseBuffer, version);
 
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
             case CREATE_STREAMS:
                 return CreateStreamsResponse.parse(responseBuffer, version);
             case OPEN_STREAMS:
@@ -289,7 +289,7 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return DeleteKVsResponse.parse(responseBuffer, version);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
-            // Kafka on S3 inject end
+            // AutoMQ for Kafka inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +
                         "code should be updated to do so.", apiKey));

@@ -146,7 +146,7 @@ final class ControllerMetricsManager {
             case REMOVE_ACCESS_CONTROL_ENTRY_RECORD:
             case NO_OP_RECORD:
             case ZK_MIGRATION_STATE_RECORD:
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
             case S3_STREAM_RECORD:
             case REMOVE_S3_STREAM_RECORD:
             case RANGE_RECORD:
@@ -165,7 +165,7 @@ final class ControllerMetricsManager {
             case KVRECORD:
             case REMOVE_KVRECORD:
             case UPDATE_NEXT_NODE_ID_RECORD:
-            // Kafka on S3 inject end
+            // AutoMQ for Kafka inject end
                 // These record types do not affect metrics
                 break;
             default:

@@ -67,7 +67,7 @@ class DelayedOperations(topicPartition: TopicPartition,
 
   def checkAndCompleteAll(): Unit = {
     val requestKey = TopicPartitionOperationKey(topicPartition)
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     Partition.DELAY_FETCH_EXECUTOR.submit(new Runnable {
       override def run(): Unit = {
         try {
@@ -78,7 +78,7 @@ class DelayedOperations(topicPartition: TopicPartition,
         }
       }
     })
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
     produce.checkAndComplete(requestKey)
   }
 
@@ -86,12 +86,12 @@ class DelayedOperations(topicPartition: TopicPartition,
 }
 
 object Partition extends KafkaMetricsGroup {
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
   val UPDATE_WATERMARK_TIME_HIST: Histogram = newHistogram("UpdateWatermarkTimeNanos")
   val TRY_COMPLETE_TIME_HIST: Histogram = newHistogram("TryCompleteTimeNanos")
   val LAST_RECORD_TIMESTAMP = new AtomicLong()
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   def apply(topicPartition: TopicPartition,
             time: Time,
@@ -325,9 +325,9 @@ class Partition(val topicPartition: TopicPartition,
   newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   private var closed: Boolean = false
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
 
@@ -416,13 +416,13 @@ class Partition(val topicPartition: TopicPartition,
       val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId, newLeaderEpoch)
       maybeLog = Some(log)
       updateHighWatermark(log)
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       log match {
         case elasticUnifiedLog: ElasticUnifiedLog =>
           elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
         case _ =>
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
       log
     } finally {
       logManager.finishedInitializingLog(topicPartition, maybeLog)
@@ -567,7 +567,7 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * Close this partition and trigger a re-election.
    * It may be messy here, but it is necessary to ensure the following steps:
@@ -599,7 +599,7 @@ class Partition(val topicPartition: TopicPartition,
       CompletableFuture.completedFuture(null)
     }
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Delete the partition. Note that deleting the partition does not delete the underlying logs.
@@ -769,7 +769,7 @@ class Partition(val topicPartition: TopicPartition,
         LeaderRecoveryState.of(partitionState.leaderRecoveryState)
       )
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val isNewLeaderEpoch = partitionState.leaderEpoch > leaderEpoch
       if (!ElasticLogManager.enabled()) {
         // only create log when partition is leader
@@ -796,7 +796,7 @@ class Partition(val topicPartition: TopicPartition,
         }
       }
 
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
       leaderReplicaIdOpt = Option(partitionState.leader)
       leaderEpoch = partitionState.leaderEpoch
@@ -1056,14 +1056,14 @@ class Partition(val topicPartition: TopicPartition,
         newHighWatermark = replicaState.logEndOffsetMetadata
       }
     }
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     // move high watermark based on log confirm offset to prevent ack inflight record.
     leaderLog match {
       case elasticLog: ElasticUnifiedLog =>
         newHighWatermark = elasticLog.confirmOffset()
       case _ =>
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     leaderLog.maybeIncrementHighWatermark(newHighWatermark) match {
       case Some(oldHighWatermark) =>
@@ -1085,7 +1085,7 @@ class Partition(val topicPartition: TopicPartition,
     }
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * Only log confirm offset move forward, then the high watermark can move forward.
    * So we need to try complete the delayed requests(ack to produce), after confirm offset move forward.
@@ -1111,7 +1111,7 @@ class Partition(val topicPartition: TopicPartition,
       TRY_COMPLETE_TIME_HIST.clear()
     }
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * The low watermark offset value, calculated only if the local replica is the partition leader
@@ -1266,12 +1266,12 @@ class Partition(val topicPartition: TopicPartition,
   def appendRecordsToLeader(records: MemoryRecords, origin: AppendOrigin, requiredAcks: Int,
                             requestLocal: RequestLocal): LogAppendInfo = {
     val (info, leaderHWIncremented) = inReadLock(leaderIsrUpdateLock) {
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       if (closed) {
         throw new NotLeaderOrFollowerException("Leader %d for partition %s on broker %d is already closed"
           .format(localBrokerId, topicPartition, localBrokerId))
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
       leaderLogIfLocal match {
         case Some(leaderLog) =>
           val minIsr = leaderLog.config.minInSyncReplicas

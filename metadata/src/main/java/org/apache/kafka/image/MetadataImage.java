@@ -59,7 +59,7 @@ public final class MetadataImage {
 
     private final AclsImage acls;
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     private final S3StreamsMetadataImage streamMetadata;
 
@@ -67,7 +67,7 @@ public final class MetadataImage {
 
     private final KVImage kv;
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     public MetadataImage(
         MetadataProvenance provenance,
@@ -148,7 +148,7 @@ public final class MetadataImage {
         return acls;
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     public S3StreamsMetadataImage streamsMetadata() {
         return streamMetadata;
@@ -162,7 +162,7 @@ public final class MetadataImage {
         return kv;
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         // Features should be written out first so we can include the metadata.version at the beginning of the
@@ -174,11 +174,11 @@ public final class MetadataImage {
         clientQuotas.write(writer, options);
         producerIds.write(writer, options);
         acls.write(writer, options);
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         streamMetadata.write(writer, options);
         objectsMetadata.write(writer, options);
         kv.write(writer, options);
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         writer.close(true);
     }
 

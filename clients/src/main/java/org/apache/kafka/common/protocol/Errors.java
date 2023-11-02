@@ -385,7 +385,7 @@ public enum Errors {
     INELIGIBLE_REPLICA(107, "The new ISR contains at least one ineligible replica.", IneligibleReplicaException::new),
     NEW_LEADER_ELECTED(108, "The AlterPartition request successfully updated the partition state but the leader has changed.", NewLeaderElectedException::new),
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     STREAM_EXIST(501, "The stream already exists.", StreamExistException::new),
     STREAM_NOT_EXIST(502, "The stream does not exist.", StreamNotExistException::new),
@@ -401,7 +401,7 @@ public enum Errors {
     KEY_EXIST(512, "The key already exists.", KeyExistException::new),
     KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

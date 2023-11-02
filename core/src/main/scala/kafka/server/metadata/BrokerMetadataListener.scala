@@ -97,11 +97,11 @@ class BrokerMetadataListener(
    */
   private var _publisher: Option[MetadataPublisher] = None
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
 
   private var _streamMetadataListener: Option[StreamMetadataListener] = None
 
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * The number of bytes of records that we have read  since the last snapshot we took.
@@ -357,11 +357,11 @@ class BrokerMetadataListener(
       trace(s"Publishing new metadata delta $delta at offset ${_image.highestOffsetAndEpoch().offset}.")
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     _streamMetadataListener.foreach(_.onChange(delta, _image))
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     // This publish call is done with its own try-catch and fault handler
     publisher.publish(delta, _image)
@@ -406,11 +406,11 @@ class BrokerMetadataListener(
     }
   }
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
 
   def registerStreamMetadataListener(listener: StreamMetadataListener): Unit = {
     _streamMetadataListener = Some(listener)
   }
 
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 }

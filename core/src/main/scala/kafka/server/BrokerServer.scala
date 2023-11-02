@@ -195,10 +195,10 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, threadNamePrefix.getOrElse(""))
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
@@ -325,7 +325,7 @@ class BrokerServer(
         sharedServer.brokerMetrics,
         sharedServer.metadataLoaderFaultHandler)
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
 
       if (config.elasticStreamEnabled) {
         if (!ElasticLogManager.init(config, clusterId, this)) {
@@ -334,7 +334,7 @@ class BrokerServer(
       } else {
         warn("Elastic stream is disabled. This node will store data locally.")
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
       val networkListeners = new ListenerCollection()
       config.effectiveAdvertisedListeners.foreach { ep =>
@@ -579,7 +579,7 @@ class BrokerServer(
         CoreUtils.swallow(alterPartitionManager.shutdown(), this)
 
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       // Note that logs are closed in logManager.shutdown().
       // Make sure these thread pools are shutdown after the log manager's shutdown.
       // shutdown log and underling stream
@@ -591,7 +591,7 @@ class BrokerServer(
       // log manager need clientToControllerChannelManager to send request to controller.
       if (clientToControllerChannelManager != null)
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
       if (quotaManagers != null)
         CoreUtils.swallow(quotaManagers.shutdown(), this)

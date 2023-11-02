@@ -212,12 +212,12 @@ public class ReplicationControlManager {
             return this;
         }
 
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         public Builder setQuorumController(Controller quorumController) {
             this.quorumController = quorumController;
             return this;
         }
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
 
         ReplicationControlManager build() {
             if (configurationControl == null) {
@@ -246,9 +246,9 @@ public class ReplicationControlManager {
                 clusterControl,
                 createTopicPolicy,
                 featureControl,
-                // elastic stream inject start
+                // AutoMQ for Kafka inject start
                 quorumController
-                // elastic stream inject end
+                // AutoMQ for Kafka inject end
             );
         }
     }
@@ -391,7 +391,7 @@ public class ReplicationControlManager {
     final KRaftClusterDescriber clusterDescriber = new KRaftClusterDescriber();
 
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     private static final int PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS = 10;
     /**
      * Partition reassignment elect timeout for each partition.
@@ -401,7 +401,7 @@ public class ReplicationControlManager {
      * Timer for partition reassignment elect timeout.
      */
     private final Timer timer = new HashedWheelTimer(1, TimeUnit.SECONDS);
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     private ReplicationControlManager(
         SnapshotRegistry snapshotRegistry,
@@ -599,7 +599,7 @@ public class ReplicationControlManager {
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
 
-            // elastic stream inject start
+            // AutoMQ for Kafka inject start
             Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
             // First, we pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
@@ -616,7 +616,7 @@ public class ReplicationControlManager {
                     log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
                 }
             }
-            // elastic stream inject end
+            // AutoMQ for Kafka inject end
 
             List<ApiMessageAndVersion> configRecords;
             ControllerResult<ApiError> configResult =
@@ -1033,7 +1033,7 @@ public class ReplicationControlManager {
                     builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
                 }
 
-                // elastic stream inject start
+                // AutoMQ for Kafka inject start
                 if (ElasticStreamSwitch.isEnabled()) {
                     List<Integer> newIsr = partitionData.newIsr();
                     if (newIsr.size() != 1) {
@@ -1043,7 +1043,7 @@ public class ReplicationControlManager {
                 } else {
                     builder.setTargetIsr(partitionData.newIsr());
                 }
-                // elastic stream inject end
+                // AutoMQ for Kafka inject end
 
                 builder.setTargetLeaderRecoveryState(
                     LeaderRecoveryState.of(partitionData.leaderRecoveryState()));
@@ -1388,10 +1388,10 @@ public class ReplicationControlManager {
 
     ApiError electLeader(String topic, int partitionId, ElectionType electionType,
                          List<ApiMessageAndVersion> records) {
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         // cancel partition replica reassign leader elect timeout.
         Optional.ofNullable(partitionReElectTimeouts.remove(new TopicPartition(topic, partitionId))).ifPresent(Timeout::cancel);
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
 
         Uuid topicId = topicsByName.get(topic);
         if (topicId == null) {
@@ -1650,12 +1650,12 @@ public class ReplicationControlManager {
                         " time(s): All brokers are currently fenced or in controlled shutdown.");
             }
 
-            // elastic stream inject start
+            // AutoMQ for Kafka inject start
             // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
             if (ElasticStreamSwitch.isEnabled()) {
                 maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(replicas, isr));
             }
-            // elastic stream inject end
+            // AutoMQ for Kafka inject end
 
             records.add(new ApiMessageAndVersion(new PartitionRecord().
                 setPartitionId(partitionId).
@@ -1760,12 +1760,12 @@ public class ReplicationControlManager {
         // from the target ISR, but we need to exclude it here too, to handle the case
         // where there is an unclean leader election which chooses a leader from outside
         // the ISR.
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         IntPredicate isAcceptableLeader = fencing ? r -> false :
             r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
 
         PartitionLeaderSelector partitionLeaderSelector = null;
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
 
         while (iterator.hasNext()) {
             TopicIdPartition topicIdPart = iterator.next();
@@ -1792,7 +1792,7 @@ public class ReplicationControlManager {
             // Note: if brokerToRemove was passed as NO_LEADER, this is a no-op (the new
             // target ISR will be the same as the old one).
 
-            // elastic stream inject start
+            // AutoMQ for Kafka inject start
             if (ElasticStreamSwitch.isEnabled()) {
                 if (brokerToAdd != -1) {
                     // new broker is unfenced(available), then the broker take no leader partition
@@ -1813,7 +1813,7 @@ public class ReplicationControlManager {
                 builder.setTargetIsr(Replicas.toList(
                     Replicas.copyWithout(partition.isr, brokerToRemove)));
             }
-            // elastic stream inject end
+            // AutoMQ for Kafka inject end
 
             builder.build().ifPresent(records::add);
         }
@@ -1928,7 +1928,7 @@ public class ReplicationControlManager {
         return builder.build();
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
                                                                PartitionRegistration part,
                                                                ReassignablePartition target) {
@@ -2003,7 +2003,7 @@ public class ReplicationControlManager {
         });
         log.info("partition[{}] reassignment re-elect leader timeout, force async elect leader again", topicPartition);
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     /**
      * Apply a given partition reassignment. In general a partition reassignment goes

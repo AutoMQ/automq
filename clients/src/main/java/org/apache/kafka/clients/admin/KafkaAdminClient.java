@@ -2079,7 +2079,7 @@ public class KafkaAdminClient extends AdminClient {
         return new HashMap<>(topicFutures);
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     @Override
     public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
@@ -2106,7 +2106,7 @@ public class KafkaAdminClient extends AdminClient {
         }, now);
         return new GetNextNodeIdResult(nodeIdFuture);
     }
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
                                                             Integer authorizedOperations) {

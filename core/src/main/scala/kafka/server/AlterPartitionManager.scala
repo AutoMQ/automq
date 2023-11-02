@@ -142,10 +142,10 @@ class DefaultAlterPartitionManager(
   // Used to allow only one in-flight request at a time
   private val inflightRequest: AtomicBoolean = new AtomicBoolean(false)
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   private[server] val unsentElectLeaders: BlockingQueue[TopicPartition] = new LinkedBlockingQueue[TopicPartition]()
   private val inflightElectLeadersRequest: AtomicBoolean = new AtomicBoolean(false)
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   override def start(): Unit = {
     controllerChannelManager.start()
@@ -383,7 +383,7 @@ class DefaultAlterPartitionManager(
     Errors.forCode(data.errorCode)
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   override def tryElectLeader(topicPartition: TopicPartition): Unit = {
     if (topicPartition != null) {
       unsentElectLeaders.add(topicPartition)
@@ -420,6 +420,6 @@ class DefaultAlterPartitionManager(
       }
     })
   }
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
 
 }

@@ -106,14 +106,14 @@ public class PartitionChangeBuilder {
         return this;
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     public PartitionChangeBuilder setTargetNode(int brokerId) {
         setTargetIsr(Collections.singletonList(brokerId));
         setTargetReplicas(Collections.singletonList(brokerId));
         setTargetLeaderRecoveryState(LeaderRecoveryState.RECOVERED);
         return this;
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     public PartitionChangeBuilder setElection(Election election) {
         this.election = election;
