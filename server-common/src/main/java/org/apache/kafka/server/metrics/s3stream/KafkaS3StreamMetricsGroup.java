@@ -28,19 +28,21 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class KafkaS3StreamMetricsGroup implements S3StreamMetricsGroup {
+    private static final String TYPE = "KafkaS3Stream";
+
     @Override
-    public Counter newCounter(String type, String name, Map<String, String> tags) {
-        return new KafkaS3MeterCounter(metricName(type, name, tags));
+    public Counter newCounter(String name, Map<String, String> tags) {
+        return new KafkaS3MeterCounter(metricName(name, tags));
     }
 
     @Override
-    public Histogram newHistogram(String type, String name, Map<String, String> tags) {
-        return new KafkaS3Histogram(metricName(type, name, tags));
+    public Histogram newHistogram(String name, Map<String, String> tags) {
+        return new KafkaS3Histogram(metricName(name, tags));
     }
 
     @Override
-    public void newGauge(String type, String name, Map<String, String> tags, Gauge gauge) {
-        KafkaYammerMetrics.defaultRegistry().newGauge(metricName(type, name, tags), new com.yammer.metrics.core.Gauge<>() {
+    public void newGauge(String name, Map<String, String> tags, Gauge gauge) {
+        KafkaYammerMetrics.defaultRegistry().newGauge(metricName(name, tags), new com.yammer.metrics.core.Gauge<>() {
             @Override
             public Long value() {
                 return gauge.value();
@@ -48,8 +50,8 @@ public class KafkaS3StreamMetricsGroup implements S3StreamMetricsGroup {
         });
     }
 
-    private MetricName metricName(String type, String name, Map<String, String> tags) {
+    private MetricName metricName(String name, Map<String, String> tags) {
         String group = KafkaS3StreamMetricsGroup.class.getPackageName();
-        return KafkaYammerMetrics.getMetricName(group, type, name, new LinkedHashMap<>(tags));
+        return KafkaYammerMetrics.getMetricName(group, TYPE, name, new LinkedHashMap<>(tags));
     }
 }
