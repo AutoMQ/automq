@@ -84,8 +84,7 @@ public class S3StreamClient implements StreamClient {
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
         TimerUtil timerUtil = new TimerUtil();
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_STREAM).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.CREATE_STREAM).operationTime.update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.CREATE_STREAM).update(timerUtil.elapsed());
             return openStream0(streamId, options.epoch());
         }), LOGGER, "createAndOpenStream");
     }
@@ -140,8 +139,7 @@ public class S3StreamClient implements StreamClient {
         TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationCount.inc();
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.OPEN_STREAM).operationTime.update(timerUtil.elapsed());
+                    OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsed());
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                             .compactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
                             .eligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)

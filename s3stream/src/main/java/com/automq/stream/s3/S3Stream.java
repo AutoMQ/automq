@@ -141,8 +141,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STREAM).operationCount.inc();
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STREAM).operationTime.update(System.currentTimeMillis() - start);
+                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(System.currentTimeMillis() - start);
                 pendingAppends.remove(cf);
             });
             return cf;
@@ -183,8 +182,7 @@ public class S3Stream implements Stream {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.FETCH_STREAM).operationCount.inc();
-                OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.FETCH_STREAM).operationTime.update(System.currentTimeMillis() - start);
+                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(System.currentTimeMillis() - start);
                 if (ex != null) {
                     LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                 } else if (networkOutboundLimiter != null) {
@@ -229,8 +227,7 @@ public class S3Stream implements Stream {
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
                 cf.whenComplete((nil, ex) -> {
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.TRIM_STREAM).operationCount.inc();
-                    OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.TRIM_STREAM).operationTime.update(System.currentTimeMillis() - start);
+                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(System.currentTimeMillis() - start);
                 });
                 return cf;
             }, LOGGER, "trim");
