@@ -78,9 +78,9 @@ public class DefaultS3Client implements Client {
         String region = kafkaConfig.s3Region();
         String bucket = kafkaConfig.s3Bucket();
         networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-                config.networkInboundBaselineBandwidth(), config.refillPeriodMs(), config.networkInboundBurstBandwidth());
+                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-                config.networkOutboundBaselineBandwidth(), config.refillPeriodMs(), config.networkOutboundBurstBandwidth());
+                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         String accessKey = System.getenv(ACCESS_KEY_NAME);
         String secretKey = System.getenv(SECRET_KEY_NAME);
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
@@ -92,7 +92,7 @@ public class DefaultS3Client implements Client {
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
-        this.blockCache = new DefaultS3BlockCache(this.config.s3CacheSize(), objectManager, s3Operator);
+        this.blockCache = new DefaultS3BlockCache(this.config.s3BlockCacheSize(), objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.s3WALPath(), this.config.s3WALCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, s3Operator);
