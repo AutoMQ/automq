@@ -1664,7 +1664,7 @@ project(':server-common') {
     api project(':clients')
     implementation libs.slf4jApi
     implementation libs.metrics
-    implementation('com.automq.elasticstream:s3stream:0.1.18-SNAPSHOT') {
+    implementation(libs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
