@@ -146,4 +146,5 @@ push|build)
   echo "Unknown command '${action}'.  Type '${script_path} --help' for usage information."
   exit 1
   ;;
+
 esac
