@@ -52,7 +52,9 @@ public class CompactionUtils {
                 }
             }
         }
-        objectStreamRanges.add(currObjectStreamRange);
+        if (currObjectStreamRange != null) {
+            objectStreamRanges.add(currObjectStreamRange);
+        }
         return objectStreamRanges;
     }
 
