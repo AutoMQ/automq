@@ -233,8 +233,9 @@ public class CompactionManager {
                         .mapToLong(CompactedObject::size)
                         .sum())
                 .sum();
-        logger.info("Compaction plans: expect to generate {} StreamObject, 1 WAL object with size {} in {} iterations, objects excluded: {}",
-                streamObjectNum, walObjectSize, compactionPlans.size(), excludedObjectIds);
+        int walObjectNum = walObjectSize > 0 ? 1 : 0;
+        logger.info("Compaction plans: expect to generate {} Stream Object, {} WAL object with size {} in {} iterations, objects excluded: {}",
+                streamObjectNum, walObjectNum, walObjectSize, compactionPlans.size(), excludedObjectIds);
     }
 
     public CompletableFuture<Void> forceSplitAll() {
