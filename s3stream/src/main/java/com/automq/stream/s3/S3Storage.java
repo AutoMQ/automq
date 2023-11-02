@@ -227,8 +227,7 @@ public class S3Storage implements Storage {
         append0(writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE).operationTime.update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE).update(timerUtil.elapsed());
         });
         return cf;
     }
@@ -247,7 +246,7 @@ public class S3Storage implements Storage {
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).operationCount.inc();
+            OperationMetricsStats.getCounter(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).inc();
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", logCache.size(), maxWALCacheSize);
                 lastLogTimestamp = System.currentTimeMillis();
@@ -305,8 +304,7 @@ public class S3Storage implements Storage {
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         mainReadExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
         cf.whenComplete((nil, ex) -> {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE).operationTime.update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsed());
         });
         return cf;
     }
@@ -409,8 +407,7 @@ public class S3Storage implements Storage {
         inflightWALUploadTasks.add(cf);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadWALObject0(logCacheBlock, cf), cf, LOGGER, "uploadWALObject"));
         cf.whenComplete((nil, ex) -> {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.UPLOAD_STORAGE_WAL).operationTime.update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.UPLOAD_STORAGE_WAL).update(timerUtil.elapsed());
             inflightWALUploadTasks.remove(cf);
             if (ex != null) {
                 LOGGER.error("upload WAL object fail", ex);

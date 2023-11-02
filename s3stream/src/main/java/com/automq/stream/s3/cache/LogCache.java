@@ -70,8 +70,7 @@ public class LogCache {
         tryRealFree();
         size.addAndGet(recordBatch.size());
         boolean full = activeBlock.put(recordBatch);
-        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE).operationCount.inc();
-        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_LOG_CACHE).operationTime.update(timerUtil.elapsed());
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_LOG_CACHE).update(timerUtil.elapsed());
         return full;
     }
 
@@ -104,11 +103,11 @@ public class LogCache {
         List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
         records.forEach(StreamRecordBatch::retain);
         if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE).operationCount.inc();
+            OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_LOG_CACHE).inc();
         } else {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE_MISS).operationCount.inc();
+            OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_LOG_CACHE_MISS).inc();
         }
-        OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.READ_STORAGE_LOG_CACHE).operationTime.update(timerUtil.elapsed());
+        OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_LOG_CACHE).update(timerUtil.elapsed());
         return records;
     }
 

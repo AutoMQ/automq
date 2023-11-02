@@ -431,7 +431,7 @@ public class BlockWALService implements WriteAheadLog {
             return append0(buf, crc);
         } catch (OverCapacityException ex) {
             buf.release();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_WAL_FULL).operationCount.inc();
+            OperationMetricsStats.getCounter(S3Operation.APPEND_STORAGE_WAL_FULL).inc();
             throw ex;
         }
     }
@@ -461,8 +461,7 @@ public class BlockWALService implements WriteAheadLog {
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         appendResult.future().whenComplete((nil, ex) -> {
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_WAL).operationCount.inc();
-            OperationMetricsStats.getOrCreateOperationMetrics(S3Operation.APPEND_STORAGE_WAL).operationTime.update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL).update(timerUtil.elapsed());
         });
         return appendResult;
     }
