@@ -371,15 +371,15 @@ attempting to start new ones."
     fi
     must_do -v docker network create --subnet=10.5.0.0/16 ducknet
 
-    # elastic stream insert start
+    # AutoMQ for Kafka insert start
     # must_do -v docker run --network=ducknet --name redis -d redis:7
     # start es cluster
 #    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
-    # elastic stream insert end
+    # AutoMQ for Kafka insert end
 
-    # Kafka on S3 inject start
+    # AutoMQ for Kafka inject start
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
-    # Kafka on S3 inject end
+    # AutoMQ for Kafka inject end
 
     # node_hosts should be firstly created to be mounted to the container
     mkdir -p "${ducker_dir}/build"
@@ -412,13 +412,13 @@ attempting to start new ones."
     generate_cluster_json_file "${num_nodes}" "${ducker_dir}/build/cluster.json"
     echo "ducker_up: successfully wrote ${ducker_dir}/build/cluster.json"
 
-    # Kafka on S3 inject start
+    # AutoMQ for Kafka inject start
     # ip is static and referenced from docker/s3/docker-compose.yaml
     cmd="aws s3api create-bucket --bucket ko3 --endpoint=http://10.5.0.2:4566"
     echo "docker exec ducker01 bash -c \"${cmd}\""
     exec docker exec --user=ducker ducker01 bash -c "${cmd}"
     echo "ducker_up: bucket ko3 ready for tests"
-    # Kafka on S3 inject end
+    # AutoMQ for Kafka inject end
 
     echo "** ducker_up: successfully brought up ${num_nodes} nodes."
 }
@@ -604,15 +604,15 @@ ducker_down() {
         must_do -v docker network rm ducknet
     fi
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
-    # elastic stream insert start
+    # AutoMQ for Kafka insert start
     # remove es
 #    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
-    # elastic stream insert end
+    # AutoMQ for Kafka insert end
 
-    # Kafka on S3 inject start
+    # AutoMQ for Kafka inject start
     # remove s3
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
-    # Kafka on S3 inject end
+    # AutoMQ for Kafka inject end
 }
 
 ducker_purge() {

@@ -91,14 +91,14 @@ public final class MetadataDelta {
 
     private AclsDelta aclsDelta = null;
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
 
     private S3ObjectsDelta s3ObjectsDelta = null;
 
     private KVDelta kvDelta = null;
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     public MetadataDelta(MetadataImage image) {
         this.image = image;
@@ -186,7 +186,7 @@ public final class MetadataDelta {
     }
 
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     public S3StreamsMetadataDelta streamMetadataDelta() {
         return s3StreamsMetadataDelta;
     }
@@ -216,7 +216,7 @@ public final class MetadataDelta {
         return kvDelta;
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     public Optional<MetadataVersion> metadataVersionChanged() {
         if (featuresDelta == null) {
@@ -286,7 +286,7 @@ public final class MetadataDelta {
             case ZK_MIGRATION_STATE_RECORD:
                 // TODO handle this
                 break;
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
             case S3_STREAM_RECORD:
                 replay((S3StreamRecord) record);
                 break;
@@ -335,7 +335,7 @@ public final class MetadataDelta {
             case REMOVE_KVRECORD:
                 replay((RemoveKVRecord) record);
                 break;
-                // Kafka on S3 inject end
+                // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }
@@ -415,7 +415,7 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().replay(record);
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     public void replay(S3StreamRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
@@ -481,7 +481,7 @@ public final class MetadataDelta {
         getOrCreateKVDelta().replay(record);
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     /**
      * Create removal deltas for anything which was in the base image, but which was not referenced in the snapshot records we just applied.
@@ -541,11 +541,11 @@ public final class MetadataDelta {
             newAcls = aclsDelta.apply();
         }
 
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
         S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
         KVImage newKVImage = getNewKVImage();
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         return new MetadataImage(
             provenance,
             newFeatures,
@@ -561,7 +561,7 @@ public final class MetadataDelta {
         );
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     private S3StreamsMetadataImage getNewS3StreamsMetadataImage() {
         return s3StreamsMetadataDelta == null ?
@@ -578,7 +578,7 @@ public final class MetadataDelta {
             image.kv() : kvDelta.apply();
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     @Override
     public String toString() {

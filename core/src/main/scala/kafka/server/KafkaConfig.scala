@@ -673,7 +673,7 @@ object KafkaConfig {
   val PasswordEncoderKeyLengthProp =  "password.encoder.key.length"
   val PasswordEncoderIterationsProp =  "password.encoder.iterations"
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /** ********* Elastic stream config *********/
   val ElasticStreamEnableProp = "elasticstream.enable"
   val ElasticStreamEndpointProp = "elasticstream.endpoint"
@@ -683,9 +683,9 @@ object KafkaConfig {
   val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
     "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
   val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   val S3EndpointProp = "s3.endpoint"
   val S3RegionProp = "s3.region"
   val S3BucketProp = "s3.bucket"
@@ -759,7 +759,7 @@ object KafkaConfig {
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
 
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
@@ -1549,14 +1549,14 @@ object KafkaConfig {
       .define(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG, INT, Defaults.QuorumRequestTimeoutMs, null, MEDIUM, RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_DOC)
       .define(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG, INT, Defaults.QuorumRetryBackoffMs, null, LOW, RaftConfig.QUORUM_RETRY_BACKOFF_MS_DOC)
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
       /** ********* Elastic stream Configuration ******** */
       .define(ElasticStreamEnableProp, BOOLEAN, false, HIGH, ElasticStreamEnableDoc)
       .define(ElasticStreamEndpointProp, STRING, "s3://", HIGH, ElasticStreamEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
@@ -1592,7 +1592,7 @@ object KafkaConfig {
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
   }
 
   /** ********* Remote Log Management Configuration *********/
@@ -2117,14 +2117,14 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val quorumRequestTimeoutMs = getInt(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG)
   val quorumRetryBackoffMs = getInt(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG)
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /** ********* Elastic stream Configuration *********/
   val elasticStreamEnabled = getBoolean(KafkaConfig.ElasticStreamEnableProp)
   val elasticStreamEndpoint = getString(KafkaConfig.ElasticStreamEndpointProp)
   val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   /** ********* Kafka on S3 Configuration *********/
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
@@ -2163,7 +2163,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
     dynamicConfig.addReconfigurable(reconfigurable)

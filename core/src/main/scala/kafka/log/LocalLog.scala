@@ -229,7 +229,7 @@ class LocalLog(@volatile protected var _dir: File,
     isMemoryMappedBufferClosed = true
   }
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   /**
    * Closes the segments of the log.
    */
@@ -240,7 +240,7 @@ class LocalLog(@volatile protected var _dir: File,
     }
     CompletableFuture.completedFuture(null)
   }
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Completely delete this log directory with no delay.
@@ -434,7 +434,7 @@ class LocalLog(@volatile protected var _dir: File,
           fetchDataInfo = segment.read(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
           if (fetchDataInfo != null) {
             if (includeAbortedTxns) {
-              // elastic stream inject start
+              // AutoMQ for Kafka inject start
               val upperBoundOpt =  fetchDataInfo.records match {
                 case adaptor: BatchIteratorRecordsAdaptor =>
                   Some(adaptor.lastOffset())
@@ -442,7 +442,7 @@ class LocalLog(@volatile protected var _dir: File,
                   None
               }
               fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo, upperBoundOpt)
-              // elastic stream inject end
+              // AutoMQ for Kafka inject end
             }
           } else segmentOpt = segments.higherSegment(baseOffset)
         }
@@ -819,15 +819,15 @@ object LocalLog extends Logging {
       case e: IOException =>
         logDirFailureChannel.maybeAddOfflineLogDir(logDir, errorMsg, e)
         throw new KafkaStorageException(errorMsg, e)
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       case e: ExecutionException if e.getCause.isInstanceOf[IOException] =>
         logDirFailureChannel.maybeAddOfflineLogDir(logDir, errorMsg, e.getCause.asInstanceOf[IOException])
         throw new KafkaStorageException(errorMsg, e.getCause)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
   }
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   private[log] def maybeHandleIOExceptionAsync[T](logDirFailureChannel: LogDirFailureChannel,
                                                   logDir: String,
                                                   errorMsg: => String)(fun: => CompletableFuture[T]): CompletableFuture[T] = {
@@ -849,7 +849,7 @@ object LocalLog extends Logging {
     })
     resultCf
   }
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Split a segment into one or more segments such that there is no offset overflow in any of them. The
@@ -1051,14 +1051,14 @@ object LocalLog extends Logging {
 
     def deleteSegments(): Unit = {
       info(s"${logPrefix}Deleting segment files ${segmentsToDelete.mkString(",")}")
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val handlingDir = if (ElasticLogManager.enabled()) dir.getPath else dir.getParent
       maybeHandleIOException(logDirFailureChannel, handlingDir, s"Error while deleting segments for $topicPartition in dir $handlingDir") {
         segmentsToDelete.foreach { segment =>
           segment.deleteIfExists()
         }
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
 
     if (asyncDelete)

@@ -254,13 +254,13 @@ class ReplicaManager(val config: KafkaConfig,
         fatal(s"Halting broker because dir $newOfflineLogDir is offline")
         Exit.halt(1)
       }
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       if (ElasticLogManager.enabled()) {
         handlePartitionFailure(newOfflineLogDir)
       } else {
         handleLogDirFailure(newOfflineLogDir)
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
     }
   }
@@ -289,10 +289,10 @@ class ReplicaManager(val config: KafkaConfig,
   val isrShrinkRate: Meter = newMeter("IsrShrinksPerSec", "shrinks", TimeUnit.SECONDS)
   val failedIsrUpdatesRate: Meter = newMeter("FailedIsrUpdatesPerSec", "failedUpdates", TimeUnit.SECONDS)
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   private val partitionOpExecutor = ThreadUtils.newCachedThread(256, "partition_op_%d", true)
   private val partitionOpMap = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   def underReplicatedPartitionCount: Int = leaderPartitionsIterator.count(_.isUnderReplicated)
 
@@ -478,7 +478,7 @@ class ReplicaManager(val config: KafkaConfig,
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               maybeRemoveTopicMetrics(topicPartition.topic)
-              // elastic stream inject start
+              // AutoMQ for Kafka inject start
               if (ElasticLogManager.enabled()) {
                 if (logManager.cleaner != null) {
                   logManager.cleaner.abortCleaning(topicPartition)
@@ -501,7 +501,7 @@ class ReplicaManager(val config: KafkaConfig,
               } else {
                 hostedPartition.partition.delete()
               }
-              // elastic stream inject end
+              // AutoMQ for Kafka inject end
             }
 
           case _ =>
@@ -517,11 +517,11 @@ class ReplicaManager(val config: KafkaConfig,
     val errorMap = new mutable.HashMap[TopicPartition, Throwable]()
     if (partitionsToDelete.nonEmpty) {
       // Delete the logs and checkpoint.
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       if (!ElasticLogManager.enabled()) {
         logManager.asyncDelete(partitionsToDelete, (tp, e) => errorMap.put(tp, e))
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
     errorMap
   }
@@ -1066,9 +1066,9 @@ class ReplicaManager(val config: KafkaConfig,
     responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
   ): Unit = {
     // check if this fetch request can be satisfied right away
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     val logReadResults = readAsyncFromLocalLog(params, fetchInfos, quota, readFromPurgatory = false)
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
     var bytesReadable: Long = 0
     var errorReadingData = false
     var hasDivergingEpoch = false
@@ -1093,7 +1093,7 @@ class ReplicaManager(val config: KafkaConfig,
       logReadResultMap.put(topicIdPartition, logReadResult)
     }
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     // If there is any slow fetch hint, we will read from local log in a separate thread.
     if (containsSlowFetchHint) {
       slowFetchExecutors.submit(new Runnable {
@@ -1110,7 +1110,7 @@ class ReplicaManager(val config: KafkaConfig,
       })
       return
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     // respond immediately if 1) fetch request does not want to wait
     //                        2) fetch request does not require any data
@@ -1162,7 +1162,7 @@ class ReplicaManager(val config: KafkaConfig,
                              readFromPurgatory: Boolean): Seq[(TopicIdPartition, LogReadResult)] = {
     val traceEnabled = isTraceEnabled
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     def read(tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): CompletableFuture[LogReadResult] = {
       val offset = fetchInfo.fetchOffset
       val partitionFetchSize = fetchInfo.maxBytes
@@ -2151,7 +2151,7 @@ class ReplicaManager(val config: KafkaConfig,
     warn(s"Stopped serving replicas in dir $dir")
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   def handlePartitionFailure(partitionDir: String): Unit = {
     warn(s"Stopping serving partition $partitionDir")
     replicaStateChangeLock synchronized {
@@ -2187,7 +2187,7 @@ class ReplicaManager(val config: KafkaConfig,
 
     warn(s"Stopped serving partition replicas in dir $partitionDir")
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   def removeMetrics(): Unit = {
     removeMetric("LeaderCount")
@@ -2364,7 +2364,7 @@ class ReplicaManager(val config: KafkaConfig,
         Some(partition, false)
 
       case HostedPartition.None =>
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         stateChangeLogger.info(s"Creating new partition $tp with topic id " +
           s"$topicId.")
 //        if (delta.image().topicsById().containsKey(topicId)) {
@@ -2374,7 +2374,7 @@ class ReplicaManager(val config: KafkaConfig,
 //          stateChangeLogger.info(s"Creating new partition $tp with topic id " +
 //            s"$topicId.")
 //        }
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         // it's a partition that we don't know about yet, so create it and mark it online
         val partition = Partition(tp, time, this)
         allPartitions.put(tp, HostedPartition.Online(partition))
@@ -2386,7 +2386,7 @@ class ReplicaManager(val config: KafkaConfig,
     asyncApplyDelta(delta, newImage).get()
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * Apply a KRaft topic change delta.
    *
@@ -2500,7 +2500,7 @@ class ReplicaManager(val config: KafkaConfig,
       }
     })
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   private def applyLocalLeadersDelta(
     changedPartitions: mutable.Set[Partition],

@@ -113,9 +113,9 @@ case class LogConfig(props: java.util.Map[_, _], overriddenConfigs: Set[String] 
   val FollowerReplicationThrottledReplicas = getList(LogConfig.FollowerReplicationThrottledReplicasProp)
   val messageDownConversionEnable = getBoolean(LogConfig.MessageDownConversionEnableProp)
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   val replicationFactor = getInt(LogConfig.ReplicationFactorProp)
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   class RemoteLogConfig {
     val remoteStorageEnable = getBoolean(LogConfig.RemoteLogStorageEnableProp)
@@ -231,10 +231,10 @@ object LogConfig {
   val LeaderReplicationThrottledReplicasProp = "leader.replication.throttled.replicas"
   val FollowerReplicationThrottledReplicasProp = "follower.replication.throttled.replicas"
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   val ReplicationFactorProp = TopicConfig.REPLICATION_FACTOR_CONFIG
   val ReplicationFactorDoc = TopicConfig.REPLICATION_FACTOR_DOC
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   val SegmentSizeDoc = TopicConfig.SEGMENT_BYTES_DOC
   val SegmentMsDoc = TopicConfig.SEGMENT_MS_DOC
@@ -399,10 +399,10 @@ object LogConfig {
       .defineInternal(LocalLogRetentionMsProp, LONG, Defaults.LocalRetentionMs, atLeast(-2), MEDIUM, LocalLogRetentionMsDoc)
       .defineInternal(LocalLogRetentionBytesProp, LONG, Defaults.LocalRetentionBytes, atLeast(-2), MEDIUM, LocalLogRetentionBytesDoc)
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     logConfigDef
       .define(ReplicationFactorProp, INT, 1, atLeast(1), HIGH, ReplicationFactorDoc)
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     logConfigDef
   }
@@ -574,9 +574,9 @@ object LogConfig {
     logProps.put(MessageTimestampDifferenceMaxMsProp, kafkaConfig.logMessageTimestampDifferenceMaxMs: java.lang.Long)
     logProps.put(MessageDownConversionEnableProp, kafkaConfig.logMessageDownConversionEnable: java.lang.Boolean)
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     logProps.put(ReplicationFactorProp, kafkaConfig.defaultReplicationFactor.asInstanceOf[Object])
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     logProps
   }

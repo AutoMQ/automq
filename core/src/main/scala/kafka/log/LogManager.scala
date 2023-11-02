@@ -232,7 +232,7 @@ class LogManager(logDirs: Seq[File],
     }
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * The partition failure handler. It will stop log cleaning and close handlers of logs in that partition.
    *
@@ -267,7 +267,7 @@ class LogManager(logDirs: Seq[File],
           s"logs for future partitions ${offlineFutureTopicPartitions.mkString(",")} are offline due to failure on log directory $dir")
     }
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Despite any exception occurs, quickly close the given log without flushing. Exceptions will only be logged and will
@@ -444,7 +444,7 @@ class LogManager(logDirs: Seq[File],
               s"$logDirAbsolutePath, resetting to the base offset of the first segment", e)
         }
 
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         var logsToLoad = Option(dir.listFiles).getOrElse(Array.empty).filter(logDir =>
           logDir.isDirectory && UnifiedLog.parseTopicPartitionName(logDir).topic != KafkaRaftServer.MetadataTopic)
         if (ElasticLogManager.enabled()) {
@@ -459,7 +459,7 @@ class LogManager(logDirs: Seq[File],
           }
           logsToLoad = Array()
         }
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
 
         numTotalLogs += logsToLoad.length
         numRemainingLogs.put(dir.getAbsolutePath, logsToLoad.length)
@@ -641,9 +641,9 @@ class LogManager(logDirs: Seq[File],
     val threadPools = ArrayBuffer.empty[ExecutorService]
     val jobs = mutable.Map.empty[File, Seq[Future[_]]]
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     val closeStreamsFutures = ArrayBuffer.empty[CompletableFuture[Void]]
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     // stop the cleaner first
     if (cleaner != null) {
@@ -662,18 +662,18 @@ class LogManager(logDirs: Seq[File],
 
       val logs = logsInDir(localLogsByDir, dir).values
 
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       // Ideally, if this broker is in controlled shutdown mode, all logs should be closed by ReplicaManager#applyDelta due to leader change.
       // However, there may be some logs due to some corner cases, e.g. network errors. Then we need to close them here.
-      // Kafka on S3 inject end
+      // AutoMQ for Kafka inject end
       val jobsForDir = logs.map { log =>
         val runnable: Runnable = () => {
           // flush the log to ensure latest possible recovery point
           log.flush(true)
-          // Kafka on S3 inject start
+          // AutoMQ for Kafka inject start
           val future = log.close()
           closeStreamsFutures.append(future)
-          // Kafka on S3 inject end
+          // AutoMQ for Kafka inject end
         }
         runnable
       }
@@ -703,10 +703,10 @@ class LogManager(logDirs: Seq[File],
         }
       }
 
-      // Kafka on S3 inject start
+      // AutoMQ for Kafka inject start
       // wait for all streams to be closed
       CoreUtils.swallow(CompletableFuture.allOf(closeStreamsFutures.toArray: _*).get(), this)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
     } finally {
       threadPools.foreach(_.shutdown())
@@ -1000,7 +1000,7 @@ class LogManager(logDirs: Seq[File],
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false, topicId: Option[Uuid], leaderEpoch: Long = 0): UnifiedLog = {
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
     // sequentially operate. So it's safe without lock
 //    logCreationOrDeletionLock synchronized {
@@ -1085,7 +1085,7 @@ class LogManager(logDirs: Seq[File],
       }
       log
 //    }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
   }
 
   private[log] def createLogDirectory(logDir: File, logDirName: String): Try[File] = {
@@ -1191,19 +1191,19 @@ class LogManager(logDirs: Seq[File],
         // Now that replica in source log directory has been successfully renamed for deletion.
         // Close the log, update checkpoint files, and enqueue this log to be deleted.
 
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         val future = sourceLog.close()
         CoreUtils.swallow(future.get(), this)
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
 
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         if (!ElasticLogManager.enabled()) {
           val logDir = sourceLog.parentDirFile
           val logsToCheckpoint = logsInDir(logDir)
           checkpointRecoveryOffsetsInDir(logDir, logsToCheckpoint)
           checkpointLogStartOffsetsInDir(logDir, logsToCheckpoint)
         }
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
         sourceLog.removeLogMetrics()
         addLogToBeDeleted(sourceLog)
       } catch {
@@ -1262,11 +1262,11 @@ class LogManager(logDirs: Seq[File],
     removedLog
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   def removeFromCurrentLogs(topicPartition: TopicPartition): Unit = {
     removeLogAndMetrics(currentLogs, topicPartition)
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Rename the directories of the given topic-partitions and add them in the queue for

@@ -488,7 +488,7 @@ public class MockController implements Controller {
         beginShutdown();
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     @Override
     public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
         throw new UnsupportedOperationException();
@@ -560,5 +560,5 @@ public class MockController implements Controller {
         throw new UnsupportedOperationException();
     }
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 }

@@ -506,10 +506,10 @@ final class KafkaMetadataLog private (
   }
 
   override def close(): Unit = {
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     val future = log.close()
     CoreUtils.swallow(future.get(), this)
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
     snapshots synchronized {
       snapshots.values.flatten.foreach(_.close())
       snapshots.clear()

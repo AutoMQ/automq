@@ -352,7 +352,7 @@ public interface Admin extends AutoCloseable {
      */
     DescribeClusterResult describeCluster(DescribeClusterOptions options);
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     /**
      * Get next available node id in the cluster.
      *
@@ -360,7 +360,7 @@ public interface Admin extends AutoCloseable {
      * @return The GetNextNodeIdResult.
      */
     GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options);
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     /**
      * This is a convenience method for {@link #describeAcls(AclBindingFilter, DescribeAclsOptions)} with

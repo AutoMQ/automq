@@ -110,7 +110,7 @@ public enum ApiKeys {
     LIST_TRANSACTIONS(ApiMessageType.LIST_TRANSACTIONS),
     ALLOCATE_PRODUCER_IDS(ApiMessageType.ALLOCATE_PRODUCER_IDS, true, true),
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     CREATE_STREAMS(ApiMessageType.CREATE_STREAMS, false, true),
     DELETE_STREAMS(ApiMessageType.DELETE_STREAMS, false, true),
     OPEN_STREAMS(ApiMessageType.OPEN_STREAMS, false, true),
@@ -124,7 +124,7 @@ public enum ApiKeys {
     PUT_KVS(ApiMessageType.PUT_KVS, false, true),
     DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true);
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);

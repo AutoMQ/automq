@@ -150,7 +150,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     metadataSupport.maybeForward(request, handler, responseCallback)
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
    *
@@ -209,7 +209,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     metadataSupport.maybeForward(request, handler, responseCallback)
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
   private def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = {
     info(s"The client connection will be closed due to controller responded " +
@@ -311,9 +311,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.LIST_TRANSACTIONS => handleListTransactionsRequest(request)
         case ApiKeys.ALLOCATE_PRODUCER_IDS => handleAllocateProducerIdsRequest(request)
         case ApiKeys.DESCRIBE_QUORUM => forwardToControllerOrFail(request)
-        // Kafka on S3 inject start
+        // AutoMQ for Kafka inject start
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
-        // Kafka on S3 inject end
+        // AutoMQ for Kafka inject end
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
@@ -668,10 +668,10 @@ class KafkaApis(val requestChannel: RequestChannel,
     // https://issues.apache.org/jira/browse/KAFKA-10730
     @nowarn("cat=deprecation")
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val callbackStartNanos = System.nanoTime()
       PRODUCE_CALLBACK_TIME_HIST.update((callbackStartNanos - startNanos) / 1000)
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
 
 
       val mergedResponseStatus = responseStatus ++ unauthorizedTopicResponses ++ nonExistingTopicResponses ++ invalidRequestResponses
@@ -731,7 +731,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         requestChannel.sendResponse(request, new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs), None)
       }
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       PRODUCE_ACK_TIME_HIST.update((System.nanoTime() - callbackStartNanos) / 1000)
       val now = System.currentTimeMillis()
       val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
@@ -743,7 +743,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         PRODUCE_CALLBACK_TIME_HIST.clear()
         PRODUCE_ACK_TIME_HIST.clear()
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
 
     def processingStatsCallback(processingStats: FetchResponseStats): Unit = {
@@ -757,7 +757,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     else {
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       def doAppendRecords(): Unit = {
         // call the replica manager to append messages to the replicas
         replicaManager.appendRecords(
@@ -786,7 +786,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       } else {
         doAppendRecords()
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
   }
 
@@ -1086,7 +1086,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         clientMetadata = clientMetadata
       )
 
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       def doFetchingRecords(): Unit = {
         // call the replica manager to fetch messages from the local replica
         replicaManager.fetchMessages(
@@ -1113,7 +1113,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         doFetchingRecords()
       }
 
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
   }
 

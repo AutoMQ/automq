@@ -602,7 +602,7 @@ private[log] class Cleaner(val id: Int,
           s"${if(retainLegacyDeletesAndTxnMarkers) "retaining" else "discarding"} deletes.")
 
         try {
-          // elastic stream inject start
+          // AutoMQ for Kafka inject start
           currentSegment match {
             case segment: ElasticLogSegment =>
               cleanIntoV2(log.topicPartition, segment, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
@@ -611,7 +611,7 @@ private[log] class Cleaner(val id: Int,
               cleanInto(log.topicPartition, currentSegment.log, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
                 log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, stats, currentTime = currentTime)
           }
-          // elastic stream inject end
+          // AutoMQ for Kafka inject end
         } catch {
           case e: LogSegmentOffsetOverflowException =>
             // Split the current segment. It's also safest to abort the current cleaning process, so that we retry from
@@ -780,9 +780,9 @@ private[log] class Cleaner(val id: Int,
         throw new IllegalStateException(s"Invalid batch size $nextBatchSize for $logDesc")
       if (nextBatchSize <= readBuffer.capacity)
         throw new IllegalStateException(s"Batch size $nextBatchSize < buffer size ${readBuffer.capacity}, but not processed for $logDesc")
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val bytesLeft = sourceRecords.fileSize() - position
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
       if (nextBatchSize > bytesLeft)
         throw new CorruptRecordException(s"Log segment may be corrupt, batch size $nextBatchSize > $bytesLeft bytes left in segment for $logDesc")
       nextBatchSize.intValue
@@ -982,11 +982,11 @@ private[log] class Cleaner(val id: Int,
                                        maxLogMessageSize: Int,
                                        transactionMetadata: CleanedTransactionMetadata,
                                        stats: CleanerStats): Boolean = {
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     if (segment.isInstanceOf[ElasticLogSegment]) {
       return buildOffsetMapForSegmentV2(topicPartition, segment, map, startOffset, nextSegmentStartOffset, transactionMetadata, stats)
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     var position = segment.offsetIndex.lookup(startOffset).position
     val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
@@ -1049,7 +1049,7 @@ private[log] class Cleaner(val id: Int,
     false
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   def isClusterMetaTopic(topicPartition: TopicPartition): Boolean = {
     Topic.CLUSTER_METADATA_TOPIC_NAME.equals(topicPartition.topic())
   }
@@ -1189,7 +1189,7 @@ private[log] class Cleaner(val id: Int,
     map.updateLatestOffset(nextSegmentStartOffset - 1L)
     false
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
 }
 

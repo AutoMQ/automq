@@ -81,12 +81,12 @@ public class ForwardingAdmin implements Admin {
         return delegate.describeCluster(options);
     }
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
     @Override
     public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         return delegate.getNextNodeId(options);
     }
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 
     @Override
     public DescribeAclsResult describeAcls(AclBindingFilter filter, DescribeAclsOptions options) {

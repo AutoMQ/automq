@@ -318,7 +318,7 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
             case ALLOCATE_PRODUCER_IDS:
                 return AllocateProducerIdsRequest.parse(buffer, apiVersion);
 
-            // Kafka on S3 inject start
+            // AutoMQ for Kafka inject start
             case CREATE_STREAMS:
                 return CreateStreamsRequest.parse(buffer, apiVersion);
             case OPEN_STREAMS:
@@ -345,7 +345,7 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return DeleteKVsRequest.parse(buffer, apiVersion);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
-            // Kafka on S3 inject end
+            // AutoMQ for Kafka inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
                         "code should be updated to do so.", apiKey));

@@ -626,9 +626,9 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def updateLogStartOffset(offset: Long): Unit = {
     logStartOffset = offset
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     localLog.updateLogStartOffset(offset)
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     if (highWatermark < offset) {
       updateHighWatermark(offset)
@@ -687,7 +687,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   def numberOfSegments: Int = localLog.segments.numberOfSegments
 
-  // Kafka on S3 inject start
+  // AutoMQ for Kafka inject start
   /**
    * Close this log.
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
@@ -706,7 +706,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       localLog.close()
     }
   }
-  // Kafka on S3 inject end
+  // AutoMQ for Kafka inject end
 
   /**
    * Rename the directory of the local log. If the log's directory is being renamed for async deletion due to a
@@ -978,10 +978,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                 s"next offset: ${localLog.logEndOffset}, " +
                 s"and messages: $validRecords")
 
-              // Kafka on S3 inject start
+              // AutoMQ for Kafka inject start
               // append will move the high watermark to ack the producer when the async flush success.
               //  if (localLog.unflushedMessages >= config.flushInterval) flush(false)
-              // Kafka on S3 inject end
+              // AutoMQ for Kafka inject end
           }
           appendInfo
         }
@@ -1853,13 +1853,13 @@ object UnifiedLog extends Logging {
     // create the log directory if it doesn't exist
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     if (!isClusterMetaLogSegment(dir) && ElasticLogManager.enabled()) {
       return applyElasticUnifiedLog(topicPartition, dir, config, scheduler, brokerTopicStats, time,
         maxTransactionTimeoutMs, producerStateManagerConfig, producerIdExpirationCheckIntervalMs, logDirFailureChannel,
         topicId, leaderEpoch)
     }
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
     val segments = new LogSegments(topicPartition)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
@@ -2190,7 +2190,7 @@ object UnifiedLog extends Logging {
     val snapshotsToDelete = segments.flatMap { segment =>
       producerStateManager.removeAndMarkSnapshotForDeletion(segment.baseOffset)}
     def deleteProducerSnapshots(): Unit = {
-      // elastic stream inject start
+      // AutoMQ for Kafka inject start
       val handlingDir = if (ElasticLogManager.enabled()) Paths.get(parentDir, topicPartition.toString).toString else parentDir
       LocalLog.maybeHandleIOException(logDirFailureChannel,
         handlingDir,
@@ -2199,7 +2199,7 @@ object UnifiedLog extends Logging {
           snapshot.deleteIfExists()
         }
       }
-      // elastic stream inject end
+      // AutoMQ for Kafka inject end
     }
 
     if (asyncDelete)
@@ -2212,12 +2212,12 @@ object UnifiedLog extends Logging {
     LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset)
   }
 
-  // elastic stream inject start
+  // AutoMQ for Kafka inject start
   def isClusterMetaLogSegment(dir: File): Boolean = {
     // FIXME: check file path topic part
     dir.getAbsolutePath.contains(Topic.CLUSTER_METADATA_TOPIC_NAME);
   }
-  // elastic stream inject end
+  // AutoMQ for Kafka inject end
 
 }
 

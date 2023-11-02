@@ -212,7 +212,7 @@ class ControllerServer(
 
         val maxIdleIntervalNs = config.metadataMaxIdleIntervalNs.fold(OptionalLong.empty)(OptionalLong.of)
 
-        // elastic stream inject start
+        // AutoMQ for Kafka inject start
         val s3Config = new S3Config(config.s3Endpoint, config.s3Region, config.s3Bucket, config.s3ObjectRetentionTimeInSecond, config.s3MockEnable)
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
@@ -221,7 +221,7 @@ class ControllerServer(
           namespace
         }
         ObjectUtils.setNamespace(namespace)
-        // elastic stream inject end
+        // AutoMQ for Kafka inject end
 
         new QuorumController.Builder(config.nodeId, sharedServer.metaProps.clusterId).
           setTime(time).

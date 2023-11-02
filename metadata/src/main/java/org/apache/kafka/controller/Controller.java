@@ -392,7 +392,7 @@ public interface Controller extends AclMutator, AutoCloseable {
      */
     void close() throws InterruptedException;
 
-    // Kafka on S3 inject start
+    // AutoMQ for Kafka inject start
 
     /**
      * Check the lifecycle of the S3 objects.
@@ -505,5 +505,5 @@ public interface Controller extends AclMutator, AutoCloseable {
         DeleteKVsRequestData request
     );
 
-    // Kafka on S3 inject end
+    // AutoMQ for Kafka inject end
 }

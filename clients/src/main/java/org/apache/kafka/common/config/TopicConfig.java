@@ -210,9 +210,9 @@ public class TopicConfig {
         "with <code>UNSUPPORTED_VERSION</code> error for consume requests from such older clients. This configuration" +
         "does not apply to any message format conversion that might be required for replication to followers.";
 
-    // elastic stream inject start
+    // AutoMQ for Kafka inject start
     public static final String REPLICATION_FACTOR_CONFIG = "elasticstream.replication.factor";
     public static final String REPLICATION_FACTOR_DOC = "The number of replicas in elastic streams for this log.";
-    // elastic stream inject end
+    // AutoMQ for Kafka inject end
 
 }

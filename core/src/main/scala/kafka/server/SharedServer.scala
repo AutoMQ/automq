@@ -98,9 +98,9 @@ class SharedServer(
   private var usedByController: Boolean = false
   val brokerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
-  // elastic stream injection start
+  // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
-  // elastic stream injection end
+  // AutoMQ for Kafka injection end
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _
