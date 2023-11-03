@@ -2,12 +2,13 @@ name: Release
 
 on:
   push:
+    branches: [ "master", "develop" ]
     tags:
-      - 'v[0-9]+\.[0-9]+\.[0-9]+'
+      - '[0-9]+\.[0-9]+\.[0-9]+\-?[a-zA-Z]*'
 
 jobs:
   release:
-    name: Release with tgz
+    name: Github Release with tgz
     strategy:
       matrix:
         platform: [ "ubuntu-22.04" ]
@@ -26,13 +27,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
 
-      - name: build tgz
+      - name: Build TarGz
         run: |
-          ./gradlew releaseTarGz
-          tag_version=$(echo ${{ github.ref_name }} | sed 's/v//')
-          for name in `ls core/build/distributions/kafka_*.tgz`;do mv $name ${name%.tgz}_v${tag_version}.tgz;done
+          ./gradlew --build-cache releaseTarGz
 
-      - name: Release
+      - name: GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           draft: false

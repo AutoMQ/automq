@@ -27,10 +27,8 @@ RUN apt update && apt install -y vim systemctl
 ENV DEBIAN_FRONTEND=noninteractive \
     AWS_DEFAULT_REGION=us-east-1
 
-ARG kafka_version=3.4.0
-
-COPY "./kafka_2.13-${kafka_version}.tgz" /opt/kafka/
-RUN tar -xzvf "/opt/kafka/kafka_2.13-$kafka_version.tgz" -C /opt/kafka/ && rm "/opt/kafka/kafka_2.13-$kafka_version.tgz" && mv "/opt/kafka/kafka_2.13-$kafka_version" /opt/kafka/kafka
+COPY "./kafka_*.tgz" /opt/kafka/kafka.tgz
+RUN tar -xzvf "/opt/kafka/kafka.tgz" -C /opt/kafka/ --one-top-level=kafka --strip-components 1 && rm "/opt/kafka/kafka.tgz"
 COPY scripts /opt/kafka/scripts
 
 RUN mkdir -p /data/kafka
