@@ -2,12 +2,11 @@ name: Release
 
 on:
   push:
-    branches: [ "master", "develop" ]
     tags:
       - '[0-9]+\.[0-9]+\.[0-9]+\-?[a-zA-Z]*'
 
 jobs:
-  release:
+  github-release:
     name: Github Release with tgz
     strategy:
       matrix:
