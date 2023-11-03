@@ -5,7 +5,7 @@ AutoMQ for Kafka
     The truly serverless Kafka solution that maximizes the benefits of cloud
 </h3>
 
-[![Docs](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/zh/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
+[![Docs](https://img.shields.io/badge/Docs-blue)](https://docs.automq.com/zh/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![E2E_TEST](https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg)](https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml)
 
