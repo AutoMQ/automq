@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@Tag("esUnit")
-public class PartitionChangeBuilderESTest {
+@Tag("S3Unit")
+public class PartitionChangeBuilderS3Test {
     @BeforeEach
     public void setUp() {
         ElasticStreamSwitch.setSwitch(true);

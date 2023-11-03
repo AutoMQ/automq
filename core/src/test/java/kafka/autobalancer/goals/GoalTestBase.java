@@ -23,7 +23,7 @@ import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Tag;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class GoalTestBase {
     protected static final String RACK = "default";
     protected static final String TOPIC_0 = "TestTopic0";

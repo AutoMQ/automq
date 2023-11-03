@@ -55,7 +55,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.StringJoiner;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestHarness {
     /**
      * Set up the unit test.

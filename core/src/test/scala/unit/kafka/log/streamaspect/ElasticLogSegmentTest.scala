@@ -15,10 +15,9 @@
  * limitations under the License.
  */
 
-package kafka.log.es
+package kafka.log.streamaspect
 
 import kafka.log._
-import kafka.log.streamaspect.{ElasticLogManager, ElasticLogSegment}
 import kafka.server.checkpoints.LeaderEpochCheckpoint
 import kafka.server.epoch.{EpochEntry, LeaderEpochFileCache}
 import kafka.server.{KafkaConfig, LogDirFailureChannel}
@@ -37,7 +36,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, mutable}
 import scala.jdk.CollectionConverters.MapHasAsJava
 
-@Tag("esUnit")
+@Tag("S3Unit")
 class ElasticLogSegmentTest {
     private val topicPartition = new TopicPartition("topic", 0)
     private val segments = mutable.Map[Long, ElasticLogSegment]()

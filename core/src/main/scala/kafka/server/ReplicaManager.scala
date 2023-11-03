@@ -23,7 +23,7 @@ import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.common.RecordValidationException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint}
+import kafka.log.streamaspect.ElasticLogManager
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
@@ -33,7 +33,6 @@ import kafka.utils.Implicits._
 import kafka.utils._
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common.errors._
-import org.apache.kafka.common.errors.es.SlowFetchHintException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
 import org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState
@@ -1075,14 +1074,10 @@ class ReplicaManager(val config: KafkaConfig,
     var hasPreferredReadReplica = false
     val logReadResultMap = new mutable.HashMap[TopicIdPartition, LogReadResult]
 
-    var containsSlowFetchHint = false
 
     logReadResults.foreach { case (topicIdPartition, logReadResult) =>
       brokerTopicStats.topicStats(topicIdPartition.topicPartition.topic).totalFetchRequestRate.mark()
       brokerTopicStats.allTopicsStats.totalFetchRequestRate.mark()
-      if (logReadResult.exception.isDefined && logReadResult.exception.get.isInstanceOf[SlowFetchHintException]) {
-        containsSlowFetchHint = true
-      }
       if (logReadResult.error != Errors.NONE)
         errorReadingData = true
       if (logReadResult.divergingEpoch.nonEmpty)
@@ -1092,25 +1087,6 @@ class ReplicaManager(val config: KafkaConfig,
       bytesReadable = bytesReadable + logReadResult.info.records.sizeInBytes
       logReadResultMap.put(topicIdPartition, logReadResult)
     }
-
-    // AutoMQ for Kafka inject start
-    // If there is any slow fetch hint, we will read from local log in a separate thread.
-    if (containsSlowFetchHint) {
-      slowFetchExecutors.submit(new Runnable {
-        override def run(): Unit = {
-          ReadManualReleaseHint.mark()
-          val logReadResults = readFromLocalLog(params, fetchInfos, quota, readFromPurgatory = false)
-          ReadManualReleaseHint.reset()
-          val fetchPartitionData = logReadResults.map { case (tp, result) =>
-            val isReassignmentFetch = params.isFromFollower && isAddingReplica(tp.topicPartition, params.replicaId)
-            tp -> result.toFetchPartitionData(isReassignmentFetch)
-          }
-          responseCallback(fetchPartitionData)
-        }
-      })
-      return
-    }
-    // AutoMQ for Kafka inject end
 
     // respond immediately if 1) fetch request does not want to wait
     //                        2) fetch request does not require any data
@@ -1181,7 +1157,6 @@ class ReplicaManager(val config: KafkaConfig,
                   _: ReplicaNotAvailableException |
                   _: KafkaStorageException |
                   _: OffsetOutOfRangeException |
-                  _: SlowFetchHintException |
                   _: InconsistentTopicIdException) =>
             LogReadResult(info = FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MemoryRecords.EMPTY),
               divergingEpoch = None,
@@ -1428,7 +1403,6 @@ class ReplicaManager(val config: KafkaConfig,
                  _: ReplicaNotAvailableException |
                  _: KafkaStorageException |
                  _: OffsetOutOfRangeException |
-                 _: SlowFetchHintException |
                  _: InconsistentTopicIdException) =>
           LogReadResult(info = FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MemoryRecords.EMPTY),
             divergingEpoch = None,

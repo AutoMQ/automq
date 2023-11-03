@@ -27,9 +27,7 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
-import org.apache.kafka.common.errors.es.SlowFetchHintException;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -41,10 +39,8 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -53,18 +49,12 @@ import static kafka.log.streamaspect.AlwaysSuccessClient.HALT_ERROR_CODES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 class AlwaysSuccessClientTest {
     private AlwaysSuccessClient client;
 
-    @BeforeEach
-    public void setup() {
-        SeparateSlowAndQuickFetchHint.mark();
-    }
-
     @AfterEach
     public void teardown() {
-        SeparateSlowAndQuickFetchHint.reset();
         client.shutdown();
     }
 
@@ -86,77 +76,6 @@ class AlwaysSuccessClientTest {
         FetchResult fetched = stream.fetch(0, 100, 1000).get();
         checkAppendAndFetch(payloads, fetched);
 
-        stream.destroy();
-    }
-
-    @Test
-    public void testQuickFetch() throws ExecutionException, InterruptedException {
-        MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        long slowFetchTimeoutMillis = 1000 * 2;
-        client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
-        client.start();
-        List<Long> quickFetchDelayMillisList = List.of(1L, slowFetchTimeoutMillis / 2);
-        List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
-
-        // test quick fetch
-        for (Long delay : quickFetchDelayMillisList) {
-            memoryClientWithDelay.setDelayMillis(delay);
-            Stream stream = client
-                    .streamClient()
-                    .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-                    .get();
-            CompletableFuture.allOf(
-                    payloads
-                            .stream()
-                            .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
-            ).get();
-            FetchResult fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(delay + slowFetchTimeoutMillis / 2, TimeUnit.MILLISECONDS)
-                    .get();
-            checkAppendAndFetch(payloads, fetched);
-            stream.destroy();
-        }
-    }
-
-    @Test
-    public void testSlowFetch() throws ExecutionException, InterruptedException {
-        MemoryClientWithDelay memoryClientWithDelay = new MemoryClientWithDelay();
-        long slowFetchTimeoutMillis = 1000 * 2;
-        client = new AlwaysSuccessClient(memoryClientWithDelay, false, slowFetchTimeoutMillis);
-        client.start();
-        List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
-
-        long slowFetchDelay = slowFetchTimeoutMillis * 3 / 2;
-        memoryClientWithDelay.setDelayMillis(slowFetchDelay);
-        Stream stream = client
-                .streamClient()
-                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
-                .get();
-        CompletableFuture.allOf(
-                payloads
-                        .stream()
-                        .map(payload -> stream.append(RawPayloadRecordBatch.of(ByteBuffer.wrap(payload)))).toArray(CompletableFuture[]::new)
-        ).get();
-
-        FetchResult fetched = null;
-        AtomicBoolean gotSlowFetchHintException = new AtomicBoolean(false);
-        try {
-            fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(slowFetchDelay, TimeUnit.MILLISECONDS)
-                    .get();
-            checkAppendAndFetch(payloads, fetched);
-        } catch (ExecutionException e) {
-            // should throw SlowFetchHintException after SLOW_FETCH_TIMEOUT_MILLIS ms
-            assertEquals(SlowFetchHintException.class, e.getCause().getClass());
-            gotSlowFetchHintException.set(true);
-            SeparateSlowAndQuickFetchHint.reset();
-            // It should reuse the fetching future above, therefore only (SLOW_FETCH_TIMEOUT_MILLIS / 2) ms is tolerable.
-            fetched = stream.fetch(0, 100, 1000)
-                    .orTimeout(slowFetchTimeoutMillis - 200, TimeUnit.MILLISECONDS)
-                    .get();
-        }
-        checkAppendAndFetch(payloads, fetched);
-        assertTrue(gotSlowFetchHintException.get(), "should throw SlowFetchHintException");
         stream.destroy();
     }
 
@@ -237,16 +156,9 @@ class AlwaysSuccessClientTest {
         stream.destroy();
 
         stream = openStream(1).join();
-        Stream finalStream = stream;
-        try {
-            finalStream.fetch(0, 100, 1000).join();
-        } catch (CompletionException ex) {
-            if (ex.getCause() instanceof SlowFetchHintException) {
-                // expected
-            } else {
-                throw ex;
-            }
-        }
+
+        stream.fetch(0, 100, 1000).join();
+
         stream.destroy();
 
         stream = openStream(1).join();

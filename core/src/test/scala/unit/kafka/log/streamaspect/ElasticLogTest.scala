@@ -15,11 +15,10 @@
  * limitations under the License.
  */
 
-package kafka.log.es
+package kafka.log.streamaspect
 
 import kafka.log._
 import kafka.log.streamaspect.client.Context
-import kafka.log.streamaspect.{ElasticLog, ElasticLogManager, MemoryClient}
 import kafka.server.{FetchDataInfo, KafkaConfig, LogDirFailureChannel, LogOffsetMetadata}
 import kafka.utils.{MockTime, Scheduler, TestUtils}
 import org.apache.kafka.common.errors.KafkaStorageException
@@ -35,7 +34,7 @@ import java.util.regex.Pattern
 import java.util.{Collections, Properties}
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
-@Tag("esUnit")
+@Tag("S3Unit")
 class ElasticLogTest {
     val properties: Properties = TestUtils.createSimpleEsBrokerConfig()
     val kafkaConfig: KafkaConfig = KafkaConfig.fromProps(properties)
