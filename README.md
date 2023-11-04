@@ -7,7 +7,8 @@ AutoMQ for Kafka
 
 [![Docs](https://img.shields.io/badge/Docs-blue)](https://docs.automq.com/zh/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
-[![E2E_TEST](https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg)](https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml)
+
+[//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
 
 ## What is AutoMQ for Kafka
 AutoMQ for Apache Kafka is redesigned based on cloud infrastructure, and users 
