@@ -172,7 +172,7 @@ public class S3ObjectControlManager {
         }
         S3Object object = this.objectsMetadata.get(objectId);
         if (object == null) {
-            log.error("object {} not exist when commit wal object", objectId);
+            log.error("object {} not exist when commit SST object", objectId);
             return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
         }
         // verify the state

@@ -19,24 +19,24 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CommitWALObjectResponse extends AbstractResponse {
+public class CommitSSTObjectResponse extends AbstractResponse {
 
 
-    private final CommitWALObjectResponseData data;
+    private final CommitSSTObjectResponseData data;
 
-    public CommitWALObjectResponse(CommitWALObjectResponseData data) {
-        super(ApiKeys.COMMIT_WALOBJECT);
+    public CommitSSTObjectResponse(CommitSSTObjectResponseData data) {
+        super(ApiKeys.COMMIT_SST_OBJECT);
         this.data = data;
     }
 
     @Override
-    public CommitWALObjectResponseData data() {
+    public CommitSSTObjectResponseData data() {
         return data;
     }
 
@@ -55,8 +55,8 @@ public class CommitWALObjectResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static CommitWALObjectResponse parse(ByteBuffer buffer, short version) {
-        return new CommitWALObjectResponse(new CommitWALObjectResponseData(
+    public static CommitSSTObjectResponse parse(ByteBuffer buffer, short version) {
+        return new CommitSSTObjectResponse(new CommitSSTObjectResponseData(
             new ByteBufferAccessor(buffer), version));
     }
     

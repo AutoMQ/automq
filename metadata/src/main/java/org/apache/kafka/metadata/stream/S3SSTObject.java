@@ -24,10 +24,10 @@ import java.util.stream.Collectors;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class S3WALObject implements Comparable<S3WALObject> {
+public class S3SSTObject implements Comparable<S3SSTObject> {
 
     private final long objectId;
     private final int nodeId;
@@ -43,11 +43,11 @@ public class S3WALObject implements Comparable<S3WALObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3WALObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
+    public S3SSTObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
         this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3WALObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3SSTObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.nodeId = nodeId;
@@ -68,7 +68,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     public ApiMessageAndVersion toRecord() {
-        return new ApiMessageAndVersion(new WALObjectRecord()
+        return new ApiMessageAndVersion(new S3SSTObjectRecord()
             .setObjectId(objectId)
             .setNodeId(nodeId)
             .setOrderId(orderId)
@@ -81,14 +81,13 @@ public class S3WALObject implements Comparable<S3WALObject> {
                     .collect(Collectors.toList())), (short) 0);
     }
 
-    public static S3WALObject of(WALObjectRecord record) {
+    public static S3SSTObject of(S3SSTObjectRecord record) {
         Map<Long, StreamOffsetRange> offsetRanges = record.streamsIndex()
             .stream()
-            .collect(Collectors.toMap(index -> index.streamId(),
+            .collect(Collectors.toMap(S3SSTObjectRecord.StreamIndex::streamId,
                 index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
-        S3WALObject s3WalObject = new S3WALObject(record.objectId(), record.nodeId(),
+        return new S3SSTObject(record.objectId(), record.nodeId(),
             offsetRanges, record.orderId(), record.dataTimeInMs());
-        return s3WalObject;
     }
 
     public Integer nodeId() {
@@ -100,7 +99,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     public S3ObjectType objectType() {
-        return S3ObjectType.WAL;
+        return S3ObjectType.SST;
     }
 
     public long orderId() {
@@ -119,7 +118,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        S3WALObject that = (S3WALObject) o;
+        S3SSTObject that = (S3SSTObject) o;
         return objectId == that.objectId;
     }
 
@@ -130,7 +129,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
 
     @Override
     public String toString() {
-        return "S3WALObject{" +
+        return "S3SSTObject{" +
             "objectId=" + objectId +
             ", orderId=" + orderId +
             ", nodeId=" + nodeId +
@@ -140,7 +139,7 @@ public class S3WALObject implements Comparable<S3WALObject> {
     }
 
     @Override
-    public int compareTo(S3WALObject o) {
+    public int compareTo(S3SSTObject o) {
         return Long.compare(this.orderId, o.orderId);
     }
 }

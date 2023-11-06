@@ -23,23 +23,23 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class SortedWALObjectsList implements SortedWALObjects {
+public class SortedSSTObjectsList implements SortedSSTObjects {
 
-    private final List<S3WALObject> list;
+    private final List<S3SSTObject> list;
 
-    public SortedWALObjectsList(SortedWALObjects source) {
+    public SortedSSTObjectsList(SortedSSTObjects source) {
         this.list = new LinkedList<>(source.list());
     }
 
-    public SortedWALObjectsList() {
+    public SortedSSTObjectsList() {
         this.list = new LinkedList<>();
     }
 
     /**
-     * Construct a SortedWALObjectsList from a list of S3WALObjects.
-     * @param list the list of S3WALObjects, must guarantee that the list is sorted
+     * Construct a SortedSSTObjectsList from a list of S3SSTObjects.
+     * @param list the list of S3SSTObjects, must guarantee that the list is sorted
      */
-    public SortedWALObjectsList(List<S3WALObject> list) {
+    public SortedSSTObjectsList(List<S3SSTObject> list) {
         this.list = list;
     }
 
@@ -54,12 +54,12 @@ public class SortedWALObjectsList implements SortedWALObjects {
     }
 
     @Override
-    public Iterator<S3WALObject> iterator() {
+    public Iterator<S3SSTObject> iterator() {
         return this.list.iterator();
     }
 
     @Override
-    public List<S3WALObject> list() {
+    public List<S3SSTObject> list() {
         return list;
     }
 
@@ -69,16 +69,16 @@ public class SortedWALObjectsList implements SortedWALObjects {
     }
 
     @Override
-    public boolean add(S3WALObject s3WALObject) {
+    public boolean add(S3SSTObject s3SSTObject) {
         // TODO: optimize by binary search
         for (int index = 0; index < this.list.size(); index++) {
-            S3WALObject current = this.list.get(index);
-            if (s3WALObject.compareTo(current) <= 0) {
-                this.list.add(index, s3WALObject);
+            S3SSTObject current = this.list.get(index);
+            if (s3SSTObject.compareTo(current) <= 0) {
+                this.list.add(index, s3SSTObject);
                 return true;
             }
         }
-        this.list.add(s3WALObject);
+        this.list.add(s3SSTObject);
         return true;
     }
 
@@ -91,7 +91,7 @@ public class SortedWALObjectsList implements SortedWALObjects {
 
 
     @Override
-    public S3WALObject get(int index) {
+    public S3SSTObject get(int index) {
         return this.list.get(index);
     }
 
@@ -108,7 +108,7 @@ public class SortedWALObjectsList implements SortedWALObjects {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        SortedWALObjectsList that = (SortedWALObjectsList) o;
+        SortedSSTObjectsList that = (SortedSSTObjectsList) o;
         return Objects.equals(list, that.list);
     }
 
@@ -119,8 +119,8 @@ public class SortedWALObjectsList implements SortedWALObjects {
 
     @Override
     public String toString() {
-        return "SortedWALObjectsList{" +
-            "list=" + list.stream().map(S3WALObject::toString).collect(Collectors.joining(",")) +
+        return "SortedSSTObjectsList{" +
+            "list=" + list.stream().map(S3SSTObject::toString).collect(Collectors.joining(",")) +
             '}';
     }
 }

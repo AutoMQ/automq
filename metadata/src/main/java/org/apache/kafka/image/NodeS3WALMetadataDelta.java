@@ -22,20 +22,20 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 
 public class NodeS3WALMetadataDelta {
 
-    private final NodeS3WALMetadataImage image;
+    private final NodeS3SSTMetadataImage image;
     private int nodeId;
     private long nodeEpoch;
-    private final Map<Long/*objectId*/, S3WALObject> addedS3WALObjects = new HashMap<>();
+    private final Map<Long/*objectId*/, S3SSTObject> addedS3SSTObjects = new HashMap<>();
 
-    private final Set<Long/*objectId*/> removedS3WALObjects = new HashSet<>();
+    private final Set<Long/*objectId*/> removedS3SSTObjects = new HashSet<>();
 
-    public NodeS3WALMetadataDelta(NodeS3WALMetadataImage image) {
+    public NodeS3WALMetadataDelta(NodeS3SSTMetadataImage image) {
         this.image = image;
         this.nodeId = image.getNodeId();
         this.nodeEpoch = image.getNodeEpoch();
@@ -46,25 +46,25 @@ public class NodeS3WALMetadataDelta {
         this.nodeEpoch = record.nodeEpoch();
     }
 
-    public void replay(WALObjectRecord record) {
-        addedS3WALObjects.put(record.objectId(), S3WALObject.of(record));
+    public void replay(S3SSTObjectRecord record) {
+        addedS3SSTObjects.put(record.objectId(), S3SSTObject.of(record));
         // new add or update, so remove from removedObjects
-        removedS3WALObjects.remove(record.objectId());
+        removedS3SSTObjects.remove(record.objectId());
     }
 
-    public void replay(RemoveWALObjectRecord record) {
-        removedS3WALObjects.add(record.objectId());
+    public void replay(RemoveSSTObjectRecord record) {
+        removedS3SSTObjects.add(record.objectId());
         // new remove, so remove from addedObjects
-        addedS3WALObjects.remove(record.objectId());
+        addedS3SSTObjects.remove(record.objectId());
     }
 
-    public NodeS3WALMetadataImage apply() {
-        Map<Long, S3WALObject> newS3WALObjects = new HashMap<>(image.getWalObjects());
-        // add all changed WAL objects
-        newS3WALObjects.putAll(addedS3WALObjects);
-        // remove all removed WAL objects
-        removedS3WALObjects.forEach(newS3WALObjects::remove);
-        return new NodeS3WALMetadataImage(this.nodeId, this.nodeEpoch, newS3WALObjects);
+    public NodeS3SSTMetadataImage apply() {
+        Map<Long, S3SSTObject> newS3SSTObjects = new HashMap<>(image.getSSTObjects());
+        // add all changed SST objects
+        newS3SSTObjects.putAll(addedS3SSTObjects);
+        // remove all removed SST objects
+        removedS3SSTObjects.forEach(newS3SSTObjects::remove);
+        return new NodeS3SSTMetadataImage(this.nodeId, this.nodeEpoch, newS3SSTObjects);
     }
 
 }
