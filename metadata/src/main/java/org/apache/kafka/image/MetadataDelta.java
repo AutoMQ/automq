@@ -41,7 +41,7 @@ import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -49,7 +49,7 @@ import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
@@ -305,11 +305,11 @@ public final class MetadataDelta {
             case REMOVE_S3_STREAM_OBJECT_RECORD:
                 replay((RemoveS3StreamObjectRecord) record);
                 break;
-            case WALOBJECT_RECORD:
-                replay((WALObjectRecord) record);
+            case S3_SSTOBJECT_RECORD:
+                replay((S3SSTObjectRecord) record);
                 break;
-            case REMOVE_WALOBJECT_RECORD:
-                replay((RemoveWALObjectRecord) record);
+            case REMOVE_SSTOBJECT_RECORD:
+                replay((RemoveSSTObjectRecord) record);
                 break;
             case S3_OBJECT_RECORD:
                 replay((S3ObjectRecord) record);
@@ -441,11 +441,11 @@ public final class MetadataDelta {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(WALObjectRecord record) {
+    public void replay(S3SSTObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(RemoveWALObjectRecord record) {
+    public void replay(RemoveSSTObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 

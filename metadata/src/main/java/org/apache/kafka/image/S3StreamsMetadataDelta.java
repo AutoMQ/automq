@@ -29,10 +29,10 @@ import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
 
 public final class S3StreamsMetadataDelta {
 
@@ -105,7 +105,7 @@ public final class S3StreamsMetadataDelta {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
     }
 
-    public void replay(WALObjectRecord record) {
+    public void replay(S3SSTObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
         record.streamsIndex().forEach(index -> {
             getOrCreateStreamMetadataDelta(index.streamId()).replay(new AdvanceRangeRecord()
@@ -114,7 +114,7 @@ public final class S3StreamsMetadataDelta {
         });
     }
 
-    public void replay(RemoveWALObjectRecord record) {
+    public void replay(RemoveSSTObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
     }
 

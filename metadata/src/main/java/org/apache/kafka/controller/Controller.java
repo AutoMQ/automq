@@ -32,8 +32,8 @@ import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
@@ -460,9 +460,9 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to commit a WAL object.
      */
-    CompletableFuture<CommitWALObjectResponseData> commitWALObject(
+    CompletableFuture<CommitSSTObjectResponseData> commitWALObject(
         ControllerRequestContext context,
-        CommitWALObjectRequestData request
+        CommitSSTObjectRequestData request
     );
 
     /**

@@ -19,8 +19,8 @@ package kafka.log.stream.s3.objects;
 
 
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitSSTObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
@@ -30,8 +30,8 @@ import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -101,38 +101,38 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest commitWALObjectRequest) {
-        CommitWALObjectRequestData request = new CommitWALObjectRequestData()
+    public CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest commitSSTObjectRequest) {
+        CommitSSTObjectRequestData request = new CommitSSTObjectRequestData()
             .setNodeId(nodeId)
             .setNodeEpoch(nodeEpoch)
-            .setOrderId(commitWALObjectRequest.getOrderId())
-            .setObjectId(commitWALObjectRequest.getObjectId())
-            .setObjectSize(commitWALObjectRequest.getObjectSize())
-            .setObjectStreamRanges(commitWALObjectRequest.getStreamRanges()
+            .setOrderId(commitSSTObjectRequest.getOrderId())
+            .setObjectId(commitSSTObjectRequest.getObjectId())
+            .setObjectSize(commitSSTObjectRequest.getObjectSize())
+            .setObjectStreamRanges(commitSSTObjectRequest.getStreamRanges()
                 .stream()
                 .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
-            .setStreamObjects(commitWALObjectRequest.getStreamObjects()
+            .setStreamObjects(commitSSTObjectRequest.getStreamObjects()
                 .stream()
                 .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
-            .setCompactedObjectIds(commitWALObjectRequest.getCompactedObjectIds());
+            .setCompactedObjectIds(commitSSTObjectRequest.getCompactedObjectIds());
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
-                return ApiKeys.COMMIT_WALOBJECT;
+                return ApiKeys.COMMIT_SST_OBJECT;
             }
 
             @Override
             public Builder toRequestBuilder() {
-                return new org.apache.kafka.common.requests.s3.CommitWALObjectRequest.Builder(request);
+                return new org.apache.kafka.common.requests.s3.CommitSSTObjectRequest.Builder(request);
             }
         };
-        CompletableFuture<CommitWALObjectResponse> future = new CompletableFuture<>();
-        RequestTask<org.apache.kafka.common.requests.s3.CommitWALObjectResponse, CommitWALObjectResponse> task = new RequestTask<>(req, future, response -> {
-            CommitWALObjectResponseData resp = response.data();
+        CompletableFuture<CommitSSTObjectResponse> future = new CompletableFuture<>();
+        RequestTask<org.apache.kafka.common.requests.s3.CommitSSTObjectResponse, CommitSSTObjectResponse> task = new RequestTask<>(req, future, response -> {
+            CommitSSTObjectResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
-                    return ResponseHandleResult.withSuccess(new CommitWALObjectResponse());
+                    return ResponseHandleResult.withSuccess(new CommitSSTObjectResponse());
                 case NODE_EPOCH_EXPIRED:
                 case NODE_EPOCH_NOT_EXIST:
                     LOGGER.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));

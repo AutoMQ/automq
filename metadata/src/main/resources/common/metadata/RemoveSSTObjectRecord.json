@@ -14,9 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 507,
+  "apiKey": 508,
   "type": "metadata",
-  "name": "WALObjectRecord",
+  "name": "RemoveSSTObjectRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -30,45 +30,7 @@
       "name": "ObjectId",
       "type": "int64",
       "versions": "0+",
-      "about": "The object id of the S3 object"
-    },
-    {
-      "name": "OrderId",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The order id of the S3 object"
-    },
-    {
-      "name": "DataTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The data time of the S3 object"
-    },
-    {
-      "name": "StreamsIndex",
-      "type": "[]StreamIndex",
-      "versions": "0+",
-      "about": "The streams index in this object",
-      "fields": [
-        {
-          "name": "StreamId",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The Stream ID of the stream in this object"
-        },
-        {
-          "name": "StartOffset",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The start offset of the stream in this object"
-        },
-        {
-          "name": "EndOffset",
-          "type": "int64",
-          "versions": "0+",
-          "about": "The end offset of the stream in this object"
-        }
-      ]
+      "about": "The object id of this object"
     }
   ]
 }

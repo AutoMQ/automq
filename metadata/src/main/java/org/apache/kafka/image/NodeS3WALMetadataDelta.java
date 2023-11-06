@@ -22,16 +22,16 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 
 public class NodeS3WALMetadataDelta {
 
     private final NodeS3WALMetadataImage image;
     private int nodeId;
     private long nodeEpoch;
-    private final Map<Long/*objectId*/, S3WALObject> addedS3WALObjects = new HashMap<>();
+    private final Map<Long/*objectId*/, S3SSTObject> addedS3WALObjects = new HashMap<>();
 
     private final Set<Long/*objectId*/> removedS3WALObjects = new HashSet<>();
 
@@ -46,20 +46,20 @@ public class NodeS3WALMetadataDelta {
         this.nodeEpoch = record.nodeEpoch();
     }
 
-    public void replay(WALObjectRecord record) {
-        addedS3WALObjects.put(record.objectId(), S3WALObject.of(record));
+    public void replay(S3SSTObjectRecord record) {
+        addedS3WALObjects.put(record.objectId(), S3SSTObject.of(record));
         // new add or update, so remove from removedObjects
         removedS3WALObjects.remove(record.objectId());
     }
 
-    public void replay(RemoveWALObjectRecord record) {
+    public void replay(RemoveSSTObjectRecord record) {
         removedS3WALObjects.add(record.objectId());
         // new remove, so remove from addedObjects
         addedS3WALObjects.remove(record.objectId());
     }
 
     public NodeS3WALMetadataImage apply() {
-        Map<Long, S3WALObject> newS3WALObjects = new HashMap<>(image.getWalObjects());
+        Map<Long, S3SSTObject> newS3WALObjects = new HashMap<>(image.getWalObjects());
         // add all changed WAL objects
         newS3WALObjects.putAll(addedS3WALObjects);
         // remove all removed WAL objects

@@ -35,8 +35,8 @@ import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
@@ -530,7 +530,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CommitWALObjectResponseData> commitWALObject(ControllerRequestContext context, CommitWALObjectRequestData request) {
+    public CompletableFuture<CommitSSTObjectResponseData> commitWALObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
         throw new UnsupportedOperationException();
     }
 

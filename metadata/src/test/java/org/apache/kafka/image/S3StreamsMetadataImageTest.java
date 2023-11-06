@@ -28,7 +28,7 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -101,17 +101,17 @@ public class S3StreamsMetadataImageTest {
 
     @Test
     public void testGetObjects() {
-        Map<Long, S3WALObject> broker0WalObjects = Map.of(
-                0L, new S3WALObject(0, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
-                1L, new S3WALObject(1, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
-                2L, new S3WALObject(2, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
-                3L, new S3WALObject(3, BROKER0, Map.of(STREAM0,
+        Map<Long, S3SSTObject> broker0WalObjects = Map.of(
+                0L, new S3SSTObject(0, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
+                1L, new S3SSTObject(1, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
+                2L, new S3SSTObject(2, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
+                3L, new S3SSTObject(3, BROKER0, Map.of(STREAM0,
                         new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
-                4L, new S3WALObject(4, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
-        Map<Long, S3WALObject> broker1WalObjects = Map.of(
-                5L, new S3WALObject(5, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
-                6L, new S3WALObject(6, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
-                7L, new S3WALObject(7, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
+                4L, new S3SSTObject(4, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
+        Map<Long, S3SSTObject> broker1WalObjects = Map.of(
+                5L, new S3SSTObject(5, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
+                6L, new S3SSTObject(6, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
+                7L, new S3SSTObject(7, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
         NodeS3WALMetadataImage broker0WALMetadataImage = new NodeS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
                 new HashMap<>(broker0WalObjects));
         NodeS3WALMetadataImage broker1WALMetadataImage = new NodeS3WALMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,

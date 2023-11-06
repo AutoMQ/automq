@@ -25,10 +25,10 @@ import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamReques
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
-import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData.StreamObject;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
@@ -47,18 +47,18 @@ import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord.StreamIndex;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord.StreamIndex;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.metadata.stream.Convertor;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -157,7 +157,7 @@ public class StreamControlManager {
 
         private final int nodeId;
         private final TimelineLong nodeEpoch;
-        private final TimelineHashMap<Long/*objectId*/, S3WALObject> walObjects;
+        private final TimelineHashMap<Long/*objectId*/, S3SSTObject> walObjects;
 
         public NodeS3WALMetadata(int nodeId, long nodeEpoch, SnapshotRegistry registry) {
             this.nodeId = nodeId;
@@ -174,7 +174,7 @@ public class StreamControlManager {
             return nodeEpoch.get();
         }
 
-        public TimelineHashMap<Long, S3WALObject> walObjects() {
+        public TimelineHashMap<Long, S3SSTObject> walObjects() {
             return walObjects;
         }
 
@@ -562,7 +562,7 @@ public class StreamControlManager {
                 if (walObj.offsetRanges().size() == 1) {
                     // only this range, but we will remove this range, so now we can remove this wal object
                     records.add(new ApiMessageAndVersion(
-                        new RemoveWALObjectRecord()
+                        new RemoveSSTObjectRecord()
                             .setNodeId(walObj.nodeId())
                             .setObjectId(walObj.objectId()), (short) 0
                     ));
@@ -579,7 +579,7 @@ public class StreamControlManager {
                 Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new WALObjectRecord()
+                records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
                     .setObjectId(walObj.objectId())
                     .setNodeId(walObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
@@ -638,7 +638,7 @@ public class StreamControlManager {
                 if (walObj.offsetRanges().size() == 1) {
                     // only this range, but we will remove this range, so now we can remove this wal object
                     records.add(new ApiMessageAndVersion(
-                        new RemoveWALObjectRecord()
+                        new RemoveSSTObjectRecord()
                             .setNodeId(walObj.nodeId())
                             .setObjectId(walObj.objectId()), (short) 0
                     ));
@@ -655,7 +655,7 @@ public class StreamControlManager {
                 Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new WALObjectRecord()
+                records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
                     .setObjectId(walObj.objectId())
                     .setNodeId(walObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
@@ -690,8 +690,8 @@ public class StreamControlManager {
      * </ul>
      */
     @SuppressWarnings("all")
-    public ControllerResult<CommitWALObjectResponseData> commitWALObject(CommitWALObjectRequestData data) {
-        CommitWALObjectResponseData resp = new CommitWALObjectResponseData();
+    public ControllerResult<CommitSSTObjectResponseData> commitWALObject(CommitSSTObjectRequestData data) {
+        CommitSSTObjectResponseData resp = new CommitSSTObjectResponseData();
         long objectId = data.objectId();
         int nodeId = data.nodeId();
         long nodeEpoch = data.nodeEpoch();
@@ -757,7 +757,7 @@ public class StreamControlManager {
             //noinspection OptionalGetWithoutIsPresent
             dataTs = compactedObjectIds.stream()
                     .map(id -> this.nodesMetadata.get(nodeId).walObjects.get(id))
-                    .map(S3WALObject::dataTimeInMs)
+                    .map(S3SSTObject::dataTimeInMs)
                     .min(Long::compareTo).get();
         }
         List<StreamOffsetRange> indexes = streamRanges.stream()
@@ -775,13 +775,13 @@ public class StreamControlManager {
             List<StreamIndex> streamIndexes = indexes.stream()
                     .map(Convertor::to)
                     .collect(Collectors.toList());
-            WALObjectRecord walObjectRecord = new WALObjectRecord()
+            S3SSTObjectRecord S3SSTObjectRecord = new S3SSTObjectRecord()
                     .setObjectId(objectId)
                     .setDataTimeInMs(dataTs)
                     .setOrderId(orderId)
                     .setNodeId(nodeId)
                     .setStreamsIndex(streamIndexes);
-            records.add(new ApiMessageAndVersion(walObjectRecord, (short) 0));
+            records.add(new ApiMessageAndVersion(S3SSTObjectRecord, (short) 0));
         }
         // commit stream objects
         if (streamObjects != null && !streamObjects.isEmpty()) {
@@ -806,7 +806,7 @@ public class StreamControlManager {
         }
         // generate compacted objects' remove record
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
-            compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveWALObjectRecord()
+            compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveSSTObjectRecord()
                     .setNodeId(nodeId)
                     .setObjectId(id), (short) 0)));
         }
@@ -1118,7 +1118,7 @@ public class StreamControlManager {
         this.nodesMetadata.put(nodeId, new NodeS3WALMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
     }
 
-    public void replay(WALObjectRecord record) {
+    public void replay(S3SSTObjectRecord record) {
         long objectId = record.objectId();
         int nodeId = record.nodeId();
         long orderId = record.orderId();
@@ -1135,7 +1135,7 @@ public class StreamControlManager {
         Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
                 .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
-        nodeMetadata.walObjects.put(objectId, new S3WALObject(objectId, nodeId, indexMap, orderId, dataTs));
+        nodeMetadata.walObjects.put(objectId, new S3SSTObject(objectId, nodeId, indexMap, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -1164,7 +1164,7 @@ public class StreamControlManager {
         });
     }
 
-    public void replay(RemoveWALObjectRecord record) {
+    public void replay(RemoveSSTObjectRecord record) {
         long objectId = record.objectId();
         NodeS3WALMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
         if (walMetadata == null) {

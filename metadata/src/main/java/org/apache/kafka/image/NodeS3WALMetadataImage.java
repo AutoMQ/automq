@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -40,10 +40,10 @@ public class NodeS3WALMetadataImage {
         S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
     private final int nodeId;
     private final long nodeEpoch;
-    private final Map<Long/*objectId*/, S3WALObject> s3WalObjects;
-    private final SortedMap<Long/*orderId*/, S3WALObject> orderIndex;
+    private final Map<Long/*objectId*/, S3SSTObject> s3WalObjects;
+    private final SortedMap<Long/*orderId*/, S3SSTObject> orderIndex;
 
-    public NodeS3WALMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3WALObject> walObjects) {
+    public NodeS3WALMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3SSTObject> walObjects) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
         this.s3WalObjects = new HashMap<>(walObjects);
@@ -82,15 +82,15 @@ public class NodeS3WALMetadataImage {
         });
     }
 
-    public Map<Long, S3WALObject> getWalObjects() {
+    public Map<Long, S3SSTObject> getWalObjects() {
         return s3WalObjects;
     }
 
-    public SortedMap<Long, S3WALObject> getOrderIndex() {
+    public SortedMap<Long, S3SSTObject> getOrderIndex() {
         return orderIndex;
     }
 
-    public List<S3WALObject> orderList() {
+    public List<S3SSTObject> orderList() {
         return orderIndex.values().stream().collect(Collectors.toList());
     }
 

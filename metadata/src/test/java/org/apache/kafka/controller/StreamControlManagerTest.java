@@ -24,10 +24,10 @@ import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamReques
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectRequestData.ObjectStreamRange;
-import org.apache.kafka.common.message.CommitWALObjectRequestData.StreamObject;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData.StreamObject;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
@@ -46,10 +46,10 @@ import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.RemoveWALObjectRecord;
+import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.common.metadata.WALObjectRecord;
+import org.apache.kafka.common.metadata.S3SSTObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
@@ -58,7 +58,7 @@ import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager.NodeS3WALMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -315,12 +315,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH0)
             .setStartOffset(0L)
             .setEndOffset(100L));
-        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
             .setObjectId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitWALObjectResponseData> result3 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result3 = manager.commitWALObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
         // verify range's end offset advanced and wal object is added
@@ -336,12 +336,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH0)
             .setStartOffset(100)
             .setEndOffset(200));
-        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
             .setObjectId(1L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
         // 4. node_0 close stream_0 with epoch_0 and node_1 open stream_0 with epoch_1
         ControllerResult<CloseStreamResponse> result7 = manager.closeStream(BROKER0, BROKER_EPOCH0,
@@ -360,12 +360,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH1)
             .setStartOffset(100)
             .setEndOffset(300));
-        CommitWALObjectRequestData commitRequest6 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest6 = new CommitSSTObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectId(6L)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges6);
-        ControllerResult<CommitWALObjectResponseData> result10 = manager.commitWALObject(commitRequest6);
+        ControllerResult<CommitSSTObjectResponseData> result10 = manager.commitWALObject(commitRequest6);
         assertEquals(Errors.NONE.code(), result10.response().errorCode());
         replay(manager, result10.records());
         // verify range's end offset advanced and wal object is added
@@ -440,13 +440,13 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(200L));
-        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -474,13 +474,13 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(200L)
                 .setEndOffset(300L));
-        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result5.response().errorCode());
         replay(manager, result5.records());
 
@@ -508,20 +508,20 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(300L));
-        CommitWALObjectRequestData commitRequest2 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest2 = new CommitSSTObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
-        ControllerResult<CommitWALObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
+        ControllerResult<CommitSSTObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
         assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 7. commit a second level wal object which compact wal_0 and wal_1
-        commitRequest2 = new CommitWALObjectRequestData()
+        commitRequest2 = new CommitSSTObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
@@ -568,7 +568,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(100L));
-        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
@@ -582,7 +582,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitWALObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -607,7 +607,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(99L)
                 .setEndOffset(200L));
-        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
@@ -621,7 +621,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitWALObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.OFFSET_NOT_MATCHED.code(), result5.response().errorCode());
     }
 
@@ -643,7 +643,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(100L));
-        CommitWALObjectRequestData commitRequest0 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
@@ -657,7 +657,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitWALObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
         long object0DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(1L).dataTimeInMs();
@@ -669,7 +669,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(100L)
                 .setEndOffset(200L));
-        CommitWALObjectRequestData commitRequest1 = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
             .setObjectId(2L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
@@ -683,7 +683,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitWALObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
         long object1DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(3L).dataTimeInMs();
@@ -743,7 +743,7 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
         // 2. commit wal object with stream0-[0, 10)
-        CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(0)
@@ -753,10 +753,10 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
                 .setEndOffset(10)));
-        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(requestData);
+        ControllerResult<CommitSSTObjectResponseData> result = manager.commitWALObject(requestData);
         replay(manager, result.records());
         // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10)
-        requestData = new CommitWALObjectRequestData()
+        requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(1)
@@ -773,7 +773,7 @@ public class StreamControlManagerTest {
         result = manager.commitWALObject(requestData);
         replay(manager, result.records());
         // 4. commit with a stream object with stream0-[20, 40)
-        requestData = new CommitWALObjectRequestData()
+        requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
@@ -790,7 +790,7 @@ public class StreamControlManagerTest {
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
         // 6. commit wal object with stream0-[40, 70)
-        requestData = new CommitWALObjectRequestData()
+        requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(3)
@@ -828,15 +828,15 @@ public class StreamControlManagerTest {
         assertEquals(0, streamMetadata.streamObjects().size());
         NodeS3WALMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
         assertEquals(1, node0Metadata.walObjects().size());
-        S3WALObject s3WALObject = node0Metadata.walObjects().get(1L);
-        assertEquals(1, s3WALObject.offsetRanges().size());
-        StreamOffsetRange range = s3WALObject.offsetRanges().get(STREAM0);
+        S3SSTObject s3SSTObject = node0Metadata.walObjects().get(1L);
+        assertEquals(1, s3SSTObject.offsetRanges().size());
+        StreamOffsetRange range = s3SSTObject.offsetRanges().get(STREAM0);
         assertNull(range);
         NodeS3WALMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
         assertEquals(1, node1Metadata.walObjects().size());
-        s3WALObject = node1Metadata.walObjects().get(3L);
-        assertEquals(1, s3WALObject.offsetRanges().size());
-        range = s3WALObject.offsetRanges().get(STREAM0);
+        s3SSTObject = node1Metadata.walObjects().get(3L);
+        assertEquals(1, s3SSTObject.offsetRanges().size());
+        range = s3SSTObject.offsetRanges().get(STREAM0);
         assertNotNull(range);
         assertEquals(40, range.getStartOffset());
         assertEquals(70, range.getEndOffset());
@@ -865,7 +865,7 @@ public class StreamControlManagerTest {
         assertEquals(0, node1Metadata.walObjects().size());
 
         // 5. commit wal object with stream0-[70, 100)
-        CommitWALObjectRequestData requestData = new CommitWALObjectRequestData()
+        CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(4)
@@ -875,7 +875,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(70)
                 .setEndOffset(100)));
-        ControllerResult<CommitWALObjectResponseData> result = manager.commitWALObject(requestData);
+        ControllerResult<CommitSSTObjectResponseData> result = manager.commitWALObject(requestData);
         replay(manager, result.records());
 
         // 6. verify
@@ -920,7 +920,7 @@ public class StreamControlManagerTest {
         assertNull(manager.streamsMetadata().get(STREAM0));
 
         assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
-        S3WALObject walObject = manager.nodesMetadata().get(BROKER0).walObjects().get(1L);
+        S3SSTObject walObject = manager.nodesMetadata().get(BROKER0).walObjects().get(1L);
         assertEquals(1, walObject.offsetRanges().size());
         StreamOffsetRange offsetRange = walObject.offsetRanges().get(STREAM1);
         assertNotNull(offsetRange);
@@ -1020,11 +1020,11 @@ public class StreamControlManagerTest {
                 case REMOVE_NODE_WALMETADATA_RECORD:
                     manager.replay((RemoveNodeWALMetadataRecord) message);
                     break;
-                case WALOBJECT_RECORD:
-                    manager.replay((WALObjectRecord) message);
+                case S3_SSTOBJECT_RECORD:
+                    manager.replay((S3SSTObjectRecord) message);
                     break;
-                case REMOVE_WALOBJECT_RECORD:
-                    manager.replay((RemoveWALObjectRecord) message);
+                case REMOVE_SSTOBJECT_RECORD:
+                    manager.replay((RemoveSSTObjectRecord) message);
                     break;
                 case S3_STREAM_OBJECT_RECORD:
                     manager.replay((S3StreamObjectRecord) message);

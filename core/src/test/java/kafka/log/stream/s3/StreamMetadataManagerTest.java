@@ -35,7 +35,7 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,9 +107,9 @@ public class StreamMetadataManagerTest {
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
 
         NodeS3WALMetadataImage walMetadataImage0 = new NodeS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
-                1L, new S3WALObject(1L, BROKER0, Map.of(
+                1L, new S3SSTObject(1L, BROKER0, Map.of(
                         STREAM1, new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
-                2L, new S3WALObject(2L, BROKER0, Map.of(
+                2L, new S3SSTObject(2L, BROKER0, Map.of(
                         STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),

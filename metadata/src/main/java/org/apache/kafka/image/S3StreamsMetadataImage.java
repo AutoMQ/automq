@@ -25,7 +25,7 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3WALObject;
+import org.apache.kafka.metadata.stream.S3SSTObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.ArrayList;
@@ -130,7 +130,7 @@ public final class S3StreamsMetadataImage {
         }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).limit(limit).collect(Collectors.toCollection(ArrayList::new));
     }
 
-    public List<S3WALObject> getWALObjects(int nodeId) {
+    public List<S3SSTObject> getWALObjects(int nodeId) {
         NodeS3WALMetadataImage wal = nodeWALMetadata.get(nodeId);
         if (wal == null) {
             return Collections.emptyList();

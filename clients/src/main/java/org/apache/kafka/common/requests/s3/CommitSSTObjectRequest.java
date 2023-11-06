@@ -18,26 +18,26 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
-import org.apache.kafka.common.message.CommitWALObjectResponseData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class CommitWALObjectRequest extends AbstractRequest {
+public class CommitSSTObjectRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<CommitWALObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<CommitSSTObjectRequest> {
 
-        private final CommitWALObjectRequestData data;
-        public Builder(CommitWALObjectRequestData data) {
-            super(ApiKeys.COMMIT_WALOBJECT);
+        private final CommitSSTObjectRequestData data;
+        public Builder(CommitSSTObjectRequestData data) {
+            super(ApiKeys.COMMIT_SST_OBJECT);
             this.data = data;
         }
 
         @Override
-        public CommitWALObjectRequest build(short version) {
-            return new CommitWALObjectRequest(data, version);
+        public CommitSSTObjectRequest build(short version) {
+            return new CommitSSTObjectRequest(data, version);
         }
 
         @Override
@@ -45,29 +45,29 @@ public class CommitWALObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final CommitWALObjectRequestData data;
+    private final CommitSSTObjectRequestData data;
 
-    public CommitWALObjectRequest(CommitWALObjectRequestData data, short version) {
-        super(ApiKeys.COMMIT_WALOBJECT, version);
+    public CommitSSTObjectRequest(CommitSSTObjectRequestData data, short version) {
+        super(ApiKeys.COMMIT_SST_OBJECT, version);
         this.data = data;
     }
 
     @Override
-    public CommitWALObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CommitSSTObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CommitWALObjectResponseData response = new CommitWALObjectResponseData()
+        CommitSSTObjectResponseData response = new CommitSSTObjectResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CommitWALObjectResponse(response);
+        return new CommitSSTObjectResponse(response);
     }
 
     @Override
-    public CommitWALObjectRequestData data() {
+    public CommitSSTObjectRequestData data() {
         return data;
     }
 
-    public static CommitWALObjectRequest parse(ByteBuffer buffer, short version) {
-        return new CommitWALObjectRequest(new CommitWALObjectRequestData(
+    public static CommitSSTObjectRequest parse(ByteBuffer buffer, short version) {
+        return new CommitSSTObjectRequest(new CommitSSTObjectRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
 

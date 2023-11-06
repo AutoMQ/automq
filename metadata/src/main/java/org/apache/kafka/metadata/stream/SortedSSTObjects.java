@@ -17,37 +17,31 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Predicate;
 
-public interface SortedWALObjects {
+public interface SortedSSTObjects {
 
     int size();
 
     boolean isEmpty();
 
-    Iterator<S3WALObject> iterator();
+    Iterator<S3SSTObject> iterator();
 
-    List<S3WALObject> list();
+    List<S3SSTObject> list();
 
     boolean contains(Object o);
 
-    boolean add(S3WALObject s3WALObject);
-
-    default boolean addAll(Collection<S3WALObject> walObjects) {
-        walObjects.forEach(this::add);
-        return true;
-    }
+    boolean add(S3SSTObject s3SSTObject);
 
     boolean remove(Object o);
 
-    default boolean removeIf(Predicate<S3WALObject> filter) {
+    default boolean removeIf(Predicate<S3SSTObject> filter) {
         return this.list().removeIf(filter);
     }
 
-    S3WALObject get(int index);
+    S3SSTObject get(int index);
 
     void clear();
 
