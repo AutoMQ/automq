@@ -28,7 +28,7 @@ public interface StreamManager {
 
     /**
      * Get current server opening streams.
-     * When server is starting or recovering, wal in EBS need streams offset to determine the recover point.
+     * When server is starting or recovering, WAL in EBS need streams offset to determine the recover point.
      * @return list of {@link StreamMetadata}
      */
     CompletableFuture<List<StreamMetadata>> getOpeningStreams();

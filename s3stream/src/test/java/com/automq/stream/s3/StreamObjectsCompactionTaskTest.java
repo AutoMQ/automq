@@ -19,8 +19,8 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitSSTObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -172,12 +172,12 @@ class StreamObjectsCompactionTaskTest {
     List<S3ObjectMetadata> prepareRawStreamObjects(long startObjectId, long streamId,
                                                    List<List<Long>> objectsDetails) throws ExecutionException, InterruptedException {
         AtomicLong objectIdAlloc = new AtomicLong(startObjectId);
-        Stack<CommitWALObjectRequest> commitWALObjectRequests = new Stack<>();
+        Stack<CommitSSTObjectRequest> commitSSTObjectRequests = new Stack<>();
         Mockito.doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager)
                 .prepareObject(anyInt(), anyLong());
-        when(objectManager.commitWALObject(ArgumentMatchers.any())).thenAnswer(invocation -> {
-            commitWALObjectRequests.push(invocation.getArgument(0));
-            return CompletableFuture.completedFuture(new CommitWALObjectResponse());
+        when(objectManager.commitSSTObject(ArgumentMatchers.any())).thenAnswer(invocation -> {
+            commitSSTObjectRequests.push(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(new CommitSSTObjectResponse());
         });
 
         List<S3ObjectMetadata> metadataList = new ArrayList<>();
@@ -191,16 +191,16 @@ class StreamObjectsCompactionTaskTest {
             Map<Long, List<StreamRecordBatch>> map = Map.of(streamId,
                     List.of(new StreamRecordBatch(streamId, 0, startOffset, Math.toIntExact(endOffset - startOffset), TestUtils.random(recordsSize))));
             Config config = new Config()
-                    .s3ObjectBlockSize(16 * 1024 * 1024)
-                    .s3ObjectPartSize(16 * 1024 * 1024)
-                    .s3StreamSplitSize(recordsSize - 1);
-            WALObjectUploadTask walObjectUploadTask = new WALObjectUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool(), false);
+                    .objectBlockSize(16 * 1024 * 1024)
+                    .objectPartSize(16 * 1024 * 1024)
+                    .streamSplitSize(recordsSize - 1);
+            DeltaWALUploadTask deltaWALUploadTask = new DeltaWALUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool(), false);
 
-            walObjectUploadTask.prepare().get();
-            walObjectUploadTask.upload().get();
-            walObjectUploadTask.commit().get();
+            deltaWALUploadTask.prepare().get();
+            deltaWALUploadTask.upload().get();
+            deltaWALUploadTask.commit().get();
 
-            CommitWALObjectRequest request = commitWALObjectRequests.pop();
+            CommitSSTObjectRequest request = commitSSTObjectRequests.pop();
             assertEquals(startObjectId + i * 2L, request.getObjectId());
 
             assertEquals(1, request.getStreamObjects().size());

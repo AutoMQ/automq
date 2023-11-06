@@ -23,8 +23,8 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.objects.CommitWALObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitSSTObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -75,8 +75,8 @@ public class S3StorageTest {
     @Test
     public void testAppend() throws Exception {
         Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
-        CommitWALObjectResponse resp = new CommitWALObjectResponse();
-        Mockito.when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
+        CommitSSTObjectResponse resp = new CommitSSTObjectResponse();
+        Mockito.when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
         CompletableFuture<Void> cf1 = storage.append(
                 new StreamRecordBatch(233, 1, 10, 1, random(100))
@@ -98,9 +98,9 @@ public class S3StorageTest {
         assertEquals(2, readRst.getRecords().size());
 
         storage.forceUpload(233L).get();
-        ArgumentCaptor<CommitWALObjectRequest> commitArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
-        verify(objectManager).commitWALObject(commitArg.capture());
-        CommitWALObjectRequest commitReq = commitArg.getValue();
+        ArgumentCaptor<CommitSSTObjectRequest> commitArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
+        verify(objectManager).commitSSTObject(commitArg.capture());
+        CommitSSTObjectRequest commitReq = commitArg.getValue();
         assertEquals(16L, commitReq.getObjectId());
         List<ObjectStreamRange> streamRanges = commitReq.getStreamRanges();
         assertEquals(2, streamRanges.size());
@@ -140,21 +140,21 @@ public class S3StorageTest {
         AtomicInteger objectCfIndex = new AtomicInteger();
         Mockito.doAnswer(invocation -> objectIdCfList.get(objectCfIndex.getAndIncrement())).when(objectManager).prepareObject(ArgumentMatchers.anyInt(), anyLong());
 
-        List<CompletableFuture<CommitWALObjectResponse>> commitCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
+        List<CompletableFuture<CommitSSTObjectResponse>> commitCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
         AtomicInteger commitCfIndex = new AtomicInteger();
-        Mockito.doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitWALObject(any());
+        Mockito.doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitSSTObject(any());
 
         LogCache.LogCacheBlock logCacheBlock1 = new LogCache.LogCacheBlock(1024);
         logCacheBlock1.put(newRecord(233L, 10L));
         logCacheBlock1.put(newRecord(234L, 10L));
         logCacheBlock1.confirmOffset(10L);
-        CompletableFuture<Void> cf1 = storage.uploadWALObject(logCacheBlock1);
+        CompletableFuture<Void> cf1 = storage.uploadDeltaWAL(logCacheBlock1);
 
         LogCache.LogCacheBlock logCacheBlock2 = new LogCache.LogCacheBlock(1024);
         logCacheBlock2.put(newRecord(233L, 20L));
         logCacheBlock2.put(newRecord(234L, 20L));
         logCacheBlock2.confirmOffset(20L);
-        CompletableFuture<Void> cf2 = storage.uploadWALObject(logCacheBlock2);
+        CompletableFuture<Void> cf2 = storage.uploadDeltaWAL(logCacheBlock2);
 
         // sequence get objectId
         verify(objectManager, Mockito.timeout(1000).times(1)).prepareObject(ArgumentMatchers.anyInt(), anyLong());
@@ -162,15 +162,15 @@ public class S3StorageTest {
         objectIdCfList.get(0).complete(1L);
         // trigger next upload prepare objectId
         verify(objectManager, Mockito.timeout(1000).times(2)).prepareObject(ArgumentMatchers.anyInt(), anyLong());
-        verify(objectManager, Mockito.timeout(1000).times(1)).commitWALObject(any());
+        verify(objectManager, Mockito.timeout(1000).times(1)).commitSSTObject(any());
 
         objectIdCfList.get(1).complete(2L);
         Thread.sleep(10);
-        verify(objectManager, Mockito.times(1)).commitWALObject(any());
+        verify(objectManager, Mockito.times(1)).commitSSTObject(any());
 
-        commitCfList.get(0).complete(new CommitWALObjectResponse());
-        verify(objectManager, Mockito.timeout(1000).times(2)).commitWALObject(any());
-        commitCfList.get(1).complete(new CommitWALObjectResponse());
+        commitCfList.get(0).complete(new CommitSSTObjectResponse());
+        verify(objectManager, Mockito.timeout(1000).times(2)).commitSSTObject(any());
+        commitCfList.get(1).complete(new CommitSSTObjectResponse());
         cf1.get(1, TimeUnit.SECONDS);
         cf2.get(1, TimeUnit.SECONDS);
     }

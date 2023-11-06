@@ -29,7 +29,7 @@ public class S3ObjectMetadata {
     /**
      * order id of the object.
      * <ul>
-     *     <li> WAL object: order id of the wal object.
+     *     <li> SST object: order id of the SST object.
      *     <li> STREAM object: meaningless.
      * </ul>
      */
@@ -39,7 +39,7 @@ public class S3ObjectMetadata {
     /**
      * stream offset ranges of the object.
      * <ul>
-     *     <li> WAL object: one or more stream offset ranges.
+     *     <li> SST object: one or more stream offset ranges.
      *     <li> STREAM object: only one stream offset range.
      * </ul>
      */
@@ -72,11 +72,11 @@ public class S3ObjectMetadata {
     }
 
     public S3ObjectMetadata(
-            // these four params come from S3WALObject or S3StreamObject
+            // these four params come from S3SSTObject or S3StreamObject
             long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
             // these two params come from S3Object
             long committedTimestamp, long objectSize,
-            // this param only comes from S3WALObject
+            // this param only comes from S3SSTObject
             long orderId) {
         this.objectId = objectId;
         this.orderId = orderId;
