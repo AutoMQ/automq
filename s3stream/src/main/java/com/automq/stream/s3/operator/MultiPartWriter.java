@@ -30,6 +30,7 @@ import software.amazon.awssdk.services.s3.model.CompletedPart;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -48,7 +49,7 @@ public class MultiPartWriter implements Writer {
      */
     private final long minPartSize;
     private ObjectPart objectPart = null;
-    private final TimerUtil timerUtil = new TimerUtil();
+    private final TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
     private final ThrottleStrategy throttleStrategy;
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
@@ -211,7 +212,7 @@ public class MultiPartWriter implements Writer {
         }
 
         private void upload0() {
-            TimerUtil timerUtil = new TimerUtil();
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getHistogram(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsed()));
         }

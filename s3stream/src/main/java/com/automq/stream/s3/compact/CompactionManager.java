@@ -155,7 +155,7 @@ public class CompactionManager {
 
     private void forceSplitObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToForceSplit) {
         logger.info("Force split {} WAL objects", objectsToForceSplit.size());
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         for (int i = 0; i < objectsToForceSplit.size(); i++) {
             timerUtil.reset();
             S3ObjectMetadata objectToForceSplit = objectsToForceSplit.get(i);
@@ -191,7 +191,7 @@ public class CompactionManager {
             objectsToCompact = objectsToCompact.subList(0, maxObjectNumToCompact);
         }
         logger.info("Compact {} WAL objects", objectsToCompact.size());
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         CommitWALObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
         if (request == null) {
             return;

@@ -244,7 +244,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
@@ -289,7 +289,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void write0(String path, ByteBuf data, CompletableFuture<Void> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         int objectSize = data.readableBytes();
         PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
@@ -319,7 +319,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<Void> delete(String path) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(bucket).key(path).build();
         return writeS3Client.deleteObject(request).thenAccept(deleteObjectResponse -> {
             OperationMetricsStats.getHistogram(S3Operation.DELETE_OBJECT).update(timerUtil.elapsed());
@@ -333,7 +333,7 @@ public class DefaultS3Operator implements S3Operator {
 
     @Override
     public CompletableFuture<List<String>> delete(List<String> objectKeys) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
                 ObjectIdentifier.builder()
                         .key(key)
@@ -367,7 +367,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     void createMultipartUpload0(String path, CompletableFuture<String> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).build();
         writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
             OperationMetricsStats.getHistogram(S3Operation.CREATE_MULTI_PART_UPLOAD).update(timerUtil.elapsed());
@@ -408,7 +408,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void uploadPart0(String path, String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
                 .partNumber(partNumber).build();
@@ -442,7 +442,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private void uploadPartCopy0(String sourcePath, String path, long start, long end, String uploadId, int partNumber, CompletableFuture<CompletedPart> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         long inclusiveEnd = end - 1;
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
                 .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
@@ -476,7 +476,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     public void completeMultipartUpload0(String path, String uploadId, List<CompletedPart> parts, CompletableFuture<Void> cf) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(parts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
 
