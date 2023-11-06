@@ -55,7 +55,7 @@ import static kafka.autobalancer.metricsreporter.metric.RawMetricType.PARTITION_
 import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_IN;
 import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
 
     /**

@@ -15,12 +15,11 @@
  * limitations under the License.
  */
 
-package kafka.log.es
+package kafka.log.streamaspect
 
 import kafka.common.{OffsetsOutOfOrderException, RecordValidationException, UnexpectedAppendOffsetException}
 import kafka.log._
 import kafka.log.streamaspect.client.Context
-import kafka.log.streamaspect.{ElasticLeaderEpochCheckpoint, ElasticLogManager, ElasticLogSegment, ElasticUnifiedLog}
 import kafka.server._
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.{EpochEntry, LeaderEpochFileCache}
@@ -47,7 +46,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
 
-@Tag("esUnit")
+@Tag("S3Unit")
 class ElasticUnifiedLogTest {
     var config: KafkaConfig = _
     val brokerTopicStats = new BrokerTopicStats

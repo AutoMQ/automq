@@ -1102,10 +1102,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         fetchingExecutors.submit(new Runnable {
           override def run(): Unit = {
             ReadManualReleaseHint.mark()
-            // FIXME: Buggy, replace quick slow fetch to async fetch
-//            SeparateSlowAndQuickFetchHint.mark()
             doFetchingRecords()
-//            SeparateSlowAndQuickFetchHint.reset()
             ReadManualReleaseHint.reset()
           }
         })

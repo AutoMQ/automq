@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     private final Map<String, AbstractGoal> goalMap = new HashMap<>();
 

@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class MetricSerdeTest {
     private static final long TIME = 123L;
     private static final int BROKER_ID = 0;
