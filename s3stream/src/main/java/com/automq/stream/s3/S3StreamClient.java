@@ -132,7 +132,7 @@ public class S3StreamClient implements StreamClient {
 
             final long totalTimeCostInMs = System.currentTimeMillis() - startTime;
             LOGGER.info("stream objects compaction finished, summary: {}", totalSummaryBuilder.withTimeCostInMs(totalTimeCostInMs).build());
-        }, config.s3StreamObjectCompactionIntervalMinutes(), config.s3StreamObjectCompactionIntervalMinutes(), TimeUnit.MINUTES);
+        }, config.streamObjectCompactionIntervalMinutes(), config.streamObjectCompactionIntervalMinutes(), TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
@@ -141,9 +141,9 @@ public class S3StreamClient implements StreamClient {
                 thenApply(metadata -> {
                     OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsed());
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
-                            .compactedStreamObjectMaxSizeInBytes(config.s3StreamObjectCompactionMaxSizeBytes())
-                            .eligibleStreamObjectLivingTimeInMs(config.s3StreamObjectCompactionLivingTimeMinutes() * 60L * 1000)
-                            .s3ObjectLogEnabled(config.s3ObjectLogEnable()).executor(streamCompactionExecutor);
+                            .compactedStreamObjectMaxSizeInBytes(config.streamObjectCompactionMaxSizeBytes())
+                            .eligibleStreamObjectLivingTimeInMs(config.streamObjectCompactionLivingTimeMinutes() * 60L * 1000)
+                            .s3ObjectLogEnabled(config.objectLogEnable()).executor(streamCompactionExecutor);
                     S3Stream stream = new S3Stream(
                             metadata.getStreamId(), metadata.getEpoch(),
                             metadata.getStartOffset(), metadata.getEndOffset(),

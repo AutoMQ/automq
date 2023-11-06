@@ -715,12 +715,12 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder config(Config config) {
             return this
-                    .flushHeaderIntervalSeconds(config.s3WALHeaderFlushIntervalSeconds())
-                    .ioThreadNums(config.s3WALThread())
-                    .slidingWindowInitialSize(config.s3WALWindowInitial())
-                    .slidingWindowScaleUnit(config.s3WALWindowIncrement())
-                    .slidingWindowUpperLimit(config.s3WALWindowMax())
-                    .blockSoftLimit(config.s3WALBlockSoftLimit());
+                    .flushHeaderIntervalSeconds(config.walHeaderFlushIntervalSeconds())
+                    .ioThreadNums(config.walThread())
+                    .slidingWindowInitialSize(config.walWindowInitial())
+                    .slidingWindowScaleUnit(config.walWindowIncrement())
+                    .slidingWindowUpperLimit(config.walWindowMax())
+                    .blockSoftLimit(config.walBlockSoftLimit());
         }
 
         public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {

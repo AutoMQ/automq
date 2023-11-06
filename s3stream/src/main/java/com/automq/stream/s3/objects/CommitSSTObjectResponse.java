@@ -18,7 +18,7 @@
 package com.automq.stream.s3.objects;
 
 /**
- * Commit WAL object response.
+ * Commit SST object response.
  */
-public class CommitWALObjectResponse {
+public class CommitSSTObjectResponse {
 }

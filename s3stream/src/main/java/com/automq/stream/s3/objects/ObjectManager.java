@@ -37,12 +37,12 @@ public interface ObjectManager {
     CompletableFuture<Long> prepareObject(int count, long ttl);
 
     /**
-     * Commit WAL object.
+     * Commit SST object.
      *
-     * @param request {@link CommitWALObjectRequest}
-     * @return {@link CommitWALObjectResponse}
+     * @param request {@link CommitSSTObjectRequest}
+     * @return {@link CommitSSTObjectResponse}
      */
-    CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request);
+    CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest request);
 
     /**
      * Commit stream object. When the source object has no reference, then delete it.
@@ -56,7 +56,7 @@ public interface ObjectManager {
      * When obj1 contains stream0 <code>[0, 100) [200, 300)</code> and obj2 contains stream1 <code>[100, 200)</code>,
      * expect getObjects(streamId, 0, 300) return <code>[obj1, obj2, obj1]</code>
      * <ul>
-     *     <li> Concern two types of objects: stream object and wal object.
+     *     <li> Concern two types of objects: stream object and SST object.
      *     <li> Returned objects must be continuous of stream range.
      *     <li> Returned objects aren't physical object concept, they are logical object concept.
      *     (regard each returned object-metadata as a slice of object)
@@ -70,15 +70,15 @@ public interface ObjectManager {
     CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
-     * Get current server wal objects.
-     * When server is starting, wal need server wal objects to recover.
+     * Get current server SST objects.
+     * When server is starting, server need server SST objects to recover.
      */
     CompletableFuture<List<S3ObjectMetadata>> getServerObjects();
 
     /**
      * Get stream objects by stream range.
      * <ul>
-     *      <li> Only concern about stream objects, ignore wal objects.
+     *      <li> Only concern about stream objects, ignore SST objects.
      *      <li> Returned stream objects can be discontinuous of stream range.
      *      <li> Ranges of the returned stream objects are <strong>in ascending order</strong>.
      * </ul>
