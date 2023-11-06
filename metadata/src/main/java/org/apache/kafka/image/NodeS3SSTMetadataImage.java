@@ -34,25 +34,25 @@ import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class NodeS3WALMetadataImage {
+public class NodeS3SSTMetadataImage {
 
-    public static final NodeS3WALMetadataImage EMPTY = new NodeS3WALMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
+    public static final NodeS3SSTMetadataImage EMPTY = new NodeS3SSTMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
         S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
     private final int nodeId;
     private final long nodeEpoch;
-    private final Map<Long/*objectId*/, S3SSTObject> s3WalObjects;
+    private final Map<Long/*objectId*/, S3SSTObject> s3SSTObjects;
     private final SortedMap<Long/*orderId*/, S3SSTObject> orderIndex;
 
-    public NodeS3WALMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3SSTObject> walObjects) {
+    public NodeS3SSTMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3SSTObject> sstObjects) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
-        this.s3WalObjects = new HashMap<>(walObjects);
+        this.s3SSTObjects = new HashMap<>(sstObjects);
         // build order index
-        if (s3WalObjects.isEmpty()) {
+        if (s3SSTObjects.isEmpty()) {
             this.orderIndex = Collections.emptySortedMap();
         } else {
             this.orderIndex = new TreeMap<>();
-            s3WalObjects.values().forEach(s3WALObject -> orderIndex.put(s3WALObject.orderId(), s3WALObject));
+            s3SSTObjects.values().forEach(s3SSTObject -> orderIndex.put(s3SSTObject.orderId(), s3SSTObject));
         }
     }
 
@@ -64,26 +64,26 @@ public class NodeS3WALMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        NodeS3WALMetadataImage that = (NodeS3WALMetadataImage) o;
-        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(s3WalObjects, that.s3WalObjects);
+        NodeS3SSTMetadataImage that = (NodeS3SSTMetadataImage) o;
+        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(s3SSTObjects, that.s3SSTObjects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nodeId, nodeEpoch, s3WalObjects);
+        return Objects.hash(nodeId, nodeEpoch, s3SSTObjects);
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
             .setNodeId(nodeId)
             .setNodeEpoch(nodeEpoch), (short) 0));
-        s3WalObjects.values().forEach(wal -> {
+        s3SSTObjects.values().forEach(wal -> {
             writer.write(wal.toRecord());
         });
     }
 
-    public Map<Long, S3SSTObject> getWalObjects() {
-        return s3WalObjects;
+    public Map<Long, S3SSTObject> getSSTObjects() {
+        return s3SSTObjects;
     }
 
     public SortedMap<Long, S3SSTObject> getOrderIndex() {
@@ -107,7 +107,7 @@ public class NodeS3WALMetadataImage {
         return "NodeS3WALMetadataImage{" +
             "nodeId=" + nodeId +
             ", nodeEpoch=" + nodeEpoch +
-            ", s3WalObjects=" + s3WalObjects +
+            ", s3SSTObjects=" + s3SSTObjects +
             '}';
     }
 }

@@ -2394,9 +2394,9 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CommitSSTObjectResponseData> commitWALObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
-        return appendWriteEvent("commitWALObject", context.deadlineNs(),
-            () -> streamControlManager.commitWALObject(request));
+    public CompletableFuture<CommitSSTObjectResponseData> commitSSTObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
+        return appendWriteEvent("commitSSTObject", context.deadlineNs(),
+            () -> streamControlManager.commitSSTObject(request));
     }
 
     @Override

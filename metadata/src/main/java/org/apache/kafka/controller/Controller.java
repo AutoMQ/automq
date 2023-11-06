@@ -458,9 +458,9 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to commit a WAL object.
+     * Broker trys to commit a SST object.
      */
-    CompletableFuture<CommitSSTObjectResponseData> commitWALObject(
+    CompletableFuture<CommitSSTObjectResponseData> commitSSTObject(
         ControllerRequestContext context,
         CommitSSTObjectRequestData request
     );

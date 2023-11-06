@@ -530,7 +530,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CommitSSTObjectResponseData> commitWALObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
+    public CompletableFuture<CommitSSTObjectResponseData> commitSSTObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
         throw new UnsupportedOperationException();
     }
 

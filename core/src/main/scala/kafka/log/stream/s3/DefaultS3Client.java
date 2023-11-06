@@ -96,7 +96,7 @@ public class DefaultS3Client implements Client {
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, s3Operator);
-        // stream object compactions share the same s3Operator with wal object compactions
+        // stream object compactions share the same s3Operator with SST object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionS3Operator, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
     }

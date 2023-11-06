@@ -153,17 +153,17 @@ public class StreamControlManager {
         }
     }
 
-    public static class NodeS3WALMetadata {
+    public static class NodeS3SSTMetadata {
 
         private final int nodeId;
         private final TimelineLong nodeEpoch;
-        private final TimelineHashMap<Long/*objectId*/, S3SSTObject> walObjects;
+        private final TimelineHashMap<Long/*objectId*/, S3SSTObject> sstObjects;
 
-        public NodeS3WALMetadata(int nodeId, long nodeEpoch, SnapshotRegistry registry) {
+        public NodeS3SSTMetadata(int nodeId, long nodeEpoch, SnapshotRegistry registry) {
             this.nodeId = nodeId;
             this.nodeEpoch = new TimelineLong(registry);
             this.nodeEpoch.set(nodeEpoch);
-            this.walObjects = new TimelineHashMap<>(registry, 0);
+            this.sstObjects = new TimelineHashMap<>(registry, 0);
         }
 
         public int getNodeId() {
@@ -174,16 +174,16 @@ public class StreamControlManager {
             return nodeEpoch.get();
         }
 
-        public TimelineHashMap<Long, S3SSTObject> walObjects() {
-            return walObjects;
+        public TimelineHashMap<Long, S3SSTObject> sstObjects() {
+            return sstObjects;
         }
 
         @Override
         public String toString() {
-            return "NodeS3WALMetadata{" +
+            return "NodeS3SSTMetadata{" +
                     "nodeId=" + nodeId +
                     ", nodeEpoch=" + nodeEpoch +
-                    ", walObjects=" + walObjects +
+                    ", sstObjects=" + sstObjects +
                     '}';
         }
     }
@@ -201,7 +201,7 @@ public class StreamControlManager {
 
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
-    private final TimelineHashMap<Integer/*nodeId*/, NodeS3WALMetadata> nodesMetadata;
+    private final TimelineHashMap<Integer/*nodeId*/, NodeS3SSTMetadata> nodesMetadata;
 
     public StreamControlManager(
             SnapshotRegistry snapshotRegistry,
@@ -551,40 +551,40 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // remove wal object or remove stream range in wal object
+        // remove SST object or remove stream range in SST object
         // TODO: optimize
         this.nodesMetadata.values()
             .stream()
-            .flatMap(entry -> entry.walObjects.values().stream())
-            .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
-            .filter(walObject -> walObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
-            .forEach(walObj -> {
-                if (walObj.offsetRanges().size() == 1) {
-                    // only this range, but we will remove this range, so now we can remove this wal object
+            .flatMap(entry -> entry.sstObjects.values().stream())
+            .filter(sstObject -> sstObject.offsetRanges().containsKey(streamId))
+            .filter(sstObject -> sstObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
+            .forEach(sstObj -> {
+                if (sstObj.offsetRanges().size() == 1) {
+                    // only this range, but we will remove this range, so now we can remove this SST object
                     records.add(new ApiMessageAndVersion(
                         new RemoveSSTObjectRecord()
-                            .setNodeId(walObj.nodeId())
-                            .setObjectId(walObj.objectId()), (short) 0
+                            .setNodeId(sstObj.nodeId())
+                            .setObjectId(sstObj.objectId()), (short) 0
                     ));
                     ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                        List.of(walObj.objectId()));
+                        List.of(sstObj.objectId()));
                     if (!markDestroyResult.response()) {
-                        log.error("[TrimStream] Mark destroy wal object: {} failed", walObj.objectId());
+                        log.error("[TrimStream] Mark destroy SST object: {} failed", sstObj.objectId());
                         resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                         return;
                     }
                     records.addAll(markDestroyResult.records());
                     return;
                 }
-                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
+                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(sstObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
                 records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
-                    .setObjectId(walObj.objectId())
-                    .setNodeId(walObj.nodeId())
+                    .setObjectId(sstObj.objectId())
+                    .setNodeId(sstObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                    .setDataTimeInMs(walObj.dataTimeInMs())
-                    .setOrderId(walObj.orderId()), (short) 0));
+                    .setDataTimeInMs(sstObj.dataTimeInMs())
+                    .setOrderId(sstObj.orderId()), (short) 0));
             });
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -629,38 +629,38 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         records.addAll(markDestroyResult.records());
-        // remove wal object or remove stream-offset-range in wal object
+        // remove SST object or remove stream-offset-range in SST object
         this.nodesMetadata.values()
             .stream()
-            .flatMap(entry -> entry.walObjects.values().stream())
-            .filter(walObject -> walObject.offsetRanges().containsKey(streamId))
-            .forEach(walObj -> {
-                if (walObj.offsetRanges().size() == 1) {
-                    // only this range, but we will remove this range, so now we can remove this wal object
+            .flatMap(entry -> entry.sstObjects.values().stream())
+            .filter(sstObject -> sstObject.offsetRanges().containsKey(streamId))
+            .forEach(sstObj -> {
+                if (sstObj.offsetRanges().size() == 1) {
+                    // only this range, but we will remove this range, so now we can remove this SST object
                     records.add(new ApiMessageAndVersion(
                         new RemoveSSTObjectRecord()
-                            .setNodeId(walObj.nodeId())
-                            .setObjectId(walObj.objectId()), (short) 0
+                            .setNodeId(sstObj.nodeId())
+                            .setObjectId(sstObj.objectId()), (short) 0
                     ));
                     ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
-                        List.of(walObj.objectId()));
+                        List.of(sstObj.objectId()));
                     if (!result.response()) {
-                        log.error("[DeleteStream]: Mark destroy wal object: {} failed", walObj.objectId());
+                        log.error("[DeleteStream]: Mark destroy SST object: {} failed", sstObj.objectId());
                         resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                         return;
                     }
                     records.addAll(result.records());
                     return;
                 }
-                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(walObj.offsetRanges());
+                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(sstObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
                 records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
-                    .setObjectId(walObj.objectId())
-                    .setNodeId(walObj.nodeId())
+                    .setObjectId(sstObj.objectId())
+                    .setNodeId(sstObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                    .setDataTimeInMs(walObj.dataTimeInMs())
-                    .setOrderId(walObj.orderId()), (short) 0));
+                    .setDataTimeInMs(sstObj.dataTimeInMs())
+                    .setOrderId(sstObj.orderId()), (short) 0));
             });
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
@@ -670,14 +670,14 @@ public class StreamControlManager {
     }
 
     /**
-     * Commit wal object.
+     * Commit SST object.
      * <p>
      * <b>Response Errors Enum:</b>
      * <ul>
      *     <li>
      *         <code>OBJECT_NOT_EXIST</code>
      *         <ol>
-     *             <li> wal object not exist when commit </li>
+     *             <li> SST object not exist when commit </li>
      *             <li> stream object not exist when commit </li>
      *         </ol>
      *     </li>
@@ -690,7 +690,7 @@ public class StreamControlManager {
      * </ul>
      */
     @SuppressWarnings("all")
-    public ControllerResult<CommitSSTObjectResponseData> commitWALObject(CommitSSTObjectRequestData data) {
+    public ControllerResult<CommitSSTObjectResponseData> commitSSTObject(CommitSSTObjectRequestData data) {
         CommitSSTObjectResponseData resp = new CommitSSTObjectResponseData();
         long objectId = data.objectId();
         int nodeId = data.nodeId();
@@ -702,7 +702,7 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitWALObject] nodeId={}'s epoch={} check failed, code: {}",
+            log.warn("[CommitSSTObject] nodeId={}'s epoch={} check failed, code: {}",
                 nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -724,7 +724,7 @@ public class StreamControlManager {
                 .collect(Collectors.toList());
             Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
             if (continuityCheckResult != Errors.NONE) {
-                log.error("[CommitWALObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
+                log.error("[CommitSSTObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
                 resp.setErrorCode(continuityCheckResult.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -733,13 +733,13 @@ public class StreamControlManager {
         // commit object
         ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
-            log.error("[CommitWALObject] object={} not exist when commit wal object", objectId);
+            log.error("[CommitSSTObject] object={} not exist when commit SST object", objectId);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (commitResult.response() == Errors.REDUNDANT_OPERATION) {
             // regard it as redundant commit operation, just return success
-            log.warn("[CommitWALObject] object={} already committed", objectId);
+            log.warn("[CommitSSTObject] object={} already committed", objectId);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
@@ -748,7 +748,7 @@ public class StreamControlManager {
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(compactedObjectIds);
             if (!destroyResult.response()) {
-                log.error("[CommitWALObject]: Mark destroy compacted objects: {} failed", compactedObjectIds);
+                log.error("[CommitSSTObject]: Mark destroy compacted objects: {} failed", compactedObjectIds);
                 resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -756,22 +756,22 @@ public class StreamControlManager {
             // update dataTs to the min compacted object's dataTs
             //noinspection OptionalGetWithoutIsPresent
             dataTs = compactedObjectIds.stream()
-                    .map(id -> this.nodesMetadata.get(nodeId).walObjects.get(id))
+                    .map(id -> this.nodesMetadata.get(nodeId).sstObjects.get(id))
                     .map(S3SSTObject::dataTimeInMs)
                     .min(Long::compareTo).get();
         }
         List<StreamOffsetRange> indexes = streamRanges.stream()
                 .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
                 .collect(Collectors.toList());
-        // update node's wal object
-        NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        // update node's SST object
+        NodeS3SSTMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeMetadata == null) {
-            // first time commit wal object, generate node's metadata record
+            // first time commit SST object, generate node's metadata record
             records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
                     .setNodeId(nodeId), (short) 0));
         }
         if (objectId != NOOP_OBJECT_ID) {
-            // generate node's wal object record
+            // generate node's SST object record
             List<StreamIndex> streamIndexes = indexes.stream()
                     .map(Convertor::to)
                     .collect(Collectors.toList());
@@ -790,7 +790,7 @@ public class StreamControlManager {
                 ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
                         streamObject.objectSize(), committedTs);
                 if (streamObjectCommitResult.response() != Errors.NONE) {
-                    log.error("[CommitWALObject]: stream object={} not exist when commit wal object: {}", streamObject.objectId(), objectId);
+                    log.error("[CommitSSTObject]: stream object={} not exist when commit SST object: {}", streamObject.objectId(), objectId);
                     resp.setErrorCode(streamObjectCommitResult.response().code());
                     return ControllerResult.of(Collections.emptyList(), resp);
                 }
@@ -810,7 +810,7 @@ public class StreamControlManager {
                     .setNodeId(nodeId)
                     .setObjectId(id), (short) 0)));
         }
-        log.info("[CommitWALObject]: nodeId={} commit wal object: {} success, compacted objects: {}, WAL stream range: {}, stream objects: {}",
+        log.info("[CommitSSTObject]: nodeId={} commit SST object: {} success, compacted objects: {}, SST stream range: {}, stream objects: {}",
                 nodeId, objectId, compactedObjectIds, data.objectStreamRanges(), streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
@@ -1110,12 +1110,12 @@ public class StreamControlManager {
         long nodeEpoch = record.nodeEpoch();
         // already exist, update the node's self metadata
         if (this.nodesMetadata.containsKey(nodeId)) {
-            NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+            NodeS3SSTMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
             nodeMetadata.nodeEpoch.set(nodeEpoch);
             return;
         }
         // not exist, create a new node
-        this.nodesMetadata.put(nodeId, new NodeS3WALMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
+        this.nodesMetadata.put(nodeId, new NodeS3SSTMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
     }
 
     public void replay(S3SSTObjectRecord record) {
@@ -1124,18 +1124,18 @@ public class StreamControlManager {
         long orderId = record.orderId();
         long dataTs = record.dataTimeInMs();
         List<StreamIndex> streamIndexes = record.streamsIndex();
-        NodeS3WALMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        NodeS3SSTMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeMetadata == null) {
             // should not happen
-            log.error("nodeId={} not exist when replay wal object record {}", nodeId, record);
+            log.error("nodeId={} not exist when replay SST object record {}", nodeId, record);
             return;
         }
 
-        // create wal object
+        // create SST object
         Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
                 .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
-        nodeMetadata.walObjects.put(objectId, new S3SSTObject(objectId, nodeId, indexMap, orderId, dataTs));
+        nodeMetadata.sstObjects.put(objectId, new S3SSTObject(objectId, nodeId, indexMap, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -1143,21 +1143,21 @@ public class StreamControlManager {
             S3StreamMetadata metadata = this.streamsMetadata.get(streamId);
             if (metadata == null) {
                 // ignore it
-                LOGGER.error("[REPLAY_WAL_FAIL] cannot find streamId={} metadata", streamId);
+                LOGGER.error("[REPLAY_SST_FAIL] cannot find streamId={} metadata", streamId);
                 return;
             }
             RangeMetadata rangeMetadata = metadata.currentRangeMetadata();
             if (rangeMetadata == null) {
                 // ignore it
-                LOGGER.error("[REPLAY_WAL_FAIL] cannot find streamId={} stream range metadata", streamId);
+                LOGGER.error("[REPLAY_SST_FAIL] cannot find streamId={} stream range metadata", streamId);
                 return;
             }
             if (rangeMetadata.endOffset() < index.startOffset()) {
-                LOGGER.error("[REPLAY_WAL_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
+                LOGGER.error("[REPLAY_SST_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
                         rangeMetadata.endOffset(), index.startOffset());
                 return;
             } else if (rangeMetadata.endOffset() > index.startOffset()) {
-                // ignore it, the WAL object is the compacted WAL object.
+                // ignore it, the SST object is the compacted SST object.
                 return;
             }
             rangeMetadata.setEndOffset(index.endOffset());
@@ -1166,13 +1166,13 @@ public class StreamControlManager {
 
     public void replay(RemoveSSTObjectRecord record) {
         long objectId = record.objectId();
-        NodeS3WALMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
+        NodeS3SSTMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
         if (walMetadata == null) {
             // should not happen
-            log.error("node {} not exist when replay remove wal object record {}", record.nodeId(), record);
+            log.error("node {} not exist when replay remove SST object record {}", record.nodeId(), record);
             return;
         }
-        walMetadata.walObjects.remove(objectId);
+        walMetadata.sstObjects.remove(objectId);
     }
 
     public void replay(S3StreamObjectRecord record) {
@@ -1192,15 +1192,15 @@ public class StreamControlManager {
         // update range
         RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
         if (rangeMetadata == null) {
-            LOGGER.error("[REPLAY_WAL_FAIL] cannot find streamId={} stream range metadata", streamId);
+            LOGGER.error("[REPLAY_SST_FAIL] cannot find streamId={} stream range metadata", streamId);
             return;
         }
         if (rangeMetadata.endOffset() < startOffset) {
-            LOGGER.error("[REPLAY_WAL_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
+            LOGGER.error("[REPLAY_SST_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
                     rangeMetadata.endOffset(), startOffset);
             return;
         } else if (rangeMetadata.endOffset() > startOffset) {
-            // ignore it, the WAL object compact and stream compact may generate this StreamObjectRecord.
+            // ignore it, the SST object compact and stream compact may generate this StreamObjectRecord.
             return;
         }
         rangeMetadata.setEndOffset(endOffset);
@@ -1228,7 +1228,7 @@ public class StreamControlManager {
         return streamsMetadata;
     }
 
-    public Map<Integer, NodeS3WALMetadata> nodesMetadata() {
+    public Map<Integer, NodeS3SSTMetadata> nodesMetadata() {
         return nodesMetadata;
     }
 

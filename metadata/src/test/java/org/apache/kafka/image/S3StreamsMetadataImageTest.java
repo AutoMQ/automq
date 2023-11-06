@@ -101,21 +101,21 @@ public class S3StreamsMetadataImageTest {
 
     @Test
     public void testGetObjects() {
-        Map<Long, S3SSTObject> broker0WalObjects = Map.of(
+        Map<Long, S3SSTObject> broker0SSTObjects = Map.of(
                 0L, new S3SSTObject(0, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
                 1L, new S3SSTObject(1, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
                 2L, new S3SSTObject(2, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
                 3L, new S3SSTObject(3, BROKER0, Map.of(STREAM0,
                         new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
                 4L, new S3SSTObject(4, BROKER0, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
-        Map<Long, S3SSTObject> broker1WalObjects = Map.of(
+        Map<Long, S3SSTObject> broker1SSTObjects = Map.of(
                 5L, new S3SSTObject(5, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
                 6L, new S3SSTObject(6, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
                 7L, new S3SSTObject(7, BROKER1, Map.of(STREAM0, new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
-        NodeS3WALMetadataImage broker0WALMetadataImage = new NodeS3WALMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
-                new HashMap<>(broker0WalObjects));
-        NodeS3WALMetadataImage broker1WALMetadataImage = new NodeS3WALMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
-                new HashMap<>(broker1WalObjects));
+        NodeS3SSTMetadataImage broker0WALMetadataImage = new NodeS3SSTMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+                new HashMap<>(broker0SSTObjects));
+        NodeS3SSTMetadataImage broker1WALMetadataImage = new NodeS3SSTMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
+                new HashMap<>(broker1SSTObjects));
         Map<Integer, RangeMetadata> ranges = Map.of(
                 0, new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),
                 1, new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),

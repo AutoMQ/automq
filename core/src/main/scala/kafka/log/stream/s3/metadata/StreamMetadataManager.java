@@ -101,9 +101,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
     }
 
-    public CompletableFuture<List<S3ObjectMetadata>> getWALObjects() {
+    public CompletableFuture<List<S3ObjectMetadata>> getSSTObjects() {
         synchronized (this) {
-            List<S3ObjectMetadata> s3ObjectMetadataList = this.streamsImage.getWALObjects(config.brokerId()).stream()
+            List<S3ObjectMetadata> s3ObjectMetadataList = this.streamsImage.getSSTObjects(config.brokerId()).stream()
                     .map(object -> {
                         S3Object s3Object = this.objectsImage.getObjectMetadata(object.objectId());
                         return new S3ObjectMetadata(object.objectId(), object.objectType(),

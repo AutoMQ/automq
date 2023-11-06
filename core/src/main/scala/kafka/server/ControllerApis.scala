@@ -117,7 +117,7 @@ class ControllerApis(val requestChannel: RequestChannel,
         case ApiKeys.DELETE_STREAMS => handleDeleteStream(request)
         case ApiKeys.TRIM_STREAMS => handleTrimStream(request)
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
-        case ApiKeys.COMMIT_SST_OBJECT => handleCommitWALObject(request)
+        case ApiKeys.COMMIT_SST_OBJECT => handleCommitSSTObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
         case ApiKeys.GET_OPENING_STREAMS => handleGetStreamsOffset(request)
         case ApiKeys.GET_KVS => handleGetKV(request)
@@ -1003,11 +1003,11 @@ class ControllerApis(val requestChannel: RequestChannel,
       }
   }
 
-  def handleCommitWALObject(request: RequestChannel.Request): CompletableFuture[Unit] = {
-    val commitWALObjectRequest = request.body[CommitSSTObjectRequest]
+  def handleCommitSSTObject(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val commitSSTObjectRequest = request.body[CommitSSTObjectRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.commitWALObject(context, commitWALObjectRequest.data)
+    controller.commitSSTObject(context, commitSSTObjectRequest.data)
       .handle[Unit] { (result, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)

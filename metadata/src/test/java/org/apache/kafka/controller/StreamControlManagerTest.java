@@ -55,7 +55,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
-import org.apache.kafka.controller.stream.StreamControlManager.NodeS3WALMetadata;
+import org.apache.kafka.controller.stream.StreamControlManager.NodeS3SSTMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3SSTObject;
@@ -309,7 +309,7 @@ public class StreamControlManagerTest {
             new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
         replay(manager, result2.records());
-        // 2. commit valid wal object
+        // 2. commit valid SST object
         List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH0)
@@ -320,17 +320,17 @@ public class StreamControlManagerTest {
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitSSTObjectResponseData> result3 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result3 = manager.commitSSTObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
-        // verify range's end offset advanced and wal object is added
+        // verify range's end offset advanced and SST object is added
         S3StreamMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         assertEquals(1, streamMetadata0.ranges().size());
         RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(100L, rangeMetadata0.endOffset());
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
-        // 3. commit a wal object that doesn't exist
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
+        // 3. commit a SST object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH0)
@@ -341,7 +341,7 @@ public class StreamControlManagerTest {
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
         // 4. node_0 close stream_0 with epoch_0 and node_1 open stream_0 with epoch_1
         ControllerResult<CloseStreamResponse> result7 = manager.closeStream(BROKER0, BROKER_EPOCH0,
@@ -354,7 +354,7 @@ public class StreamControlManagerTest {
         assertEquals(0L, result8.response().startOffset());
         assertEquals(100L, result8.response().nextOffset());
         replay(manager, result8.records());
-        // 5. node_1 successfully commit wal object which contains stream_0's data
+        // 5. node_1 successfully commit SST object which contains stream_0's data
         List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -365,10 +365,10 @@ public class StreamControlManagerTest {
             .setObjectId(6L)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges6);
-        ControllerResult<CommitSSTObjectResponseData> result10 = manager.commitWALObject(commitRequest6);
+        ControllerResult<CommitSSTObjectResponseData> result10 = manager.commitSSTObject(commitRequest6);
         assertEquals(Errors.NONE.code(), result10.response().errorCode());
         replay(manager, result10.records());
-        // verify range's end offset advanced and wal object is added
+        // verify range's end offset advanced and SST object is added
         streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         assertEquals(2, streamMetadata0.ranges().size());
         assertEquals(0L, streamMetadata0.ranges().get(0).startOffset());
@@ -376,7 +376,7 @@ public class StreamControlManagerTest {
         RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
         assertEquals(100L, rangeMetadata1.startOffset());
         assertEquals(300L, rangeMetadata1.endOffset());
-        assertEquals(1, manager.nodesMetadata().get(BROKER1).walObjects().size());
+        assertEquals(1, manager.nodesMetadata().get(BROKER1).sstObjects().size());
 
         // 6. get stream's offset
         GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
@@ -428,7 +428,7 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
 
-        // 2. commit first level wal object of stream_0 and stream_1
+        // 2. commit first level SST object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges0 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -446,7 +446,7 @@ public class StreamControlManagerTest {
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -460,7 +460,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(200L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object0DataTs = manager.nodesMetadata().get(BROKER0).walObjects().get(0L).dataTimeInMs();
+        long object0DataTs = manager.nodesMetadata().get(BROKER0).sstObjects().get(0L).dataTimeInMs();
 
         // 4. keep committing first level object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -480,7 +480,7 @@ public class StreamControlManagerTest {
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitSSTObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result5.response().errorCode());
         replay(manager, result5.records());
 
@@ -493,9 +493,9 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object1DataTs = manager.nodesMetadata().get(BROKER0).walObjects().get(1L).dataTimeInMs();
+        long object1DataTs = manager.nodesMetadata().get(BROKER0).sstObjects().get(1L).dataTimeInMs();
 
-        // 6. commit an invalid wal object which contains the destroyed or not exist wal object
+        // 6. commit an invalid SST object which contains the destroyed or not exist SST object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         List<ObjectStreamRange> streamRanges2 = List.of(
             new ObjectStreamRange()
@@ -515,12 +515,12 @@ public class StreamControlManagerTest {
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
-        ControllerResult<CommitSSTObjectResponseData> result6 = manager.commitWALObject(commitRequest2);
+        ControllerResult<CommitSSTObjectResponseData> result6 = manager.commitSSTObject(commitRequest2);
         assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
-        // 7. commit a second level wal object which compact wal_0 and wal_1
+        // 7. commit a second level SST object which compact wal_0 and wal_1
         commitRequest2 = new CommitSSTObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
@@ -528,7 +528,7 @@ public class StreamControlManagerTest {
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L));
-        result6 = manager.commitWALObject(commitRequest2);
+        result6 = manager.commitSSTObject(commitRequest2);
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         replay(manager, result6.records());
 
@@ -541,12 +541,12 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        assertEquals(object0DataTs, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).dataTimeInMs());
+        assertEquals(object0DataTs, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).dataTimeInMs());
 
-        // 9. verify compacted wal objects is removed
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
-        assertEquals(2, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).objectId());
-        assertEquals(0, manager.nodesMetadata().get(BROKER0).walObjects().get(2L).orderId());
+        // 9. verify compacted SST objects is removed
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
+        assertEquals(2, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).objectId());
+        assertEquals(0, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).orderId());
 
     }
 
@@ -582,7 +582,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -600,7 +600,7 @@ public class StreamControlManagerTest {
         // 4. verify stream object is added
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
 
-        // 5. commit wal object with not continuous stream
+        // 5. commit SST object with not continuous stream
         List<ObjectStreamRange> streamRanges1 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -621,7 +621,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitSSTObject(commitRequest1);
         assertEquals(Errors.OFFSET_NOT_MATCHED.code(), result5.response().errorCode());
     }
 
@@ -657,7 +657,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result0 = manager.commitWALObject(commitRequest0);
+        ControllerResult<CommitSSTObjectResponseData> result0 = manager.commitSSTObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
         long object0DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(1L).dataTimeInMs();
@@ -683,7 +683,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result1 = manager.commitWALObject(commitRequest1);
+        ControllerResult<CommitSSTObjectResponseData> result1 = manager.commitSSTObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
         long object1DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(3L).dataTimeInMs();
@@ -742,7 +742,7 @@ public class StreamControlManagerTest {
         // 1. create and open stream0 and stream1 for node0
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
-        // 2. commit wal object with stream0-[0, 10)
+        // 2. commit SST object with stream0-[0, 10)
         CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
@@ -753,9 +753,9 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
                 .setEndOffset(10)));
-        ControllerResult<CommitSSTObjectResponseData> result = manager.commitWALObject(requestData);
+        ControllerResult<CommitSSTObjectResponseData> result = manager.commitSSTObject(requestData);
         replay(manager, result.records());
-        // 3. commit wal object with stream0-[10, 20), and stream1-[0, 10)
+        // 3. commit SST object with stream0-[10, 20), and stream1-[0, 10)
         requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
@@ -770,7 +770,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
                 .setEndOffset(10)));
-        result = manager.commitWALObject(requestData);
+        result = manager.commitSSTObject(requestData);
         replay(manager, result.records());
         // 4. commit with a stream object with stream0-[20, 40)
         requestData = new CommitSSTObjectRequestData()
@@ -784,12 +784,12 @@ public class StreamControlManagerTest {
                 .setObjectId(2)
                 .setStartOffset(20)
                 .setEndOffset(40)));
-        result = manager.commitWALObject(requestData);
+        result = manager.commitSSTObject(requestData);
         replay(manager, result.records());
         // 5. node0 close stream0 and node1 open stream0
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
-        // 6. commit wal object with stream0-[40, 70)
+        // 6. commit SST object with stream0-[40, 70)
         requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
@@ -800,7 +800,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH1)
                 .setStartOffset(40)
                 .setEndOffset(70)));
-        result = manager.commitWALObject(requestData);
+        result = manager.commitSSTObject(requestData);
         replay(manager, result.records());
     }
 
@@ -826,15 +826,15 @@ public class StreamControlManagerTest {
         assertEquals(60, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        NodeS3WALMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.walObjects().size());
-        S3SSTObject s3SSTObject = node0Metadata.walObjects().get(1L);
+        NodeS3SSTMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
+        assertEquals(1, node0Metadata.sstObjects().size());
+        S3SSTObject s3SSTObject = node0Metadata.sstObjects().get(1L);
         assertEquals(1, s3SSTObject.offsetRanges().size());
         StreamOffsetRange range = s3SSTObject.offsetRanges().get(STREAM0);
         assertNull(range);
-        NodeS3WALMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(1, node1Metadata.walObjects().size());
-        s3SSTObject = node1Metadata.walObjects().get(3L);
+        NodeS3SSTMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
+        assertEquals(1, node1Metadata.sstObjects().size());
+        s3SSTObject = node1Metadata.sstObjects().get(3L);
         assertEquals(1, s3SSTObject.offsetRanges().size());
         range = s3SSTObject.offsetRanges().get(STREAM0);
         assertNotNull(range);
@@ -860,11 +860,11 @@ public class StreamControlManagerTest {
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
         node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.walObjects().size());
+        assertEquals(1, node0Metadata.sstObjects().size());
         node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(0, node1Metadata.walObjects().size());
+        assertEquals(0, node1Metadata.sstObjects().size());
 
-        // 5. commit wal object with stream0-[70, 100)
+        // 5. commit SST object with stream0-[70, 100)
         CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
@@ -875,7 +875,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(70)
                 .setEndOffset(100)));
-        ControllerResult<CommitSSTObjectResponseData> result = manager.commitWALObject(requestData);
+        ControllerResult<CommitSSTObjectResponseData> result = manager.commitSSTObject(requestData);
         replay(manager, result.records());
 
         // 6. verify
@@ -919,12 +919,12 @@ public class StreamControlManagerTest {
         // 4. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).walObjects().size());
-        S3SSTObject walObject = manager.nodesMetadata().get(BROKER0).walObjects().get(1L);
-        assertEquals(1, walObject.offsetRanges().size());
-        StreamOffsetRange offsetRange = walObject.offsetRanges().get(STREAM1);
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
+        S3SSTObject sstObject = manager.nodesMetadata().get(BROKER0).sstObjects().get(1L);
+        assertEquals(1, sstObject.offsetRanges().size());
+        StreamOffsetRange offsetRange = sstObject.offsetRanges().get(STREAM1);
         assertNotNull(offsetRange);
-        assertEquals(0, manager.nodesMetadata().get(BROKER1).walObjects().size());
+        assertEquals(0, manager.nodesMetadata().get(BROKER1).sstObjects().size());
 
         // 5. delete again
         req = new DeleteStreamRequest()

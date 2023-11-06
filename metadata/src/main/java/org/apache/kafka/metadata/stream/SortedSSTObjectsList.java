@@ -36,7 +36,7 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
     }
 
     /**
-     * Construct a SortedSSTObjectsList from a list of S3WALObjects.
+     * Construct a SortedSSTObjectsList from a list of S3SSTObjects.
      * @param list the list of S3SSTObjects, must guarantee that the list is sorted
      */
     public SortedSSTObjectsList(List<S3SSTObject> list) {

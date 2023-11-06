@@ -185,7 +185,7 @@ add_settings_for_s3() {
     if [[ "${role}" == "broker" || "${role}" == "server" ]]; then
         add_or_setup_value "s3.wal.capacity" "4294967296" "${file_name}"
         add_or_setup_value "s3.wal.cache.size" "1073741824" "${file_name}"
-        add_or_setup_value "s3.wal.object.size" "536870912" "${file_name}"
+        add_or_setup_value "s3.wal.upload.threshold" "536870912" "${file_name}"
         add_or_setup_value "s3.stream.object.split.size" "16777216" "${file_name}"
         add_or_setup_value "s3.object.block.size" "16777216" "${file_name}"
         add_or_setup_value "s3.object.part.size" "33554432" "${file_name}"

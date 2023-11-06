@@ -141,7 +141,7 @@ public class ControllerObjectManager implements ObjectManager {
                 case COMPACTED_OBJECTS_NOT_FOUND:
                     throw code.exception();
                 default:
-                    LOGGER.error("Error while committing WAL object: {}, code: {}, retry later", request, code);
+                    LOGGER.error("Error while committing SST object: {}, code: {}, retry later", request, code);
                     return ResponseHandleResult.withRetry();
             }
         });
@@ -207,7 +207,7 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
         try {
-            return this.metadataManager.getWALObjects();
+            return this.metadataManager.getSSTObjects();
         } catch (Exception e) {
             LOGGER.error("Error while get server objects", e);
             return CompletableFuture.completedFuture(Collections.emptyList());
