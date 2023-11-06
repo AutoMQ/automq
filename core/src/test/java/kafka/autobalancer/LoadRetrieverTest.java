@@ -49,7 +49,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness {
     protected static final String METRIC_TOPIC = "AutoBalancerMetricsReporterTest";
 

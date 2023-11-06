@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-@Tag("esUnit")
+@Tag("S3Unit")
 public class ExecutionManagerTest {
 
     private boolean checkTopicPartition(AlterPartitionReassignmentsRequestData.ReassignableTopic topic,
