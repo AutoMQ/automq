@@ -67,17 +67,17 @@ public class DefaultS3BlockCacheTest {
         ));
         objectWriter.write(234, List.of(newRecord(234, 0, 5, 512)));
         objectWriter.close();
-        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.SST);
 
         objectWriter = ObjectWriter.writer(1, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(newRecord(233, 30, 10, 512)));
         objectWriter.close();
-        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.SST);
 
         objectWriter = ObjectWriter.writer(2, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(newRecord(233, 40, 20, 512)));
         objectWriter.close();
-        S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata3 = new S3ObjectMetadata(2, objectWriter.size(), S3ObjectType.SST);
 
         when(objectManager.getObjects(eq(233L), eq(11L), eq(60L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(
                 metadata1, metadata2
@@ -104,12 +104,12 @@ public class DefaultS3BlockCacheTest {
                 newRecord(233, 15, 5, 4096)
         ));
         objectWriter.close();
-        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.SST);
 
         objectWriter = ObjectWriter.writer(1, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(newRecord(233, 20, 10, 512)));
         objectWriter.close();
-        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.SST);
 
         when(objectManager.getObjects(eq(233L), eq(10L), eq(11L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata1)));
 

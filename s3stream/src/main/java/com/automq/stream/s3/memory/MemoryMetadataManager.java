@@ -23,8 +23,8 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitSSTObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final AtomicLong objectIdAlloc = new AtomicLong();
     private final Map<Long, List<S3ObjectMetadata>> streamObjects = new HashMap<>();
-    private final Map<Long, S3ObjectMetadata> walObjects = new HashMap<>();
+    private final Map<Long, S3ObjectMetadata> sstObjects = new HashMap<>();
 
     @Override
     public synchronized CompletableFuture<Long> prepareObject(int count, long ttl) {
@@ -52,20 +52,20 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public synchronized CompletableFuture<CommitWALObjectResponse> commitWALObject(CommitWALObjectRequest request) {
+    public synchronized CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest request) {
         long dataTimeInMs = System.currentTimeMillis();
         if (!request.getCompactedObjectIds().isEmpty()) {
             for (long id : request.getCompactedObjectIds()) {
-                dataTimeInMs = Math.min(walObjects.get(id).dataTimeInMs(), dataTimeInMs);
-                walObjects.remove(id);
+                dataTimeInMs = Math.min(sstObjects.get(id).dataTimeInMs(), dataTimeInMs);
+                sstObjects.remove(id);
             }
         }
         long now = System.currentTimeMillis();
         if (request.getObjectId() != ObjectUtils.NOOP_OBJECT_ID) {
             S3ObjectMetadata object = new S3ObjectMetadata(
-                    request.getObjectId(), S3ObjectType.WAL, request.getStreamRanges().stream().map(MemoryMetadataManager::to).collect(Collectors.toList()),
+                    request.getObjectId(), S3ObjectType.SST, request.getStreamRanges().stream().map(MemoryMetadataManager::to).collect(Collectors.toList()),
                     dataTimeInMs, now, request.getObjectSize(), request.getOrderId());
-            walObjects.put(request.getObjectId(), object);
+            sstObjects.put(request.getObjectId(), object);
         }
         for (StreamObject r : request.getStreamObjects()) {
             List<S3ObjectMetadata> objects = streamObjects.computeIfAbsent(r.getStreamId(), id -> new LinkedList<>());
@@ -76,8 +76,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                     )
             );
         }
-        request.getCompactedObjectIds().forEach(walObjects::remove);
-        return CompletableFuture.completedFuture(new CommitWALObjectResponse());
+        request.getCompactedObjectIds().forEach(sstObjects::remove);
+        return CompletableFuture.completedFuture(new CommitSSTObjectResponse());
     }
 
     @Override
@@ -92,7 +92,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public synchronized CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
-        return CompletableFuture.completedFuture(new LinkedList<>(walObjects.values()));
+        return CompletableFuture.completedFuture(new LinkedList<>(sstObjects.values()));
     }
 
     @Override

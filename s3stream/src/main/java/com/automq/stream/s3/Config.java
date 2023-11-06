@@ -20,42 +20,42 @@ package com.automq.stream.s3;
 // TODO: rename & init
 public class Config {
     private int brokerId;
-    private String s3Endpoint;
-    private String s3Region;
-    private String s3Bucket;
-    private boolean s3ForcePathStyle = false;
-    private String s3AccessKey;
-    private String s3SecretKey;
-    private String s3WALPath = "/tmp/s3stream_wal";
-    private long s3WALCacheSize = 200 * 1024 * 1024;
-    private long s3WALCapacity = 1024L * 1024 * 1024;
-    private int s3WALHeaderFlushIntervalSeconds = 10;
-    private int s3WALThread = 8;
-    private long s3WALWindowInitial = 1048576L;
-    private long s3WALWindowIncrement = 4194304L;
-    private long s3WALWindowMax = 536870912L;
-    private long s3WALBlockSoftLimit = 128 * 1024;
-    private long s3WALObjectSize = 100 * 1024 * 1024;
-    private int s3StreamSplitSize = 16777216;
-    private int s3ObjectBlockSize = 8388608;
-    private int s3ObjectPartSize = 16777216;
-    private long s3BlockCacheSize = 100 * 1024 * 1024;
-    private int s3StreamObjectCompactionIntervalMinutes = 60;
-    private long s3StreamObjectCompactionMaxSizeBytes = 10737418240L;
-    private int s3StreamObjectCompactionLivingTimeMinutes = 60;
-    private int s3ControllerRequestRetryMaxCount = 5;
-    private long s3ControllerRequestRetryBaseDelayMs = 500;
+    private String endpoint;
+    private String region;
+    private String bucket;
+    private boolean forcePathStyle = false;
+    private String accessKey;
+    private String secretKey;
+    private String walPath = "/tmp/s3stream_wal";
+    private long walCacheSize = 200 * 1024 * 1024;
+    private long walCapacity = 1024L * 1024 * 1024;
+    private int walHeaderFlushIntervalSeconds = 10;
+    private int walThread = 8;
+    private long walWindowInitial = 1048576L;
+    private long walWindowIncrement = 4194304L;
+    private long walWindowMax = 536870912L;
+    private long walBlockSoftLimit = 128 * 1024;
+    private long walUploadThreshold = 100 * 1024 * 1024;
+    private int streamSplitSize = 16777216;
+    private int objectBlockSize = 8388608;
+    private int objectPartSize = 16777216;
+    private long blockCacheSize = 100 * 1024 * 1024;
+    private int streamObjectCompactionIntervalMinutes = 60;
+    private long streamObjectCompactionMaxSizeBytes = 10737418240L;
+    private int streamObjectCompactionLivingTimeMinutes = 60;
+    private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
+    private long controllerRequestRetryBaseDelayMs = 500;
     private long brokerEpoch = 0L;
-    private int s3WALObjectCompactionInterval = 20;
-    private long s3WALObjectCompactionCacheSize = 200 * 1024 * 1024;
-    private int s3WALObjectCompactionUploadConcurrency = 8;
-    private long s3WALObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
-    private int s3WALObjectCompactionForceSplitPeriod = 120;
-    private int s3WALObjectCompactionMaxObjectNum = 500;
-    private int s3MaxStreamNumPerWALObject = 10000;
-    private int s3MaxStreamObjectNumPerCommit = 10000;
-    private boolean s3MockEnable = false;
-    private boolean s3ObjectLogEnable = false;
+    private int sstCompactionInterval = 20;
+    private long sstCompactionCacheSize = 200 * 1024 * 1024;
+    private int sstCompactionUploadConcurrency = 8;
+    private long sstCompactionStreamSplitSize = 16 * 1024 * 1024;
+    private int sstCompactionForceSplitPeriod = 120;
+    private int sstCompactionMaxObjectNum = 500;
+    private int maxStreamNumPerSST = 10000;
+    private int maxStreamObjectNumPerCommit = 10000;
+    private boolean mockEnable = false;
+    private boolean objectLogEnable = false;
     // 100MB/s
     private long networkBaselineBandwidth = 100 * 1024 * 1024;
     private int refillPeriodMs = 1000;
@@ -64,148 +64,148 @@ public class Config {
         return brokerId;
     }
 
-    public String s3Endpoint() {
-        return s3Endpoint;
+    public String endpoint() {
+        return endpoint;
     }
 
-    public String s3Region() {
-        return s3Region;
+    public String region() {
+        return region;
     }
 
-    public String s3Bucket() {
-        return s3Bucket;
+    public String bucket() {
+        return bucket;
     }
 
-    public boolean s3ForcePathStyle() {
-        return s3ForcePathStyle;
+    public boolean forcePathStyle() {
+        return forcePathStyle;
     }
 
-    public String s3WALPath() {
-        return s3WALPath;
+    public String walPath() {
+        return walPath;
     }
 
-    public long s3WALCacheSize() {
-        return s3WALCacheSize;
+    public long walCacheSize() {
+        return walCacheSize;
     }
 
-    public long s3WALCapacity() {
-        return s3WALCapacity;
+    public long walCapacity() {
+        return walCapacity;
     }
 
-    public int s3WALHeaderFlushIntervalSeconds() {
-        return s3WALHeaderFlushIntervalSeconds;
+    public int walHeaderFlushIntervalSeconds() {
+        return walHeaderFlushIntervalSeconds;
     }
 
-    public int s3WALThread() {
-        return s3WALThread;
+    public int walThread() {
+        return walThread;
     }
 
-    public long s3WALWindowInitial() {
-        return s3WALWindowInitial;
+    public long walWindowInitial() {
+        return walWindowInitial;
     }
 
-    public long s3WALWindowIncrement() {
-        return s3WALWindowIncrement;
+    public long walWindowIncrement() {
+        return walWindowIncrement;
     }
 
-    public long s3WALWindowMax() {
-        return s3WALWindowMax;
+    public long walWindowMax() {
+        return walWindowMax;
     }
 
-    public long s3WALBlockSoftLimit() {
-        return s3WALBlockSoftLimit;
+    public long walBlockSoftLimit() {
+        return walBlockSoftLimit;
     }
 
-    public long s3WALObjectSize() {
-        return s3WALObjectSize;
+    public long walUploadThreshold() {
+        return walUploadThreshold;
     }
 
-    public int s3StreamSplitSize() {
-        return s3StreamSplitSize;
+    public int streamSplitSize() {
+        return streamSplitSize;
     }
 
-    public int s3ObjectBlockSize() {
-        return s3ObjectBlockSize;
+    public int objectBlockSize() {
+        return objectBlockSize;
     }
 
-    public int s3ObjectPartSize() {
-        return s3ObjectPartSize;
+    public int objectPartSize() {
+        return objectPartSize;
     }
 
-    public long s3BlockCacheSize() {
-        return s3BlockCacheSize;
+    public long blockCacheSize() {
+        return blockCacheSize;
     }
 
-    public int s3StreamObjectCompactionIntervalMinutes() {
-        return s3StreamObjectCompactionIntervalMinutes;
+    public int streamObjectCompactionIntervalMinutes() {
+        return streamObjectCompactionIntervalMinutes;
     }
 
-    public long s3StreamObjectCompactionMaxSizeBytes() {
-        return s3StreamObjectCompactionMaxSizeBytes;
+    public long streamObjectCompactionMaxSizeBytes() {
+        return streamObjectCompactionMaxSizeBytes;
     }
 
-    public int s3StreamObjectCompactionLivingTimeMinutes() {
-        return s3StreamObjectCompactionLivingTimeMinutes;
+    public int streamObjectCompactionLivingTimeMinutes() {
+        return streamObjectCompactionLivingTimeMinutes;
     }
 
-    public int s3ControllerRequestRetryMaxCount() {
-        return s3ControllerRequestRetryMaxCount;
+    public int controllerRequestRetryMaxCount() {
+        return controllerRequestRetryMaxCount;
     }
 
-    public long s3ControllerRequestRetryBaseDelayMs() {
-        return s3ControllerRequestRetryBaseDelayMs;
+    public long controllerRequestRetryBaseDelayMs() {
+        return controllerRequestRetryBaseDelayMs;
     }
 
     public long brokerEpoch() {
         return brokerEpoch;
     }
 
-    public int s3WALObjectCompactionInterval() {
-        return s3WALObjectCompactionInterval;
+    public int sstCompactionInterval() {
+        return sstCompactionInterval;
     }
 
-    public long s3WALObjectCompactionCacheSize() {
-        return s3WALObjectCompactionCacheSize;
+    public long sstCompactionCacheSize() {
+        return sstCompactionCacheSize;
     }
 
-    public int s3WALObjectCompactionUploadConcurrency() {
-        return s3WALObjectCompactionUploadConcurrency;
+    public int sstCompactionUploadConcurrency() {
+        return sstCompactionUploadConcurrency;
     }
 
-    public long s3WALObjectCompactionStreamSplitSize() {
-        return s3WALObjectCompactionStreamSplitSize;
+    public long sstCompactionStreamSplitSize() {
+        return sstCompactionStreamSplitSize;
     }
 
-    public int s3WALObjectCompactionForceSplitPeriod() {
-        return s3WALObjectCompactionForceSplitPeriod;
+    public int sstCompactionForceSplitPeriod() {
+        return sstCompactionForceSplitPeriod;
     }
 
-    public int s3WALObjectCompactionMaxObjectNum() {
-        return s3WALObjectCompactionMaxObjectNum;
+    public int sstCompactionMaxObjectNum() {
+        return sstCompactionMaxObjectNum;
     }
 
-    public int s3MaxStreamNumPerWALObject() {
-        return s3MaxStreamNumPerWALObject;
+    public int maxStreamNumPerSST() {
+        return maxStreamNumPerSST;
     }
 
-    public int s3MaxStreamObjectNumPerCommit() {
-        return s3MaxStreamObjectNumPerCommit;
+    public int maxStreamObjectNumPerCommit() {
+        return maxStreamObjectNumPerCommit;
     }
 
-    public boolean s3MockEnable() {
-        return s3MockEnable;
+    public boolean mockEnable() {
+        return mockEnable;
     }
 
-    public boolean s3ObjectLogEnable() {
-        return s3ObjectLogEnable;
+    public boolean objectLogEnable() {
+        return objectLogEnable;
     }
 
-    public String s3AccessKey() {
-        return s3AccessKey;
+    public String accessKey() {
+        return accessKey;
     }
 
-    public String s3SecretKey() {
-        return s3SecretKey;
+    public String secretKey() {
+        return secretKey;
     }
 
     public long networkBaselineBandwidth() {
@@ -221,118 +221,118 @@ public class Config {
         return this;
     }
 
-    public Config s3Endpoint(String s3Endpoint) {
-        this.s3Endpoint = s3Endpoint;
+    public Config endpoint(String s3Endpoint) {
+        this.endpoint = s3Endpoint;
         return this;
     }
 
-    public Config s3Region(String s3Region) {
-        this.s3Region = s3Region;
+    public Config region(String s3Region) {
+        this.region = s3Region;
         return this;
     }
 
-    public Config s3Bucket(String s3Bucket) {
-        this.s3Bucket = s3Bucket;
+    public Config bucket(String s3Bucket) {
+        this.bucket = s3Bucket;
         return this;
     }
 
-    public Config s3ForcePathStyle(boolean s3ForcePathStyle) {
-        this.s3ForcePathStyle = s3ForcePathStyle;
+    public Config forcePathStyle(boolean s3ForcePathStyle) {
+        this.forcePathStyle = s3ForcePathStyle;
         return this;
     }
 
-    public Config s3WALPath(String s3WALPath) {
-        this.s3WALPath = s3WALPath;
+    public Config walPath(String s3WALPath) {
+        this.walPath = s3WALPath;
         return this;
     }
 
-    public Config s3WALCacheSize(long s3WALCacheSize) {
-        this.s3WALCacheSize = s3WALCacheSize;
+    public Config walCacheSize(long s3WALCacheSize) {
+        this.walCacheSize = s3WALCacheSize;
         return this;
     }
 
-    public Config s3WALCapacity(long s3WALCapacity) {
-        this.s3WALCapacity = s3WALCapacity;
+    public Config walCapacity(long s3WALCapacity) {
+        this.walCapacity = s3WALCapacity;
         return this;
     }
 
-    public Config s3WALHeaderFlushIntervalSeconds(int s3WALHeaderFlushIntervalSeconds) {
-        this.s3WALHeaderFlushIntervalSeconds = s3WALHeaderFlushIntervalSeconds;
+    public Config walHeaderFlushIntervalSeconds(int s3WALHeaderFlushIntervalSeconds) {
+        this.walHeaderFlushIntervalSeconds = s3WALHeaderFlushIntervalSeconds;
         return this;
     }
 
-    public Config s3WALThread(int s3WALThread) {
-        this.s3WALThread = s3WALThread;
+    public Config walThread(int s3WALThread) {
+        this.walThread = s3WALThread;
         return this;
     }
 
-    public Config s3WALWindowInitial(long s3WALWindowInitial) {
-        this.s3WALWindowInitial = s3WALWindowInitial;
+    public Config walWindowInitial(long s3WALWindowInitial) {
+        this.walWindowInitial = s3WALWindowInitial;
         return this;
     }
 
-    public Config s3WALWindowIncrement(long s3WALWindowIncrement) {
-        this.s3WALWindowIncrement = s3WALWindowIncrement;
+    public Config walWindowIncrement(long s3WALWindowIncrement) {
+        this.walWindowIncrement = s3WALWindowIncrement;
         return this;
     }
 
-    public Config s3WALWindowMax(long s3WALWindowMax) {
-        this.s3WALWindowMax = s3WALWindowMax;
+    public Config walWindowMax(long s3WALWindowMax) {
+        this.walWindowMax = s3WALWindowMax;
         return this;
     }
 
-    public Config s3WALBlockSoftLimit(long s3WALBlockSoftLimit) {
-        this.s3WALBlockSoftLimit = s3WALBlockSoftLimit;
+    public Config walBlockSoftLimit(long s3WALBlockSoftLimit) {
+        this.walBlockSoftLimit = s3WALBlockSoftLimit;
         return this;
     }
 
-    public Config s3WALObjectSize(long s3WALObjectSize) {
-        this.s3WALObjectSize = s3WALObjectSize;
+    public Config walUploadThreshold(long s3WALObjectSize) {
+        this.walUploadThreshold = s3WALObjectSize;
         return this;
     }
 
-    public Config s3StreamSplitSize(int s3StreamSplitSize) {
-        this.s3StreamSplitSize = s3StreamSplitSize;
+    public Config streamSplitSize(int s3StreamSplitSize) {
+        this.streamSplitSize = s3StreamSplitSize;
         return this;
     }
 
-    public Config s3ObjectBlockSize(int s3ObjectBlockSize) {
-        this.s3ObjectBlockSize = s3ObjectBlockSize;
+    public Config objectBlockSize(int s3ObjectBlockSize) {
+        this.objectBlockSize = s3ObjectBlockSize;
         return this;
     }
 
-    public Config s3ObjectPartSize(int s3ObjectPartSize) {
-        this.s3ObjectPartSize = s3ObjectPartSize;
+    public Config objectPartSize(int s3ObjectPartSize) {
+        this.objectPartSize = s3ObjectPartSize;
         return this;
     }
 
-    public Config s3BlockCacheSize(long s3CacheSize) {
-        this.s3BlockCacheSize = s3CacheSize;
+    public Config blockCacheSize(long s3CacheSize) {
+        this.blockCacheSize = s3CacheSize;
         return this;
     }
 
-    public Config s3StreamObjectCompactionIntervalMinutes(int s3StreamObjectCompactionIntervalMinutes) {
-        this.s3StreamObjectCompactionIntervalMinutes = s3StreamObjectCompactionIntervalMinutes;
+    public Config streamObjectCompactionIntervalMinutes(int s3StreamObjectCompactionIntervalMinutes) {
+        this.streamObjectCompactionIntervalMinutes = s3StreamObjectCompactionIntervalMinutes;
         return this;
     }
 
-    public Config s3StreamObjectCompactionMaxSizeBytes(long s3StreamObjectCompactionMaxSizeBytes) {
-        this.s3StreamObjectCompactionMaxSizeBytes = s3StreamObjectCompactionMaxSizeBytes;
+    public Config streamObjectCompactionMaxSizeBytes(long s3StreamObjectCompactionMaxSizeBytes) {
+        this.streamObjectCompactionMaxSizeBytes = s3StreamObjectCompactionMaxSizeBytes;
         return this;
     }
 
-    public Config s3StreamObjectCompactionLivingTimeMinutes(int s3StreamObjectCompactionLivingTimeMinutes) {
-        this.s3StreamObjectCompactionLivingTimeMinutes = s3StreamObjectCompactionLivingTimeMinutes;
+    public Config streamObjectCompactionLivingTimeMinutes(int s3StreamObjectCompactionLivingTimeMinutes) {
+        this.streamObjectCompactionLivingTimeMinutes = s3StreamObjectCompactionLivingTimeMinutes;
         return this;
     }
 
-    public Config s3ControllerRequestRetryMaxCount(int s3ControllerRequestRetryMaxCount) {
-        this.s3ControllerRequestRetryMaxCount = s3ControllerRequestRetryMaxCount;
+    public Config controllerRequestRetryMaxCount(int s3ControllerRequestRetryMaxCount) {
+        this.controllerRequestRetryMaxCount = s3ControllerRequestRetryMaxCount;
         return this;
     }
 
-    public Config s3ControllerRequestRetryBaseDelayMs(long s3ControllerRequestRetryBaseDelayMs) {
-        this.s3ControllerRequestRetryBaseDelayMs = s3ControllerRequestRetryBaseDelayMs;
+    public Config controllerRequestRetryBaseDelayMs(long s3ControllerRequestRetryBaseDelayMs) {
+        this.controllerRequestRetryBaseDelayMs = s3ControllerRequestRetryBaseDelayMs;
         return this;
     }
 
@@ -341,63 +341,63 @@ public class Config {
         return this;
     }
 
-    public Config s3WALObjectCompactionInterval(int s3WALObjectCompactionInterval) {
-        this.s3WALObjectCompactionInterval = s3WALObjectCompactionInterval;
+    public Config sstCompactionInterval(int s3WALObjectCompactionInterval) {
+        this.sstCompactionInterval = s3WALObjectCompactionInterval;
         return this;
     }
 
-    public Config s3WALObjectCompactionCacheSize(long s3WALObjectCompactionCacheSize) {
-        this.s3WALObjectCompactionCacheSize = s3WALObjectCompactionCacheSize;
+    public Config sstCompactionCacheSize(long sstCompactionCacheSize) {
+        this.sstCompactionCacheSize = sstCompactionCacheSize;
         return this;
     }
 
-    public Config s3WALObjectCompactionUploadConcurrency(int s3WALObjectCompactionUploadConcurrency) {
-        this.s3WALObjectCompactionUploadConcurrency = s3WALObjectCompactionUploadConcurrency;
+    public Config sstCompactionUploadConcurrency(int sstCompactionUploadConcurrency) {
+        this.sstCompactionUploadConcurrency = sstCompactionUploadConcurrency;
         return this;
     }
 
-    public Config s3WALObjectCompactionStreamSplitSize(long s3WALObjectCompactionStreamSplitSize) {
-        this.s3WALObjectCompactionStreamSplitSize = s3WALObjectCompactionStreamSplitSize;
+    public Config sstCompactionStreamSplitSize(long sstCompactionStreamSplitSize) {
+        this.sstCompactionStreamSplitSize = sstCompactionStreamSplitSize;
         return this;
     }
 
-    public Config s3WALObjectCompactionForceSplitPeriod(int s3WALObjectCompactionForceSplitPeriod) {
-        this.s3WALObjectCompactionForceSplitPeriod = s3WALObjectCompactionForceSplitPeriod;
+    public Config sstCompactionForceSplitPeriod(int sstCompactionForceSplitPeriod) {
+        this.sstCompactionForceSplitPeriod = sstCompactionForceSplitPeriod;
         return this;
     }
 
-    public Config s3WALObjectCompactionMaxObjectNum(int s3WALObjectCompactionMaxObjectNum) {
-        this.s3WALObjectCompactionMaxObjectNum = s3WALObjectCompactionMaxObjectNum;
+    public Config sstCompactionMaxObjectNum(int sstCompactionMaxObjectNum) {
+        this.sstCompactionMaxObjectNum = sstCompactionMaxObjectNum;
         return this;
     }
 
-    public Config s3MaxStreamNumPerWALObject(int s3MaxStreamNumPerWALObject) {
-        this.s3MaxStreamNumPerWALObject = s3MaxStreamNumPerWALObject;
+    public Config maxStreamNumPerSST(int maxStreamNumPerSST) {
+        this.maxStreamNumPerSST = maxStreamNumPerSST;
         return this;
     }
 
-    public Config s3MaxStreamObjectNumPerCommit(int s3MaxStreamObjectNumPerCommit) {
-        this.s3MaxStreamObjectNumPerCommit = s3MaxStreamObjectNumPerCommit;
+    public Config maxStreamObjectNumPerCommit(int s3MaxStreamObjectNumPerCommit) {
+        this.maxStreamObjectNumPerCommit = s3MaxStreamObjectNumPerCommit;
         return this;
     }
 
-    public Config s3MockEnable(boolean s3MockEnable) {
-        this.s3MockEnable = s3MockEnable;
+    public Config mockEnable(boolean s3MockEnable) {
+        this.mockEnable = s3MockEnable;
         return this;
     }
 
-    public Config s3ObjectLogEnable(boolean s3ObjectLogEnable) {
-        this.s3ObjectLogEnable = s3ObjectLogEnable;
+    public Config objectLogEnable(boolean s3ObjectLogEnable) {
+        this.objectLogEnable = s3ObjectLogEnable;
         return this;
     }
 
-    public Config s3AccessKey(String s3AccessKey) {
-        this.s3AccessKey = s3AccessKey;
+    public Config accessKey(String s3AccessKey) {
+        this.accessKey = s3AccessKey;
         return this;
     }
 
-    public Config s3SecretKey(String s3SecretKey) {
-        this.s3SecretKey = s3SecretKey;
+    public Config secretKey(String s3SecretKey) {
+        this.secretKey = s3SecretKey;
         return this;
     }
 

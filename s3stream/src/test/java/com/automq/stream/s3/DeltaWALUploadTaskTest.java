@@ -20,8 +20,8 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.objects.CommitWALObjectRequest;
-import com.automq.stream.s3.objects.CommitWALObjectResponse;
+import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitSSTObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -54,10 +54,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
-public class WALObjectUploadTaskTest {
+public class DeltaWALUploadTaskTest {
     ObjectManager objectManager;
     S3Operator s3Operator;
-    WALObjectUploadTask walObjectUploadTask;
+    DeltaWALUploadTask deltaWALUploadTask;
 
     @BeforeEach
     public void setup() {
@@ -69,7 +69,7 @@ public class WALObjectUploadTaskTest {
     public void testUpload() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
+        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -83,24 +83,24 @@ public class WALObjectUploadTaskTest {
         ));
 
         Config config = new Config()
-                .s3ObjectBlockSize(16 * 1024 * 1024)
-                .s3ObjectPartSize(16 * 1024 * 1024)
-                .s3StreamSplitSize(1000);
-        walObjectUploadTask = WALObjectUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
+                .objectBlockSize(16 * 1024 * 1024)
+                .objectPartSize(16 * 1024 * 1024)
+                .streamSplitSize(1000);
+        deltaWALUploadTask = DeltaWALUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
 
-        walObjectUploadTask.prepare().get();
-        walObjectUploadTask.upload().get();
-        walObjectUploadTask.commit().get();
+        deltaWALUploadTask.prepare().get();
+        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.commit().get();
 
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
-        ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
-        verify(objectManager, times(1)).commitWALObject(reqArg.capture());
+        ArgumentCaptor<CommitSSTObjectRequest> reqArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
+        verify(objectManager, times(1)).commitSSTObject(reqArg.capture());
         // expect
         // - stream233 split
         // - stream234 write to one stream range
-        CommitWALObjectRequest request = reqArg.getValue();
+        CommitSSTObjectRequest request = reqArg.getValue();
         assertEquals(10, request.getObjectId());
         assertEquals(1, request.getStreamRanges().size());
         assertEquals(234, request.getStreamRanges().get(0).getStreamId());
@@ -115,7 +115,7 @@ public class WALObjectUploadTaskTest {
         assertEquals(16, streamObject.getEndOffset());
 
         {
-            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.WAL);
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.SST);
             ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get().get(0);
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
@@ -151,7 +151,7 @@ public class WALObjectUploadTaskTest {
     public void testUpload_oneStream() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
+        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -160,22 +160,22 @@ public class WALObjectUploadTaskTest {
                 new StreamRecordBatch(233, 0, 14, 2, random(512))
         ));
         Config config = new Config()
-                .s3ObjectBlockSize(16 * 1024 * 1024)
-                .s3ObjectPartSize(16 * 1024 * 1024)
-                .s3StreamSplitSize(16 * 1024 * 1024);
-        walObjectUploadTask = WALObjectUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
+                .objectBlockSize(16 * 1024 * 1024)
+                .objectPartSize(16 * 1024 * 1024)
+                .streamSplitSize(16 * 1024 * 1024);
+        deltaWALUploadTask = DeltaWALUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
 
-        walObjectUploadTask.prepare().get();
-        walObjectUploadTask.upload().get();
-        walObjectUploadTask.commit().get();
+        deltaWALUploadTask.prepare().get();
+        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.commit().get();
 
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
 
-        ArgumentCaptor<CommitWALObjectRequest> reqArg = ArgumentCaptor.forClass(CommitWALObjectRequest.class);
-        verify(objectManager, times(1)).commitWALObject(reqArg.capture());
-        CommitWALObjectRequest request = reqArg.getValue();
+        ArgumentCaptor<CommitSSTObjectRequest> reqArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
+        verify(objectManager, times(1)).commitSSTObject(reqArg.capture());
+        CommitSSTObjectRequest request = reqArg.getValue();
         assertEquals(0, request.getObjectSize());
         assertEquals(0, request.getStreamRanges().size());
         assertEquals(1, request.getStreamObjects().size());
@@ -185,7 +185,7 @@ public class WALObjectUploadTaskTest {
     public void test_emptyWALData() throws ExecutionException, InterruptedException, TimeoutException {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitWALObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitWALObjectResponse()));
+        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -196,10 +196,10 @@ public class WALObjectUploadTaskTest {
         ));
 
         Config config = new Config()
-                .s3ObjectBlockSize(16 * 1024 * 1024)
-                .s3ObjectPartSize(16 * 1024 * 1024)
-                .s3StreamSplitSize(64);
-        walObjectUploadTask = WALObjectUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
-        assertTrue(walObjectUploadTask.forceSplit);
+                .objectBlockSize(16 * 1024 * 1024)
+                .objectPartSize(16 * 1024 * 1024)
+                .streamSplitSize(64);
+        deltaWALUploadTask = DeltaWALUploadTask.of(config, map, objectManager, s3Operator, ForkJoinPool.commonPool());
+        assertTrue(deltaWALUploadTask.forceSplit);
     }
 }

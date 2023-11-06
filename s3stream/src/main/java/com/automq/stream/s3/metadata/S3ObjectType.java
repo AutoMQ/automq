@@ -19,9 +19,9 @@ package com.automq.stream.s3.metadata;
 
 public enum S3ObjectType {
     /**
-     * WAL object
+     * Sorted stream table object
      */
-    WAL,
+    SST,
 
     /**
      * STREAM object

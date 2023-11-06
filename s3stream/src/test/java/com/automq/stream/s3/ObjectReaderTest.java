@@ -109,7 +109,7 @@ public class ObjectReaderTest {
             objectWriter.write(i, List.of(r));
         }
         objectWriter.close().get();
-        S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.WAL);
+        S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.SST);
         try (ObjectReader objectReader = new ObjectReader(metadata, s3Operator)) {
             ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
             assertEquals(streamCount, info.blockCount());

@@ -92,7 +92,7 @@ public class CompactionTestBase {
                     new StreamOffsetRange(STREAM_1, 30, 60),
                     new StreamOffsetRange(STREAM_2, 30, 60)
             );
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, S3ObjectType.SST, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_0);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
             List.of(r1, r2, r3, r4).forEach(StreamRecordBatch::release);
@@ -111,7 +111,7 @@ public class CompactionTestBase {
                     new StreamOffsetRange(STREAM_0, 15, 20),
                     new StreamOffsetRange(STREAM_1, 60, 120)
             );
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.SST, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_1);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
             List.of(r5, r6).forEach(StreamRecordBatch::release);
@@ -130,7 +130,7 @@ public class CompactionTestBase {
                     new StreamOffsetRange(STREAM_1, 400, 500),
                     new StreamOffsetRange(STREAM_2, 230, 270)
             );
-            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, S3ObjectType.WAL, streamsIndices, System.currentTimeMillis(),
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_2, S3ObjectType.SST, streamsIndices, System.currentTimeMillis(),
                     System.currentTimeMillis(), objectWriter.size(), OBJECT_2);
             S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
             List.of(r8, r9).forEach(StreamRecordBatch::release);
