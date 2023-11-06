@@ -1,13 +1,12 @@
-name: Release
+name: Docker Release
 
 on:
   push:
-    branches: [ "master", "develop" ]
     tags:
       - '[0-9]+\.[0-9]+\.[0-9]+'
 
 jobs:
-  release:
+  docker-release:
     name: Docker Image Release
     strategy:
       matrix:
