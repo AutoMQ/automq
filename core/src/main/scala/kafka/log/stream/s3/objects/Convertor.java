@@ -19,12 +19,12 @@ package kafka.log.stream.s3.objects;
 
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import org.apache.kafka.common.message.CommitWALObjectRequestData;
+import org.apache.kafka.common.message.CommitSSTObjectRequestData;
 
 public class Convertor {
 
-    public static CommitWALObjectRequestData.StreamObject toStreamObjectInRequest(StreamObject s) {
-        return new CommitWALObjectRequestData.StreamObject()
+    public static CommitSSTObjectRequestData.StreamObject toStreamObjectInRequest(StreamObject s) {
+        return new CommitSSTObjectRequestData.StreamObject()
                 .setStreamId(s.getStreamId())
                 .setObjectId(s.getObjectId())
                 .setObjectSize(s.getObjectSize())
@@ -32,8 +32,8 @@ public class Convertor {
                 .setEndOffset(s.getEndOffset());
     }
 
-    public static CommitWALObjectRequestData.ObjectStreamRange toObjectStreamRangeInRequest(ObjectStreamRange s) {
-        return new CommitWALObjectRequestData.ObjectStreamRange()
+    public static CommitSSTObjectRequestData.ObjectStreamRange toObjectStreamRangeInRequest(ObjectStreamRange s) {
+        return new CommitSSTObjectRequestData.ObjectStreamRange()
                 .setStreamId(s.getStreamId())
                 .setStartOffset(s.getStartOffset())
                 .setEndOffset(s.getEndOffset());
