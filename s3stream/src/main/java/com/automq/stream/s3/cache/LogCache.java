@@ -30,6 +30,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -66,7 +67,7 @@ public class LogCache {
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         tryRealFree();
         size.addAndGet(recordBatch.size());
         boolean full = activeBlock.put(recordBatch);
@@ -99,7 +100,7 @@ public class LogCache {
      * Note: the records is retained, the caller should release it.
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
         records.forEach(StreamRecordBatch::retain);
         if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {

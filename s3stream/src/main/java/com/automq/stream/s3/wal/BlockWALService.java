@@ -437,7 +437,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     public AppendResult append0(ByteBuf body, int crc) throws OverCapacityException {
-        TimerUtil timerUtil = new TimerUtil();
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         checkReadyToServe();
 
         final long recordSize = RECORD_HEADER_SIZE + body.readableBytes();
