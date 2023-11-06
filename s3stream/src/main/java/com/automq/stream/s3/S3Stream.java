@@ -26,6 +26,7 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClientException;
+import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -42,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -132,7 +134,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         writeLock.lock();
         try {
-            long start = System.currentTimeMillis();
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
@@ -141,7 +143,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(System.currentTimeMillis() - start);
+                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(timerUtil.elapsed());
                 pendingAppends.remove(cf);
             });
             return cf;
@@ -178,11 +180,11 @@ public class S3Stream implements Stream {
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
         readLock.lock();
         try {
-            long start = System.currentTimeMillis();
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(System.currentTimeMillis() - start);
+                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsed());
                 if (ex != null) {
                     LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                 } else if (networkOutboundLimiter != null) {
@@ -221,13 +223,13 @@ public class S3Stream implements Stream {
     public CompletableFuture<Void> trim(long newStartOffset) {
         writeLock.lock();
         try {
-            long start = System.currentTimeMillis();
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             return exec(() -> {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
                 cf.whenComplete((nil, ex) -> {
-                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(System.currentTimeMillis() - start);
+                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(timerUtil.elapsed());
                 });
                 return cf;
             }, LOGGER, "trim");
