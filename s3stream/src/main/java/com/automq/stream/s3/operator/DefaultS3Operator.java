@@ -522,13 +522,13 @@ public class DefaultS3Operator implements S3Operator {
     private void checkConfig() {
         if (this.networkInboundBandwidthLimiter != null) {
             if (this.networkInboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
-                throw new IllegalArgumentException(String.format("Network inbound bandwidth limit %d must be no less than min part size %d",
+                throw new IllegalArgumentException(String.format("Network inbound burst bandwidth limit %d must be no less than min part size %d",
                         this.networkInboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
             }
         }
         if (this.networkOutboundBandwidthLimiter != null) {
             if (this.networkOutboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
-                throw new IllegalArgumentException(String.format("Network outbound bandwidth limit %d must be no less than min part size %d",
+                throw new IllegalArgumentException(String.format("Network outbound burst bandwidth limit %d must be no less than min part size %d",
                         this.networkOutboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
             }
         }

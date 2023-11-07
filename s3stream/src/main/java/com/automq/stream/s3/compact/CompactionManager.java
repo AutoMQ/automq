@@ -34,7 +34,10 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.LogContext;
+import io.github.bucket4j.Bucket;
 import io.netty.util.concurrent.DefaultThreadFactory;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -75,6 +78,7 @@ public class CompactionManager {
     private final long networkBandwidth;
     private final boolean s3ObjectLogEnable;
     private final long compactionCacheSize;
+    private Bucket compactionBucket = null;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager, S3Operator s3Operator) {
         String logPrefix = String.format("[CompactionManager id=%d] ", config.brokerId());
@@ -105,21 +109,28 @@ public class CompactionManager {
     }
 
     public void start() {
-        this.scheduledExecutorService.scheduleWithFixedDelay(() -> {
+        scheduleNextCompaction((long) this.compactionInterval * 60 * 1000);
+    }
+
+    private void scheduleNextCompaction(long delayMillis) {
+        logger.info("Next Compaction started in {} ms", delayMillis);
+        this.scheduledExecutorService.schedule(() -> {
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             try {
                 logger.info("Compaction started");
-                long start = System.currentTimeMillis();
                 this.compact()
-                        .thenAccept(result -> logger.info("Compaction complete, total cost {} ms", System.currentTimeMillis() - start))
+                        .thenAccept(result -> logger.info("Compaction complete, total cost {} ms", timerUtil.elapsed()))
                         .exceptionally(ex -> {
-                            logger.error("Compaction failed, cost {} ms, ", System.currentTimeMillis() - start, ex);
+                            logger.error("Compaction failed, cost {} ms, ", timerUtil.elapsed(), ex);
                             return null;
                         })
                         .join();
             } catch (Exception ex) {
                 logger.error("Error while compacting objects ", ex);
             }
-        }, 1, this.compactionInterval, TimeUnit.MINUTES);
+            long nextDelay = Math.max(0, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsed());
+            scheduleNextCompaction(nextDelay);
+        }, delayMillis, TimeUnit.MILLISECONDS);
     }
 
     public void shutdown() {
@@ -139,12 +150,21 @@ public class CompactionManager {
     private void compact(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectMetadataList) {
         logger.info("Get {} SST objects from metadata", objectMetadataList.size());
         if (objectMetadataList.isEmpty()) {
-            logger.info("No SST objects to compact");
             return;
         }
         Map<Boolean, List<S3ObjectMetadata>> objectMetadataFilterMap = convertS3Objects(objectMetadataList);
         List<S3ObjectMetadata> objectsToForceSplit = objectMetadataFilterMap.get(true);
         List<S3ObjectMetadata> objectsToCompact = objectMetadataFilterMap.get(false);
+
+        long totalSize = objectsToForceSplit.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
+        totalSize += objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
+        long expectReadBytesPerSec = totalSize / compactionInterval / 60;
+        compactionBucket = Bucket.builder().addLimit(limit -> limit
+                        .capacity(expectReadBytesPerSec)
+                        .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
+        logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
+                expectReadBytesPerSec, compactionInterval);
+
         if (!objectsToForceSplit.isEmpty()) {
             // split SST objects to seperated stream objects
             forceSplitObjects(streamMetadataList, objectsToForceSplit);
@@ -184,6 +204,9 @@ public class CompactionManager {
     }
 
     private void compactObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToCompact) {
+        if (objectsToCompact.isEmpty()) {
+            return;
+        }
         // sort by S3 object data time in descending order
         objectsToCompact.sort((o1, o2) -> Long.compare(o2.dataTimeInMs(), o1.dataTimeInMs()));
         if (maxObjectNumToCompact < objectsToCompact.size()) {
@@ -318,7 +341,7 @@ public class CompactionManager {
             objectManager.prepareObject(batchGroup.size(), TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                     .thenComposeAsync(objectId -> {
                         List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).toList();
-                        DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator);
+                        DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator, compactionBucket);
                         // batch read
                         reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
 
@@ -505,7 +528,7 @@ public class CompactionManager {
             for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
                 List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
-                DataBlockReader reader = new DataBlockReader(metadata, s3Operator);
+                DataBlockReader reader = new DataBlockReader(metadata, s3Operator, compactionBucket);
                 reader.readBlocks(streamDataBlocks, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();

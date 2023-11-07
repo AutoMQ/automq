@@ -21,6 +21,9 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
+import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -32,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockReader {
@@ -40,11 +44,19 @@ public class DataBlockReader {
     private final String objectKey;
     private final S3Operator s3Operator;
     private final CompletableFuture<List<StreamDataBlock>> indexBlockCf = new CompletableFuture<>();
+    private final Bucket throttleBucket;
+    private final ScheduledExecutorService bucketCbExecutor = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", false), LOGGER);
 
     public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
+        this(metadata, s3Operator, null);
+    }
+
+    public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator, Bucket throttleBucket) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
+        this.throttleBucket = throttleBucket;
     }
 
     public CompletableFuture<List<StreamDataBlock>> getDataBlockIndex() {
@@ -123,9 +135,7 @@ public class DataBlockReader {
                         long readSize = Math.min(remainBytes, maxReadBatchSize);
                         endPosition = startPosition + readSize;
                         final int finalCnt = cnt;
-                        cfList.add(s3Operator.rangeRead(objectKey, startPosition, endPosition, ThrottleStrategy.THROTTLE)
-                                .thenAccept(buf -> bufferMap.put(finalCnt, buf))
-                        );
+                        cfList.add(rangeRead(startPosition, endPosition).thenAccept(buf -> bufferMap.put(finalCnt, buf)));
                         remainBytes -= readSize;
                         startPosition += readSize;
                         cnt++;
@@ -162,15 +172,23 @@ public class DataBlockReader {
     }
 
     private void readContinuousBlocks0(List<StreamDataBlock> streamDataBlocks) {
-        s3Operator.rangeRead(objectKey,
-                        streamDataBlocks.get(0).getBlockStartPosition(),
-                        streamDataBlocks.get(streamDataBlocks.size() - 1).getBlockEndPosition(), ThrottleStrategy.THROTTLE)
+        rangeRead(streamDataBlocks.get(0).getBlockStartPosition(),
+                streamDataBlocks.get(streamDataBlocks.size() - 1).getBlockEndPosition())
                 .thenAccept(buf -> parseDataBlocks(buf, streamDataBlocks))
                 .exceptionally(ex -> {
                     LOGGER.error("read data from object {} failed", metadata.objectId(), ex);
                     failDataBlocks(streamDataBlocks, ex);
                     return null;
                 });
+    }
+
+    private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
+        if (throttleBucket == null) {
+            return s3Operator.rangeRead(objectKey, start, end);
+        } else {
+            return throttleBucket.asScheduler().consume(end - start + 1, bucketCbExecutor)
+                    .thenCompose(v -> s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE));
+        }
     }
 
     private void parseDataBlocks(ByteBuf buf, List<StreamDataBlock> streamDataBlocks) {
