@@ -19,6 +19,7 @@ package com.automq.stream.s3.wal.util;
 
 import io.netty.buffer.ByteBuf;
 
+import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
 public class WALUtil {
@@ -41,11 +42,10 @@ public class WALUtil {
      */
     public static int crc32(ByteBuf buf, int length) {
         CRC32 crc32 = new CRC32();
-        buf.markReaderIndex();
-        for (int i = 0; i < length; i++) {
-            crc32.update(buf.readByte());
+        ByteBuf slice = buf.slice(buf.readerIndex(), length);
+        for (ByteBuffer buffer : slice.nioBuffers()) {
+            crc32.update(buffer);
         }
-        buf.resetReaderIndex();
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 
