@@ -93,7 +93,7 @@ public class DefaultS3BlockCacheTest {
     }
 
     @Test
-    public void testRead_readahead() throws ExecutionException, InterruptedException {
+    public void testRead_readAhead() throws ExecutionException, InterruptedException {
         objectManager = Mockito.mock(ObjectManager.class);
         s3Operator = Mockito.spy(new MemoryS3Operator());
         s3BlockCache = new DefaultS3BlockCache(1024 * 1024, objectManager, s3Operator);
@@ -115,16 +115,16 @@ public class DefaultS3BlockCacheTest {
 
         s3BlockCache.read(233L, 10L, 11L, 10000).get();
         // range read index and range read data
-        verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
-        verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
-        // trigger readahead
+        verify(s3Operator, Mockito.times(2)).rangeRead(eq(ObjectUtils.genKey(0, 0)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        verify(s3Operator, Mockito.times(0)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
+        // trigger read ahead
         when(objectManager.getObjects(eq(233L), eq(20L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(List.of(metadata2)));
         when(objectManager.getObjects(eq(233L), eq(30L), eq(-1L), eq(2))).thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
         s3BlockCache.read(233L, 15L, 16L, 10000).get();
-        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong());
+        verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
         verify(objectManager, timeout(1000).times(1)).getObjects(eq(233L), eq(30L), eq(-1L), eq(2));
 
-        // expect readahead already cached the records
+        // expect read ahead already cached the records
         List<StreamRecordBatch> records = s3BlockCache.read(233L, 20L, 30L, 10000).get().getRecords();
         assertEquals(1, records.size());
         assertEquals(20L, records.get(0).getBaseOffset());
