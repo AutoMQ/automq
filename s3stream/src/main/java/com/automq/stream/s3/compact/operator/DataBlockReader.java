@@ -68,7 +68,7 @@ public class DataBlockReader {
     }
 
     public void parseDataBlockIndex(long startPosition) {
-        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize(), ThrottleStrategy.THROTTLE)
+        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize(), ThrottleStrategy.THROTTLE_2)
                 .thenAccept(buf -> {
                     try {
                         indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
@@ -184,10 +184,10 @@ public class DataBlockReader {
 
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
         if (throttleBucket == null) {
-            return s3Operator.rangeRead(objectKey, start, end);
+            return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2);
         } else {
             return throttleBucket.asScheduler().consume(end - start + 1, bucketCbExecutor)
-                    .thenCompose(v -> s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE));
+                    .thenCompose(v -> s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2));
         }
     }
 

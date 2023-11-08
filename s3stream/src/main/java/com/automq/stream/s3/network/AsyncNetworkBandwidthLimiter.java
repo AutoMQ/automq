@@ -20,7 +20,8 @@ package com.automq.stream.s3.network;
 import com.automq.stream.s3.metrics.stats.NetworkMetricsStats;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
-import java.util.LinkedList;
+import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -45,7 +46,7 @@ public class AsyncNetworkBandwidthLimiter {
         this.type = type;
         this.availableTokens = tokenSize;
         this.maxTokens = maxTokenSize;
-        this.queuedCallbacks = new LinkedList<>();
+        this.queuedCallbacks = new PriorityQueue<>();
         this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
         this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
         this.callbackThreadPool.execute(() -> {
@@ -56,11 +57,10 @@ public class AsyncNetworkBandwidthLimiter {
                         condition.await();
                     }
                     while (!queuedCallbacks.isEmpty() && availableTokens > 0) {
-                        BucketItem head = queuedCallbacks.peek();
+                        BucketItem head = queuedCallbacks.poll();
                         availableTokens -= head.size;
                         logMetrics(head.size);
                         head.cf.complete(null);
-                        queuedCallbacks.poll();
                     }
                 } catch (InterruptedException ignored) {
                     break;
@@ -126,24 +126,21 @@ public class AsyncNetworkBandwidthLimiter {
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        switch (throttleStrategy) {
-            case BYPASS:
-                forceConsume(size);
-                cf.complete(null);
-                break;
-            case THROTTLE:
-                cf = consume(size);
-                break;
+        if (Objects.requireNonNull(throttleStrategy) == ThrottleStrategy.BYPASS) {
+            forceConsume(size);
+            cf.complete(null);
+        } else {
+            cf = consume(throttleStrategy.priority(), size);
         }
         return cf;
     }
 
-    private CompletableFuture<Void> consume(long size) {
+    private CompletableFuture<Void> consume(int priority, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         lock.lock();
         try {
             if (availableTokens < 0 || !queuedCallbacks.isEmpty()) {
-                queuedCallbacks.add(new BucketItem(size, cf));
+                queuedCallbacks.add(new BucketItem(priority, size, cf));
                 condition.signalAll();
             } else {
                 availableTokens -= size;
@@ -164,7 +161,11 @@ public class AsyncNetworkBandwidthLimiter {
         }
     }
 
-    record BucketItem(long size, CompletableFuture<Void> cf) {
+    record BucketItem(int priority, long size, CompletableFuture<Void> cf) implements Comparable<BucketItem> {
+        @Override
+        public int compareTo(BucketItem o) {
+            return Long.compare(priority, o.priority);
+        }
     }
 
     public enum Type {
