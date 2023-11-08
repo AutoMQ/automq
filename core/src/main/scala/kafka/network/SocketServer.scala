@@ -921,6 +921,7 @@ private[kafka] class Processor(
       () => apiVersionManager.apiVersionResponse(throttleTimeMs = 0)
     )
   )
+  private val orderedResponses = new ConcurrentHashMap[String, OrderedResponse]()
 
   // Visible to override for testing
   protected[network] def createSelector(channelBuilder: ChannelBuilder): KSelector = {
@@ -1218,6 +1219,7 @@ private[kafka] class Processor(
         }
         remove
       })
+      orderedResponses.remove(connectionId)
       //      inflightResponses.remove(connectionId).foreach(updateRequestMetrics)
       // AutoMQ for Kafka inject end
     }
@@ -1294,16 +1296,23 @@ private[kafka] class Processor(
     connId
   }
 
-  private val orderedResponses = new ConcurrentHashMap[String, OrderedResponse]()
 
-  class OrderedResponse(val nextCorrelationId: util.Queue[Int], val responses: util.Map[Int, RequestChannel.Response])
 
   private[network] def enqueueResponse(response: RequestChannel.Response): Unit = {
-    // TODO: remove request response status change
     // AutoMQ for Kafka inject start
     val connectionId = response.request.context.connectionId
-    val correlationId = response.request.context.correlationId()
+    val originHeader = response.request.context.originHeader()
+    val correlationId = if (originHeader != null) {
+      originHeader.correlationId()
+    } else {
+      response.request.header.correlationId()
+    }
     val orderedResponse = orderedResponses.get(connectionId)
+    if (orderedResponse == null) {
+      // connection closed
+      responseQueue.put(response)
+      return
+    }
     orderedResponse.synchronized {
       if (correlationId == orderedResponse.nextCorrelationId.peek()) {
         orderedResponse.nextCorrelationId.poll()
@@ -1375,6 +1384,8 @@ private[kafka] class Processor(
     }
   }
 }
+
+class OrderedResponse(val nextCorrelationId: util.Queue[Int], val responses: util.Map[Int, RequestChannel.Response])
 
 /**
  * Interface for connection quota configuration. Connection quotas can be configured at the
