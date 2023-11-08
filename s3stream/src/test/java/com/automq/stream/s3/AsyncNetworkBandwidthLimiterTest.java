@@ -49,7 +49,7 @@ public class AsyncNetworkBandwidthLimiterTest {
     @Test
     public void testThrottleConsume() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 1000, 100);
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE, 1);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE_1, 1);
         Assertions.assertEquals(9, bucket.getAvailableTokens());
         Assertions.assertTrue(cf.isDone());
     }
@@ -57,7 +57,7 @@ public class AsyncNetworkBandwidthLimiterTest {
     @Test
     public void testThrottleConsume2() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 1000, 100);
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE, 20);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE_1, 20);
         Assertions.assertEquals(-10, bucket.getAvailableTokens());
         cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
@@ -72,7 +72,7 @@ public class AsyncNetworkBandwidthLimiterTest {
         CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.BYPASS, 20);
         Assertions.assertEquals(-10, bucket.getAvailableTokens());
         Assertions.assertTrue(cf.isDone());
-        cf = bucket.consume(ThrottleStrategy.THROTTLE, 10);
+        cf = bucket.consume(ThrottleStrategy.THROTTLE_1, 10);
         Assertions.assertEquals(-10, bucket.getAvailableTokens());
         cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);

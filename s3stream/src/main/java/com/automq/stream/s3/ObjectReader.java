@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.api.ErrorCode;
 import com.automq.stream.api.StreamClientException;
@@ -73,7 +74,7 @@ public class ObjectReader implements AutoCloseable {
     }
 
     public CompletableFuture<DataBlock> read(DataBlockIndex block) {
-        CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition());
+        CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.THROTTLE_1);
         return rangeReadCf.thenApply(buf -> new DataBlock(buf, block.recordCount()));
     }
 
