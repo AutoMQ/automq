@@ -21,9 +21,10 @@ import kafka.network._
 import kafka.utils._
 import kafka.metrics.KafkaMetricsGroup
 
-import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.{BlockingQueue, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
 import com.yammer.metrics.core.Meter
+import kafka.network.RequestChannel.BaseRequest
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.utils.{KafkaThread, Time}
@@ -44,7 +45,7 @@ class KafkaRequestHandler(id: Int,
                           val totalHandlerThreads: AtomicInteger,
                           val requestChannel: RequestChannel,
                           apis: ApiRequestHandler,
-                          time: Time) extends Runnable with Logging {
+                          time: Time, val requestQueue: BlockingQueue[BaseRequest]) extends Runnable with Logging {
   this.logIdent = s"[Kafka Request Handler $id on Broker $brokerId], "
   private val shutdownComplete = new CountDownLatch(1)
   private val requestLocal = RequestLocal.withThreadConfinedCaching
@@ -58,7 +59,7 @@ class KafkaRequestHandler(id: Int,
       // time should be discounted by # threads.
       val startSelectTime = time.nanoseconds
 
-      val req = requestChannel.receiveRequest(300)
+      val req = requestQueue.poll(300, TimeUnit.MILLISECONDS)
       val endTime = time.nanoseconds
       val idleTime = endTime - startSelectTime
       aggregateIdleMeter.mark(idleTime / totalHandlerThreads.get)
@@ -118,28 +119,32 @@ class KafkaRequestHandlerPool(val brokerId: Int,
 
   this.logIdent = "[" + logAndThreadNamePrefix + " Kafka Request Handler on Broker " + brokerId + "], "
   val runnables = new mutable.ArrayBuffer[KafkaRequestHandler](numThreads)
+
+  var multiRequestQueue = requestChannel.registerNRequestHandler(numThreads)
+
   for (i <- 0 until numThreads) {
-    createHandler(i)
+    createHandler(i, multiRequestQueue.get(i))
   }
 
-  def createHandler(id: Int): Unit = synchronized {
-    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time)
+  def createHandler(id: Int, requestQueue: BlockingQueue[BaseRequest]): Unit = synchronized {
+    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, requestQueue)
     KafkaThread.daemon(logAndThreadNamePrefix + "-kafka-request-handler-" + id, runnables(id)).start()
   }
 
   def resizeThreadPool(newSize: Int): Unit = synchronized {
-    val currentSize = threadPoolSize.get
-    info(s"Resizing request handler thread pool size from $currentSize to $newSize")
-    if (newSize > currentSize) {
-      for (i <- currentSize until newSize) {
-        createHandler(i)
-      }
-    } else if (newSize < currentSize) {
-      for (i <- 1 to (currentSize - newSize)) {
-        runnables.remove(currentSize - i).stop()
-      }
-    }
-    threadPoolSize.set(newSize)
+    // TODO: resize the thread pool and keep the request order for per connection.
+//    val currentSize = threadPoolSize.get
+//    info(s"Resizing request handler thread pool size from $currentSize to $newSize")
+//    if (newSize > currentSize) {
+//      for (i <- currentSize until newSize) {
+//        createHandler(i)
+//      }
+//    } else if (newSize < currentSize) {
+//      for (i <- 1 to (currentSize - newSize)) {
+//        runnables.remove(currentSize - i).stop()
+//      }
+//    }
+//    threadPoolSize.set(newSize)
   }
 
   def shutdown(): Unit = synchronized {

@@ -887,7 +887,7 @@ private[kafka] class Processor(
   }
 
   private val newConnections = new ArrayBlockingQueue[SocketChannel](connectionQueueSize)
-  private val inflightResponses = mutable.Map[String, RequestChannel.Response]()
+  private val inflightResponses = new ConcurrentHashMap[Send, RequestChannel.Response]()
   private val responseQueue = new LinkedBlockingDeque[RequestChannel.Response]()
 
   private[kafka] val metricTags = mutable.LinkedHashMap(
@@ -1002,13 +1002,16 @@ private[kafka] class Processor(
             // There is no response to send to the client, we need to read more pipelined requests
             // that are sitting in the server's socket buffer
             updateRequestMetrics(response)
-            trace(s"Socket server received empty response to send, registering for read: $response")
+            if (isTraceEnabled) {
+              trace(s"Socket server received empty response to send, registering for read: $response")
+            }
+            // AutoMQ for Kafka inject start
             // Try unmuting the channel. If there was no quota violation and the channel has not been throttled,
             // it will be unmuted immediately. If the channel has been throttled, it will be unmuted only if the
             // throttling delay has already passed by now.
-            handleChannelMuteEvent(channelId, ChannelMuteEvent.RESPONSE_SENT)
-            tryUnmuteChannel(channelId)
-
+            //            handleChannelMuteEvent(channelId, ChannelMuteEvent.RESPONSE_SENT)
+            //            tryUnmuteChannel(channelId)
+            // AutoMQ for Kafka inject end
           case response: SendResponse =>
             sendResponse(response, response.responseSend)
           case response: CloseConnectionResponse =>
@@ -1045,8 +1048,9 @@ private[kafka] class Processor(
     // removed from the Selector after discarding any pending staged receives.
     // `openOrClosingChannel` can be None if the selector closed the connection because it was idle for too long
     if (openOrClosingChannel(connectionId).isDefined) {
-      selector.send(new NetworkSend(connectionId, responseSend))
-      inflightResponses += (connectionId -> response)
+      val send = new NetworkSend(connectionId, responseSend)
+      selector.send(send)
+      inflightResponses.put(send, response)
     }
   }
 
@@ -1105,9 +1109,17 @@ private[kafka] class Processor(
                       apiVersionsRequest.data.clientSoftwareVersion))
                   }
                 }
+                val ordering = orderedResponses.computeIfAbsent(connectionId, _ => new OrderedResponse(new ConcurrentLinkedQueue[Int](), new ConcurrentHashMap[Int, RequestChannel.Response]()))
+                ordering.nextCorrelationId.add(req.context.correlationId())
                 requestChannel.sendRequest(req)
-                selector.mute(connectionId)
-                handleChannelMuteEvent(connectionId, ChannelMuteEvent.REQUEST_RECEIVED)
+
+                // AutoMQ for Kafka inject start
+                // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
+
+                //                selector.mute(connectionId)
+                //                handleChannelMuteEvent(connectionId, ChannelMuteEvent.REQUEST_RECEIVED)
+
+                // AutoMQ for Kafka inject end
               }
             }
           case None =>
@@ -1127,7 +1139,8 @@ private[kafka] class Processor(
   private def processCompletedSends(): Unit = {
     selector.completedSends.forEach { send =>
       try {
-        val response = inflightResponses.remove(send.destinationId).getOrElse {
+        val response = inflightResponses.remove(send)
+        if (response == null) {
           throw new IllegalStateException(s"Send for ${send.destinationId} completed, but not in `inflightResponses`")
         }
         updateRequestMetrics(response)
@@ -1135,11 +1148,16 @@ private[kafka] class Processor(
         // Invoke send completion callback
         response.onComplete.foreach(onComplete => onComplete(send))
 
+        // AutoMQ for Kafka inject start
+        // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
+
         // Try unmuting the channel. If there was no quota violation and the channel has not been throttled,
         // it will be unmuted immediately. If the channel has been throttled, it will unmuted only if the throttling
         // delay has already passed by now.
-        handleChannelMuteEvent(send.destinationId, ChannelMuteEvent.RESPONSE_SENT)
-        tryUnmuteChannel(send.destinationId)
+        //        handleChannelMuteEvent(send.destinationId, ChannelMuteEvent.RESPONSE_SENT)
+        //        tryUnmuteChannel(send.destinationId)
+
+        // AutoMQ for Kafka inject end
       } catch {
         case e: Throwable => processChannelException(send.destinationId,
           s"Exception while processing completed send to ${send.destinationId}", e)
@@ -1160,7 +1178,7 @@ private[kafka] class Processor(
         val remoteHost = ConnectionId.fromString(connectionId).getOrElse {
           throw new IllegalStateException(s"connectionId has unexpected format: $connectionId")
         }.remoteHost
-        inflightResponses.remove(connectionId).foreach(updateRequestMetrics)
+        inflightResponses.entrySet().removeIf(e => connectionId.equals(e.getValue.request.context.connectionId))
         // the channel has been closed by the selector but the quotas still need to be updated
         connectionQuotas.dec(listenerName, InetAddress.getByName(remoteHost))
       } catch {
@@ -1192,7 +1210,16 @@ private[kafka] class Processor(
         connectionQuotas.dec(listenerName, address)
       selector.close(connectionId)
 
-      inflightResponses.remove(connectionId).foreach(response => updateRequestMetrics(response))
+      // AutoMQ for Kafka inject start
+      inflightResponses.entrySet().removeIf(e => {
+        val remove = connectionId.equals(e.getValue.request.context.connectionId)
+        if (remove) {
+          updateRequestMetrics(e.getValue)
+        }
+        remove
+      })
+      //      inflightResponses.remove(connectionId).foreach(updateRequestMetrics)
+      // AutoMQ for Kafka inject end
     }
   }
 
@@ -1267,9 +1294,31 @@ private[kafka] class Processor(
     connId
   }
 
+  private val orderedResponses = new ConcurrentHashMap[String, OrderedResponse]()
+
+  class OrderedResponse(val nextCorrelationId: util.Queue[Int], val responses: util.Map[Int, RequestChannel.Response])
+
   private[network] def enqueueResponse(response: RequestChannel.Response): Unit = {
-    responseQueue.put(response)
-    wakeup()
+    // TODO: remove request response status change
+    // AutoMQ for Kafka inject start
+    val connectionId = response.request.context.connectionId
+    val correlationId = response.request.context.correlationId()
+    val orderedResponse = orderedResponses.get(connectionId)
+    orderedResponse.synchronized {
+      if (correlationId == orderedResponse.nextCorrelationId.peek()) {
+        orderedResponse.nextCorrelationId.poll()
+        responseQueue.put(response)
+
+        while (!orderedResponse.nextCorrelationId.isEmpty && orderedResponse.responses.containsKey(orderedResponse.nextCorrelationId.peek())) {
+          val waitingResponse = orderedResponse.responses.remove(orderedResponse.nextCorrelationId.poll())
+          responseQueue.put(waitingResponse)
+        }
+        wakeup()
+      } else {
+        orderedResponse.responses.put(response.request.context.correlationId(), response)
+      }
+    }
+    // AutoMQ for Kafka inject end
   }
 
   private def dequeueResponse(): RequestChannel.Response = {

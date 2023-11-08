@@ -124,7 +124,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   val aclApis = new AclApis(authHelper, authorizer, requestHelper, "broker", config)
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
   // These two executors separate the handling of `produce` and `fetch` requests in case of throttling.
-  val appendingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
+  val appendingExecutors = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
   val fetchingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
   val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
 
@@ -775,17 +775,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         produceRequest.clearPartitionRecords()
         PRODUCE_TIME_HIST.update((System.nanoTime() - startNanos) / 1000)
       }
-
-      if (ElasticLogManager.enabled()) {
-        // The appending is done is a separate thread pool to avoid blocking io thread
-        appendingExecutors.submit(new Runnable {
-          override def run(): Unit = {
-            doAppendRecords()
-          }
-        })
-      } else {
-        doAppendRecords()
-      }
+      // TODO: quick throttle when underline permit is not enough
+      // TODO: isolate to a separate thread pool to avoid blocking io thread. Connection should be bind to certain async thread to keep the order
+      doAppendRecords()
       // AutoMQ for Kafka inject end
     }
   }
