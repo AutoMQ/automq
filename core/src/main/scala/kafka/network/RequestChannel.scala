@@ -38,6 +38,8 @@ import org.apache.kafka.common.requests._
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.kafka.common.utils.{Sanitizer, Time}
 
+import java.util
+import java.util.Collections
 import scala.annotation.nowarn
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -347,11 +349,19 @@ class RequestChannel(val queueSize: Int,
                      val metrics: RequestChannel.Metrics) extends KafkaMetricsGroup {
   import RequestChannel._
   private val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  private val multiRequestQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
+
   private val processors = new ConcurrentHashMap[Int, Processor]()
   val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
 
-  newGauge(requestQueueSizeMetricName, () => requestQueue.size)
+  newGauge(requestQueueSizeMetricName, () => {
+    if (multiRequestQueue.size() != 0) {
+      multiRequestQueue.stream().mapToInt(q => q.size()).sum()
+    } else {
+      requestQueue.size()
+    }
+  })
 
   newGauge(responseQueueSizeMetricName, () => {
     processors.values.asScala.foldLeft(0) {(total, processor) =>
@@ -367,6 +377,15 @@ class RequestChannel(val queueSize: Int,
       Map(ProcessorMetricTag -> processor.id.toString))
   }
 
+  def registerNRequestHandler(count: Int): util.List[BlockingQueue[BaseRequest]] = {
+    val queueSize = math.max(this.queueSize / count, 1)
+    for (i <- 0 until count) {
+      val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+      multiRequestQueue.add(requestQueue)
+    }
+    Collections.unmodifiableList(multiRequestQueue)
+  }
+
   def removeProcessor(processorId: Int): Unit = {
     processors.remove(processorId)
     removeMetric(responseQueueSizeMetricName, Map(ProcessorMetricTag -> processorId.toString))
@@ -374,7 +393,12 @@ class RequestChannel(val queueSize: Int,
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request): Unit = {
-    requestQueue.put(request)
+    if (multiRequestQueue.size() != 0) {
+      val requestQueue = multiRequestQueue.get(math.abs(request.context.connectionId.hashCode % multiRequestQueue.size()))
+      requestQueue.put(request)
+    } else {
+      requestQueue.put(request)
+    }
   }
 
   def closeConnection(
@@ -452,13 +476,14 @@ class RequestChannel(val queueSize: Int,
     }
   }
 
+  @Deprecated
   /** Get the next request or block until specified time has elapsed */
-  def receiveRequest(timeout: Long): RequestChannel.BaseRequest =
+  def receiveRequest(timeout: Long): RequestChannel.BaseRequest = {
+    if (multiRequestQueue.size() != 0) {
+      throw new IllegalStateException("it should receive by register returned queue");
+    }
     requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
-
-  /** Get the next request or block until there is one */
-  def receiveRequest(): RequestChannel.BaseRequest =
-    requestQueue.take()
+  }
 
   def updateErrorMetrics(apiKey: ApiKeys, errors: collection.Map[Errors, Integer]): Unit = {
     errors.forKeyValue { (error, count) =>
@@ -468,6 +493,7 @@ class RequestChannel(val queueSize: Int,
 
   def clear(): Unit = {
     requestQueue.clear()
+    multiRequestQueue.forEach(q => q.clear())
   }
 
   def shutdown(): Unit = {
@@ -475,7 +501,10 @@ class RequestChannel(val queueSize: Int,
     metrics.close()
   }
 
-  def sendShutdownRequest(): Unit = requestQueue.put(ShutdownRequest)
+  def sendShutdownRequest(): Unit = {
+    requestQueue.put(ShutdownRequest)
+    multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+  }
 
 }
 
