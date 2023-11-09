@@ -99,7 +99,7 @@ public class S3Storage implements Storage {
         this.maxWALCacheSize = config.walCacheSize();
         this.log = log;
         this.blockCache = blockCache;
-        this.logCache = new LogCache(config.walUploadThreshold(), config.maxStreamNumPerSST());
+        this.logCache = new LogCache(config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
         DirectByteBufAlloc.registerOOMHandlers(new LogCacheEvictOOMHandler());
         this.streamManager = streamManager;
         this.objectManager = objectManager;
@@ -358,7 +358,7 @@ public class S3Storage implements Storage {
     public synchronized CompletableFuture<Void> forceUpload(long streamId) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         List<CompletableFuture<Void>> inflightWALUploadTasks = new ArrayList<>(this.inflightWALUploadTasks);
-        // await inflight SST upload tasks to group force upload tasks.
+        // await inflight stream set object upload tasks to group force upload tasks.
         CompletableFuture.allOf(inflightWALUploadTasks.toArray(new CompletableFuture[0])).whenCompleteAsync((nil, ex) -> {
             logCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
             Optional<LogCache.LogCacheBlock> blockOpt = logCache.archiveCurrentBlockIfContains(streamId);
@@ -469,9 +469,9 @@ public class S3Storage implements Storage {
                 commitDeltaWALUpload(next);
             }
         }, backgroundExecutor).exceptionally(ex -> {
-            LOGGER.error("Unexpected exception when commit SST object", ex);
+            LOGGER.error("Unexpected exception when commit stream set object", ex);
             context.cf.completeExceptionally(ex);
-            System.err.println("Unexpected exception when commit SST object");
+            System.err.println("Unexpected exception when commit stream set object");
             //noinspection CallToPrintStackTrace
             ex.printStackTrace();
             System.exit(1);

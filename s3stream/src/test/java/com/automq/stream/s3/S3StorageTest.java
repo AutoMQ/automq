@@ -23,8 +23,8 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectResponse;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -75,8 +75,8 @@ public class S3StorageTest {
     @Test
     public void testAppend() throws Exception {
         Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
-        CommitSSTObjectResponse resp = new CommitSSTObjectResponse();
-        Mockito.when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
+        CommitStreamSetObjectResponse resp = new CommitStreamSetObjectResponse();
+        Mockito.when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
         CompletableFuture<Void> cf1 = storage.append(
                 new StreamRecordBatch(233, 1, 10, 1, random(100))
@@ -98,9 +98,9 @@ public class S3StorageTest {
         assertEquals(2, readRst.getRecords().size());
 
         storage.forceUpload(233L).get();
-        ArgumentCaptor<CommitSSTObjectRequest> commitArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
-        verify(objectManager).commitSSTObject(commitArg.capture());
-        CommitSSTObjectRequest commitReq = commitArg.getValue();
+        ArgumentCaptor<CommitStreamSetObjectRequest> commitArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager).commitStreamSetObject(commitArg.capture());
+        CommitStreamSetObjectRequest commitReq = commitArg.getValue();
         assertEquals(16L, commitReq.getObjectId());
         List<ObjectStreamRange> streamRanges = commitReq.getStreamRanges();
         assertEquals(2, streamRanges.size());
@@ -140,9 +140,9 @@ public class S3StorageTest {
         AtomicInteger objectCfIndex = new AtomicInteger();
         Mockito.doAnswer(invocation -> objectIdCfList.get(objectCfIndex.getAndIncrement())).when(objectManager).prepareObject(ArgumentMatchers.anyInt(), anyLong());
 
-        List<CompletableFuture<CommitSSTObjectResponse>> commitCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
+        List<CompletableFuture<CommitStreamSetObjectResponse>> commitCfList = List.of(new CompletableFuture<>(), new CompletableFuture<>());
         AtomicInteger commitCfIndex = new AtomicInteger();
-        Mockito.doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitSSTObject(any());
+        Mockito.doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitStreamSetObject(any());
 
         LogCache.LogCacheBlock logCacheBlock1 = new LogCache.LogCacheBlock(1024);
         logCacheBlock1.put(newRecord(233L, 10L));
@@ -162,15 +162,15 @@ public class S3StorageTest {
         objectIdCfList.get(0).complete(1L);
         // trigger next upload prepare objectId
         verify(objectManager, Mockito.timeout(1000).times(2)).prepareObject(ArgumentMatchers.anyInt(), anyLong());
-        verify(objectManager, Mockito.timeout(1000).times(1)).commitSSTObject(any());
+        verify(objectManager, Mockito.timeout(1000).times(1)).commitStreamSetObject(any());
 
         objectIdCfList.get(1).complete(2L);
         Thread.sleep(10);
-        verify(objectManager, Mockito.times(1)).commitSSTObject(any());
+        verify(objectManager, Mockito.times(1)).commitStreamSetObject(any());
 
-        commitCfList.get(0).complete(new CommitSSTObjectResponse());
-        verify(objectManager, Mockito.timeout(1000).times(2)).commitSSTObject(any());
-        commitCfList.get(1).complete(new CommitSSTObjectResponse());
+        commitCfList.get(0).complete(new CommitStreamSetObjectResponse());
+        verify(objectManager, Mockito.timeout(1000).times(2)).commitStreamSetObject(any());
+        commitCfList.get(1).complete(new CommitStreamSetObjectResponse());
         cf1.get(1, TimeUnit.SECONDS);
         cf2.get(1, TimeUnit.SECONDS);
     }

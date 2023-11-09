@@ -20,8 +20,8 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectResponse;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -69,7 +69,7 @@ public class DeltaWALUploadTaskTest {
     public void testUpload() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -95,12 +95,12 @@ public class DeltaWALUploadTaskTest {
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
-        ArgumentCaptor<CommitSSTObjectRequest> reqArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
-        verify(objectManager, times(1)).commitSSTObject(reqArg.capture());
+        ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
         // expect
         // - stream233 split
         // - stream234 write to one stream range
-        CommitSSTObjectRequest request = reqArg.getValue();
+        CommitStreamSetObjectRequest request = reqArg.getValue();
         assertEquals(10, request.getObjectId());
         assertEquals(1, request.getStreamRanges().size());
         assertEquals(234, request.getStreamRanges().get(0).getStreamId());
@@ -115,7 +115,7 @@ public class DeltaWALUploadTaskTest {
         assertEquals(16, streamObject.getEndOffset());
 
         {
-            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.SST);
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
             ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get().get(0);
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
@@ -151,7 +151,7 @@ public class DeltaWALUploadTaskTest {
     public void testUpload_oneStream() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
@@ -173,9 +173,9 @@ public class DeltaWALUploadTaskTest {
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
 
-        ArgumentCaptor<CommitSSTObjectRequest> reqArg = ArgumentCaptor.forClass(CommitSSTObjectRequest.class);
-        verify(objectManager, times(1)).commitSSTObject(reqArg.capture());
-        CommitSSTObjectRequest request = reqArg.getValue();
+        ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
+        CommitStreamSetObjectRequest request = reqArg.getValue();
         assertEquals(0, request.getObjectSize());
         assertEquals(0, request.getStreamRanges().size());
         assertEquals(1, request.getStreamObjects().size());
@@ -185,7 +185,7 @@ public class DeltaWALUploadTaskTest {
     public void test_emptyWALData() throws ExecutionException, InterruptedException, TimeoutException {
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
-        when(objectManager.commitSSTObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitSSTObjectResponse()));
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(

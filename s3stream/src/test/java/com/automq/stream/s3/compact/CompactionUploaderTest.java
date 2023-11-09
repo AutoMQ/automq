@@ -54,7 +54,7 @@ public class CompactionUploaderTest extends CompactionTestBase {
         objectManager = new MemoryMetadataManager();
         config = mock(Config.class);
         when(config.networkBaselineBandwidth()).thenReturn(500L);
-        when(config.sstCompactionUploadConcurrency()).thenReturn(3);
+        when(config.streamSetObjectCompactionUploadConcurrency()).thenReturn(3);
         when(config.objectPartSize()).thenReturn(100);
     }
 
@@ -67,18 +67,18 @@ public class CompactionUploaderTest extends CompactionTestBase {
                 new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 0, 30, 1));
         CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks);
         CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
-        CompletableFuture<Void> cf = uploader.chainWriteSSTObject(null, compactedObject);
+        CompletableFuture<Void> cf = uploader.chainWriteStreamSetObject(null, compactedObject);
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
             streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
         }
-        cf.thenAccept(v -> uploader.forceUploadSST()).join();
-        uploader.forceUploadSST().join();
+        cf.thenAccept(v -> uploader.forceUploadStreamSetObject()).join();
+        uploader.forceUploadStreamSetObject().join();
         long walObjectSize = uploader.complete();
         System.out.printf("write size: %d%n", walObjectSize);
         assertEquals(walObjectSize, calculateObjectSize(streamDataBlocks));
 
         //check s3 object
-        DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.SST), s3Operator);
+        DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.STREAM_SET), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
         assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
@@ -106,8 +106,8 @@ public class CompactionUploaderTest extends CompactionTestBase {
         CompactedObject compactedObject2 = new CompactedObject(CompactionType.COMPACT, streamDataBlocks2);
 
         CompactionUploader uploader = new CompactionUploader(objectManager, s3Operator, config);
-        CompletableFuture<Void> cf = uploader.chainWriteSSTObject(null, compactedObject);
-        cf = uploader.chainWriteSSTObject(cf, compactedObject2);
+        CompletableFuture<Void> cf = uploader.chainWriteStreamSetObject(null, compactedObject);
+        cf = uploader.chainWriteStreamSetObject(cf, compactedObject2);
 
         for (StreamDataBlock streamDataBlock : streamDataBlocks2) {
             streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
@@ -117,8 +117,8 @@ public class CompactionUploaderTest extends CompactionTestBase {
             streamDataBlock.getDataCf().complete(TestUtils.random(streamDataBlock.getBlockSize()));
         }
 
-        cf.thenAccept(v -> uploader.forceUploadSST()).join();
-        uploader.forceUploadSST().join();
+        cf.thenAccept(v -> uploader.forceUploadStreamSetObject()).join();
+        uploader.forceUploadStreamSetObject().join();
         long walObjectSize = uploader.complete();
 
         List<StreamDataBlock> expectedDataBlocks = new ArrayList<>(streamDataBlocks1);
@@ -126,7 +126,7 @@ public class CompactionUploaderTest extends CompactionTestBase {
         assertEquals(walObjectSize, calculateObjectSize(expectedDataBlocks));
 
         //check s3 object
-        DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.SST), s3Operator);
+        DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.STREAM_SET), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
         assertEquals(streamDataBlocksFromS3.size(), expectedDataBlocks.size());
