@@ -42,19 +42,19 @@ public class CompactionAnalyzer {
     private final Logger logger;
     private final long compactionCacheSize;
     private final long streamSplitSize;
-    private final int maxStreamNumInSST;
+    private final int maxStreamNumInStreamSet;
     private final int maxStreamObjectNum;
 
-    public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize, int maxStreamNumInSST, int maxStreamObjectNum) {
-        this(compactionCacheSize, streamSplitSize, maxStreamNumInSST, maxStreamObjectNum, new LogContext("[CompactionAnalyzer]"));
+    public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize, int maxStreamNumInStreamSet, int maxStreamObjectNum) {
+        this(compactionCacheSize, streamSplitSize, maxStreamNumInStreamSet, maxStreamObjectNum, new LogContext("[CompactionAnalyzer]"));
     }
 
     public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize,
-                              int maxStreamNumInSST, int maxStreamObjectNum, LogContext logContext) {
+                              int maxStreamNumInStreamSet, int maxStreamObjectNum, LogContext logContext) {
         this.logger = logContext.logger(CompactionAnalyzer.class);
         this.compactionCacheSize = compactionCacheSize;
         this.streamSplitSize = streamSplitSize;
-        this.maxStreamNumInSST = maxStreamNumInSST;
+        this.maxStreamNumInStreamSet = maxStreamNumInStreamSet;
         this.maxStreamObjectNum = maxStreamObjectNum;
     }
 
@@ -63,7 +63,7 @@ public class CompactionAnalyzer {
             return Collections.emptyList();
         }
         streamDataBlockMap = filterBlocksToCompact(streamDataBlockMap);
-        this.logger.info("{} SST objects to compact after filter", streamDataBlockMap.size());
+        this.logger.info("{} stream set objects to compact after filter", streamDataBlockMap.size());
         if (streamDataBlockMap.isEmpty()) {
             return Collections.emptyList();
         }
@@ -78,7 +78,7 @@ public class CompactionAnalyzer {
 
     /**
      * Group stream data blocks into different compaction type ({@link CompactionType#COMPACT} & {@link CompactionType#SPLIT})
-     * with compaction limitation ({@code maxStreamObjectNum} and {@code maxStreamNumInSST}).
+     * with compaction limitation ({@code maxStreamObjectNum} and {@code maxStreamNumInStreamSet}).
      *
      * @param streamDataBlockMap stream data blocks map, key: object id, value: stream data blocks
      * @param excludedObjectIds objects that are excluded from compaction because of compaction limitation
@@ -88,7 +88,7 @@ public class CompactionAnalyzer {
         List<StreamDataBlock> sortedStreamDataBlocks = sortStreamRangePositions(streamDataBlockMap);
         List<CompactedObjectBuilder> compactedObjectBuilders = new ArrayList<>();
         CompactionStats stats = null;
-        int streamNumInSST = -1;
+        int streamNumInStreamSet = -1;
         int streamObjectNum = -1;
         do {
             final Set<Long> objectsToRemove = new HashSet<>();
@@ -97,7 +97,7 @@ public class CompactionAnalyzer {
                     logger.warn("Stream object num {} exceeds limit {}, try to reduce number of objects to compact", streamObjectNum, maxStreamObjectNum);
                     addObjectsToRemove(CompactionType.SPLIT, compactedObjectBuilders, stats, objectsToRemove);
                 } else {
-                    logger.warn("Stream number {} exceeds limit {}, try to reduce number of objects to compact", streamNumInSST, maxStreamNumInSST);
+                    logger.warn("Stream number {} exceeds limit {}, try to reduce number of objects to compact", streamNumInStreamSet, maxStreamNumInStreamSet);
                     addObjectsToRemove(CompactionType.COMPACT, compactedObjectBuilders, stats, objectsToRemove);
                 }
                 if (objectsToRemove.isEmpty()) {
@@ -118,10 +118,10 @@ public class CompactionAnalyzer {
             }
             compactedObjectBuilders = compactObjects(sortedStreamDataBlocks);
             stats = CompactionStats.of(compactedObjectBuilders);
-            streamNumInSST = stats.getStreamRecord().streamNumInSST();
+            streamNumInStreamSet = stats.getStreamRecord().streamNumInStreamSet();
             streamObjectNum = stats.getStreamRecord().streamObjectNum();
-            logger.info("Current stream num in SST: {}, max: {}, stream object num: {}, max: {}", streamNumInSST, maxStreamNumInSST, streamObjectNum, maxStreamObjectNum);
-        } while (streamNumInSST > maxStreamNumInSST || streamObjectNum > maxStreamObjectNum);
+            logger.info("Current stream num in stream set: {}, max: {}, stream object num: {}, max: {}", streamNumInStreamSet, maxStreamNumInStreamSet, streamObjectNum, maxStreamObjectNum);
+        } while (streamNumInStreamSet > maxStreamNumInStreamSet || streamObjectNum > maxStreamObjectNum);
 
         return compactedObjectBuilders;
     }
@@ -129,7 +129,7 @@ public class CompactionAnalyzer {
     /**
      * Find objects to exclude from compaction.
      *
-     * @param compactionType {@link CompactionType#COMPACT} means to exclude objects to reduce stream number in SST;
+     * @param compactionType {@link CompactionType#COMPACT} means to exclude objects to reduce stream number in stream set object;
      *                       {@link CompactionType#SPLIT} means to exclude objects to reduce stream object number
      * @param compactedObjectBuilders all compacted object builders
      * @param stats compaction stats
@@ -192,7 +192,7 @@ public class CompactionAnalyzer {
     List<CompactionPlan> generatePlanWithCacheLimit(List<CompactedObjectBuilder> compactedObjectBuilders) {
         List<CompactionPlan> compactionPlans = new ArrayList<>();
         List<CompactedObject> compactedObjects = new ArrayList<>();
-        CompactedObjectBuilder compactedSSTObjectBuilder = null;
+        CompactedObjectBuilder compactedStreamSetObjectBuilder = null;
         long totalSize = 0L;
         for (int i = 0; i < compactedObjectBuilders.size(); ) {
             CompactedObjectBuilder compactedObjectBuilder = compactedObjectBuilders.get(i);
@@ -210,39 +210,39 @@ public class CompactionAnalyzer {
                     }
                     if (endOffset != 0) {
                         CompactedObjectBuilder builder = compactedObjectBuilder.split(0, endOffset);
-                        compactedSSTObjectBuilder = addOrMergeCompactedObject(builder, compactedObjects, compactedSSTObjectBuilder);
+                        compactedStreamSetObjectBuilder = addOrMergeCompactedObject(builder, compactedObjects, compactedStreamSetObjectBuilder);
                     }
                 }
-                compactionPlans.add(generateCompactionPlan(compactedObjects, compactedSSTObjectBuilder));
+                compactionPlans.add(generateCompactionPlan(compactedObjects, compactedStreamSetObjectBuilder));
                 compactedObjects.clear();
-                compactedSSTObjectBuilder = null;
+                compactedStreamSetObjectBuilder = null;
                 totalSize = 0;
             } else {
                 // object fits into cache size
-                compactedSSTObjectBuilder = addOrMergeCompactedObject(compactedObjectBuilder, compactedObjects, compactedSSTObjectBuilder);
+                compactedStreamSetObjectBuilder = addOrMergeCompactedObject(compactedObjectBuilder, compactedObjects, compactedStreamSetObjectBuilder);
                 totalSize += compactedObjectBuilder.totalBlockSize();
                 i++;
             }
 
         }
-        if (!compactedObjects.isEmpty() || compactedSSTObjectBuilder != null) {
-            compactionPlans.add(generateCompactionPlan(compactedObjects, compactedSSTObjectBuilder));
+        if (!compactedObjects.isEmpty() || compactedStreamSetObjectBuilder != null) {
+            compactionPlans.add(generateCompactionPlan(compactedObjects, compactedStreamSetObjectBuilder));
         }
         return compactionPlans;
     }
 
     private CompactedObjectBuilder addOrMergeCompactedObject(CompactedObjectBuilder compactedObjectBuilder,
                                                              List<CompactedObject> compactedObjects,
-                                                             CompactedObjectBuilder compactedSSTObjectBuilder) {
+                                                             CompactedObjectBuilder compactedStreamSetObjectBuilder) {
         if (compactedObjectBuilder.type() == CompactionType.SPLIT) {
             compactedObjects.add(compactedObjectBuilder.build());
         } else {
-            if (compactedSSTObjectBuilder == null) {
-                compactedSSTObjectBuilder = new CompactedObjectBuilder();
+            if (compactedStreamSetObjectBuilder == null) {
+                compactedStreamSetObjectBuilder = new CompactedObjectBuilder();
             }
-            compactedSSTObjectBuilder.merge(compactedObjectBuilder);
+            compactedStreamSetObjectBuilder.merge(compactedObjectBuilder);
         }
-        return compactedSSTObjectBuilder;
+        return compactedStreamSetObjectBuilder;
     }
 
     private boolean shouldSplitObject(CompactedObjectBuilder compactedObjectBuilder) {
@@ -251,9 +251,9 @@ public class CompactionAnalyzer {
         return true;
     }
 
-    private CompactionPlan generateCompactionPlan(List<CompactedObject> compactedObjects, CompactedObjectBuilder compactedSSTObject) {
-        if (compactedSSTObject != null) {
-            compactedObjects.add(compactedSSTObject.build());
+    private CompactionPlan generateCompactionPlan(List<CompactedObject> compactedObjects, CompactedObjectBuilder compactedStreamSetObject) {
+        if (compactedStreamSetObject != null) {
+            compactedObjects.add(compactedStreamSetObject.build());
         }
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = new HashMap<>();
         for (CompactedObject compactedObject : compactedObjects) {

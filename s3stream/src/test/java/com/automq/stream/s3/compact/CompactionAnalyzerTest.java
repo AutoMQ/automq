@@ -446,7 +446,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(300, 100, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         List<S3ObjectMetadata> s3ObjectMetadata = new ArrayList<>(S3_WAL_OBJECT_METADATA_LIST);
         s3ObjectMetadata.add(
-                new S3ObjectMetadata(100, S3ObjectType.SST,
+                new S3ObjectMetadata(100, S3ObjectType.STREAM_SET,
                         List.of(new StreamOffsetRange(STREAM_2, 1000, 1200)), System.currentTimeMillis(),
                         System.currentTimeMillis(), 512, 100));
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();

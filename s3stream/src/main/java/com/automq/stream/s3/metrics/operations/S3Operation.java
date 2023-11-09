@@ -62,7 +62,7 @@ public enum S3Operation {
 
     /* S3 object operations start */
     PREPARE_OBJECT(S3MetricsType.S3Object, "prepare"),
-    COMMIT_SST_OBJECT(S3MetricsType.S3Object, "commit_sst_object"),
+    COMMIT_STREAM_SET_OBJECT(S3MetricsType.S3Object, "commit_stream_set_object"),
     COMPACTED_OBJECT(S3MetricsType.S3Object, "compacted_object"),
     COMMIT_STREAM_OBJECT(S3MetricsType.S3Object, "commit_stream_object"),
     GET_OBJECTS(S3MetricsType.S3Object, "get_objects"),

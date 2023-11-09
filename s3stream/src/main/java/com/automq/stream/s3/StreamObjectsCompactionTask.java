@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.objects.CommitStreamObjectRequest;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
@@ -137,14 +137,14 @@ public class StreamObjectsCompactionTask {
                     .close()
                     .thenApply(v -> {
                         smallSizeCopyWriteCount.set(objectCopier.smallSizeCopyWriteCount());
-                        return new CommitStreamObjectRequest(objId, objectCopier.size(), stream.streamId(), startOffset, endOffset, sourceObjectIds);
+                        return new CompactStreamObjectRequest(objId, objectCopier.size(), stream.streamId(), startOffset, endOffset, sourceObjectIds);
                     });
             }, executor)
             .thenComposeAsync(request -> {
                 if (s3ObjectLogEnabled) {
                     s3ObjectLogger.trace("{}", request);
                 }
-                return objectManager.commitStreamObject(request).thenApply(resp -> {
+                return objectManager.compactStreamObject(request).thenApply(resp -> {
                     LOGGER.debug("{} stream objects compaction task with range [{}, {}) is done, objects {} => object {}, size {}",
                             logIdent, startOffset, endOffset, request.getSourceObjectIds(), request.getObjectId(), request.getObjectSize());
                     return new CompactionResult(stream.streamId(), startOffset, endOffset, request.getSourceObjectIds(),

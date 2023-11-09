@@ -18,9 +18,9 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectResponse;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -92,7 +92,7 @@ class StreamObjectsCompactionTaskTest {
         AtomicLong objectIdAlloc = new AtomicLong(100);
         when(objectManager.prepareObject(anyInt(), anyLong())).thenAnswer(
                 invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement()));
-        when(objectManager.commitStreamObject(ArgumentMatchers.any(CommitStreamObjectRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
+        when(objectManager.compactStreamObject(ArgumentMatchers.any(CompactStreamObjectRequest.class))).thenReturn(CompletableFuture.completedFuture(null));
 
         // trigger a stream object compaction task
         task.prepare();
@@ -101,7 +101,7 @@ class StreamObjectsCompactionTaskTest {
         // 40L > stream.startOffset, expecting no changes to startSearchingOffset
         assertEquals(stream.startOffset(), task.getNextStartSearchingOffset());
 
-        verify(objectManager, times(2)).commitStreamObject(ArgumentMatchers.any(CommitStreamObjectRequest.class));
+        verify(objectManager, times(2)).compactStreamObject(ArgumentMatchers.any(CompactStreamObjectRequest.class));
 
         List<StreamObjectsCompactionTask.CompactionResult> compactionResults = task.getCompactionResults();
 
@@ -144,7 +144,7 @@ class StreamObjectsCompactionTaskTest {
             assertTrue(e.getCause() instanceof RuntimeException, "should throw RuntimeException");
         }
         verify(objectManager, times(1)).prepareObject(anyInt(), anyLong());
-        verify(objectManager, times(0)).commitStreamObject(ArgumentMatchers.any(CommitStreamObjectRequest.class));
+        verify(objectManager, times(0)).compactStreamObject(ArgumentMatchers.any(CompactStreamObjectRequest.class));
 
         // The first group's compaction failed due to stream's closure, the second group should not be handled.
         when(stream.isClosed()).thenReturn(true);
@@ -155,7 +155,7 @@ class StreamObjectsCompactionTaskTest {
             assertTrue(e.getCause() instanceof StreamObjectsCompactionTask.HaltException, "should throw HaltException");
         }
         verify(objectManager, times(1)).prepareObject(anyInt(), anyLong());
-        verify(objectManager, times(0)).commitStreamObject(ArgumentMatchers.any(CommitStreamObjectRequest.class));
+        verify(objectManager, times(0)).compactStreamObject(ArgumentMatchers.any(CompactStreamObjectRequest.class));
 
     }
 
@@ -172,12 +172,12 @@ class StreamObjectsCompactionTaskTest {
     List<S3ObjectMetadata> prepareRawStreamObjects(long startObjectId, long streamId,
                                                    List<List<Long>> objectsDetails) throws ExecutionException, InterruptedException {
         AtomicLong objectIdAlloc = new AtomicLong(startObjectId);
-        Stack<CommitSSTObjectRequest> commitSSTObjectRequests = new Stack<>();
+        Stack<CommitStreamSetObjectRequest> commitStreamSetObjectRequests = new Stack<>();
         Mockito.doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager)
                 .prepareObject(anyInt(), anyLong());
-        when(objectManager.commitSSTObject(ArgumentMatchers.any())).thenAnswer(invocation -> {
-            commitSSTObjectRequests.push(invocation.getArgument(0));
-            return CompletableFuture.completedFuture(new CommitSSTObjectResponse());
+        when(objectManager.commitStreamSetObject(ArgumentMatchers.any())).thenAnswer(invocation -> {
+            commitStreamSetObjectRequests.push(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(new CommitStreamSetObjectResponse());
         });
 
         List<S3ObjectMetadata> metadataList = new ArrayList<>();
@@ -200,7 +200,7 @@ class StreamObjectsCompactionTaskTest {
             deltaWALUploadTask.upload().get();
             deltaWALUploadTask.commit().get();
 
-            CommitSSTObjectRequest request = commitSSTObjectRequests.pop();
+            CommitStreamSetObjectRequest request = commitStreamSetObjectRequests.pop();
             assertEquals(startObjectId + i * 2L, request.getObjectId());
 
             assertEquals(1, request.getStreamObjects().size());

@@ -18,7 +18,7 @@
 package com.automq.stream.s3.objects;
 
 /**
- * Commit SST object response.
+ * Commit stream set object response.
  */
-public class CommitSSTObjectResponse {
+public class CommitStreamSetObjectResponse {
 }

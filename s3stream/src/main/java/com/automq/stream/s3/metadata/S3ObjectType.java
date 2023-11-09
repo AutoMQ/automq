@@ -19,12 +19,12 @@ package com.automq.stream.s3.metadata;
 
 public enum S3ObjectType {
     /**
-     * Sorted stream table object
+     * STREAM_SET object which contains multiple streams' records
      */
-    SST,
+    STREAM_SET,
 
     /**
-     * STREAM object
+     * STREAM object which only contains one stream's records.
      */
     STREAM,
 

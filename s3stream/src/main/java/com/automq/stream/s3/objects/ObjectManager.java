@@ -37,26 +37,26 @@ public interface ObjectManager {
     CompletableFuture<Long> prepareObject(int count, long ttl);
 
     /**
-     * Commit SST object.
+     * Commit stream set object.
      *
-     * @param request {@link CommitSSTObjectRequest}
-     * @return {@link CommitSSTObjectResponse}
+     * @param request {@link CommitStreamSetObjectRequest}
+     * @return {@link CommitStreamSetObjectResponse}
      */
-    CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest request);
+    CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest request);
 
     /**
-     * Commit stream object. When the source object has no reference, then delete it.
+     * Compact stream object. When the source object has no reference, then delete it.
      *
-     * @param request {@link CommitStreamObjectRequest}
+     * @param request {@link CompactStreamObjectRequest}
      */
-    CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request);
+    CompletableFuture<Void> compactStreamObject(CompactStreamObjectRequest request);
 
     /**
      * Get objects by stream range.
      * When obj1 contains stream0 <code>[0, 100) [200, 300)</code> and obj2 contains stream1 <code>[100, 200)</code>,
      * expect getObjects(streamId, 0, 300) return <code>[obj1, obj2, obj1]</code>
      * <ul>
-     *     <li> Concern two types of objects: stream object and SST object.
+     *     <li> Concern two types of objects: stream object and stream set object.
      *     <li> Returned objects must be continuous of stream range.
      *     <li> Returned objects aren't physical object concept, they are logical object concept.
      *     (regard each returned object-metadata as a slice of object)
@@ -70,15 +70,15 @@ public interface ObjectManager {
     CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
-     * Get current server SST objects.
-     * When server is starting, server need server SST objects to recover.
+     * Get current server stream set objects.
+     * When server is starting, server need server stream set objects to recover.
      */
     CompletableFuture<List<S3ObjectMetadata>> getServerObjects();
 
     /**
      * Get stream objects by stream range.
      * <ul>
-     *      <li> Only concern about stream objects, ignore SST objects.
+     *      <li> Only concern about stream objects, ignore stream set objects.
      *      <li> Returned stream objects can be discontinuous of stream range.
      *      <li> Ranges of the returned stream objects are <strong>in ascending order</strong>.
      * </ul>

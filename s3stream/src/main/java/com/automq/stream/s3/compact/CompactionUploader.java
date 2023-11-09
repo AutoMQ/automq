@@ -38,28 +38,28 @@ public class CompactionUploader {
     private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
     private final ObjectManager objectManager;
     private final ExecutorService streamObjectUploadPool;
-    private final ExecutorService sstObjectUploadPool;
+    private final ExecutorService streamSetObjectUploadPool;
     private final S3Operator s3Operator;
     private final Config kafkaConfig;
-    private CompletableFuture<Long> sstObjectIdCf = null;
-    private DataBlockWriter sstObjectWriter = null;
+    private CompletableFuture<Long> streamSetObjectIdCf = null;
+    private DataBlockWriter streamSetObjectWriter = null;
 
     public CompactionUploader(ObjectManager objectManager, S3Operator s3Operator, Config kafkaConfig) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.kafkaConfig = kafkaConfig;
-        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.sstCompactionUploadConcurrency(),
+        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.streamSetObjectCompactionUploadConcurrency(),
                 ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
-        this.sstObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
-                ThreadUtils.createThreadFactory("compaction-sst-object-uploader-%d", true), LOGGER);
+        this.streamSetObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("compaction-stream-set-object-uploader-%d", true), LOGGER);
     }
 
     public void stop() {
-        this.sstObjectUploadPool.shutdown();
+        this.streamSetObjectUploadPool.shutdown();
         this.streamObjectUploadPool.shutdown();
     }
 
-    public CompletableFuture<Void> chainWriteSSTObject(CompletableFuture<Void> prev, CompactedObject compactedObject) {
+    public CompletableFuture<Void> chainWriteStreamSetObject(CompletableFuture<Void> prev, CompactedObject compactedObject) {
         if (compactedObject.type() != CompactionType.COMPACT) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("wrong compacted object type, expected COMPACT"));
         }
@@ -68,29 +68,29 @@ public class CompactionUploader {
                             .stream()
                             .map(StreamDataBlock::getDataCf)
                             .toArray(CompletableFuture[]::new))
-                    .thenComposeAsync(v -> prepareObjectAndWrite(compactedObject), sstObjectUploadPool);
+                    .thenComposeAsync(v -> prepareObjectAndWrite(compactedObject), streamSetObjectUploadPool);
         }
         return prev.thenComposeAsync(v ->
                 CompletableFuture.allOf(compactedObject.streamDataBlocks()
                         .stream()
                         .map(StreamDataBlock::getDataCf)
                         .toArray(CompletableFuture[]::new))
-                .thenComposeAsync(vv -> prepareObjectAndWrite(compactedObject), sstObjectUploadPool));
+                .thenComposeAsync(vv -> prepareObjectAndWrite(compactedObject), streamSetObjectUploadPool));
     }
 
     private CompletableFuture<Void> prepareObjectAndWrite(CompactedObject compactedObject) {
-        if (sstObjectIdCf == null) {
-            sstObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES));
+        if (streamSetObjectIdCf == null) {
+            streamSetObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES));
         }
-        return sstObjectIdCf.thenAcceptAsync(objectId -> {
-            if (sstObjectWriter == null) {
-                sstObjectWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.objectPartSize());
+        return streamSetObjectIdCf.thenAcceptAsync(objectId -> {
+            if (streamSetObjectWriter == null) {
+                streamSetObjectWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.objectPartSize());
             }
             for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
-                sstObjectWriter.write(streamDataBlock);
+                streamSetObjectWriter.write(streamDataBlock);
             }
         }, streamObjectUploadPool).exceptionally(ex -> {
-            LOGGER.error("prepare and write SST object failed", ex);
+            LOGGER.error("prepare and write stream set object failed", ex);
             return null;
         });
     }
@@ -129,30 +129,30 @@ public class CompactionUploader {
                 });
     }
 
-    public CompletableFuture<Void> forceUploadSST() {
-        if (sstObjectWriter == null) {
+    public CompletableFuture<Void> forceUploadStreamSetObject() {
+        if (streamSetObjectWriter == null) {
             return CompletableFuture.completedFuture(null);
         }
-        return sstObjectWriter.forceUpload();
+        return streamSetObjectWriter.forceUpload();
     }
 
     public long complete() {
-        if (sstObjectWriter == null) {
+        if (streamSetObjectWriter == null) {
             return 0L;
         }
-        sstObjectWriter.close().join();
-        return sstObjectWriter.size();
+        streamSetObjectWriter.close().join();
+        return streamSetObjectWriter.size();
     }
 
     public void reset() {
-        sstObjectIdCf = null;
-        sstObjectWriter = null;
+        streamSetObjectIdCf = null;
+        streamSetObjectWriter = null;
     }
 
-    public long getSSTObjectId() {
-        if (sstObjectIdCf == null) {
+    public long getStreamSetObjectId() {
+        if (streamSetObjectIdCf == null) {
             return -1;
         }
-        return sstObjectIdCf.getNow(-1L);
+        return streamSetObjectIdCf.getNow(-1L);
     }
 }

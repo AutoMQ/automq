@@ -22,9 +22,9 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectResponse;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final AtomicLong objectIdAlloc = new AtomicLong();
     private final Map<Long, List<S3ObjectMetadata>> streamObjects = new HashMap<>();
-    private final Map<Long, S3ObjectMetadata> sstObjects = new HashMap<>();
+    private final Map<Long, S3ObjectMetadata> streamSetObjects = new HashMap<>();
 
     @Override
     public synchronized CompletableFuture<Long> prepareObject(int count, long ttl) {
@@ -52,20 +52,20 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public synchronized CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest request) {
+    public synchronized CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest request) {
         long dataTimeInMs = System.currentTimeMillis();
         if (!request.getCompactedObjectIds().isEmpty()) {
             for (long id : request.getCompactedObjectIds()) {
-                dataTimeInMs = Math.min(sstObjects.get(id).dataTimeInMs(), dataTimeInMs);
-                sstObjects.remove(id);
+                dataTimeInMs = Math.min(streamSetObjects.get(id).dataTimeInMs(), dataTimeInMs);
+                streamSetObjects.remove(id);
             }
         }
         long now = System.currentTimeMillis();
         if (request.getObjectId() != ObjectUtils.NOOP_OBJECT_ID) {
             S3ObjectMetadata object = new S3ObjectMetadata(
-                    request.getObjectId(), S3ObjectType.SST, request.getStreamRanges().stream().map(MemoryMetadataManager::to).collect(Collectors.toList()),
+                    request.getObjectId(), S3ObjectType.STREAM_SET, request.getStreamRanges().stream().map(MemoryMetadataManager::to).collect(Collectors.toList()),
                     dataTimeInMs, now, request.getObjectSize(), request.getOrderId());
-            sstObjects.put(request.getObjectId(), object);
+            streamSetObjects.put(request.getObjectId(), object);
         }
         for (StreamObject r : request.getStreamObjects()) {
             List<S3ObjectMetadata> objects = streamObjects.computeIfAbsent(r.getStreamId(), id -> new LinkedList<>());
@@ -76,12 +76,12 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                     )
             );
         }
-        request.getCompactedObjectIds().forEach(sstObjects::remove);
-        return CompletableFuture.completedFuture(new CommitSSTObjectResponse());
+        request.getCompactedObjectIds().forEach(streamSetObjects::remove);
+        return CompletableFuture.completedFuture(new CommitStreamSetObjectResponse());
     }
 
     @Override
-    public synchronized CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest request) {
+    public synchronized CompletableFuture<Void> compactStreamObject(CompactStreamObjectRequest request) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
@@ -92,7 +92,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public synchronized CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
-        return CompletableFuture.completedFuture(new LinkedList<>(sstObjects.values()));
+        return CompletableFuture.completedFuture(new LinkedList<>(streamSetObjects.values()));
     }
 
     @Override

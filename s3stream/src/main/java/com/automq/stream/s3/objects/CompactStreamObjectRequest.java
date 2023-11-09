@@ -19,7 +19,7 @@ package com.automq.stream.s3.objects;
 
 import java.util.List;
 
-public class CommitStreamObjectRequest {
+public class CompactStreamObjectRequest {
     private long objectId;
     private long objectSize;
     private long streamId;
@@ -30,7 +30,7 @@ public class CommitStreamObjectRequest {
      */
     private List<Long> sourceObjectIds;
 
-    public CommitStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds) {
+    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.streamId = streamId;
