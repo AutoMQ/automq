@@ -27,7 +27,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -73,7 +73,7 @@ public class CompactionManager {
     private final int maxObjectNumToCompact;
     private final int compactionInterval;
     private final int forceSplitObjectPeriod;
-    private final int maxStreamNumPerSST;
+    private final int maxStreamNumPerStreamSetObject;
     private final int maxStreamObjectNumPerCommit;
     private final long networkBandwidth;
     private final boolean s3ObjectLogEnable;
@@ -88,24 +88,24 @@ public class CompactionManager {
         this.objectManager = objectManager;
         this.streamManager = streamManager;
         this.s3Operator = s3Operator;
-        this.compactionInterval = config.sstCompactionInterval();
-        this.forceSplitObjectPeriod = config.sstCompactionForceSplitPeriod();
-        this.maxObjectNumToCompact = config.sstCompactionMaxObjectNum();
+        this.compactionInterval = config.streamSetObjectCompactionInterval();
+        this.forceSplitObjectPeriod = config.streamSetObjectCompactionForceSplitPeriod();
+        this.maxObjectNumToCompact = config.streamSetObjectCompactionMaxObjectNum();
         this.s3ObjectLogEnable = config.objectLogEnable();
         this.networkBandwidth = config.networkBaselineBandwidth();
         this.uploader = new CompactionUploader(objectManager, s3Operator, config);
-        this.compactionCacheSize = config.sstCompactionCacheSize();
-        long streamSplitSize = config.sstCompactionStreamSplitSize();
-        maxStreamNumPerSST = config.maxStreamNumPerSST();
+        this.compactionCacheSize = config.streamSetObjectCompactionCacheSize();
+        long streamSplitSize = config.streamSetObjectCompactionStreamSplitSize();
+        maxStreamNumPerStreamSetObject = config.maxStreamNumPerStreamSetObject();
         maxStreamObjectNumPerCommit = config.maxStreamObjectNumPerCommit();
-        this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerSST,
+        this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerStreamSetObject,
                 maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.brokerId())));
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("schedule-compact-executor"));
         this.compactThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("object-compaction-manager"));
         this.forceSplitThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("force-split-executor"));
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +
-                        "streamSplitSize: {} bytes, forceSplitObjectPeriod: {} min, maxObjectNumToCompact: {}, maxStreamNumInSST: {}, maxStreamObjectNum: {}",
-                compactionInterval, compactionCacheSize, streamSplitSize, forceSplitObjectPeriod, maxObjectNumToCompact, maxStreamNumPerSST, maxStreamObjectNumPerCommit);
+                        "streamSplitSize: {} bytes, forceSplitObjectPeriod: {} min, maxObjectNumToCompact: {}, maxStreamNumInStreamSet: {}, maxStreamObjectNum: {}",
+                compactionInterval, compactionCacheSize, streamSplitSize, forceSplitObjectPeriod, maxObjectNumToCompact, maxStreamNumPerStreamSetObject, maxStreamObjectNumPerCommit);
     }
 
     public void start() {
@@ -148,7 +148,7 @@ public class CompactionManager {
     }
 
     private void compact(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectMetadataList) {
-        logger.info("Get {} SST objects from metadata", objectMetadataList.size());
+        logger.info("Get {} stream set objects from metadata", objectMetadataList.size());
         if (objectMetadataList.isEmpty()) {
             return;
         }
@@ -166,29 +166,29 @@ public class CompactionManager {
                 expectReadBytesPerSec, compactionInterval);
 
         if (!objectsToForceSplit.isEmpty()) {
-            // split SST objects to seperated stream objects
+            // split stream set objects to seperated stream objects
             forceSplitObjects(streamMetadataList, objectsToForceSplit);
         }
-        // compact SST objects
+        // compact stream set objects
         compactObjects(streamMetadataList, objectsToCompact);
     }
 
     private void forceSplitObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToForceSplit) {
-        logger.info("Force split {} SST objects", objectsToForceSplit.size());
+        logger.info("Force split {} stream set objects", objectsToForceSplit.size());
         TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         for (int i = 0; i < objectsToForceSplit.size(); i++) {
             timerUtil.reset();
             S3ObjectMetadata objectToForceSplit = objectsToForceSplit.get(i);
             logger.info("Force split progress {}/{}, splitting object {}, object size {}", i + 1, objectsToForceSplit.size(),
                     objectToForceSplit.objectId(), objectToForceSplit.objectSize());
-            CommitSSTObjectRequest request = buildSplitRequest(streamMetadataList, objectToForceSplit);
+            CommitStreamSetObjectRequest request = buildSplitRequest(streamMetadataList, objectToForceSplit);
             if (request == null) {
                 continue;
             }
             logger.info("Build force split request for object {} complete, generated {} stream objects, time cost: {} ms, start committing objects",
                     objectToForceSplit.objectId(), request.getStreamObjects().size(), timerUtil.elapsed());
             timerUtil.reset();
-            objectManager.commitSSTObject(request)
+            objectManager.commitStreamSetObject(request)
                     .thenAccept(resp -> {
                         logger.info("Commit force split request succeed, time cost: {} ms", timerUtil.elapsed());
                         if (s3ObjectLogEnable) {
@@ -213,20 +213,20 @@ public class CompactionManager {
             // compact latest S3 objects first when number of objects to compact exceeds maxObjectNumToCompact
             objectsToCompact = objectsToCompact.subList(0, maxObjectNumToCompact);
         }
-        logger.info("Compact {} SST objects", objectsToCompact.size());
+        logger.info("Compact {} stream set objects", objectsToCompact.size());
         TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
-        CommitSSTObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
+        CommitStreamSetObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
         if (request == null) {
             return;
         }
         if (request.getCompactedObjectIds().isEmpty()) {
-            logger.info("No SST objects to compact");
+            logger.info("No stream set objects to compact");
             return;
         }
-        logger.info("Build compact request for {} SST objects complete, SST object id: {}, SST object size: {}, stream object num: {}, time cost: {}, start committing objects",
+        logger.info("Build compact request for {} stream set objects complete, stream set object id: {}, stresam set object size: {}, stream object num: {}, time cost: {}, start committing objects",
                 request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), timerUtil.elapsed());
         timerUtil.reset();
-        objectManager.commitSSTObject(request)
+        objectManager.commitStreamSetObject(request)
                 .thenAccept(resp -> {
                     logger.info("Commit compact request succeed, time cost: {} ms", timerUtil.elapsed());
                     if (s3ObjectLogEnable) {
@@ -250,15 +250,15 @@ public class CompactionManager {
                         .filter(o -> o.type() == CompactionType.SPLIT)
                         .count())
                 .sum();
-        long sstObjectSize = compactionPlans.stream()
+        long streamSetObjectSize = compactionPlans.stream()
                 .mapToLong(p -> p.compactedObjects().stream()
                         .filter(o -> o.type() == CompactionType.COMPACT)
                         .mapToLong(CompactedObject::size)
                         .sum())
                 .sum();
-        int sstObjectNum = sstObjectSize > 0 ? 1 : 0;
-        logger.info("Compaction plans: expect to generate {} Stream Object, {} SST object with size {} in {} iterations, objects excluded: {}",
-                streamObjectNum, sstObjectNum, sstObjectSize, compactionPlans.size(), excludedObjectIds);
+        int streamSetObjectNum = streamSetObjectSize > 0 ? 1 : 0;
+        logger.info("Compaction plans: expect to generate {} Stream Object, {} stream set object with size {} in {} iterations, objects excluded: {}",
+                streamObjectNum, streamSetObjectNum, streamSetObjectSize, compactionPlans.size(), excludedObjectIds);
     }
 
     public CompletableFuture<Void> forceSplitAll() {
@@ -269,14 +269,14 @@ public class CompactionManager {
                     .map(StreamOffsetRange::getStreamId).distinct().toList();
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
                 if (objectMetadataList.isEmpty()) {
-                    logger.info("No SST objects to force split");
+                    logger.info("No stream set objects to force split");
                     return;
                 }
                 forceSplitObjects(streamMetadataList, objectMetadataList);
                 cf.complete(null);
             }, forceSplitThreadPool);
         }, forceSplitThreadPool).exceptionally(ex -> {
-            logger.error("Error while force split all SST objects ", ex);
+            logger.error("Error while force split all stream set objects ", ex);
             cf.completeExceptionally(ex);
             return null;
         }));
@@ -285,13 +285,13 @@ public class CompactionManager {
     }
 
     /**
-     * Split specified SST object into stream objects.
+     * Split specified stream set object into stream objects.
      *
      * @param streamMetadataList metadata of opened streams
-     * @param objectMetadata SST object to split
+     * @param objectMetadata stream set object to split
      * @return List of CompletableFuture of StreamObject
      */
-    private Collection<CompletableFuture<StreamObject>> splitSSTObject(List<StreamMetadata> streamMetadataList, S3ObjectMetadata objectMetadata) {
+    private Collection<CompletableFuture<StreamObject>> splitStreamSetObject(List<StreamMetadata> streamMetadataList, S3ObjectMetadata objectMetadata) {
         if (objectMetadata == null) {
             return new ArrayList<>();
         }
@@ -379,14 +379,14 @@ public class CompactionManager {
         return groupedDataBlocks.stream().map(Pair::getValue).collect(Collectors.toList());
     }
 
-    CommitSSTObjectRequest buildSplitRequest(List<StreamMetadata> streamMetadataList, S3ObjectMetadata objectToSplit) {
-        Collection<CompletableFuture<StreamObject>> cfs = splitSSTObject(streamMetadataList, objectToSplit);
+    CommitStreamSetObjectRequest buildSplitRequest(List<StreamMetadata> streamMetadataList, S3ObjectMetadata objectToSplit) {
+        Collection<CompletableFuture<StreamObject>> cfs = splitStreamSetObject(streamMetadataList, objectToSplit);
         if (cfs.isEmpty()) {
             logger.error("Force split object {} failed, no stream object generated", objectToSplit.objectId());
             return null;
         }
 
-        CommitSSTObjectRequest request = new CommitSSTObjectRequest();
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
         request.setObjectId(-1L);
 
         // wait for all force split objects to complete
@@ -407,11 +407,11 @@ public class CompactionManager {
         return request;
     }
 
-    CommitSSTObjectRequest buildCompactRequest(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToCompact) {
-        CommitSSTObjectRequest request = new CommitSSTObjectRequest();
+    CommitStreamSetObjectRequest buildCompactRequest(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToCompact) {
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
 
         Set<Long> compactedObjectIds = new HashSet<>();
-        logger.info("{} SST objects as compact candidates, total compaction size: {}",
+        logger.info("{} stream set objects as compact candidates, total compaction size: {}",
                 objectsToCompact.size(), objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum());
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, objectsToCompact, s3Operator);
         long now = System.currentTimeMillis();
@@ -435,7 +435,7 @@ public class CompactionManager {
     }
 
     boolean sanityCheckCompactionResult(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> compactedObjects,
-                                        CommitSSTObjectRequest request) {
+                                        CommitStreamSetObjectRequest request) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
                 .collect(Collectors.toMap(StreamMetadata::getStreamId, e -> e));
         Map<Long, S3ObjectMetadata> objectMetadataMap = compactedObjects.stream()
@@ -504,13 +504,13 @@ public class CompactionManager {
         return mergedList;
     }
 
-    Map<Boolean, List<S3ObjectMetadata>> convertS3Objects(List<S3ObjectMetadata> s3SSTObjectMetadata) {
-        return new HashMap<>(s3SSTObjectMetadata.stream()
+    Map<Boolean, List<S3ObjectMetadata>> convertS3Objects(List<S3ObjectMetadata> streamSetObjectMetadata) {
+        return new HashMap<>(streamSetObjectMetadata.stream()
                 .collect(Collectors.partitioningBy(e -> (System.currentTimeMillis() - e.dataTimeInMs())
                         >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod))));
     }
 
-    void executeCompactionPlans(CommitSSTObjectRequest request, List<CompactionPlan> compactionPlans, List<S3ObjectMetadata> s3ObjectMetadata)
+    void executeCompactionPlans(CommitStreamSetObjectRequest request, List<CompactionPlan> compactionPlans, List<S3ObjectMetadata> s3ObjectMetadata)
             throws IllegalArgumentException {
         if (compactionPlans.isEmpty()) {
             return;
@@ -523,7 +523,7 @@ public class CompactionManager {
             CompactionPlan compactionPlan = compactionPlans.get(i);
             long totalSize = compactionPlan.streamDataBlocksMap().values().stream().flatMap(List::stream)
                     .mapToLong(StreamDataBlock::getBlockSize).sum();
-            logger.info("Compaction progress {}/{}, read from {} SSTs, total size: {}", i + 1, compactionPlans.size(),
+            logger.info("Compaction progress {}/{}, read from {} stream set objects, total size: {}", i + 1, compactionPlans.size(),
                     compactionPlan.streamDataBlocksMap().size(), totalSize);
             for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
@@ -532,21 +532,21 @@ public class CompactionManager {
                 reader.readBlocks(streamDataBlocks, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
-            CompletableFuture<Void> sstObjectCF = null;
+            CompletableFuture<Void> streamSetObjectCF = null;
             for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
                 if (compactedObject.type() == CompactionType.COMPACT) {
                     sortedStreamDataBlocks.addAll(compactedObject.streamDataBlocks());
-                    sstObjectCF = uploader.chainWriteSSTObject(sstObjectCF, compactedObject);
+                    streamSetObjectCF = uploader.chainWriteStreamSetObject(streamSetObjectCF, compactedObject);
                 } else {
                     streamObjectCFList.add(uploader.writeStreamObject(compactedObject));
                 }
             }
 
-            // wait for all stream objects and SST object part to be uploaded
+            // wait for all stream objects and stream set object part to be uploaded
             try {
-                if (sstObjectCF != null) {
+                if (streamSetObjectCF != null) {
                     // wait for all writes done
-                    sstObjectCF.thenAccept(v -> uploader.forceUploadSST()).join();
+                    streamSetObjectCF.thenAccept(v -> uploader.forceUploadStreamSetObject()).join();
                 }
                 streamObjectCFList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
             } catch (Exception ex) {
@@ -558,8 +558,8 @@ public class CompactionManager {
         }
         List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRange(sortedStreamDataBlocks);
         objectStreamRanges.forEach(request::addStreamRange);
-        request.setObjectId(uploader.getSSTObjectId());
-        // set SST object id to be the first object id of compacted objects
+        request.setObjectId(uploader.getStreamSetObjectId());
+        // set stream set object id to be the first object id of compacted objects
         request.setOrderId(s3ObjectMetadata.get(0).objectId());
         request.setObjectSize(uploader.complete());
         uploader.reset();

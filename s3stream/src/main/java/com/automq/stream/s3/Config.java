@@ -46,13 +46,13 @@ public class Config {
     private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
     private long controllerRequestRetryBaseDelayMs = 500;
     private long brokerEpoch = 0L;
-    private int sstCompactionInterval = 20;
-    private long sstCompactionCacheSize = 200 * 1024 * 1024;
-    private int sstCompactionUploadConcurrency = 8;
-    private long sstCompactionStreamSplitSize = 16 * 1024 * 1024;
-    private int sstCompactionForceSplitPeriod = 120;
-    private int sstCompactionMaxObjectNum = 500;
-    private int maxStreamNumPerSST = 10000;
+    private int streamSetObjectCompactionInterval = 20;
+    private long streamSetObjectCompactionCacheSize = 200 * 1024 * 1024;
+    private int streamSetObjectCompactionUploadConcurrency = 8;
+    private long streamSetObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
+    private int streamSetObjectCompactionForceSplitPeriod = 120;
+    private int streamSetObjectCompactionMaxObjectNum = 500;
+    private int maxStreamNumPerStreamSetObject = 10000;
     private int maxStreamObjectNumPerCommit = 10000;
     private boolean mockEnable = false;
     private boolean objectLogEnable = false;
@@ -160,32 +160,32 @@ public class Config {
         return brokerEpoch;
     }
 
-    public int sstCompactionInterval() {
-        return sstCompactionInterval;
+    public int streamSetObjectCompactionInterval() {
+        return streamSetObjectCompactionInterval;
     }
 
-    public long sstCompactionCacheSize() {
-        return sstCompactionCacheSize;
+    public long streamSetObjectCompactionCacheSize() {
+        return streamSetObjectCompactionCacheSize;
     }
 
-    public int sstCompactionUploadConcurrency() {
-        return sstCompactionUploadConcurrency;
+    public int streamSetObjectCompactionUploadConcurrency() {
+        return streamSetObjectCompactionUploadConcurrency;
     }
 
-    public long sstCompactionStreamSplitSize() {
-        return sstCompactionStreamSplitSize;
+    public long streamSetObjectCompactionStreamSplitSize() {
+        return streamSetObjectCompactionStreamSplitSize;
     }
 
-    public int sstCompactionForceSplitPeriod() {
-        return sstCompactionForceSplitPeriod;
+    public int streamSetObjectCompactionForceSplitPeriod() {
+        return streamSetObjectCompactionForceSplitPeriod;
     }
 
-    public int sstCompactionMaxObjectNum() {
-        return sstCompactionMaxObjectNum;
+    public int streamSetObjectCompactionMaxObjectNum() {
+        return streamSetObjectCompactionMaxObjectNum;
     }
 
-    public int maxStreamNumPerSST() {
-        return maxStreamNumPerSST;
+    public int maxStreamNumPerStreamSetObject() {
+        return maxStreamNumPerStreamSetObject;
     }
 
     public int maxStreamObjectNumPerCommit() {
@@ -341,43 +341,43 @@ public class Config {
         return this;
     }
 
-    public Config sstCompactionInterval(int s3WALObjectCompactionInterval) {
-        this.sstCompactionInterval = s3WALObjectCompactionInterval;
+    public Config streamSetObjectCompactionInterval(int streamSetObjectCompactionInterval) {
+        this.streamSetObjectCompactionInterval = streamSetObjectCompactionInterval;
         return this;
     }
 
-    public Config sstCompactionCacheSize(long sstCompactionCacheSize) {
-        this.sstCompactionCacheSize = sstCompactionCacheSize;
+    public Config streamSetObjectCompactionCacheSize(long streamSetObjectCompactionCacheSize) {
+        this.streamSetObjectCompactionCacheSize = streamSetObjectCompactionCacheSize;
         return this;
     }
 
-    public Config sstCompactionUploadConcurrency(int sstCompactionUploadConcurrency) {
-        this.sstCompactionUploadConcurrency = sstCompactionUploadConcurrency;
+    public Config streamSetObjectCompactionUploadConcurrency(int streamSetObjectCompactionUploadConcurrency) {
+        this.streamSetObjectCompactionUploadConcurrency = streamSetObjectCompactionUploadConcurrency;
         return this;
     }
 
-    public Config sstCompactionStreamSplitSize(long sstCompactionStreamSplitSize) {
-        this.sstCompactionStreamSplitSize = sstCompactionStreamSplitSize;
+    public Config streamSetObjectCompactionStreamSplitSize(long streamSetObjectCompactionStreamSplitSize) {
+        this.streamSetObjectCompactionStreamSplitSize = streamSetObjectCompactionStreamSplitSize;
         return this;
     }
 
-    public Config sstCompactionForceSplitPeriod(int sstCompactionForceSplitPeriod) {
-        this.sstCompactionForceSplitPeriod = sstCompactionForceSplitPeriod;
+    public Config streamSetObjectCompactionForceSplitPeriod(int streamSetObjectCompactionForceSplitPeriod) {
+        this.streamSetObjectCompactionForceSplitPeriod = streamSetObjectCompactionForceSplitPeriod;
         return this;
     }
 
-    public Config sstCompactionMaxObjectNum(int sstCompactionMaxObjectNum) {
-        this.sstCompactionMaxObjectNum = sstCompactionMaxObjectNum;
+    public Config streamSetObjectCompactionMaxObjectNum(int streamSetObjectCompactionMaxObjectNum) {
+        this.streamSetObjectCompactionMaxObjectNum = streamSetObjectCompactionMaxObjectNum;
         return this;
     }
 
-    public Config maxStreamNumPerSST(int maxStreamNumPerSST) {
-        this.maxStreamNumPerSST = maxStreamNumPerSST;
+    public Config maxStreamNumPerStreamSetObject(int maxStreamNumPerStreamSetObject) {
+        this.maxStreamNumPerStreamSetObject = maxStreamNumPerStreamSetObject;
         return this;
     }
 
-    public Config maxStreamObjectNumPerCommit(int s3MaxStreamObjectNumPerCommit) {
-        this.maxStreamObjectNumPerCommit = s3MaxStreamObjectNumPerCommit;
+    public Config maxStreamObjectNumPerCommit(int maxStreamObjectNumPerCommit) {
+        this.maxStreamObjectNumPerCommit = maxStreamObjectNumPerCommit;
         return this;
     }
 

@@ -35,7 +35,7 @@ public class CompactionStats {
     }
 
     public static CompactionStats of(List<CompactedObjectBuilder> compactedObjectBuilders) {
-        int streamNumInSST = 0;
+        int streamNumInStreamSet = 0;
         int streamObjectNum = 0;
         Map<Long, Integer> tmpObjectRecordMap = new HashMap<>();
         for (CompactedObjectBuilder compactedObjectBuilder : compactedObjectBuilders) {
@@ -47,10 +47,10 @@ public class CompactionStats {
             if (compactedObjectBuilder.type() == CompactionType.SPLIT && !compactedObjectBuilder.streamDataBlocks().isEmpty()) {
                 streamObjectNum++;
             } else if (compactedObjectBuilder.type() == CompactionType.COMPACT) {
-                streamNumInSST += compactedObjectBuilder.totalStreamNum();
+                streamNumInStreamSet += compactedObjectBuilder.totalStreamNum();
             }
         }
-        return new CompactionStats(new CompactionStreamRecord(streamNumInSST, streamObjectNum), tmpObjectRecordMap);
+        return new CompactionStats(new CompactionStreamRecord(streamNumInStreamSet, streamObjectNum), tmpObjectRecordMap);
     }
 
     public CompactionStreamRecord getStreamRecord() {
@@ -61,7 +61,7 @@ public class CompactionStats {
         return s3ObjectToCompactedObjectNumMap;
     }
 
-    public record CompactionStreamRecord(int streamNumInSST, int streamObjectNum) {
+    public record CompactionStreamRecord(int streamNumInStreamSet, int streamObjectNum) {
 
     }
 }
