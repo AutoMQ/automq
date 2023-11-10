@@ -28,6 +28,11 @@ Compared to Apache Kafka, AutoMQ for Apache Kafka offers the following advantage
 
 3. Simplified Management: No need to manage disks; It automatically performs second-level partition load balancing across Brokers.
 
+## S3Stream
+AutoMQ for Kafka is built on S3Stream directly, a streaming library based on object storage. Please refer to [S3Stream](https://docs.automq.com/zh/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d) for more architecture details.
+
+AutomMQ for Kafka and AutoMQ for RocketMQ share the same codebase of S3Stream, so please refer to [AutoMQ RocketMQ](https://github.com/AutoMQ/automq-for-rocketmq/tree/main/s3stream) for the source code.
+
 ## Quick Start
 
 ### Local Run
