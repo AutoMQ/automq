@@ -140,8 +140,20 @@ private[log] class ProducerStateEntry(val producerId: Long,
   def findDuplicateBatch(batch: RecordBatch): Option[BatchMetadata] = {
     if (batch.producerEpoch != producerEpoch)
        None
-    else
-      batchWithSequenceRange(batch.baseSequence, batch.lastSequence)
+    else {
+      // AutoMQ for Kafka inject start
+      val metadata = batchWithSequenceRange(batch.baseSequence, batch.lastSequence)
+      if (metadata.isEmpty) {
+        if (this.firstSeq <= batch.baseSequence() && this.lastSeq >= batch.lastSequence()) {
+          throw new DuplicateSequenceException(
+            String.format("The batch is duplicated, broker cached metadata is %s, the record batch is [%s, %s]",
+              this, batch.baseSequence(), batch.lastSequence())
+          )
+        }
+      }
+      // AutoMQ for Kafka inject end
+      metadata
+    }
   }
 
   // Return the batch metadata of the cached batch having the exact sequence range, if any.
@@ -435,12 +447,17 @@ object ProducerStateManager {
     struct.set(CrcField, 0L) // we'll fill this after writing the entries
     val entriesArray = entries.map {
       case (producerId, entry) =>
+        // AutoMQ for Kafka inject start
+        // encode cached entries sequence range to the snapshot, so we can detect the duplicated message after partition reassignment
+        // TODO: final solution, encoded full cached entries to the snapshot
+        val offsetDelta = entry.lastSeq - entry.firstSeq
+        // AutoMQ for Kafka inject end
         val producerEntryStruct = struct.instance(ProducerEntriesField)
         producerEntryStruct.set(ProducerIdField, producerId)
           .set(ProducerEpochField, entry.producerEpoch)
           .set(LastSequenceField, entry.lastSeq)
           .set(LastOffsetField, entry.lastDataOffset)
-          .set(OffsetDeltaField, entry.lastOffsetDelta)
+          .set(OffsetDeltaField, offsetDelta)
           .set(TimestampField, entry.lastTimestamp)
           .set(CoordinatorEpochField, entry.coordinatorEpoch)
           .set(CurrentTxnFirstOffsetField, entry.currentTxnFirstOffset.getOrElse(-1L))
