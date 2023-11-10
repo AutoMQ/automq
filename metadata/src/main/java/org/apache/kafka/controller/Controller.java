@@ -32,8 +32,8 @@ import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
@@ -460,9 +460,9 @@ public interface Controller extends AclMutator, AutoCloseable {
     /**
      * Broker trys to commit a SST object.
      */
-    CompletableFuture<CommitSSTObjectResponseData> commitSSTObject(
+    CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(
         ControllerRequestContext context,
-        CommitSSTObjectRequestData request
+        CommitStreamSetObjectRequestData request
     );
 
     /**

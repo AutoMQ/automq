@@ -20,7 +20,7 @@
     "controller",
     "broker"
   ],
-  "name": "CommitSSTObjectRequest",
+  "name": "CommitStreamSetObjectRequest",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [

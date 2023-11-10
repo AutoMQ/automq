@@ -19,24 +19,25 @@ package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 
-public class CommitSSTObjectResponse extends AbstractResponse {
+public class CommitStreamSetObjectResponse extends AbstractResponse {
 
 
-    private final CommitSSTObjectResponseData data;
+    private final CommitStreamSetObjectResponseData data;
 
-    public CommitSSTObjectResponse(CommitSSTObjectResponseData data) {
-        super(ApiKeys.COMMIT_SST_OBJECT);
+    public CommitStreamSetObjectResponse(CommitStreamSetObjectResponseData data) {
+        super(ApiKeys.COMMIT_STREAM_SET_OBJECT);
         this.data = data;
     }
 
     @Override
-    public CommitSSTObjectResponseData data() {
+    public CommitStreamSetObjectResponseData data() {
         return data;
     }
 
@@ -55,8 +56,8 @@ public class CommitSSTObjectResponse extends AbstractResponse {
         data.setThrottleTimeMs(throttleTimeMs);
     }
 
-    public static CommitSSTObjectResponse parse(ByteBuffer buffer, short version) {
-        return new CommitSSTObjectResponse(new CommitSSTObjectResponseData(
+    public static CommitStreamSetObjectResponse parse(ByteBuffer buffer, short version) {
+        return new CommitStreamSetObjectResponse(new CommitStreamSetObjectResponseData(
             new ByteBufferAccessor(buffer), version));
     }
     

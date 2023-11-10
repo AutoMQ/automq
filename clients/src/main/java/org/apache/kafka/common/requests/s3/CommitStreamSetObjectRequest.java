@@ -18,26 +18,26 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
 
-public class CommitSSTObjectRequest extends AbstractRequest {
+public class CommitStreamSetObjectRequest extends AbstractRequest {
 
-    public static class Builder extends AbstractRequest.Builder<CommitSSTObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<CommitStreamSetObjectRequest> {
 
-        private final CommitSSTObjectRequestData data;
-        public Builder(CommitSSTObjectRequestData data) {
-            super(ApiKeys.COMMIT_SST_OBJECT);
+        private final CommitStreamSetObjectRequestData data;
+        public Builder(CommitStreamSetObjectRequestData data) {
+            super(ApiKeys.COMMIT_STREAM_SET_OBJECT);
             this.data = data;
         }
 
         @Override
-        public CommitSSTObjectRequest build(short version) {
-            return new CommitSSTObjectRequest(data, version);
+        public CommitStreamSetObjectRequest build(short version) {
+            return new CommitStreamSetObjectRequest(data, version);
         }
 
         @Override
@@ -45,29 +45,29 @@ public class CommitSSTObjectRequest extends AbstractRequest {
             return data.toString();
         }
     }
-    private final CommitSSTObjectRequestData data;
+    private final CommitStreamSetObjectRequestData data;
 
-    public CommitSSTObjectRequest(CommitSSTObjectRequestData data, short version) {
-        super(ApiKeys.COMMIT_SST_OBJECT, version);
+    public CommitStreamSetObjectRequest(CommitStreamSetObjectRequestData data, short version) {
+        super(ApiKeys.COMMIT_STREAM_SET_OBJECT, version);
         this.data = data;
     }
 
     @Override
-    public CommitSSTObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
+    public CommitStreamSetObjectResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
-        CommitSSTObjectResponseData response = new CommitSSTObjectResponseData()
+        CommitStreamSetObjectResponseData response = new CommitStreamSetObjectResponseData()
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
-        return new CommitSSTObjectResponse(response);
+        return new CommitStreamSetObjectResponse(response);
     }
 
     @Override
-    public CommitSSTObjectRequestData data() {
+    public CommitStreamSetObjectRequestData data() {
         return data;
     }
 
-    public static CommitSSTObjectRequest parse(ByteBuffer buffer, short version) {
-        return new CommitSSTObjectRequest(new CommitSSTObjectRequestData(
+    public static CommitStreamSetObjectRequest parse(ByteBuffer buffer, short version) {
+        return new CommitStreamSetObjectRequest(new CommitStreamSetObjectRequestData(
             new ByteBufferAccessor(buffer), version), version);
     }
 

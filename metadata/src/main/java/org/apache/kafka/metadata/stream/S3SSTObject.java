@@ -99,7 +99,7 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
     }
 
     public S3ObjectType objectType() {
-        return S3ObjectType.SST;
+        return S3ObjectType.STREAM_SET;
     }
 
     public long orderId() {

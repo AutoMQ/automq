@@ -24,10 +24,10 @@ import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamReques
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData.ObjectStreamRange;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData.StreamObject;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.StreamObject;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
@@ -315,12 +315,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH0)
             .setStartOffset(0L)
             .setEndOffset(100L));
-        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
             .setObjectId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitSSTObjectResponseData> result3 = manager.commitSSTObject(commitRequest0);
+        ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
         // verify range's end offset advanced and SST object is added
@@ -336,12 +336,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH0)
             .setStartOffset(100)
             .setEndOffset(200));
-        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
             .setObjectId(1L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest1);
+        ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
         // 4. node_0 close stream_0 with epoch_0 and node_1 open stream_0 with epoch_1
         ControllerResult<CloseStreamResponse> result7 = manager.closeStream(BROKER0, BROKER_EPOCH0,
@@ -360,12 +360,12 @@ public class StreamControlManagerTest {
             .setStreamEpoch(EPOCH1)
             .setStartOffset(100)
             .setEndOffset(300));
-        CommitSSTObjectRequestData commitRequest6 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest6 = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectId(6L)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges6);
-        ControllerResult<CommitSSTObjectResponseData> result10 = manager.commitSSTObject(commitRequest6);
+        ControllerResult<CommitStreamSetObjectResponseData> result10 = manager.commitStreamSetObject(commitRequest6);
         assertEquals(Errors.NONE.code(), result10.response().errorCode());
         replay(manager, result10.records());
         // verify range's end offset advanced and SST object is added
@@ -440,13 +440,13 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(200L));
-        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges0);
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest0);
+        ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -474,13 +474,13 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(200L)
                 .setEndOffset(300L));
-        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges1);
-        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitSSTObject(commitRequest1);
+        ControllerResult<CommitStreamSetObjectResponseData> result5 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result5.response().errorCode());
         replay(manager, result5.records());
 
@@ -508,27 +508,27 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(300L));
-        CommitSSTObjectRequestData commitRequest2 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest2 = new CommitStreamSetObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L, 10L));
-        ControllerResult<CommitSSTObjectResponseData> result6 = manager.commitSSTObject(commitRequest2);
+        ControllerResult<CommitStreamSetObjectResponseData> result6 = manager.commitStreamSetObject(commitRequest2);
         assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
         // 7. commit a second level SST object which compact wal_0 and wal_1
-        commitRequest2 = new CommitSSTObjectRequestData()
+        commitRequest2 = new CommitStreamSetObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setObjectStreamRanges(streamRanges2)
             .setCompactedObjectIds(List.of(0L, 1L));
-        result6 = manager.commitSSTObject(commitRequest2);
+        result6 = manager.commitStreamSetObject(commitRequest2);
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         replay(manager, result6.records());
 
@@ -568,7 +568,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(100L));
-        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
@@ -582,7 +582,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result4 = manager.commitSSTObject(commitRequest0);
+        ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
 
@@ -607,7 +607,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(99L)
                 .setEndOffset(200L));
-        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
             .setObjectId(1L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
@@ -621,7 +621,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result5 = manager.commitSSTObject(commitRequest1);
+        ControllerResult<CommitStreamSetObjectResponseData> result5 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.OFFSET_NOT_MATCHED.code(), result5.response().errorCode());
     }
 
@@ -643,7 +643,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0L)
                 .setEndOffset(100L));
-        CommitSSTObjectRequestData commitRequest0 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
             .setObjectId(0L)
             .setOrderId(0L)
             .setNodeId(BROKER0)
@@ -657,7 +657,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(0L)
                     .setEndOffset(200L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result0 = manager.commitSSTObject(commitRequest0);
+        ControllerResult<CommitStreamSetObjectResponseData> result0 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
         long object0DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(1L).dataTimeInMs();
@@ -669,7 +669,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(100L)
                 .setEndOffset(200L));
-        CommitSSTObjectRequestData commitRequest1 = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
             .setObjectId(2L)
             .setOrderId(1L)
             .setNodeId(BROKER0)
@@ -683,7 +683,7 @@ public class StreamControlManagerTest {
                     .setStartOffset(200L)
                     .setEndOffset(400L)
             ));
-        ControllerResult<CommitSSTObjectResponseData> result1 = manager.commitSSTObject(commitRequest1);
+        ControllerResult<CommitStreamSetObjectResponseData> result1 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
         long object1DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(3L).dataTimeInMs();
@@ -743,7 +743,7 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
         // 2. commit SST object with stream0-[0, 10)
-        CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(0)
@@ -753,10 +753,10 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
                 .setEndOffset(10)));
-        ControllerResult<CommitSSTObjectResponseData> result = manager.commitSSTObject(requestData);
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 3. commit SST object with stream0-[10, 20), and stream1-[0, 10)
-        requestData = new CommitSSTObjectRequestData()
+        requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(1)
@@ -770,10 +770,10 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(0)
                 .setEndOffset(10)));
-        result = manager.commitSSTObject(requestData);
+        result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 4. commit with a stream object with stream0-[20, 40)
-        requestData = new CommitSSTObjectRequestData()
+        requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
             .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
@@ -784,13 +784,13 @@ public class StreamControlManagerTest {
                 .setObjectId(2)
                 .setStartOffset(20)
                 .setEndOffset(40)));
-        result = manager.commitSSTObject(requestData);
+        result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 5. node0 close stream0 and node1 open stream0
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
         // 6. commit SST object with stream0-[40, 70)
-        requestData = new CommitSSTObjectRequestData()
+        requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(3)
@@ -800,7 +800,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH1)
                 .setStartOffset(40)
                 .setEndOffset(70)));
-        result = manager.commitSSTObject(requestData);
+        result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
     }
 
@@ -865,7 +865,7 @@ public class StreamControlManagerTest {
         assertEquals(0, node1Metadata.sstObjects().size());
 
         // 5. commit SST object with stream0-[70, 100)
-        CommitSSTObjectRequestData requestData = new CommitSSTObjectRequestData()
+        CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
             .setObjectId(4)
@@ -875,7 +875,7 @@ public class StreamControlManagerTest {
                 .setStreamEpoch(EPOCH0)
                 .setStartOffset(70)
                 .setEndOffset(100)));
-        ControllerResult<CommitSSTObjectResponseData> result = manager.commitSSTObject(requestData);
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
 
         // 6. verify

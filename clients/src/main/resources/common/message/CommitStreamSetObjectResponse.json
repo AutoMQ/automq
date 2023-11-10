@@ -16,7 +16,7 @@
 {
   "apiKey": 506,
   "type": "response",
-  "name": "CommitSSTObjectResponse",
+  "name": "CommitStreamSetObjectResponse",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [

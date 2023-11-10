@@ -25,10 +25,10 @@ import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamReques
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData.ObjectStreamRange;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData.StreamObject;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.ObjectStreamRange;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.StreamObject;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
@@ -690,8 +690,8 @@ public class StreamControlManager {
      * </ul>
      */
     @SuppressWarnings("all")
-    public ControllerResult<CommitSSTObjectResponseData> commitSSTObject(CommitSSTObjectRequestData data) {
-        CommitSSTObjectResponseData resp = new CommitSSTObjectResponseData();
+    public ControllerResult<CommitStreamSetObjectResponseData> commitStreamSetObject(CommitStreamSetObjectRequestData data) {
+        CommitStreamSetObjectResponseData resp = new CommitStreamSetObjectResponseData();
         long objectId = data.objectId();
         int nodeId = data.nodeId();
         long nodeEpoch = data.nodeEpoch();
@@ -702,7 +702,7 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitSSTObject] nodeId={}'s epoch={} check failed, code: {}",
+            log.warn("[CommitStreamSetObject] nodeId={}'s epoch={} check failed, code: {}",
                 nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }

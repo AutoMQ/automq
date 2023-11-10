@@ -130,7 +130,7 @@ public final class S3StreamsMetadataImage {
         }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).limit(limit).collect(Collectors.toCollection(ArrayList::new));
     }
 
-    public List<S3SSTObject> getSSTObjects(int nodeId) {
+    public List<S3SSTObject> getStreamSetObjects(int nodeId) {
         NodeS3SSTMetadataImage wal = nodeSSTMetadata.get(nodeId);
         if (wal == null) {
             return Collections.emptyList();
