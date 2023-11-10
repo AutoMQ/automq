@@ -191,8 +191,8 @@ public class S3Storage implements Storage {
             if (!records.isEmpty()) {
                 long startOffset = records.get(0).getBaseOffset();
                 long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
-                if (startOffset > expectedStartOffset) {
-                    throw new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %s endOffset=%s from controller, " +
+                if (startOffset != expectedStartOffset) {
+                    throw new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
                             "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
                 }
             }
