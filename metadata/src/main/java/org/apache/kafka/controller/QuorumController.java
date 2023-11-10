@@ -47,8 +47,8 @@ import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
@@ -110,14 +110,14 @@ import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
-import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
@@ -1519,11 +1519,11 @@ public final class QuorumController implements Controller {
             case REMOVE_S3_STREAM_OBJECT_RECORD:
                 streamControlManager.replay((RemoveS3StreamObjectRecord) message);
                 break;
-            case S3_SSTOBJECT_RECORD:
-                streamControlManager.replay((S3SSTObjectRecord) message);
+            case S3_STREAM_SET_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamSetObjectRecord) message);
                 break;
-            case REMOVE_SSTOBJECT_RECORD:
-                streamControlManager.replay((RemoveSSTObjectRecord) message);
+            case REMOVE_STREAM_SET_OBJECT_RECORD:
+                streamControlManager.replay((RemoveStreamSetObjectRecord) message);
                 break;
             case S3_OBJECT_RECORD:
                 s3ObjectControlManager.replay((S3ObjectRecord) message);
@@ -2394,9 +2394,9 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<CommitSSTObjectResponseData> commitSSTObject(ControllerRequestContext context, CommitSSTObjectRequestData request) {
-        return appendWriteEvent("commitSSTObject", context.deadlineNs(),
-            () -> streamControlManager.commitSSTObject(request));
+    public CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(ControllerRequestContext context, CommitStreamSetObjectRequestData request) {
+        return appendWriteEvent("commitStreamSetObject", context.deadlineNs(),
+            () -> streamControlManager.commitStreamSetObject(request));
     }
 
     @Override

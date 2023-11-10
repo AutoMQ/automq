@@ -22,20 +22,20 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
-import org.apache.kafka.metadata.stream.S3SSTObject;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 
 public class NodeS3WALMetadataDelta {
 
-    private final NodeS3SSTMetadataImage image;
+    private final NodeS3StreamSetObjectMetadataImage image;
     private int nodeId;
     private long nodeEpoch;
-    private final Map<Long/*objectId*/, S3SSTObject> addedS3SSTObjects = new HashMap<>();
+    private final Map<Long/*objectId*/, S3StreamSetObject> addedS3StreamSetObjects = new HashMap<>();
 
-    private final Set<Long/*objectId*/> removedS3SSTObjects = new HashSet<>();
+    private final Set<Long/*objectId*/> removedS3StreamSetObjects = new HashSet<>();
 
-    public NodeS3WALMetadataDelta(NodeS3SSTMetadataImage image) {
+    public NodeS3WALMetadataDelta(NodeS3StreamSetObjectMetadataImage image) {
         this.image = image;
         this.nodeId = image.getNodeId();
         this.nodeEpoch = image.getNodeEpoch();
@@ -46,25 +46,25 @@ public class NodeS3WALMetadataDelta {
         this.nodeEpoch = record.nodeEpoch();
     }
 
-    public void replay(S3SSTObjectRecord record) {
-        addedS3SSTObjects.put(record.objectId(), S3SSTObject.of(record));
+    public void replay(S3StreamSetObjectRecord record) {
+        addedS3StreamSetObjects.put(record.objectId(), S3StreamSetObject.of(record));
         // new add or update, so remove from removedObjects
-        removedS3SSTObjects.remove(record.objectId());
+        removedS3StreamSetObjects.remove(record.objectId());
     }
 
-    public void replay(RemoveSSTObjectRecord record) {
-        removedS3SSTObjects.add(record.objectId());
+    public void replay(RemoveStreamSetObjectRecord record) {
+        removedS3StreamSetObjects.add(record.objectId());
         // new remove, so remove from addedObjects
-        addedS3SSTObjects.remove(record.objectId());
+        addedS3StreamSetObjects.remove(record.objectId());
     }
 
-    public NodeS3SSTMetadataImage apply() {
-        Map<Long, S3SSTObject> newS3SSTObjects = new HashMap<>(image.getSSTObjects());
-        // add all changed SST objects
-        newS3SSTObjects.putAll(addedS3SSTObjects);
-        // remove all removed SST objects
-        removedS3SSTObjects.forEach(newS3SSTObjects::remove);
-        return new NodeS3SSTMetadataImage(this.nodeId, this.nodeEpoch, newS3SSTObjects);
+    public NodeS3StreamSetObjectMetadataImage apply() {
+        Map<Long, S3StreamSetObject> newS3StreamSetObjects = new HashMap<>(image.getObjects());
+        // add all changed stream set objects
+        newS3StreamSetObjects.putAll(addedS3StreamSetObjects);
+        // remove all removed stream set objects
+        removedS3StreamSetObjects.forEach(newS3StreamSetObjects::remove);
+        return new NodeS3StreamSetObjectMetadataImage(this.nodeId, this.nodeEpoch, newS3StreamSetObjects);
     }
 
 }

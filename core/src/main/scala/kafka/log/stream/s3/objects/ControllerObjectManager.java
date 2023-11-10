@@ -18,9 +18,10 @@
 package kafka.log.stream.s3.objects;
 
 
-import com.automq.stream.s3.objects.CommitStreamObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectRequest;
-import com.automq.stream.s3.objects.CommitSSTObjectResponse;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
@@ -28,10 +29,10 @@ import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.KafkaConfig;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
-import org.apache.kafka.common.message.CommitSSTObjectRequestData;
-import org.apache.kafka.common.message.CommitSSTObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -41,7 +42,6 @@ import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.metadata.stream.InRangeObjects;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,9 +71,9 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         PrepareS3ObjectRequestData request = new PrepareS3ObjectRequestData()
-            .setNodeId(nodeId)
-            .setPreparedCount(count)
-            .setTimeToLiveInMs(ttl);
+                .setNodeId(nodeId)
+                .setPreparedCount(count)
+                .setTimeToLiveInMs(ttl);
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -101,38 +101,38 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitSSTObjectResponse> commitSSTObject(CommitSSTObjectRequest commitSSTObjectRequest) {
-        CommitSSTObjectRequestData request = new CommitSSTObjectRequestData()
-            .setNodeId(nodeId)
-            .setNodeEpoch(nodeEpoch)
-            .setOrderId(commitSSTObjectRequest.getOrderId())
-            .setObjectId(commitSSTObjectRequest.getObjectId())
-            .setObjectSize(commitSSTObjectRequest.getObjectSize())
-            .setObjectStreamRanges(commitSSTObjectRequest.getStreamRanges()
-                .stream()
-                .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
-            .setStreamObjects(commitSSTObjectRequest.getStreamObjects()
-                .stream()
-                .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
-            .setCompactedObjectIds(commitSSTObjectRequest.getCompactedObjectIds());
+    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
+        CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
+                .setNodeId(nodeId)
+                .setNodeEpoch(nodeEpoch)
+                .setOrderId(commitStreamSetObjectRequest.getOrderId())
+                .setObjectId(commitStreamSetObjectRequest.getObjectId())
+                .setObjectSize(commitStreamSetObjectRequest.getObjectSize())
+                .setObjectStreamRanges(commitStreamSetObjectRequest.getStreamRanges()
+                        .stream()
+                        .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+                .setStreamObjects(commitStreamSetObjectRequest.getStreamObjects()
+                        .stream()
+                        .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
+                .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds());
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
-                return ApiKeys.COMMIT_SST_OBJECT;
+                return ApiKeys.COMMIT_STREAM_SET_OBJECT;
             }
 
             @Override
             public Builder toRequestBuilder() {
-                return new org.apache.kafka.common.requests.s3.CommitSSTObjectRequest.Builder(request);
+                return new org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest.Builder(request);
             }
         };
-        CompletableFuture<CommitSSTObjectResponse> future = new CompletableFuture<>();
-        RequestTask<org.apache.kafka.common.requests.s3.CommitSSTObjectResponse, CommitSSTObjectResponse> task = new RequestTask<>(req, future, response -> {
-            CommitSSTObjectResponseData resp = response.data();
+        CompletableFuture<CommitStreamSetObjectResponse> future = new CompletableFuture<>();
+        RequestTask<org.apache.kafka.common.requests.s3.CommitStreamSetObjectResponse, CommitStreamSetObjectResponse> task = new RequestTask<>(req, future, response -> {
+            CommitStreamSetObjectResponseData resp = response.data();
             Errors code = Errors.forCode(resp.errorCode());
             switch (code) {
                 case NONE:
-                    return ResponseHandleResult.withSuccess(new CommitSSTObjectResponse());
+                    return ResponseHandleResult.withSuccess(new CommitStreamSetObjectResponse());
                 case NODE_EPOCH_EXPIRED:
                 case NODE_EPOCH_NOT_EXIST:
                     LOGGER.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
@@ -141,7 +141,7 @@ public class ControllerObjectManager implements ObjectManager {
                 case COMPACTED_OBJECTS_NOT_FOUND:
                     throw code.exception();
                 default:
-                    LOGGER.error("Error while committing SST object: {}, code: {}, retry later", request, code);
+                    LOGGER.error("Error while committing stream set object: {}, code: {}, retry later", request, code);
                     return ResponseHandleResult.withRetry();
             }
         });
@@ -149,17 +149,16 @@ public class ControllerObjectManager implements ObjectManager {
         return future;
     }
 
-    @Override
-    public CompletableFuture<Void> commitStreamObject(CommitStreamObjectRequest commitStreamObjectRequest) {
+    public CompletableFuture<Void> compactStreamObject(CompactStreamObjectRequest compactStreamObjectRequest) {
         CommitStreamObjectRequestData request = new CommitStreamObjectRequestData()
-            .setNodeId(nodeId)
-            .setNodeEpoch(nodeEpoch)
-            .setObjectId(commitStreamObjectRequest.getObjectId())
-            .setObjectSize(commitStreamObjectRequest.getObjectSize())
-            .setStreamId(commitStreamObjectRequest.getStreamId())
-            .setStartOffset(commitStreamObjectRequest.getStartOffset())
-            .setEndOffset(commitStreamObjectRequest.getEndOffset())
-            .setSourceObjectIds(commitStreamObjectRequest.getSourceObjectIds());
+                .setNodeId(nodeId)
+                .setNodeEpoch(nodeEpoch)
+                .setObjectId(compactStreamObjectRequest.getObjectId())
+                .setObjectSize(compactStreamObjectRequest.getObjectSize())
+                .setStreamId(compactStreamObjectRequest.getStreamId())
+                .setStartOffset(compactStreamObjectRequest.getStartOffset())
+                .setEndOffset(compactStreamObjectRequest.getEndOffset())
+                .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -207,7 +206,7 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
         try {
-            return this.metadataManager.getSSTObjects();
+            return this.metadataManager.getStreamSetObjects();
         } catch (Exception e) {
             LOGGER.error("Error while get server objects", e);
             return CompletableFuture.completedFuture(Collections.emptyList());

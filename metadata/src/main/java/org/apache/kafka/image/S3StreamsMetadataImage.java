@@ -25,7 +25,7 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3SSTObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.ArrayList;
@@ -47,20 +47,20 @@ public final class S3StreamsMetadataImage {
 
     private final Map<Long/*streamId*/, S3StreamMetadataImage> streamsMetadata;
 
-    private final Map<Integer/*nodeId*/, NodeS3SSTMetadataImage> nodeSSTMetadata;
+    private final Map<Integer/*nodeId*/, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata;
 
     public S3StreamsMetadataImage(
             long assignedStreamId,
             Map<Long, S3StreamMetadataImage> streamsMetadata,
-            Map<Integer, NodeS3SSTMetadataImage> nodeSSTMetadata) {
+            Map<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata) {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamsMetadata = streamsMetadata;
-        this.nodeSSTMetadata = nodeSSTMetadata;
+        this.nodeStreamSetObjectMetadata = nodeStreamSetObjectMetadata;
     }
 
 
     boolean isEmpty() {
-        return this.nodeSSTMetadata.isEmpty() && this.streamsMetadata.isEmpty();
+        return this.nodeStreamSetObjectMetadata.isEmpty() && this.streamsMetadata.isEmpty();
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -68,7 +68,7 @@ public final class S3StreamsMetadataImage {
                 new ApiMessageAndVersion(
                         new AssignedStreamIdRecord().setAssignedStreamId(nextAssignedStreamId - 1), (short) 0));
         streamsMetadata.values().forEach(image -> image.write(writer, options));
-        nodeSSTMetadata.values().forEach(image -> image.write(writer, options));
+        nodeStreamSetObjectMetadata.values().forEach(image -> image.write(writer, options));
     }
 
     public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
@@ -130,8 +130,8 @@ public final class S3StreamsMetadataImage {
         }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).limit(limit).collect(Collectors.toCollection(ArrayList::new));
     }
 
-    public List<S3SSTObject> getSSTObjects(int nodeId) {
-        NodeS3SSTMetadataImage wal = nodeSSTMetadata.get(nodeId);
+    public List<S3StreamSetObject> getStreamSetObjects(int nodeId) {
+        NodeS3StreamSetObjectMetadataImage wal = nodeStreamSetObjectMetadata.get(nodeId);
         if (wal == null) {
             return Collections.emptyList();
         }
@@ -174,9 +174,9 @@ public final class S3StreamsMetadataImage {
             this.nodeId = nodeId;
         }
 
-        private Queue<S3ObjectMetadataWrapper> rangeOfSSTObjects() {
-            NodeS3SSTMetadataImage sstImage = nodeSSTMetadata.get(nodeId);
-            return sstImage.orderList().stream()
+        private Queue<S3ObjectMetadataWrapper> rangeOfStreamSetObjects() {
+            NodeS3StreamSetObjectMetadataImage streamSetObjectImage = nodeStreamSetObjectMetadata.get(nodeId);
+            return streamSetObjectImage.orderList().stream()
                 .filter(obj -> obj.offsetRanges().containsKey(streamId))
                 .filter(obj -> {
                     StreamOffsetRange offsetRange = obj.offsetRanges().get(streamId);
@@ -221,23 +221,23 @@ public final class S3StreamsMetadataImage {
             if (limit <= 0) {
                 return InRangeObjects.INVALID;
             }
-            if (!nodeSSTMetadata.containsKey(nodeId) || !streamsMetadata.containsKey(streamId)) {
+            if (!nodeStreamSetObjectMetadata.containsKey(nodeId) || !streamsMetadata.containsKey(streamId)) {
                 return InRangeObjects.INVALID;
             }
 
             Queue<S3ObjectMetadataWrapper> streamObjects = rangeOfStreamObjects();
-            Queue<S3ObjectMetadataWrapper> sstObjects = rangeOfSSTObjects();
+            Queue<S3ObjectMetadataWrapper> streamSetObjects = rangeOfStreamSetObjects();
             List<S3ObjectMetadata> inRangeObjects = new ArrayList<>();
             long nextStartOffset = startOffset;
 
             while (limit > 0
                     && nextStartOffset < endOffset
-                    && (!streamObjects.isEmpty() || !sstObjects.isEmpty())) {
+                    && (!streamObjects.isEmpty() || !streamSetObjects.isEmpty())) {
                 S3ObjectMetadataWrapper streamRange = null;
-                if (sstObjects.isEmpty() || (!streamObjects.isEmpty() && streamObjects.peek().startOffset() < sstObjects.peek().startOffset())) {
+                if (streamSetObjects.isEmpty() || (!streamObjects.isEmpty() && streamObjects.peek().startOffset() < streamSetObjects.peek().startOffset())) {
                     streamRange = streamObjects.poll();
                 } else {
-                    streamRange = sstObjects.poll();
+                    streamRange = streamSetObjects.poll();
                 }
                 long objectStartOffset = streamRange.startOffset();
                 long objectEndOffset = streamRange.endOffset();
@@ -301,16 +301,16 @@ public final class S3StreamsMetadataImage {
         S3StreamsMetadataImage other = (S3StreamsMetadataImage) obj;
         return this.nextAssignedStreamId == other.nextAssignedStreamId
                 && this.streamsMetadata.equals(other.streamsMetadata)
-                && this.nodeSSTMetadata.equals(other.nodeSSTMetadata);
+                && this.nodeStreamSetObjectMetadata.equals(other.nodeStreamSetObjectMetadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nextAssignedStreamId, streamsMetadata, nodeSSTMetadata);
+        return Objects.hash(nextAssignedStreamId, streamsMetadata, nodeStreamSetObjectMetadata);
     }
 
-    public Map<Integer, NodeS3SSTMetadataImage> nodeWALMetadata() {
-        return nodeSSTMetadata;
+    public Map<Integer, NodeS3StreamSetObjectMetadataImage> nodeWALMetadata() {
+        return nodeStreamSetObjectMetadata;
     }
 
     public Map<Long, S3StreamMetadataImage> streamsMetadata() {
@@ -336,7 +336,7 @@ public final class S3StreamsMetadataImage {
                 "nextAssignedStreamId=" + nextAssignedStreamId +
                 ", streamsMetadata=" + streamsMetadata.entrySet().stream().
                 map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
-                ", nodeWALMetadata=" + nodeSSTMetadata.entrySet().stream().
+                ", nodeWALMetadata=" + nodeStreamSetObjectMetadata.entrySet().stream().
                 map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
                 '}';
     }

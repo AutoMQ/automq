@@ -18,17 +18,17 @@
 package org.apache.kafka.metadata.stream;
 
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 
 public class Convertor {
-    public static S3SSTObjectRecord.StreamIndex to(StreamOffsetRange s) {
-        return new S3SSTObjectRecord.StreamIndex()
+    public static S3StreamSetObjectRecord.StreamIndex to(StreamOffsetRange s) {
+        return new S3StreamSetObjectRecord.StreamIndex()
                 .setStreamId(s.getStreamId())
                 .setStartOffset(s.getStartOffset())
                 .setEndOffset(s.getEndOffset());
     }
 
-    public static StreamOffsetRange to(S3SSTObjectRecord.StreamIndex s) {
+    public static StreamOffsetRange to(S3StreamSetObjectRecord.StreamIndex s) {
         return new StreamOffsetRange(s.streamId(), s.startOffset(), s.endOffset());
     }
 }

@@ -25,29 +25,29 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("S3Unit")
-public class SortedSSTObjectsListTest {
+public class SortedStreamSetObjectsListTest {
 
 
     @Test
     public void testSorted() {
-        SortedSSTObjects objects = new SortedSSTObjectsList();
-        objects.add(new S3SSTObject(0, -1, null, 2));
-        objects.add(new S3SSTObject(1, -1, null, 1));
-        objects.add(new S3SSTObject(2, -1, null, 3));
-        objects.add(new S3SSTObject(3, -1, null, 0));
-        objects.add(new S3SSTObject(4, -1, null, 4));
+        SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
+        objects.add(new S3StreamSetObject(0, -1, null, 2));
+        objects.add(new S3StreamSetObject(1, -1, null, 1));
+        objects.add(new S3StreamSetObject(2, -1, null, 3));
+        objects.add(new S3StreamSetObject(3, -1, null, 0));
+        objects.add(new S3StreamSetObject(4, -1, null, 4));
 
         assertEquals(5, objects.size());
         List<Long> expectedOrderIds = List.of(0L, 1L, 2L, 3L, 4L);
         assertEquals(expectedOrderIds, objects.list()
             .stream()
-            .map(S3SSTObject::orderId)
+            .map(S3StreamSetObject::orderId)
             .collect(Collectors.toList()));
 
         List<Long> expectedObjectIds = List.of(3L, 1L, 0L, 2L, 4L);
         assertEquals(expectedObjectIds, objects.list()
             .stream()
-            .map(S3SSTObject::objectId)
+            .map(S3StreamSetObject::objectId)
             .collect(Collectors.toList()));
 
         objects.removeIf(obj -> obj.objectId() == 2 || obj.objectId() == 3);
@@ -56,13 +56,13 @@ public class SortedSSTObjectsListTest {
         expectedOrderIds = List.of(1L, 2L, 4L);
         assertEquals(expectedOrderIds, objects.list()
             .stream()
-            .map(S3SSTObject::orderId)
+            .map(S3StreamSetObject::orderId)
             .collect(Collectors.toList()));
 
         expectedObjectIds = List.of(1L, 0L, 4L);
         assertEquals(expectedObjectIds, objects.list()
             .stream()
-            .map(S3SSTObject::objectId)
+            .map(S3StreamSetObject::objectId)
             .collect(Collectors.toList()));
     }
 
