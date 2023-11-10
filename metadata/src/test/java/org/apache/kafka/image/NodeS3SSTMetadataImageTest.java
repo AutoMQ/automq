@@ -28,7 +28,7 @@ import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -57,25 +57,25 @@ public class NodeS3SSTMetadataImageTest {
         delta0Records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
             .setNodeId(BROKER0)
             .setNodeEpoch(1), (short) 0));
-        delta0Records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
+        delta0Records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
             .setObjectId(0L)
             .setNodeId(BROKER0)
             .setOrderId(0L)
             .setStreamsIndex(List.of(
-                new S3SSTObjectRecord.StreamIndex()
+                new S3StreamSetObjectRecord.StreamIndex()
                     .setStreamId(STREAM0)
                     .setStartOffset(0L)
                     .setEndOffset(100L),
-                new S3SSTObjectRecord.StreamIndex()
+                new S3StreamSetObjectRecord.StreamIndex()
                     .setStreamId(STREAM1)
                     .setStartOffset(0)
                     .setEndOffset(200))), (short) 0));
-        delta0Records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
+        delta0Records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
             .setObjectId(1L)
             .setNodeId(BROKER0)
             .setOrderId(1L)
             .setStreamsIndex(List.of(
-                new S3SSTObjectRecord.StreamIndex()
+                new S3StreamSetObjectRecord.StreamIndex()
                     .setStreamId(STREAM0)
                     .setStartOffset(101L)
                     .setEndOffset(200L))), (short) 0));
@@ -97,12 +97,12 @@ public class NodeS3SSTMetadataImageTest {
         delta1Records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
             .setNodeId(BROKER0)
             .setNodeEpoch(2), (short) 0));
-        delta1Records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
+        delta1Records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
             .setObjectId(0L)
             .setNodeId(BROKER0)
             .setOrderId(0L)
             .setStreamsIndex(List.of(
-                new S3SSTObjectRecord.StreamIndex()
+                new S3StreamSetObjectRecord.StreamIndex()
                     .setStreamId(STREAM1)
                     .setStartOffset(0)
                     .setEndOffset(200))), (short) 0));

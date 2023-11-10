@@ -153,7 +153,7 @@ final class ControllerMetricsManager {
             case REMOVE_RANGE_RECORD:
             case S3_STREAM_OBJECT_RECORD:
             case REMOVE_S3_STREAM_OBJECT_RECORD:
-            case S3_SSTOBJECT_RECORD:
+            case S3_STREAM_SET_OBJECT_RECORD:
             case REMOVE_SSTOBJECT_RECORD:
             case S3_OBJECT_RECORD:
             case REMOVE_S3_OBJECT_RECORD:

@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class S3SSTObject implements Comparable<S3SSTObject> {
@@ -68,7 +68,7 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
     }
 
     public ApiMessageAndVersion toRecord() {
-        return new ApiMessageAndVersion(new S3SSTObjectRecord()
+        return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
             .setObjectId(objectId)
             .setNodeId(nodeId)
             .setOrderId(orderId)
@@ -81,10 +81,10 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
                     .collect(Collectors.toList())), (short) 0);
     }
 
-    public static S3SSTObject of(S3SSTObjectRecord record) {
+    public static S3SSTObject of(S3StreamSetObjectRecord record) {
         Map<Long, StreamOffsetRange> offsetRanges = record.streamsIndex()
             .stream()
-            .collect(Collectors.toMap(S3SSTObjectRecord.StreamIndex::streamId,
+            .collect(Collectors.toMap(S3StreamSetObjectRecord.StreamIndex::streamId,
                 index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
         return new S3SSTObject(record.objectId(), record.nodeId(),
             offsetRanges, record.orderId(), record.dataTimeInMs());

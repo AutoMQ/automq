@@ -49,7 +49,7 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
@@ -1020,8 +1020,8 @@ public class StreamControlManagerTest {
                 case REMOVE_NODE_WALMETADATA_RECORD:
                     manager.replay((RemoveNodeWALMetadataRecord) message);
                     break;
-                case S3_SSTOBJECT_RECORD:
-                    manager.replay((S3SSTObjectRecord) message);
+                case S3_STREAM_SET_OBJECT_RECORD:
+                    manager.replay((S3StreamSetObjectRecord) message);
                     break;
                 case REMOVE_SSTOBJECT_RECORD:
                     manager.replay((RemoveSSTObjectRecord) message);

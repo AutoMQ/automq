@@ -32,7 +32,7 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 
 public final class S3StreamsMetadataDelta {
 
@@ -105,7 +105,7 @@ public final class S3StreamsMetadataDelta {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
     }
 
-    public void replay(S3SSTObjectRecord record) {
+    public void replay(S3StreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
         record.streamsIndex().forEach(index -> {
             getOrCreateStreamMetadataDelta(index.streamId()).replay(new AdvanceRangeRecord()

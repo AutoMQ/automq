@@ -49,7 +49,7 @@ import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
@@ -305,8 +305,8 @@ public final class MetadataDelta {
             case REMOVE_S3_STREAM_OBJECT_RECORD:
                 replay((RemoveS3StreamObjectRecord) record);
                 break;
-            case S3_SSTOBJECT_RECORD:
-                replay((S3SSTObjectRecord) record);
+            case S3_STREAM_SET_OBJECT_RECORD:
+                replay((S3StreamSetObjectRecord) record);
                 break;
             case REMOVE_SSTOBJECT_RECORD:
                 replay((RemoveSSTObjectRecord) record);
@@ -441,7 +441,7 @@ public final class MetadataDelta {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 
-    public void replay(S3SSTObjectRecord record) {
+    public void replay(S3StreamSetObjectRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
 

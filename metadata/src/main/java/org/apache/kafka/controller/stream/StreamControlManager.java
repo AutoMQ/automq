@@ -50,8 +50,8 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord.StreamIndex;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord.StreamIndex;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
@@ -579,7 +579,7 @@ public class StreamControlManager {
                 Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(sstObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
+                records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
                     .setObjectId(sstObj.objectId())
                     .setNodeId(sstObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
@@ -655,7 +655,7 @@ public class StreamControlManager {
                 Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(sstObj.offsetRanges());
                 // remove offset range
                 newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new S3SSTObjectRecord()
+                records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
                     .setObjectId(sstObj.objectId())
                     .setNodeId(sstObj.nodeId())
                     .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
@@ -775,13 +775,13 @@ public class StreamControlManager {
             List<StreamIndex> streamIndexes = indexes.stream()
                     .map(Convertor::to)
                     .collect(Collectors.toList());
-            S3SSTObjectRecord S3SSTObjectRecord = new S3SSTObjectRecord()
+            S3StreamSetObjectRecord S3StreamSetObjectRecord = new S3StreamSetObjectRecord()
                     .setObjectId(objectId)
                     .setDataTimeInMs(dataTs)
                     .setOrderId(orderId)
                     .setNodeId(nodeId)
                     .setStreamsIndex(streamIndexes);
-            records.add(new ApiMessageAndVersion(S3SSTObjectRecord, (short) 0));
+            records.add(new ApiMessageAndVersion(S3StreamSetObjectRecord, (short) 0));
         }
         // commit stream objects
         if (streamObjects != null && !streamObjects.isEmpty()) {
@@ -1118,7 +1118,7 @@ public class StreamControlManager {
         this.nodesMetadata.put(nodeId, new NodeS3SSTMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
     }
 
-    public void replay(S3SSTObjectRecord record) {
+    public void replay(S3StreamSetObjectRecord record) {
         long objectId = record.objectId();
         int nodeId = record.nodeId();
         long orderId = record.orderId();

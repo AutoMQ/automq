@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.metadata.stream.S3SSTObject;
 
 public class NodeS3WALMetadataDelta {
@@ -46,7 +46,7 @@ public class NodeS3WALMetadataDelta {
         this.nodeEpoch = record.nodeEpoch();
     }
 
-    public void replay(S3SSTObjectRecord record) {
+    public void replay(S3StreamSetObjectRecord record) {
         addedS3SSTObjects.put(record.objectId(), S3SSTObject.of(record));
         // new add or update, so remove from removedObjects
         removedS3SSTObjects.remove(record.objectId());

@@ -117,7 +117,7 @@ import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
-import org.apache.kafka.common.metadata.S3SSTObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
@@ -1519,8 +1519,8 @@ public final class QuorumController implements Controller {
             case REMOVE_S3_STREAM_OBJECT_RECORD:
                 streamControlManager.replay((RemoveS3StreamObjectRecord) message);
                 break;
-            case S3_SSTOBJECT_RECORD:
-                streamControlManager.replay((S3SSTObjectRecord) message);
+            case S3_STREAM_SET_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamSetObjectRecord) message);
                 break;
             case REMOVE_SSTOBJECT_RECORD:
                 streamControlManager.replay((RemoveSSTObjectRecord) message);
