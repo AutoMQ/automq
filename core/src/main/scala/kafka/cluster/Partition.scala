@@ -586,7 +586,6 @@ class Partition(val topicPartition: TopicPartition,
     inWriteLock(leaderIsrUpdateLock) {
       remoteReplicasMap.clear()
       assignmentState = SimpleAssignmentState(Seq.empty)
-      log = None
       futureLog = None
       partitionState = CommittedPartitionState(Set.empty, LeaderRecoveryState.RECOVERED)
       leaderReplicaIdOpt = None
@@ -1100,7 +1099,7 @@ class Partition(val topicPartition: TopicPartition,
           tryCompleteDelayedRequests()
           TRY_COMPLETE_TIME_HIST.update(System.nanoTime() - tryCompleteDelayRequestStartNanos)
         }
-      case None =>
+      case None => logger.warn("try to handle leader confirm offset move, but leader log is not exist")
     }
     val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
     val now = System.currentTimeMillis()
