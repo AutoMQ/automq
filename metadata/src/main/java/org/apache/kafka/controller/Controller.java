@@ -458,7 +458,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to commit a SST object.
+     * Broker trys to commit a stream set object.
      */
     CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(
         ControllerRequestContext context,

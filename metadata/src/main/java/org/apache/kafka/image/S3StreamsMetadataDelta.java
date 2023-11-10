@@ -29,7 +29,7 @@ import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -47,7 +47,7 @@ public final class S3StreamsMetadataDelta {
     private final Set<Long> deletedStreams = new HashSet<>();
     // TODO: when we recycle the node's memory data structure
     // We don't use pair of specify NodeCreateRecord and NodeRemoveRecord to create or remove nodes, and
-    // we create NodeStreamMetadataImage when we create the first SSTObjectRecord for a node,
+    // we create NodeStreamMetadataImage when we create the first StreamSetObjectRecord for a node,
     // so we should decide when to recycle the node's memory data structure
     private final Set<Integer> deletedNodes = new HashSet<>();
 
@@ -114,7 +114,7 @@ public final class S3StreamsMetadataDelta {
         });
     }
 
-    public void replay(RemoveSSTObjectRecord record) {
+    public void replay(RemoveStreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
     }
 
@@ -132,7 +132,7 @@ public final class S3StreamsMetadataDelta {
         if (delta == null) {
             delta = new NodeS3WALMetadataDelta(
                 image.nodeWALMetadata().
-                    getOrDefault(nodeId, NodeS3SSTMetadataImage.EMPTY));
+                    getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
             changedNodes.put(nodeId, delta);
         }
         return delta;
@@ -140,7 +140,7 @@ public final class S3StreamsMetadataDelta {
 
     S3StreamsMetadataImage apply() {
         Map<Long, S3StreamMetadataImage> newStreams = new HashMap<>(image.streamsMetadata());
-        Map<Integer, NodeS3SSTMetadataImage> newNodeStreams = new HashMap<>(image.nodeWALMetadata());
+        Map<Integer, NodeS3StreamSetObjectMetadataImage> newNodeStreams = new HashMap<>(image.nodeWALMetadata());
 
         // apply the delta changes of old streams since the last image
         this.changedStreams.forEach((streamId, delta) -> {
@@ -152,8 +152,8 @@ public final class S3StreamsMetadataDelta {
 
         // apply the delta changes of old nodes since the last image
         this.changedNodes.forEach((nodeId, delta) -> {
-            NodeS3SSTMetadataImage newNodeS3SSTMetadataImage = delta.apply();
-            newNodeStreams.put(nodeId, newNodeS3SSTMetadataImage);
+            NodeS3StreamSetObjectMetadataImage newNodeS3StreamSetObjectMetadataImage = delta.apply();
+            newNodeStreams.put(nodeId, newNodeS3StreamSetObjectMetadataImage);
         });
         // remove the deleted nodes
         deletedNodes.forEach(newNodeStreams::remove);

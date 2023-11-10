@@ -23,23 +23,23 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class SortedSSTObjectsList implements SortedSSTObjects {
+public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
-    private final List<S3SSTObject> list;
+    private final List<S3StreamSetObject> list;
 
-    public SortedSSTObjectsList(SortedSSTObjects source) {
+    public SortedStreamSetObjectsList(SortedStreamSetObjects source) {
         this.list = new LinkedList<>(source.list());
     }
 
-    public SortedSSTObjectsList() {
+    public SortedStreamSetObjectsList() {
         this.list = new LinkedList<>();
     }
 
     /**
-     * Construct a SortedSSTObjectsList from a list of S3SSTObjects.
-     * @param list the list of S3SSTObjects, must guarantee that the list is sorted
+     * Construct a SortedStreamSetObjectsList from a list of S3StreamSetObjects.
+     * @param list the list of S3StreamSetObjects, must guarantee that the list is sorted
      */
-    public SortedSSTObjectsList(List<S3SSTObject> list) {
+    public SortedStreamSetObjectsList(List<S3StreamSetObject> list) {
         this.list = list;
     }
 
@@ -54,12 +54,12 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
     }
 
     @Override
-    public Iterator<S3SSTObject> iterator() {
+    public Iterator<S3StreamSetObject> iterator() {
         return this.list.iterator();
     }
 
     @Override
-    public List<S3SSTObject> list() {
+    public List<S3StreamSetObject> list() {
         return list;
     }
 
@@ -69,16 +69,16 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
     }
 
     @Override
-    public boolean add(S3SSTObject s3SSTObject) {
+    public boolean add(S3StreamSetObject s3StreamSetObject) {
         // TODO: optimize by binary search
         for (int index = 0; index < this.list.size(); index++) {
-            S3SSTObject current = this.list.get(index);
-            if (s3SSTObject.compareTo(current) <= 0) {
-                this.list.add(index, s3SSTObject);
+            S3StreamSetObject current = this.list.get(index);
+            if (s3StreamSetObject.compareTo(current) <= 0) {
+                this.list.add(index, s3StreamSetObject);
                 return true;
             }
         }
-        this.list.add(s3SSTObject);
+        this.list.add(s3StreamSetObject);
         return true;
     }
 
@@ -91,7 +91,7 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
 
 
     @Override
-    public S3SSTObject get(int index) {
+    public S3StreamSetObject get(int index) {
         return this.list.get(index);
     }
 
@@ -108,7 +108,7 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        SortedSSTObjectsList that = (SortedSSTObjectsList) o;
+        SortedStreamSetObjectsList that = (SortedStreamSetObjectsList) o;
         return Objects.equals(list, that.list);
     }
 
@@ -119,8 +119,8 @@ public class SortedSSTObjectsList implements SortedSSTObjects {
 
     @Override
     public String toString() {
-        return "SortedSSTObjectsList{" +
-            "list=" + list.stream().map(S3SSTObject::toString).collect(Collectors.joining(",")) +
+        return "SortedStreamSetObjectsList{" +
+            "list=" + list.stream().map(S3StreamSetObject::toString).collect(Collectors.joining(",")) +
             '}';
     }
 }

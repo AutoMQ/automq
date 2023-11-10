@@ -311,12 +311,12 @@ object Defaults {
   val QuorumRetryBackoffMs = RaftConfig.DEFAULT_QUORUM_RETRY_BACKOFF_MS
 
   /** ********* Kafka on S3 Configuration *********/
-  val S3SSTCompactionInterval: Int = 20 // 20min
-  val S3SSTCompactionCacheSize: Long = 200 * 1024 * 1024 // 200MB
-  val S3SSTCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
-  val S3SSTCompactionForceSplitMinutes: Int = 120 // 120min
-  val S3SSTCompactionMaxObjectNum: Int = 500
-  val S3MaxStreamNumPerSST: Int = 10000
+  val S3StreamSetObjectCompactionInterval: Int = 20 // 20min
+  val S3StreamSetObjectCompactionCacheSize: Long = 200 * 1024 * 1024 // 200MB
+  val S3StreamSetObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
+  val S3StreamSetObjectCompactionForceSplitMinutes: Int = 120 // 120min
+  val S3StreamSetObjectCompactionMaxObjectNum: Int = 500
+  val S3MaxStreamNumPerStreamSetObject: Int = 10000
   val S3MaxStreamObjectNumPerCommit: Int = 10000
   val S3ObjectRetentionMinutes: Long = 10 // 10min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
@@ -734,7 +734,7 @@ object KafkaConfig {
   val S3WALCacheSizeDoc = "The S3 storage max WAL cache size. When WAL cache is full, storage will hang the request, \n" +
     "until WAL cache is free by S3 WAL upload."
   val S3WALUploadThresholdDoc = "The S3 WAL trigger upload (bytes) threshold."
-  val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload delta WAL or compact SST object."
+  val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload delta WAL or compact stream set object."
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
@@ -743,12 +743,12 @@ object KafkaConfig {
   val S3StreamObjectCompactionLivingTimeMinutesDoc = "The S3 stream object compaction living time threshold in minutes."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
   val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
-  val S3SSTCompactionIntervalDoc = "The execution interval of SST object compaction in minutes."
-  val S3SSTCompactionCacheSizeDoc = "The SST object compaction cache size in Bytes."
-  val S3SSTCompactionStreamSplitSizeDoc = "The SST compaction stream split size threshold in Bytes."
-  val S3SSTCompactionForceSplitMinutesDoc = "The SST compaction force split period in minutes."
-  val S3SSTCompactionMaxObjectNumDoc = "The maximum num of SST objects to be compact at one time"
-  val S3MaxStreamNumPerSSTDoc = "The maximum number of streams allowed in single SST object"
+  val S3StreamSetObjectCompactionIntervalDoc = "The execution interval of stream set object compaction in minutes."
+  val S3StreamSetObjectCompactionCacheSizeDoc = "The stream set object compaction cache size in Bytes."
+  val S3StreamSetObjectCompactionStreamSplitSizeDoc = "The stream set object compaction stream split size threshold in Bytes."
+  val S3StreamSetObjectCompactionForceSplitMinutesDoc = "The stream set object compaction force split period in minutes."
+  val S3StreamSetObjectCompactionMaxObjectNumDoc = "The maximum num of stream set objects to be compact at one time"
+  val S3MaxStreamNumPerStreamSetObjectDoc = "The maximum number of streams allowed in single stream set object"
   val S3MaxStreamObjectNumPerCommitDoc = "The maximum number of stream objects in single commit request"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
   val S3ObjectRetentionTimeInSecondDoc = "The S3 object retention time in second, default is 10 minutes (600s)."
@@ -1576,12 +1576,12 @@ object KafkaConfig {
       .define(S3StreamObjectCompactionLivingTimeMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionLivingTimeMinutesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
       .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
-      .define(S3StreamSetObjectCompactionIntervalProp, INT, Defaults.S3SSTCompactionInterval, MEDIUM, S3SSTCompactionIntervalDoc)
-      .define(S3StreamSetObjectCompactionCacheSizeProp, LONG, Defaults.S3SSTCompactionCacheSize, MEDIUM, S3SSTCompactionCacheSizeDoc)
-      .define(S3StreamSetObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3SSTCompactionStreamSplitSize, MEDIUM, S3SSTCompactionStreamSplitSizeDoc)
-      .define(S3StreamSetObjectCompactionForceSplitMinutesProp, INT, Defaults.S3SSTCompactionForceSplitMinutes, MEDIUM, S3SSTCompactionForceSplitMinutesDoc)
-      .define(S3StreamSetObjectCompactionMaxObjectNumProp, INT, Defaults.S3SSTCompactionMaxObjectNum, MEDIUM, S3SSTCompactionMaxObjectNumDoc)
-      .define(S3MaxStreamNumPerStreamSetObjectProp, INT, Defaults.S3MaxStreamNumPerSST, MEDIUM, S3MaxStreamNumPerSSTDoc)
+      .define(S3StreamSetObjectCompactionIntervalProp, INT, Defaults.S3StreamSetObjectCompactionInterval, MEDIUM, S3StreamSetObjectCompactionIntervalDoc)
+      .define(S3StreamSetObjectCompactionCacheSizeProp, LONG, Defaults.S3StreamSetObjectCompactionCacheSize, MEDIUM, S3StreamSetObjectCompactionCacheSizeDoc)
+      .define(S3StreamSetObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3StreamSetObjectCompactionStreamSplitSize, MEDIUM, S3StreamSetObjectCompactionStreamSplitSizeDoc)
+      .define(S3StreamSetObjectCompactionForceSplitMinutesProp, INT, Defaults.S3StreamSetObjectCompactionForceSplitMinutes, MEDIUM, S3StreamSetObjectCompactionForceSplitMinutesDoc)
+      .define(S3StreamSetObjectCompactionMaxObjectNumProp, INT, Defaults.S3StreamSetObjectCompactionMaxObjectNum, MEDIUM, S3StreamSetObjectCompactionMaxObjectNumDoc)
+      .define(S3MaxStreamNumPerStreamSetObjectProp, INT, Defaults.S3MaxStreamNumPerStreamSetObject, MEDIUM, S3MaxStreamNumPerStreamSetObjectDoc)
       .define(S3MaxStreamObjectNumPerCommit, INT, Defaults.S3MaxStreamObjectNumPerCommit, MEDIUM, S3MaxStreamObjectNumPerCommitDoc)
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
       .define(S3ObjectRetentionMinutes, LONG, Defaults.S3ObjectRetentionMinutes, MEDIUM, S3ObjectRetentionTimeInSecondDoc)

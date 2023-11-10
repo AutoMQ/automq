@@ -46,7 +46,7 @@ import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.RemoveSSTObjectRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -55,10 +55,10 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
-import org.apache.kafka.controller.stream.StreamControlManager.NodeS3SSTMetadata;
+import org.apache.kafka.controller.stream.StreamControlManager.NodeS3StreamSetObjectMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager.S3StreamMetadata;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3SSTObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -309,7 +309,7 @@ public class StreamControlManagerTest {
             new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
         replay(manager, result2.records());
-        // 2. commit valid SST object
+        // 2. commit valid stream set object
         List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH0)
@@ -323,14 +323,14 @@ public class StreamControlManagerTest {
         ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
-        // verify range's end offset advanced and SST object is added
+        // verify range's end offset advanced and stream set object is added
         S3StreamMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         assertEquals(1, streamMetadata0.ranges().size());
         RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(100L, rangeMetadata0.endOffset());
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
-        // 3. commit a SST object that doesn't exist
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
+        // 3. commit a stream set object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH0)
@@ -354,7 +354,7 @@ public class StreamControlManagerTest {
         assertEquals(0L, result8.response().startOffset());
         assertEquals(100L, result8.response().nextOffset());
         replay(manager, result8.records());
-        // 5. node_1 successfully commit SST object which contains stream_0's data
+        // 5. node_1 successfully commit stream set object which contains stream_0's data
         List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH1)
@@ -368,7 +368,7 @@ public class StreamControlManagerTest {
         ControllerResult<CommitStreamSetObjectResponseData> result10 = manager.commitStreamSetObject(commitRequest6);
         assertEquals(Errors.NONE.code(), result10.response().errorCode());
         replay(manager, result10.records());
-        // verify range's end offset advanced and SST object is added
+        // verify range's end offset advanced and stream set object is added
         streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         assertEquals(2, streamMetadata0.ranges().size());
         assertEquals(0L, streamMetadata0.ranges().get(0).startOffset());
@@ -376,7 +376,7 @@ public class StreamControlManagerTest {
         RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
         assertEquals(100L, rangeMetadata1.startOffset());
         assertEquals(300L, rangeMetadata1.endOffset());
-        assertEquals(1, manager.nodesMetadata().get(BROKER1).sstObjects().size());
+        assertEquals(1, manager.nodesMetadata().get(BROKER1).streamSetObjects().size());
 
         // 6. get stream's offset
         GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
@@ -428,7 +428,7 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
 
-        // 2. commit first level SST object of stream_0 and stream_1
+        // 2. commit first level stream set object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges0 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -460,7 +460,7 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(200L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object0DataTs = manager.nodesMetadata().get(BROKER0).sstObjects().get(0L).dataTimeInMs();
+        long object0DataTs = manager.nodesMetadata().get(BROKER0).streamSetObjects().get(0L).dataTimeInMs();
 
         // 4. keep committing first level object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -493,9 +493,9 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        long object1DataTs = manager.nodesMetadata().get(BROKER0).sstObjects().get(1L).dataTimeInMs();
+        long object1DataTs = manager.nodesMetadata().get(BROKER0).streamSetObjects().get(1L).dataTimeInMs();
 
-        // 6. commit an invalid SST object which contains the destroyed or not exist SST object
+        // 6. commit an invalid stream set object which contains the destroyed or not exist stream set object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         List<ObjectStreamRange> streamRanges2 = List.of(
             new ObjectStreamRange()
@@ -520,7 +520,7 @@ public class StreamControlManagerTest {
         assertEquals(0, result6.records().size());
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
 
-        // 7. commit a second level SST object which compact wal_0 and wal_1
+        // 7. commit a second level stream set object which compact wal_0 and wal_1
         commitRequest2 = new CommitStreamSetObjectRequestData()
             .setObjectId(2L)
             .setOrderId(0L)
@@ -541,12 +541,12 @@ public class StreamControlManagerTest {
         assertEquals(STREAM1, streamsOffset.streamMetadataList().get(1).streamId());
         assertEquals(0L, streamsOffset.streamMetadataList().get(1).startOffset());
         assertEquals(300L, streamsOffset.streamMetadataList().get(1).endOffset());
-        assertEquals(object0DataTs, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).dataTimeInMs());
+        assertEquals(object0DataTs, manager.nodesMetadata().get(BROKER0).streamSetObjects().get(2L).dataTimeInMs());
 
-        // 9. verify compacted SST objects is removed
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
-        assertEquals(2, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).objectId());
-        assertEquals(0, manager.nodesMetadata().get(BROKER0).sstObjects().get(2L).orderId());
+        // 9. verify compacted stream set objects is removed
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
+        assertEquals(2, manager.nodesMetadata().get(BROKER0).streamSetObjects().get(2L).objectId());
+        assertEquals(0, manager.nodesMetadata().get(BROKER0).streamSetObjects().get(2L).orderId());
 
     }
 
@@ -600,7 +600,7 @@ public class StreamControlManagerTest {
         // 4. verify stream object is added
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
 
-        // 5. commit SST object with not continuous stream
+        // 5. commit stream set object with not continuous stream
         List<ObjectStreamRange> streamRanges1 = List.of(
             new ObjectStreamRange()
                 .setStreamId(STREAM0)
@@ -742,7 +742,7 @@ public class StreamControlManagerTest {
         // 1. create and open stream0 and stream1 for node0
         createAndOpenStream(BROKER0, EPOCH0);
         createAndOpenStream(BROKER0, EPOCH0);
-        // 2. commit SST object with stream0-[0, 10)
+        // 2. commit stream set object with stream0-[0, 10)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
@@ -755,7 +755,7 @@ public class StreamControlManagerTest {
                 .setEndOffset(10)));
         ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
-        // 3. commit SST object with stream0-[10, 20), and stream1-[0, 10)
+        // 3. commit stream set object with stream0-[10, 20), and stream1-[0, 10)
         requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER0)
             .setObjectSize(999)
@@ -789,7 +789,7 @@ public class StreamControlManagerTest {
         // 5. node0 close stream0 and node1 open stream0
         closeStream(BROKER0, EPOCH0, STREAM0);
         openStream(BROKER1, EPOCH1, STREAM0);
-        // 6. commit SST object with stream0-[40, 70)
+        // 6. commit stream set object with stream0-[40, 70)
         requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
@@ -826,17 +826,17 @@ public class StreamControlManagerTest {
         assertEquals(60, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        NodeS3SSTMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.sstObjects().size());
-        S3SSTObject s3SSTObject = node0Metadata.sstObjects().get(1L);
-        assertEquals(1, s3SSTObject.offsetRanges().size());
-        StreamOffsetRange range = s3SSTObject.offsetRanges().get(STREAM0);
+        NodeS3StreamSetObjectMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
+        assertEquals(1, node0Metadata.streamSetObjects().size());
+        S3StreamSetObject s3StreamSetObject = node0Metadata.streamSetObjects().get(1L);
+        assertEquals(1, s3StreamSetObject.offsetRanges().size());
+        StreamOffsetRange range = s3StreamSetObject.offsetRanges().get(STREAM0);
         assertNull(range);
-        NodeS3SSTMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(1, node1Metadata.sstObjects().size());
-        s3SSTObject = node1Metadata.sstObjects().get(3L);
-        assertEquals(1, s3SSTObject.offsetRanges().size());
-        range = s3SSTObject.offsetRanges().get(STREAM0);
+        NodeS3StreamSetObjectMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
+        assertEquals(1, node1Metadata.streamSetObjects().size());
+        s3StreamSetObject = node1Metadata.streamSetObjects().get(3L);
+        assertEquals(1, s3StreamSetObject.offsetRanges().size());
+        range = s3StreamSetObject.offsetRanges().get(STREAM0);
         assertNotNull(range);
         assertEquals(40, range.getStartOffset());
         assertEquals(70, range.getEndOffset());
@@ -860,11 +860,11 @@ public class StreamControlManagerTest {
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
         node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.sstObjects().size());
+        assertEquals(1, node0Metadata.streamSetObjects().size());
         node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(0, node1Metadata.sstObjects().size());
+        assertEquals(0, node1Metadata.streamSetObjects().size());
 
-        // 5. commit SST object with stream0-[70, 100)
+        // 5. commit stream set object with stream0-[70, 100)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
             .setNodeId(BROKER1)
             .setObjectSize(999)
@@ -919,12 +919,12 @@ public class StreamControlManagerTest {
         // 4. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).sstObjects().size());
-        S3SSTObject sstObject = manager.nodesMetadata().get(BROKER0).sstObjects().get(1L);
-        assertEquals(1, sstObject.offsetRanges().size());
-        StreamOffsetRange offsetRange = sstObject.offsetRanges().get(STREAM1);
+        assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
+        S3StreamSetObject streamSetObject = manager.nodesMetadata().get(BROKER0).streamSetObjects().get(1L);
+        assertEquals(1, streamSetObject.offsetRanges().size());
+        StreamOffsetRange offsetRange = streamSetObject.offsetRanges().get(STREAM1);
         assertNotNull(offsetRange);
-        assertEquals(0, manager.nodesMetadata().get(BROKER1).sstObjects().size());
+        assertEquals(0, manager.nodesMetadata().get(BROKER1).streamSetObjects().size());
 
         // 5. delete again
         req = new DeleteStreamRequest()
@@ -1023,8 +1023,8 @@ public class StreamControlManagerTest {
                 case S3_STREAM_SET_OBJECT_RECORD:
                     manager.replay((S3StreamSetObjectRecord) message);
                     break;
-                case REMOVE_SSTOBJECT_RECORD:
-                    manager.replay((RemoveSSTObjectRecord) message);
+                case REMOVE_STREAM_SET_OBJECT_RECORD:
+                    manager.replay((RemoveStreamSetObjectRecord) message);
                     break;
                 case S3_STREAM_OBJECT_RECORD:
                     manager.replay((S3StreamObjectRecord) message);

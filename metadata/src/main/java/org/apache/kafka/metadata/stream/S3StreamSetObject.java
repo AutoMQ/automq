@@ -27,7 +27,7 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class S3SSTObject implements Comparable<S3SSTObject> {
+public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
 
     private final long objectId;
     private final int nodeId;
@@ -43,11 +43,11 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3SSTObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
+    public S3StreamSetObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
         this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3SSTObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3StreamSetObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.nodeId = nodeId;
@@ -81,12 +81,12 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
                     .collect(Collectors.toList())), (short) 0);
     }
 
-    public static S3SSTObject of(S3StreamSetObjectRecord record) {
+    public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
         Map<Long, StreamOffsetRange> offsetRanges = record.streamsIndex()
             .stream()
             .collect(Collectors.toMap(S3StreamSetObjectRecord.StreamIndex::streamId,
                 index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
-        return new S3SSTObject(record.objectId(), record.nodeId(),
+        return new S3StreamSetObject(record.objectId(), record.nodeId(),
             offsetRanges, record.orderId(), record.dataTimeInMs());
     }
 
@@ -118,7 +118,7 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        S3SSTObject that = (S3SSTObject) o;
+        S3StreamSetObject that = (S3StreamSetObject) o;
         return objectId == that.objectId;
     }
 
@@ -129,7 +129,7 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
 
     @Override
     public String toString() {
-        return "S3SSTObject{" +
+        return "S3StreamSetObject{" +
             "objectId=" + objectId +
             ", orderId=" + orderId +
             ", nodeId=" + nodeId +
@@ -139,7 +139,7 @@ public class S3SSTObject implements Comparable<S3SSTObject> {
     }
 
     @Override
-    public int compareTo(S3SSTObject o) {
+    public int compareTo(S3StreamSetObject o) {
         return Long.compare(this.orderId, o.orderId);
     }
 }

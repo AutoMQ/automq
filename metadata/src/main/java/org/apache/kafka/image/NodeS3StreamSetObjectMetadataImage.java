@@ -18,6 +18,7 @@
 
 package org.apache.kafka.image;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -25,34 +26,33 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
 
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.metadata.stream.S3SSTObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class NodeS3SSTMetadataImage {
+public class NodeS3StreamSetObjectMetadataImage {
 
-    public static final NodeS3SSTMetadataImage EMPTY = new NodeS3SSTMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
+    public static final NodeS3StreamSetObjectMetadataImage EMPTY = new NodeS3StreamSetObjectMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
         S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
     private final int nodeId;
     private final long nodeEpoch;
-    private final Map<Long/*objectId*/, S3SSTObject> s3SSTObjects;
-    private final SortedMap<Long/*orderId*/, S3SSTObject> orderIndex;
+    private final Map<Long/*objectId*/, S3StreamSetObject> s3Objects;
+    private final SortedMap<Long/*orderId*/, S3StreamSetObject> orderIndex;
 
-    public NodeS3SSTMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3SSTObject> sstObjects) {
+    public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3StreamSetObject> streamSetObjects) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
-        this.s3SSTObjects = new HashMap<>(sstObjects);
+        this.s3Objects = new HashMap<>(streamSetObjects);
         // build order index
-        if (s3SSTObjects.isEmpty()) {
+        if (s3Objects.isEmpty()) {
             this.orderIndex = Collections.emptySortedMap();
         } else {
             this.orderIndex = new TreeMap<>();
-            s3SSTObjects.values().forEach(s3SSTObject -> orderIndex.put(s3SSTObject.orderId(), s3SSTObject));
+            s3Objects.values().forEach(obj -> orderIndex.put(obj.orderId(), obj));
         }
     }
 
@@ -64,34 +64,34 @@ public class NodeS3SSTMetadataImage {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        NodeS3SSTMetadataImage that = (NodeS3SSTMetadataImage) o;
-        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(s3SSTObjects, that.s3SSTObjects);
+        NodeS3StreamSetObjectMetadataImage that = (NodeS3StreamSetObjectMetadataImage) o;
+        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(s3Objects, that.s3Objects);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nodeId, nodeEpoch, s3SSTObjects);
+        return Objects.hash(nodeId, nodeEpoch, s3Objects);
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
             .setNodeId(nodeId)
             .setNodeEpoch(nodeEpoch), (short) 0));
-        s3SSTObjects.values().forEach(wal -> {
+        s3Objects.values().forEach(wal -> {
             writer.write(wal.toRecord());
         });
     }
 
-    public Map<Long, S3SSTObject> getSSTObjects() {
-        return s3SSTObjects;
+    public Map<Long, S3StreamSetObject> getObjects() {
+        return s3Objects;
     }
 
-    public SortedMap<Long, S3SSTObject> getOrderIndex() {
+    public SortedMap<Long, S3StreamSetObject> getOrderIndex() {
         return orderIndex;
     }
 
-    public List<S3SSTObject> orderList() {
-        return orderIndex.values().stream().collect(Collectors.toList());
+    public List<S3StreamSetObject> orderList() {
+        return new ArrayList<>(orderIndex.values());
     }
 
     public int getNodeId() {
@@ -107,7 +107,7 @@ public class NodeS3SSTMetadataImage {
         return "NodeS3WALMetadataImage{" +
             "nodeId=" + nodeId +
             ", nodeEpoch=" + nodeEpoch +
-            ", s3SSTObjects=" + s3SSTObjects +
+            ", objects=" + s3Objects +
             '}';
     }
 }

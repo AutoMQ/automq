@@ -21,27 +21,27 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.function.Predicate;
 
-public interface SortedSSTObjects {
+public interface SortedStreamSetObjects {
 
     int size();
 
     boolean isEmpty();
 
-    Iterator<S3SSTObject> iterator();
+    Iterator<S3StreamSetObject> iterator();
 
-    List<S3SSTObject> list();
+    List<S3StreamSetObject> list();
 
     boolean contains(Object o);
 
-    boolean add(S3SSTObject s3SSTObject);
+    boolean add(S3StreamSetObject s3StreamSetObject);
 
     boolean remove(Object o);
 
-    default boolean removeIf(Predicate<S3SSTObject> filter) {
+    default boolean removeIf(Predicate<S3StreamSetObject> filter) {
         return this.list().removeIf(filter);
     }
 
-    S3SSTObject get(int index);
+    S3StreamSetObject get(int index);
 
     void clear();
 
