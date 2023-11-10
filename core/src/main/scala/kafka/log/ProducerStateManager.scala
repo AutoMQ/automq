@@ -71,6 +71,7 @@ private[log] object ProducerStateEntry {
 }
 
 private[log] case class BatchMetadata(lastSeq: Int, lastOffset: Long, offsetDelta: Int, timestamp: Long) {
+  var recovered: Boolean = false
   def firstSeq: Int =  DefaultRecordBatch.decrementSequence(lastSeq, offsetDelta)
   def firstOffset: Long = lastOffset - offsetDelta
 
@@ -143,8 +144,10 @@ private[log] class ProducerStateEntry(val producerId: Long,
     else {
       // AutoMQ for Kafka inject start
       val metadata = batchWithSequenceRange(batch.baseSequence, batch.lastSequence)
-      if (metadata.isEmpty) {
-        if (this.firstSeq <= batch.baseSequence() && this.lastSeq >= batch.lastSequence()) {
+      if (metadata.isEmpty && this.batchMetadata.nonEmpty && this.batchMetadata.front.recovered) {
+        // the batchMetadata is recovered from snapshot
+        val front = batchMetadata.front
+        if (front.firstSeq <= batch.baseSequence() && front.lastSeq >= batch.lastSequence()) {
           throw new DuplicateSequenceException(
             String.format("The batch is duplicated, broker cached metadata is %s, the record batch is [%s, %s]",
               this, batch.baseSequence(), batch.lastSequence())
@@ -417,8 +420,11 @@ object ProducerStateManager {
         val coordinatorEpoch = producerEntryStruct.getInt(CoordinatorEpochField)
         val currentTxnFirstOffset = producerEntryStruct.getLong(CurrentTxnFirstOffsetField)
         val lastAppendedDataBatches = mutable.Queue.empty[BatchMetadata]
-        if (offset >= 0)
-          lastAppendedDataBatches += BatchMetadata(seq, offset, offsetDelta, timestamp)
+        if (offset >= 0) {
+          val metadata = BatchMetadata(seq, offset, offsetDelta, timestamp)
+          metadata.recovered = true
+          lastAppendedDataBatches += metadata
+        }
 
         val newEntry = new ProducerStateEntry(producerId, lastAppendedDataBatches, producerEpoch,
           coordinatorEpoch, timestamp, if (currentTxnFirstOffset >= 0) Some(currentTxnFirstOffset) else None)
