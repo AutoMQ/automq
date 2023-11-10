@@ -228,8 +228,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private int availableReadPermit() {
-        // TODO: implement limiter
-        return Integer.MAX_VALUE;
+        return inflightReadLimiter.availablePermits();
     }
 
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
