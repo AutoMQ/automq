@@ -23,7 +23,7 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.metadata.BrokerMetadataListener;
 import kafka.server.metadata.KRaftMetadataCache;
-import org.apache.kafka.image.NodeS3SSTMetadataImage;
+import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
 import org.apache.kafka.image.S3ObjectsImage;
@@ -35,7 +35,7 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3SSTObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,10 +106,10 @@ public class StreamMetadataManagerTest {
                 0L, new S3StreamObject(0L, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
 
-        NodeS3SSTMetadataImage walMetadataImage0 = new NodeS3SSTMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
-                1L, new S3SSTObject(1L, BROKER0, Map.of(
+        NodeS3StreamSetObjectMetadataImage walMetadataImage0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
+                1L, new S3StreamSetObject(1L, BROKER0, Map.of(
                         STREAM1, new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
-                2L, new S3SSTObject(2L, BROKER0, Map.of(
+                2L, new S3StreamSetObject(2L, BROKER0, Map.of(
                         STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
@@ -122,7 +122,7 @@ public class StreamMetadataManagerTest {
         streamObjects.put(1L, new S3StreamObject(1L, STREAM0, 100L, 150L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 1, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, NodeS3SSTMetadataImage.EMPTY));
+                Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
         image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
 
         ranges = new HashMap<>(ranges);
@@ -131,7 +131,7 @@ public class StreamMetadataManagerTest {
         streamObjects.put(2L, new S3StreamObject(2L, STREAM0, 150L, 200L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 2, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, NodeS3SSTMetadataImage.EMPTY));
+                Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
         image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
     }
 
