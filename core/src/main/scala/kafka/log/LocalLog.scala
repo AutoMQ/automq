@@ -444,7 +444,7 @@ class LocalLog(@volatile protected var _dir: File,
                 case _ =>
                   None
               }
-              addAbortedTransactions(startOffset, segment, fetchDataInfo, upperBoundOpt)
+              fetchDataInfo = addAbortedTransactions(startOffset, segment, fetchDataInfo, upperBoundOpt)
               // AutoMQ for Kafka inject end
             }
           } else segmentOpt = segments.higherSegment(baseOffset)
