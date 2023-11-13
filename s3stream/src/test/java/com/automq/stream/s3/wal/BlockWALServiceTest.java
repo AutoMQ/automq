@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
 import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
@@ -463,7 +464,7 @@ class BlockWALServiceTest {
     }
 
     private void write(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
-        ByteBuf recordBody = TestUtils.random(recordSize);
+        ByteBuf recordBody = TestUtils.random(recordSize - RECORD_HEADER_SIZE);
         ByteBuf recordHeader = recordHeader(recordBody, logicOffset);
 
         CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
@@ -486,8 +487,8 @@ class BlockWALServiceTest {
     }
 
     private static class RecoverFromDisasterParam {
-        public static final long CAPACITY = (long) WALUtil.BLOCK_SIZE * (100 + 2);
-        public static final int RECORD_SIZE = WALUtil.BLOCK_SIZE + 1;
+        int recordSize;
+        long capacity;
         // WAL header
         long trimOffset;
         long startOffset;
@@ -498,102 +499,212 @@ class BlockWALServiceTest {
         List<Long> recoveredOffsets;
 
         public RecoverFromDisasterParam(
-                long trimOffsetBlock,
-                long startOffsetBlock,
-                long nextOffsetBlock,
-                long maxLengthBlock,
-                List<Long> writeOffsetsBlock,
-                List<Long> recoveredOffsetsBlock
+                int recordSize,
+                long capacity,
+                long trimOffset,
+                long startOffset,
+                long nextOffset,
+                long maxLength,
+                List<Long> writeOffsets,
+                List<Long> recoveredOffsets,
+                int unit
         ) {
-            this.trimOffset = trimOffsetBlock * WALUtil.BLOCK_SIZE;
-            this.startOffset = startOffsetBlock * WALUtil.BLOCK_SIZE;
-            this.nextOffset = nextOffsetBlock * WALUtil.BLOCK_SIZE;
-            this.maxLength = maxLengthBlock * WALUtil.BLOCK_SIZE;
-            this.writeOffsets = writeOffsetsBlock.stream().map(offset -> offset * WALUtil.BLOCK_SIZE).collect(Collectors.toList());
-            this.recoveredOffsets = recoveredOffsetsBlock.stream().map(offset -> offset * WALUtil.BLOCK_SIZE).collect(Collectors.toList());
+            this.recordSize = recordSize;
+            this.capacity = capacity * unit + WAL_HEADER_TOTAL_CAPACITY;
+            this.trimOffset = trimOffset * unit;
+            this.startOffset = startOffset * unit;
+            this.nextOffset = nextOffset * unit;
+            this.maxLength = maxLength * unit;
+            this.writeOffsets = writeOffsets.stream().map(offset -> offset * unit).collect(Collectors.toList());
+            this.recoveredOffsets = recoveredOffsets.stream().map(offset -> offset * unit).collect(Collectors.toList());
         }
 
         public Arguments toArguments(String name) {
-            return Arguments.of(name, trimOffset, startOffset, nextOffset, maxLength, writeOffsets, recoveredOffsets);
+            return Arguments.of(name, recordSize, capacity, trimOffset, startOffset, nextOffset, maxLength, writeOffsets, recoveredOffsets);
         }
     }
 
     public static Stream<Arguments> testRecoverFromDisasterData() {
         return Stream.of(
                 new RecoverFromDisasterParam(
-                        0,
-                        0,
-                        0,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        -1L,
+                        0L,
+                        0L,
+                        50L,
                         Arrays.asList(0L, 2L, 4L),
-                        Arrays.asList(0L, 2L, 4L)
+                        Arrays.asList(0L, 2L, 4L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("base"),
                 new RecoverFromDisasterParam(
-                        0,
-                        10,
-                        10,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        0L,
+                        10L,
+                        10L,
+                        50L,
                         Arrays.asList(0L, 2L, 4L),
-                        Arrays.asList(0L, 2L, 4L)
-                ).toArguments("trimmed at zero (not trimmed)"),
+                        Arrays.asList(2L, 4L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("trimmed at zero"),
                 new RecoverFromDisasterParam(
-                        2,
-                        10,
-                        10,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        2L,
+                        10L,
+                        10L,
+                        50L,
                         Arrays.asList(0L, 2L, 4L, 6L),
-                        Arrays.asList(4L, 6L)
+                        Arrays.asList(4L, 6L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("trimmed"),
                 new RecoverFromDisasterParam(
-                        2,
-                        3,
-                        3,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        2L,
+                        3L,
+                        3L,
+                        50L,
                         Arrays.asList(0L, 2L, 4L, 6L, 8L, 10L, 12L, 14L, 16L, 18L, 20L),
-                        Arrays.asList(4L, 6L, 8L, 10L, 12L, 14L, 16L, 18L, 20L)
+                        Arrays.asList(4L, 6L, 8L, 10L, 12L, 14L, 16L, 18L, 20L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("WAL header flushed slow"),
                 new RecoverFromDisasterParam(
-                        2,
-                        3,
-                        3,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        2L,
+                        3L,
+                        3L,
+                        50L,
                         Arrays.asList(0L, 2L, 8L, 10L, 14L, 20L),
-                        Arrays.asList(8L, 10L, 14L, 20L)
+                        Arrays.asList(8L, 10L, 14L, 20L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("many invalid records"),
                 new RecoverFromDisasterParam(
-                        2,
-                        3,
-                        3,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        2L,
+                        3L,
+                        3L,
+                        50L,
                         Arrays.asList(14L, 8L, 10L, 20L, 0L, 2L),
-                        Arrays.asList(8L, 10L, 14L, 20L)
+                        Arrays.asList(8L, 10L, 14L, 20L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("write in random order"),
                 new RecoverFromDisasterParam(
-                        20230920,
-                        20230920,
-                        20230920,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        20230920L,
+                        20230920L,
+                        20230920L,
+                        50L,
                         Arrays.asList(20230900L, 20230910L, 20230916L, 20230920L, 20230930L, 20230940L, 20230950L, 20230960L, 20230970L),
-                        Arrays.asList(20230930L, 20230940L, 20230950L, 20230960L, 20230970L)
+                        Arrays.asList(20230930L, 20230940L, 20230950L, 20230960L, 20230970L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("big logic offset"),
                 new RecoverFromDisasterParam(
-                        180,
-                        210,
-                        240,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        180L,
+                        210L,
+                        240L,
+                        50L,
                         Arrays.asList(150L, 160L, 170L, 180L, 190L, 200L, 202L, 210L, 220L, 230L, 240L),
-                        Arrays.asList(190L, 200L, 202L, 210L, 220L, 230L, 240L)
+                        Arrays.asList(190L, 200L, 202L, 210L, 220L, 230L, 240L),
+                        WALUtil.BLOCK_SIZE
                 ).toArguments("round robin"),
                 new RecoverFromDisasterParam(
-                        210,
-                        250,
-                        290,
-                        50,
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        210L,
+                        250L,
+                        290L,
+                        50L,
                         Arrays.asList(111L, 113L, 115L, 117L, 119L, 120L, 130L,
                                 210L, 215L, 220L, 230L, 240L, 250L, 260L, 270L, 280L, 290L),
-                        Arrays.asList(215L, 220L, 230L, 240L, 250L, 260L, 270L, 280L, 290L)
-                ).toArguments("overwrite")
+                        Arrays.asList(215L, 220L, 230L, 240L, 250L, 260L, 270L, 280L, 290L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("overwrite"),
                 // TODO: test window max length
+                new RecoverFromDisasterParam(
+                        42,
+                        8192L,
+                        -1L,
+                        0L,
+                        0L,
+                        8192L,
+                        Arrays.asList(0L, 42L, 84L),
+                        Arrays.asList(0L, 42L, 84L),
+                        1
+                ).toArguments("merge write - base"),
+                new RecoverFromDisasterParam(
+                        42,
+                        8192L,
+                        42L,
+                        0L,
+                        0L,
+                        50L,
+                        Arrays.asList(0L, 42L, 84L, 126L),
+                        Arrays.asList(84L, 126L),
+                        1
+                ).toArguments("merge write - trimmed"),
+                new RecoverFromDisasterParam(
+                        42,
+                        8192L,
+                        42L,
+                        4096L,
+                        4096L,
+                        50L,
+                        Arrays.asList(0L, 42L, 42 * 2L, 42 * 4L, 4096L, 4096L + 42L, 4096L + 42 * 3L),
+                        Arrays.asList(42 * 2L, 4096L, 4096L + 42L),
+                        1
+                ).toArguments("merge write - some invalid records"),
+                new RecoverFromDisasterParam(
+                        42,
+                        8192L,
+                        42L,
+                        4096L,
+                        4096L,
+                        50L,
+                        Arrays.asList(42L, 42 * 4L, 42 * 2L, 4096L + 42 * 3L, 0L, 4096L, 4096L + 42L),
+                        Arrays.asList(42 * 2L, 4096L, 4096L + 42L),
+                        1
+                ).toArguments("merge write - random order"),
+                new RecoverFromDisasterParam(
+                        1000,
+                        8192L,
+                        2000L,
+                        4096L,
+                        4096L,
+                        50L,
+                        Arrays.asList(0L, 1000L, 2000L, 3000L, 4000L, 5000L, 7000L),
+                        Arrays.asList(3000L, 4000L, 5000L),
+                        1
+                ).toArguments("merge write - record in the middle"),
+                new RecoverFromDisasterParam(
+                        42,
+                        8192L,
+                        8192L + 4096L + 42L,
+                        16384L,
+                        16384L,
+                        50L,
+                        Arrays.asList(8192L + 4096L, 8192L + 4096L + 42L, 8192L + 4096L + 42 * 2L, 8192L + 4096L + 42 * 4L, 16384L, 16384L + 42L, 16384L + 42 * 3L),
+                        Arrays.asList(8192L + 4096L + 42 * 2L, 16384L, 16384L + 42L),
+                        1
+                ).toArguments("merge write - round robin"),
+                new RecoverFromDisasterParam(
+                        1000,
+                        8192L,
+                        12000L,
+                        16384L,
+                        16384L,
+                        50L,
+                        Arrays.asList(1000L, 2000L, 3000L, 4000L, 5000L, 6000L, 7000L,
+                                9000L, 10000L, 11000L, 12000L, 13000L, 14000L, 15000L),
+                        Arrays.asList(13000L, 14000L, 15000L),
+                        1
+                ).toArguments("merge write - overwrite")
         );
     }
 
@@ -601,6 +712,8 @@ class BlockWALServiceTest {
     @MethodSource("testRecoverFromDisasterData")
     public void testRecoverFromDisaster(
             String name,
+            int recordSize,
+            long capacity,
             long trimOffset,
             long startOffset,
             long nextOffset,
@@ -609,17 +722,17 @@ class BlockWALServiceTest {
             List<Long> recoveredOffsets
     ) throws IOException {
         final String tempFilePath = TestUtils.tempFilePath();
-        final WALChannel walChannel = WALChannel.builder(tempFilePath, RecoverFromDisasterParam.CAPACITY).build();
+        final WALChannel walChannel = WALChannel.builder(tempFilePath, capacity).build();
 
         // Simulate disaster
         walChannel.open();
         writeWALHeader(walChannel, trimOffset, startOffset, nextOffset, maxLength);
         for (long writeOffset : writeOffsets) {
-            write(walChannel, writeOffset, RecoverFromDisasterParam.RECORD_SIZE);
+            write(walChannel, writeOffset, recordSize);
         }
         walChannel.close();
 
-        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, RecoverFromDisasterParam.CAPACITY)
+        final WriteAheadLog wal = BlockWALService.builder(tempFilePath, capacity)
                 .flushHeaderIntervalSeconds(1 << 30)
                 .build()
                 .start();
