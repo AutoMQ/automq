@@ -34,9 +34,6 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.Unpooled;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -49,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
@@ -185,6 +184,11 @@ public class S3Stream implements Stream {
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
                 OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsed());
+
+                if (timerUtil.elapsed() > 1000) {
+                    LOGGER.warn("{} stream fetch [{}, {}) {} takes {} ms", logIdent, startOffset, endOffset, maxBytes, timerUtil.elapsed());
+                }
+
                 if (ex != null) {
                     LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                 } else if (networkOutboundLimiter != null) {
