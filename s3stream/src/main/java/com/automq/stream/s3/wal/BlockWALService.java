@@ -487,21 +487,11 @@ public class BlockWALService implements WriteAheadLog {
         checkReadyToServe();
 
         long trimmedOffset = walHeaderCoreData.getTrimOffset();
-        return recover(trimmedOffset);
-    }
-
-    /**
-     * Recover from the given offset.
-     */
-    private Iterator<RecoverResult> recover(long startOffset) {
-        long recoverStartOffset = WALUtil.alignSmallByBlockSize(startOffset);
-        RecoverIterator iterator;
-        if (startOffset == 0) {
-            iterator = new RecoverIterator(recoverStartOffset);
-        } else {
-            iterator = new RecoverIterator(recoverStartOffset, startOffset);
+        long recoverStartOffset = trimmedOffset;
+        if (recoverStartOffset < 0) {
+            recoverStartOffset = 0;
         }
-        return iterator;
+        return new RecoverIterator(recoverStartOffset, trimmedOffset);
     }
 
     @Override
@@ -552,7 +542,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     static class WALHeaderCoreData {
-        private final AtomicLong trimOffset2 = new AtomicLong(0);
+        private final AtomicLong trimOffset2 = new AtomicLong(-1);
         private final AtomicLong flushedTrimOffset = new AtomicLong(0);
         private final AtomicLong slidingWindowStartOffset5 = new AtomicLong(0);
         private final AtomicLong slidingWindowNextWriteOffset4 = new AtomicLong(0);
@@ -837,12 +827,8 @@ public class BlockWALService implements WriteAheadLog {
 
     class RecoverIterator implements Iterator<RecoverResult> {
         private long nextRecoverOffset;
-        private long skipRecordAtOffset = -1;
+        private final long skipRecordAtOffset;
         private RecoverResult next;
-
-        public RecoverIterator(long nextRecoverOffset) {
-            this.nextRecoverOffset = nextRecoverOffset;
-        }
 
         public RecoverIterator(long nextRecoverOffset, long skipRecordAtOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
