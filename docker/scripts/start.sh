@@ -190,7 +190,7 @@ add_settings_for_s3() {
         add_or_setup_value "s3.object.block.size" "16777216" "${file_name}"
         add_or_setup_value "s3.object.part.size" "33554432" "${file_name}"
         add_or_setup_value "s3.cache.size" "1073741824" "${file_name}"
-        add_or_setup_value "s3.object.compaction.cache.size" "536870912" "${file_name}"
+        add_or_setup_value "stream.set.object.compaction.cache.size" "536870912" "${file_name}"
     fi
 }
 
