@@ -25,7 +25,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.streamaspect.{ElasticLogManager, ReadManualReleaseHint}
+import kafka.log.streamaspect.{ElasticLogManager, ReadAllHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.network.RequestChannel
@@ -1093,9 +1093,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         // The fetching is done is a separate thread pool to avoid blocking io thread.
         fetchingExecutors.submit(new Runnable {
           override def run(): Unit = {
-            ReadManualReleaseHint.mark()
+            ReadAllHint.mark()
             doFetchingRecords()
-            ReadManualReleaseHint.reset()
+            ReadAllHint.reset()
           }
         })
       } else {

@@ -20,9 +20,9 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class ReadManualReleaseHint {
+public class ReadAllHint {
 
-    public static final FastThreadLocal<AtomicBoolean> MANUAL_RELEASE = new FastThreadLocal<AtomicBoolean>() {
+    public static final FastThreadLocal<AtomicBoolean> HINT = new FastThreadLocal<AtomicBoolean>() {
         @Override
         protected AtomicBoolean initialValue() {
             return new AtomicBoolean(false);
@@ -30,15 +30,15 @@ public class ReadManualReleaseHint {
     };
 
     public static boolean isMarked() {
-        return MANUAL_RELEASE.get().get();
+        return HINT.get().get();
     }
 
     public static void mark() {
-        MANUAL_RELEASE.get().set(true);
+        HINT.get().set(true);
     }
 
     public static void reset() {
-        MANUAL_RELEASE.get().set(false);
+        HINT.get().set(false);
     }
 
 }
