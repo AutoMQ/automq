@@ -17,6 +17,8 @@
 
 package kafka.log
 
+import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
+
 import java.io.{File, IOException}
 import java.nio.file.Files
 import java.text.NumberFormat
@@ -31,7 +33,6 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{Time, Utils}
 import kafka.log.streamaspect.ElasticLogManager
-import kafka.log.streamaspect.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
 
 import java.util.concurrent.{CompletableFuture, ExecutionException}
 import scala.jdk.CollectionConverters._
@@ -435,9 +436,11 @@ class LocalLog(@volatile protected var _dir: File,
           if (fetchDataInfo != null) {
             if (includeAbortedTxns) {
               // AutoMQ for Kafka inject start
-              val upperBoundOpt =  fetchDataInfo.records match {
-                case adaptor: BatchIteratorRecordsAdaptor =>
-                  Some(adaptor.lastOffset())
+              val upperBoundOpt = fetchDataInfo.records match {
+                case records: PooledMemoryRecords =>
+                  Some(records.lastOffset())
+                case adapter: BatchIteratorRecordsAdaptor =>
+                  Some(adapter.lastOffset())
                 case _ =>
                   None
               }

@@ -99,7 +99,7 @@ public class ElasticLogFileRecords {
     }
 
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
-        if (ReadManualReleaseHint.isMarked()) {
+        if (ReadAllHint.isMarked()) {
             return readAll0(startOffset, maxOffset, maxSize);
         } else {
             return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
@@ -276,16 +276,20 @@ public class ElasticLogFileRecords {
     public static class PooledMemoryRecords extends AbstractRecords implements PooledResource {
         private final List<FetchResult> fetchResults;
         private final MemoryRecords memoryRecords;
+        private final long lastOffset;
 
         private PooledMemoryRecords(List<FetchResult> fetchResults) {
             this.fetchResults = fetchResults;
             CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer();
+            long lastOffset = 0;
             for (FetchResult fetchResult : fetchResults) {
                 for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
                     compositeByteBuf.addComponent(true, Unpooled.wrappedBuffer(recordBatchWithContext.rawPayload()));
+                    lastOffset = recordBatchWithContext.lastOffset();
                 }
             }
             this.memoryRecords = MemoryRecords.readableRecords(compositeByteBuf.nioBuffer());
+            this.lastOffset = lastOffset;
         }
 
         public static PooledMemoryRecords of(List<FetchResult> fetchResults) {
@@ -321,6 +325,10 @@ public class ElasticLogFileRecords {
         public void release() {
             fetchResults.forEach(FetchResult::free);
             fetchResults.clear();
+        }
+
+        public long lastOffset() {
+            return lastOffset;
         }
     }
 
