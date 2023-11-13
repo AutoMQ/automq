@@ -60,6 +60,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -571,6 +572,8 @@ public class DefaultS3Operator implements S3Operator {
                         AnonymousCredentialsProvider.create()
                 ).build()
         );
+        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
+                .apiCallAttemptTimeout(Duration.ofSeconds(30)));
         return builder.build();
     }
 
