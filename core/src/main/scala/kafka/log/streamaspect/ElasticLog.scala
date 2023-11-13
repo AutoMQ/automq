@@ -20,7 +20,7 @@ package kafka.log.streamaspect
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
 import kafka.log._
-import kafka.log.streamaspect.ElasticLogFileRecords.BatchIteratorRecordsAdaptor
+import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.server.checkpoints.LeaderEpochCheckpointFile
 import kafka.server.epoch.EpochEntry
@@ -345,8 +345,10 @@ class ElasticLog(val metaStream: MetaStream,
           } else {
             if (includeAbortedTxns) {
               val upperBoundOpt = fetchDataInfo.records match {
-                case adaptor: BatchIteratorRecordsAdaptor =>
-                  Some(adaptor.lastOffset())
+                case records: PooledMemoryRecords =>
+                  Some(records.lastOffset())
+                case adapter: BatchIteratorRecordsAdaptor =>
+                  Some(adapter.lastOffset())
                 case _ =>
                   None
               }
