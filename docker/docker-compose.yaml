@@ -30,7 +30,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     # use a static ip
     networks:
-      kos_net:
+      afk_net:
         ipv4_address: 10.6.0.2
 
   # create needed buckets
@@ -47,21 +47,19 @@ services:
       localstack:
         condition: service_healthy
     networks:
-      - kos_net
+      - afk_net
 
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
-    image: automqinc/kafka:0.6.6
+    image: automqinc/kafka:0.7.0
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
-    command: bash /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
-    # use a static ip
+    command: bash /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      kos_net:
-        ipv4_address: 10.6.0.4
+      - afk_net
     depends_on:
       - localstack
       - aws-cli
@@ -69,14 +67,23 @@ services:
   broker1:
     container_name: "${BROKER1_DOCKER_NAME-broker1}"
     hostname: "${BROKER1_DOCKER_NAME-broker1}"
-    image: automqinc/kafka:0.6.6
+    image: automqinc/kafka:0.7.0
+    ports:
+      - "9094:9094"
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1 --override autobalancer.reporter.network.in.capacity=5120 --override autobalancer.reporter.network.out.capacity=5120 --override autobalancer.reporter.metrics.reporting.interval.ms=5000
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_METRICS_REPORTING_INTERVAL_MS=5000
+      # override listener settings
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      - kos_net
+      - afk_net
     depends_on:
       - localstack
       - aws-cli
@@ -85,14 +92,23 @@ services:
   broker2:
     container_name: "${BROKER2_DOCKER_NAME-broker2}"
     hostname: "${BROKER2_DOCKER_NAME-broker2}"
-    image: automqinc/kafka:0.6.6
+    image: automqinc/kafka:0.7.0
+    ports:
+      - "9095:9095"
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@10.6.0.4:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1 --override autobalancer.reporter.network.in.capacity=5120 --override autobalancer.reporter.network.out.capacity=5120 --override autobalancer.reporter.metrics.reporting.interval.ms=5000
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_METRICS_REPORTING_INTERVAL_MS=5000
+      # override listener settings
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9095
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9095
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      - kos_net
+      - afk_net
     depends_on:
       - localstack
       - aws-cli
@@ -104,8 +120,8 @@ volumes:
     driver: local
 
 networks:
-  kos_net:
-    name: kos_net
+  afk_net:
+    name: afk_net
     driver: bridge
     ipam:
       driver: default
