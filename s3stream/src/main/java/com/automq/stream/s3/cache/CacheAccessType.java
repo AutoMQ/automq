@@ -15,28 +15,10 @@
  * limitations under the License.
  */
 
-package com.automq.stream.api;
+package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.cache.CacheAccessType;
-
-import java.util.List;
-
-public interface FetchResult {
-
-    /**
-     * Get fetched RecordBatch list.
-     *
-     * @return {@link RecordBatchWithContext} list.
-     */
-    List<RecordBatchWithContext> recordBatchList();
-
-    default CacheAccessType getCacheAccessType() {
-        return CacheAccessType.DELTA_WAL_CACHE_HIT;
-    }
-
-    /**
-     * Free fetch result backend memory.
-     */
-    default void free() {
-    }
+public enum CacheAccessType {
+    DELTA_WAL_CACHE_HIT,
+    BLOCK_CACHE_HIT,
+    BLOCK_CACHE_MISS,
 }

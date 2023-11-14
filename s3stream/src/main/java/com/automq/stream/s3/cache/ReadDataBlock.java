@@ -23,19 +23,16 @@ import java.util.List;
 import java.util.OptionalLong;
 
 public class ReadDataBlock {
-    private final boolean isCacheHit;
+    private final CacheAccessType cacheAccessType;
     private List<StreamRecordBatch> records;
 
-    public ReadDataBlock(List<StreamRecordBatch> records) {
-        this(records, true);
-    }
-    public ReadDataBlock(List<StreamRecordBatch> records, boolean isCacheHit) {
+    public ReadDataBlock(List<StreamRecordBatch> records, CacheAccessType cacheAccessType) {
         this.records = records;
-        this.isCacheHit = isCacheHit;
+        this.cacheAccessType = cacheAccessType;
     }
 
-    public boolean isCacheHit() {
-        return isCacheHit;
+    public CacheAccessType getCacheAccessType() {
+        return cacheAccessType;
     }
 
     public List<StreamRecordBatch> getRecords() {

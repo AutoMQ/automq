@@ -90,7 +90,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 return;
             }
 
-            if (ret.isCacheHit()) {
+            if (ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT) {
                 OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_BLOCK_CACHE).inc();
             } else {
                 OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_BLOCK_CACHE_MISS).inc();
@@ -102,7 +102,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     public CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, boolean awaitReadAhead) {
         if (startOffset >= endOffset || maxBytes <= 0) {
-            return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList()));
+            return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList(), CacheAccessType.BLOCK_CACHE_MISS));
         }
 
         if (awaitReadAhead) {
@@ -127,7 +127,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
         cacheRst.getReadAhead().ifPresent(readAhead -> backgroundReadAhead(streamId, readAhead));
         if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
-            return CompletableFuture.completedFuture(new ReadDataBlock(cacheRecords));
+            return CompletableFuture.completedFuture(new ReadDataBlock(cacheRecords, CacheAccessType.BLOCK_CACHE_HIT));
         }
 
         // 2. get from s3
@@ -139,7 +139,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     .thenApply(s3Rst -> {
                         List<StreamRecordBatch> records = new ArrayList<>(cacheRst.getRecords());
                         records.addAll(s3Rst.getRecords());
-                        return new ReadDataBlock(records, false);
+                        return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);
                     });
         }, mainExecutor);
     }
@@ -197,7 +197,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         });
         return getDataCf.thenComposeAsync(blockCfList -> {
             if (blockCfList.isEmpty()) {
-                return CompletableFuture.completedFuture(new ReadDataBlock(context.records));
+                return CompletableFuture.completedFuture(new ReadDataBlock(context.records, CacheAccessType.BLOCK_CACHE_MISS));
             }
             try {
                 long nextStartOffset = context.nextStartOffset;
@@ -228,7 +228,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 context.nextStartOffset = nextStartOffset;
                 context.nextMaxBytes = nextMaxBytes;
                 if (fulfill) {
-                    return CompletableFuture.completedFuture(new ReadDataBlock(context.records));
+                    return CompletableFuture.completedFuture(new ReadDataBlock(context.records, CacheAccessType.BLOCK_CACHE_MISS));
                 } else {
                     return readFromS3(streamId, endOffset, context);
                 }

@@ -26,6 +26,7 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClientException;
+import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
@@ -219,7 +220,7 @@ public class S3Stream implements Stream {
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
             LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
-            return new DefaultFetchResult(records);
+            return new DefaultFetchResult(records, dataBlock.getCacheAccessType());
         });
     }
 
@@ -339,9 +340,11 @@ public class S3Stream implements Stream {
 
     static class DefaultFetchResult implements FetchResult {
         private final List<RecordBatchWithContext> records;
+        private final CacheAccessType cacheAccessType;
 
-        public DefaultFetchResult(List<StreamRecordBatch> streamRecords) {
+        public DefaultFetchResult(List<StreamRecordBatch> streamRecords, CacheAccessType cacheAccessType) {
             this.records = streamRecords.stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+            this.cacheAccessType = cacheAccessType;
             streamRecords.forEach(StreamRecordBatch::release);
         }
 
@@ -349,6 +352,12 @@ public class S3Stream implements Stream {
         public List<RecordBatchWithContext> recordBatchList() {
             return records;
         }
+
+        @Override
+        public CacheAccessType getCacheAccessType() {
+            return cacheAccessType;
+        }
+
     }
 
     static class Status {

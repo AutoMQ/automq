@@ -19,6 +19,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.StreamClientException;
+import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
@@ -59,6 +60,7 @@ public class S3StreamTest {
         assertEquals(1, rst.recordBatchList().size());
         assertEquals(110, rst.recordBatchList().get(0).baseOffset());
         assertEquals(115, rst.recordBatchList().get(0).lastOffset());
+        assertEquals(CacheAccessType.DELTA_WAL_CACHE_HIT, rst.getCacheAccessType());
 
         // TODO: add fetch from WAL cache
 
@@ -75,6 +77,6 @@ public class S3StreamTest {
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
         StreamRecordBatch record = new StreamRecordBatch(0, 0, start, (int) (end - start), TestUtils.random(size));
-        return new ReadDataBlock(List.of(record));
+        return new ReadDataBlock(List.of(record), CacheAccessType.DELTA_WAL_CACHE_HIT);
     }
 }
