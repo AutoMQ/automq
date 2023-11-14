@@ -41,24 +41,19 @@ Launch an AutoMQ for Kafka cluster locally using Docker Compose.
 
 This cluster comprises 1 Controller node, 2 Broker nodes, and an additional LocalStack container to simulate S3 services locally.
 ``` bash
-cd docker
 # launch AutoMQ for Kafka cluster
-docker compose up -d
+docker compose -f docker/docker-compose.yaml up -d
 ```
 #### Run a console producer and consumer
 1. Create a topic to store your events:
 ``` bash
-# login to broker1
-docker exec -it broker1 bash
-# go to kafka directory
-cd /opt/kafka/kafka
 # create quickstart-events topic
-bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server $(hostname -I | awk '{print $1}'):9092
+bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9094
 ```
 
 2. Run the console producer client to write a few events into your topic. By default, each line you enter will result in a separate event being written to the topic.
 ``` bash
-bin/kafka-console-producer.sh --topic quickstart-events --bootstrap-server $(hostname -I | awk '{print $1}'):9092
+bin/kafka-console-producer.sh --topic quickstart-events --bootstrap-server localhost:9094
 ```
 You may input some messages like:
 ``` text
@@ -68,17 +63,14 @@ This is my second event
 
 3. Run the console consumer client to read the events you just created:
 ``` bash
-# CRTL-C to exit the producer
+# CRTL-C to exit the consumer
 # run console consumer
-bin/kafka-console-consumer.sh --topic quickstart-events --from-beginning --bootstrap-server $(hostname -I | awk '{print $1}'):9092
+bin/kafka-console-consumer.sh --topic quickstart-events --from-beginning --bootstrap-server localhost:9094
 ```
 
 4. Clean up the cluster
 ``` bash
-# exit from the broker1 container
-exit
-# clean up the cluster
-docker compose down -v
+docker compose -f docker/docker-compose.yaml down -v
 ```
 
 [Explore more](https://docs.automq.com/zh/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde): Second-level partition migration and automatic traffic rebalancing.

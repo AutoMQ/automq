@@ -80,7 +80,7 @@ help|-h|--help
     Display this help message
 up [--process.roles ROLE] [--node.id NODE_ID] [--controller.quorum.voters VOTERS]
    [--s3.region REGION] [--s3.bucket BUCKET] [--s3.endpoint ENDPOINT]
-   [--s3.access.key ACCESS_KEY] [--s3.secret.key SECRET_KEY] [--override KEY=VALUE]
+   [--s3.access.key ACCESS_KEY] [--s3.secret.key SECRET_KEY]
     start node.
 EOF
   exit "${exit_status}"
@@ -189,7 +189,7 @@ add_settings_for_s3() {
         add_or_setup_value "s3.stream.object.split.size" "16777216" "${file_name}"
         add_or_setup_value "s3.object.block.size" "16777216" "${file_name}"
         add_or_setup_value "s3.object.part.size" "33554432" "${file_name}"
-        add_or_setup_value "s3.cache.size" "1073741824" "${file_name}"
+        add_or_setup_value "s3.block.cache.size" "1073741824" "${file_name}"
         add_or_setup_value "stream.set.object.compaction.cache.size" "536870912" "${file_name}"
     fi
 }
@@ -220,9 +220,32 @@ kafka_monitor_ip() {
     fi
 }
 
+configure_from_environment_variables() {
+    file_name=$1
+    # List of special cases to apply to the variables
+    local -r exception_regexps=(
+        "s/sasl\.ssl/sasl_ssl/g"
+        "s/sasl\.plaintext/sasl_plaintext/g"
+    )
+    # Map environment variables to config properties
+    for var in "${!KAFKA_CFG_@}"; do
+        key="$(echo "$var" | sed -e 's/^KAFKA_CFG_//g' -e 's/_/\./g' | tr '[:upper:]' '[:lower:]')"
+
+        # Exception for the camel case in this environment variable
+        [[ "$var" == "KAFKA_CFG_ZOOKEEPER_CLIENTCNXNSOCKET" ]] && key="zookeeper.clientCnxnSocket"
+
+        # Apply exception regexps
+        for regex in "${exception_regexps[@]}"; do
+            key="$(echo "$key" | sed "$regex")"
+        done
+
+        value="${!var}"
+        add_or_setup_value "${key}" "${value}" "${file_name}"
+    done
+}
+
 kafka_up() {
   echo "kafka_up: start"
-  override_settings=()
 
   while [[ $# -ge 1 ]]; do
       case "${1}" in
@@ -235,7 +258,6 @@ kafka_up() {
           --s3.access.key) set_once s3_access_key "${2}" "s3 access key"; shift 2;;
           --s3.secret.key) set_once s3_secret_key "${2}" "s3 secret key"; shift 2;;
           --s3.endpoint) set_once s3_endpoint "${2}" "s3 endpoint"; shift 2;;
-          --override) [[ -n "${2}" ]] && override_settings+=("${2}"); shift 2;;
       esac
   done
 
@@ -294,12 +316,8 @@ kafka_up() {
   kafka_monitor_ip
   echo "kafka_up: ip settings changed"
 
-  # override settings
-  for element in "${override_settings[@]}"; do
-      key=$(echo "${element}" | awk -F= '{print $1}')
-      value=$(echo "${element}" | awk -F= '{print $2}')
-      add_or_setup_value "${key}" "${value}" "${kafka_dir}/config/kraft/${process_role}.properties"
-  done
+  # override settings from env
+  configure_from_environment_variables "${kafka_dir}/config/kraft/${process_role}.properties"
 
   # format the data path
   must_do -v "${kafka_dir}/bin/kafka-storage.sh format -g -t ${cluster_id} -c ${kafka_dir}/config/kraft/${process_role}.properties"
