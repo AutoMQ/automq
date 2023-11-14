@@ -32,6 +32,7 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import java.io.IOException;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -81,17 +82,19 @@ public class WriteBench implements AutoCloseable {
         ExecutorService executor = Threads.newFixedThreadPool(
                 config.threads, ThreadUtils.createThreadFactory("append-thread-%d", false), null);
         AppendTaskConfig appendTaskConfig = new AppendTaskConfig(config);
+        Stat stat = new Stat();
         for (int i = 0; i < config.threads; i++) {
             int index = i;
             executor.submit(() -> {
                 try {
-                    runAppendTask(index, appendTaskConfig);
+                    runAppendTask(index, appendTaskConfig, stat);
                 } catch (Exception e) {
                     System.err.printf("Append task %d failed, %s\n", index, e.getMessage());
                     e.printStackTrace();
                 }
             });
         }
+        logIt(config, stat);
 
         executor.shutdown();
         try {
@@ -105,7 +108,22 @@ public class WriteBench implements AutoCloseable {
         System.out.println("Benchmark finished");
     }
 
-    private void runAppendTask(int index, AppendTaskConfig config) throws Exception {
+    private static void logIt(Config config, Stat stat) {
+        ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
+        statExecutor.scheduleAtFixedRate(() -> {
+            Stat.Result result = stat.reset();
+            if (0 != result.count()) {
+                System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
+                        TimeUnit.SECONDS.toNanos(1) * result.count() / result.elapsedTimeNanos(),
+                        TimeUnit.SECONDS.toNanos(1) * (result.count() * config.recordSizeBytes) / result.elapsedTimeNanos() / 1024,
+                        (double) result.costNanos() / TimeUnit.MILLISECONDS.toNanos(1) / result.count(),
+                        (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
+            }
+        }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void runAppendTask(int index, AppendTaskConfig config, Stat stat) throws Exception {
         System.out.printf("Append task %d started\n", index);
 
         byte[] bytes = new byte[config.recordSizeBytes];
@@ -113,18 +131,14 @@ public class WriteBench implements AutoCloseable {
         ByteBuf payload = Unpooled.wrappedBuffer(bytes).retain();
         int intervalNanos = (int) TimeUnit.SECONDS.toNanos(1) / Math.max(1, config.throughputBytes / config.recordSizeBytes);
         long lastAppendTimeNanos = System.nanoTime();
-        long lastLogTimeMillis = System.currentTimeMillis();
         long taskStartTimeMillis = System.currentTimeMillis();
-        AtomicLong count = new AtomicLong();
-        AtomicLong costNanos = new AtomicLong();
-        AtomicLong maxCostNanos = new AtomicLong();
 
         while (true) {
             while (true) {
                 long now = System.nanoTime();
                 long elapsedNanos = now - lastAppendTimeNanos;
                 if (elapsedNanos >= intervalNanos) {
-                    lastAppendTimeNanos = now;
+                    lastAppendTimeNanos += intervalNanos;
                     break;
                 }
                 LockSupport.parkNanos((intervalNanos - elapsedNanos) >> 2);
@@ -133,21 +147,6 @@ public class WriteBench implements AutoCloseable {
             long now = System.currentTimeMillis();
             if (now - taskStartTimeMillis > TimeUnit.SECONDS.toMillis(config.durationSeconds)) {
                 break;
-            }
-
-            if (now - lastLogTimeMillis > TimeUnit.SECONDS.toMillis(LOG_INTERVAL_SECONDS)) {
-                long countValue = count.getAndSet(0);
-                long costNanosValue = costNanos.getAndSet(0);
-                long maxCostNanosValue = maxCostNanos.getAndSet(0);
-                if (0 != countValue) {
-                    System.out.printf("Append task %d | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
-                            index,
-                            countValue / LOG_INTERVAL_SECONDS,
-                            (countValue * config.recordSizeBytes) / LOG_INTERVAL_SECONDS / 1024,
-                            costNanosValue / 1_000_000.0 / countValue,
-                            maxCostNanosValue / 1_000_000.0);
-                    lastLogTimeMillis = now;
-                }
             }
 
             long appendStartTimeNanos = System.nanoTime();
@@ -160,9 +159,7 @@ public class WriteBench implements AutoCloseable {
             }
             result.future().thenAccept(v -> {
                 long costNanosValue = System.nanoTime() - appendStartTimeNanos;
-                count.incrementAndGet();
-                costNanos.addAndGet(costNanosValue);
-                maxCostNanos.accumulateAndGet(costNanosValue, Math::max);
+                stat.update(costNanosValue);
                 flushedOffset.update(v.flushedOffset());
             }).whenComplete((v, e) -> {
                 if (e != null) {
@@ -248,6 +245,37 @@ public class WriteBench implements AutoCloseable {
             this.throughputBytes = config.throughputBytes / config.threads;
             this.recordSizeBytes = config.recordSizeBytes;
             this.durationSeconds = config.durationSeconds;
+        }
+    }
+
+    static class Stat {
+        final AtomicLong count = new AtomicLong();
+        final AtomicLong costNanos = new AtomicLong();
+        final AtomicLong maxCostNanos = new AtomicLong();
+        long lastResetTimeNanos = System.nanoTime();
+
+        public void update(long costNanosValue) {
+            count.incrementAndGet();
+            costNanos.addAndGet(costNanosValue);
+            maxCostNanos.accumulateAndGet(costNanosValue, Math::max);
+        }
+
+        /**
+         * NOT thread-safe
+         */
+        public Result reset() {
+            long countValue = count.getAndSet(0);
+            long costNanosValue = costNanos.getAndSet(0);
+            long maxCostNanosValue = maxCostNanos.getAndSet(0);
+
+            long now = System.nanoTime();
+            long elapsedTimeNanos = now - lastResetTimeNanos;
+            lastResetTimeNanos = now;
+
+            return new Result(countValue, costNanosValue, maxCostNanosValue, elapsedTimeNanos);
+        }
+
+        public record Result(long count, long costNanos, long maxCostNanos, long elapsedTimeNanos) {
         }
     }
 
