@@ -36,6 +36,7 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -216,6 +217,12 @@ public class S3Stream implements Stream {
                             ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS,
                             String.format("fetch range[%s, %s) is out of stream bound [%s, %s)", startOffset, endOffset, startOffset(), confirmOffset)
                     ));
+        }
+        if (startOffset > endOffset) {
+            return FutureUtil.failedFuture(new IllegalArgumentException(String.format("fetch startOffset %s is greater than endOffset %s", startOffset, endOffset)));
+        }
+        if (startOffset == endOffset) {
+            return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
         return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();

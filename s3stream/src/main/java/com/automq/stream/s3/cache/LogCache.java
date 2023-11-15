@@ -42,6 +42,7 @@ public class LogCache {
     private static final int DEFAULT_MAX_BLOCK_STREAM_COUNT = 10000;
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
+    private final long capacity;
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
     private final List<LogCacheBlock> blocks = new ArrayList<>();
@@ -50,7 +51,8 @@ public class LogCache {
     private final AtomicLong size = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
 
-    public LogCache(long cacheBlockMaxSize, int maxCacheBlockStreamCount, Consumer<LogCacheBlock> blockFreeListener) {
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount, Consumer<LogCacheBlock> blockFreeListener) {
+        this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
@@ -58,12 +60,12 @@ public class LogCache {
         this.blockFreeListener = blockFreeListener;
     }
 
-    public LogCache(long cacheBlockMaxSize) {
-        this(cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
+    public LogCache(long capacity, long cacheBlockMaxSize) {
+        this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
     }
 
-    public LogCache(long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
-        this(cacheBlockMaxSize, maxCacheBlockStreamCount, DEFAULT_BLOCK_FREE_LISTENER);
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
+        this(capacity, cacheBlockMaxSize, maxCacheBlockStreamCount, DEFAULT_BLOCK_FREE_LISTENER);
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
@@ -186,11 +188,11 @@ public class LogCache {
     }
 
     private void tryRealFree() {
-        if (size.get() <= cacheBlockMaxSize * 0.9) {
+        if (size.get() <= capacity * 0.9) {
             return;
         }
         blocks.removeIf(b -> {
-            if (size.get() <= cacheBlockMaxSize * 0.9) {
+            if (size.get() <= capacity * 0.9) {
                 return false;
             }
             if (b.free) {
