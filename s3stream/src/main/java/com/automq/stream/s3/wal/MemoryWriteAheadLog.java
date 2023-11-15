@@ -40,6 +40,11 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
+    public WALMetadata metadata() {
+        return new WALMetadata(0, 0);
+    }
+
+    @Override
     public AppendResult append(ByteBuf data, int crc) {
         data.release();
         long offset = offsetAlloc.getAndIncrement();

@@ -476,7 +476,7 @@ class BlockWALServiceTest {
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long startOffset, long nextOffset, long maxLength) throws IOException {
-        ByteBuf header = new BlockWALService.WALHeaderCoreData()
+        ByteBuf header = new WALHeader()
                 .setCapacity(walChannel.capacity())
                 .updateTrimOffset(trimOffset)
                 .setSlidingWindowStartOffset(startOffset)
