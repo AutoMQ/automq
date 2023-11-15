@@ -1140,6 +1140,7 @@ project(':core') {
     from(project.file("$rootDir/bin")) { into "bin/" }
     from(project.file("$rootDir/config")) { into "config/" }
     from(project.file("$rootDir/licenses")) { into "licenses/" }
+    from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
     from "$rootDir/LICENSE-binary" rename {String filename -> filename.replace("-binary", "")}
     from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
     from(configurations.runtimeClasspath) { into("libs/") }
