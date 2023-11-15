@@ -100,7 +100,7 @@ public class S3Storage implements Storage {
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
-        this.deltaWALCache = new LogCache(config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        this.deltaWALCache = new LogCache(config.walCacheSize(), config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
         DirectByteBufAlloc.registerOOMHandlers(new LogCacheEvictOOMHandler());
         this.streamManager = streamManager;
         this.objectManager = objectManager;
@@ -235,6 +235,7 @@ public class S3Storage implements Storage {
 
     /**
      * Append record to WAL.
+     *
      * @return backoff status.
      */
     public boolean append0(WalWriteRequest request, boolean fromBackoff) {

@@ -30,7 +30,7 @@ public class LogCacheTest {
 
     @Test
     public void testPutGet() {
-        LogCache logCache = new LogCache(1024 * 1024);
+        LogCache logCache = new LogCache(1024 * 1024, 1024 * 1024);
 
         logCache.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
         logCache.put(new StreamRecordBatch(233L, 0L, 11L, 2, TestUtils.random(20)));
