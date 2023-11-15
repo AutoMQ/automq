@@ -19,7 +19,7 @@ package com.automq.stream.s3;
 
 // TODO: rename & init
 public class Config {
-    private int brokerId;
+    private int nodeId;
     private String endpoint;
     private String region;
     private String bucket;
@@ -45,7 +45,7 @@ public class Config {
     private int streamObjectCompactionLivingTimeMinutes = 60;
     private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
     private long controllerRequestRetryBaseDelayMs = 500;
-    private long brokerEpoch = 0L;
+    private long nodeEpoch = 0L;
     private int streamSetObjectCompactionInterval = 20;
     private long streamSetObjectCompactionCacheSize = 200 * 1024 * 1024;
     private int streamSetObjectCompactionUploadConcurrency = 8;
@@ -60,8 +60,8 @@ public class Config {
     private long networkBaselineBandwidth = 100 * 1024 * 1024;
     private int refillPeriodMs = 1000;
 
-    public int brokerId() {
-        return brokerId;
+    public int nodeId() {
+        return nodeId;
     }
 
     public String endpoint() {
@@ -156,8 +156,8 @@ public class Config {
         return controllerRequestRetryBaseDelayMs;
     }
 
-    public long brokerEpoch() {
-        return brokerEpoch;
+    public long nodeEpoch() {
+        return nodeEpoch;
     }
 
     public int streamSetObjectCompactionInterval() {
@@ -216,8 +216,8 @@ public class Config {
         return refillPeriodMs;
     }
 
-    public Config brokerId(int brokerId) {
-        this.brokerId = brokerId;
+    public Config nodeId(int brokerId) {
+        this.nodeId = brokerId;
         return this;
     }
 
@@ -336,8 +336,8 @@ public class Config {
         return this;
     }
 
-    public Config brokerEpoch(long brokerEpoch) {
-        this.brokerEpoch = brokerEpoch;
+    public Config nodeEpoch(long brokerEpoch) {
+        this.nodeEpoch = brokerEpoch;
         return this;
     }
 
