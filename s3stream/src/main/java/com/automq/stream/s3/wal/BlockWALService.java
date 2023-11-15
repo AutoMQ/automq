@@ -523,6 +523,10 @@ public class BlockWALService implements WriteAheadLog {
         );
     }
 
+    public static BlockWALServiceBuilder builder(String path) {
+        return new BlockWALServiceBuilder(path);
+    }
+
     public static class BlockWALServiceBuilder {
         private final String blockDevicePath;
         private long blockDeviceCapacityWant;
@@ -534,10 +538,15 @@ public class BlockWALService implements WriteAheadLog {
         private long blockSoftLimit = 1 << 17; // 128KiB
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
+        private boolean readOnly;
 
-        BlockWALServiceBuilder(String blockDevicePath, long capacity) {
+        public BlockWALServiceBuilder(String blockDevicePath, long capacity) {
             this.blockDevicePath = blockDevicePath;
             this.blockDeviceCapacityWant = capacity;
+        }
+
+        public BlockWALServiceBuilder(String blockDevicePath) {
+            this.blockDevicePath = blockDevicePath;
         }
 
         public BlockWALServiceBuilder config(Config config) {
@@ -592,7 +601,13 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
+        public BlockWALServiceBuilder readOnly() {
+            this.readOnly = true;
+            return this;
+        }
+
         public BlockWALService build() {
+            // TODO: BlockWALService support readOnly mode
             BlockWALService blockWALService = new BlockWALService();
 
             // make blockDeviceCapacityWant align to BLOCK_SIZE
