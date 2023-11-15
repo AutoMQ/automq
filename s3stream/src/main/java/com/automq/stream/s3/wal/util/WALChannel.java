@@ -27,6 +27,7 @@ import java.io.IOException;
  * 2. WALBlockDeviceChannel based on block device, which uses O_DIRECT to bypass page cache.
  */
 public interface WALChannel {
+
     static WALChannelBuilder builder(String path, long capacity) {
         return new WALChannelBuilder(path, capacity);
     }
