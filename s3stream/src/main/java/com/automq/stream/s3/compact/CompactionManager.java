@@ -34,6 +34,8 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 import io.github.bucket4j.Bucket;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
@@ -65,7 +67,8 @@ public class CompactionManager {
     private final StreamManager streamManager;
     private final S3Operator s3Operator;
     private final CompactionAnalyzer compactionAnalyzer;
-    private final ScheduledExecutorService scheduledExecutorService;
+    private final ScheduledExecutorService compactScheduledExecutor;
+    private final ScheduledExecutorService bucketCallbackScheduledExecutor;
     private final ExecutorService compactThreadPool;
     private final ExecutorService forceSplitThreadPool;
     private final CompactionUploader uploader;
@@ -100,7 +103,10 @@ public class CompactionManager {
         maxStreamObjectNumPerCommit = config.maxStreamObjectNumPerCommit();
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerStreamSetObject,
                 maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.brokerId())));
-        this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("schedule-compact-executor"));
+        this.compactScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger);
+        this.bucketCallbackScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger);
         this.compactThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("object-compaction-manager"));
         this.forceSplitThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("force-split-executor"));
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +
@@ -114,7 +120,7 @@ public class CompactionManager {
 
     private void scheduleNextCompaction(long delayMillis) {
         logger.info("Next Compaction started in {} ms", delayMillis);
-        this.scheduledExecutorService.schedule(() -> {
+        this.compactScheduledExecutor.schedule(() -> {
             TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
             try {
                 logger.info("Compaction started");
@@ -134,7 +140,8 @@ public class CompactionManager {
     }
 
     public void shutdown() {
-        this.scheduledExecutorService.shutdown();
+        this.compactScheduledExecutor.shutdown();
+        this.bucketCallbackScheduledExecutor.shutdown();
         this.uploader.stop();
     }
 
@@ -264,7 +271,7 @@ public class CompactionManager {
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
-        this.scheduledExecutorService.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
+        this.compactScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
                     .map(StreamOffsetRange::getStreamId).distinct().toList();
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
@@ -341,7 +348,7 @@ public class CompactionManager {
             objectManager.prepareObject(batchGroup.size(), TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                     .thenComposeAsync(objectId -> {
                         List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).toList();
-                        DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator, compactionBucket);
+                        DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator, compactionBucket, bucketCallbackScheduledExecutor);
                         // batch read
                         reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
 
@@ -528,7 +535,7 @@ public class CompactionManager {
             for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
                 List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
-                DataBlockReader reader = new DataBlockReader(metadata, s3Operator, compactionBucket);
+                DataBlockReader reader = new DataBlockReader(metadata, s3Operator, compactionBucket, bucketCallbackScheduledExecutor);
                 reader.readBlocks(streamDataBlocks, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
             }
             List<CompletableFuture<StreamObject>> streamObjectCFList = new ArrayList<>();
