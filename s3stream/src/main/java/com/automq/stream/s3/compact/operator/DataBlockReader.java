@@ -21,8 +21,6 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.compact.objects.StreamDataBlock;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.utils.ThreadUtils;
-import com.automq.stream.utils.Threads;
 import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -33,6 +31,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -45,18 +44,22 @@ public class DataBlockReader {
     private final S3Operator s3Operator;
     private final CompletableFuture<List<StreamDataBlock>> indexBlockCf = new CompletableFuture<>();
     private final Bucket throttleBucket;
-    private final ScheduledExecutorService bucketCbExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", false), LOGGER);
+    private final ScheduledExecutorService bucketCallbackExecutor;
 
     public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
-        this(metadata, s3Operator, null);
+        this(metadata, s3Operator, null, null);
     }
 
-    public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator, Bucket throttleBucket) {
+    public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator, Bucket throttleBucket, ScheduledExecutorService bucketCallbackExecutor) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
         this.throttleBucket = throttleBucket;
+        if (this.throttleBucket != null) {
+            this.bucketCallbackExecutor = Objects.requireNonNull(bucketCallbackExecutor);
+        } else {
+            this.bucketCallbackExecutor = null;
+        }
     }
 
     public CompletableFuture<List<StreamDataBlock>> getDataBlockIndex() {
@@ -186,7 +189,7 @@ public class DataBlockReader {
         if (throttleBucket == null) {
             return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2);
         } else {
-            return throttleBucket.asScheduler().consume(end - start + 1, bucketCbExecutor)
+            return throttleBucket.asScheduler().consume(end - start + 1, bucketCallbackExecutor)
                     .thenCompose(v -> s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2));
         }
     }
