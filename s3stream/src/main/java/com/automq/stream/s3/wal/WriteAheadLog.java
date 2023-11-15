@@ -28,7 +28,14 @@ public interface WriteAheadLog {
 
     WriteAheadLog start() throws IOException;
 
+
     void shutdownGracefully();
+
+    /**
+     * Get write ahead log metadata
+     * @return {@link WALMetadata}
+     */
+    WALMetadata metadata();
 
     /**
      * Append data to log, note append may be out of order.
@@ -87,4 +94,5 @@ public interface WriteAheadLog {
             super(message);
         }
     }
+
 }

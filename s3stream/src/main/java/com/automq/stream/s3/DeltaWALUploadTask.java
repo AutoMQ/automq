@@ -58,7 +58,7 @@ public class DeltaWALUploadTask {
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
                               ExecutorService executor, boolean forceSplit) {
-        this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.brokerId()));
+        this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = config.objectBlockSize();
         this.objectPartSize = config.objectPartSize();

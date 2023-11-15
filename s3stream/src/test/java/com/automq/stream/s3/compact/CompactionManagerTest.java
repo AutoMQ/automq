@@ -64,7 +64,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void setUp() throws Exception {
         super.setUp();
         config = Mockito.mock(Config.class);
-        when(config.brokerId()).thenReturn(BROKER0);
+        when(config.nodeId()).thenReturn(BROKER0);
         when(config.streamSetObjectCompactionUploadConcurrency()).thenReturn(3);
         when(config.objectPartSize()).thenReturn(100);
         when(config.streamSetObjectCompactionCacheSize()).thenReturn(300L);

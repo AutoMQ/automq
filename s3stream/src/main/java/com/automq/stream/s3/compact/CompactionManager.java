@@ -84,7 +84,7 @@ public class CompactionManager {
     private Bucket compactionBucket = null;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager, S3Operator s3Operator) {
-        String logPrefix = String.format("[CompactionManager id=%d] ", config.brokerId());
+        String logPrefix = String.format("[CompactionManager id=%d] ", config.nodeId());
         this.logger = new LogContext(logPrefix).logger(CompactionManager.class);
         this.s3ObjectLogger = S3ObjectLogger.logger(logPrefix);
         this.kafkaConfig = config;
@@ -102,7 +102,7 @@ public class CompactionManager {
         maxStreamNumPerStreamSetObject = config.maxStreamNumPerStreamSetObject();
         maxStreamObjectNumPerCommit = config.maxStreamObjectNumPerCommit();
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerStreamSetObject,
-                maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.brokerId())));
+                maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.nodeId())));
         this.compactScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
                 ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger);
         this.bucketCallbackScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
