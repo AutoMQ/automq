@@ -56,6 +56,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
@@ -72,8 +73,8 @@ public class S3Storage implements Storage {
      * WAL out of order callback sequencer. Single thread mainWriteExecutor will ensure the memory safety.
      */
     private final WALCallbackSequencer callbackSequencer = new WALCallbackSequencer();
-    private final Queue<WALObjectUploadTaskContext> walPrepareQueue = new LinkedList<>();
-    private final Queue<WALObjectUploadTaskContext> walCommitQueue = new LinkedList<>();
+    private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
+    private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<CompletableFuture<Void>> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
 
     private final ScheduledExecutorService mainWriteExecutor = Threads.newSingleThreadScheduledExecutor(
@@ -124,11 +125,20 @@ public class S3Storage implements Storage {
     /**
      * Upload WAL to S3 and close opening streams.
      */
-    private void recover() throws Throwable {
+    public void recover() throws Throwable {
+        recover0(this.deltaWAL, this.streamManager, this.objectManager, this::uploadDeltaWAL, LOGGER);
+    }
+
+    public void recover(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager, Logger logger) throws Throwable {
+        recover0(deltaWAL, streamManager, objectManager, this::uploadDeltaWAL, logger);
+    }
+
+    static void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
+                         Function<DeltaWALUploadTaskContext, CompletableFuture<Void>> upload, Logger logger) throws Throwable {
         deltaWAL.start();
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
 
-        LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(deltaWAL.recover(), streams);
+        LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
         Map<Long, Long> streamEndOffsets = new HashMap<>();
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
@@ -137,14 +147,16 @@ public class S3Storage implements Storage {
         });
 
         if (cacheBlock.size() != 0) {
-            LOGGER.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            uploadDeltaWAL(cacheBlock).get();
+            logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
+            DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(cacheBlock);
+            context.objectManager = objectManager;
+            upload.apply(context).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
         deltaWAL.reset().get();
         for (StreamMetadata stream : streams) {
             long newEndOffset = streamEndOffsets.getOrDefault(stream.getStreamId(), stream.getEndOffset());
-            LOGGER.info("recover try close stream {} with new end offset {}", stream, newEndOffset);
+            logger.info("recover try close stream {} with new end offset {}", stream, newEndOffset);
         }
         CompletableFuture.allOf(
                 streams
@@ -153,8 +165,11 @@ public class S3Storage implements Storage {
                         .toArray(CompletableFuture[]::new)
         ).get();
     }
+    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams) {
+        return recoverContinuousRecords(it, openingStreams, LOGGER);
+    }
 
-    LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams) {
+    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::getStreamId, StreamMetadata::getEndOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
         long logEndOffset = -1L;
@@ -181,7 +196,7 @@ public class S3Storage implements Storage {
                 cacheBlock.put(streamRecordBatch);
                 streamNextOffsets.put(streamRecordBatch.getStreamId(), streamRecordBatch.getLastOffset());
             } else {
-                LOGGER.error("unexpected WAL record, streamId={}, expectNextOffset={}, record={}", streamId, expectNextOffset, streamRecordBatch);
+                logger.error("unexpected WAL record, streamId={}, expectNextOffset={}, record={}", streamId, expectNextOffset, streamRecordBatch);
                 streamRecordBatch.release();
             }
         }
@@ -305,9 +320,7 @@ public class S3Storage implements Storage {
         TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         mainReadExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
-        cf.whenComplete((nil, ex) -> {
-            OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsed());
-        });
+        cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsed()));
         return cf;
     }
 
@@ -404,10 +417,17 @@ public class S3Storage implements Storage {
      * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
      */
     CompletableFuture<Void> uploadDeltaWAL(LogCache.LogCacheBlock logCacheBlock) {
+        DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
+        context.objectManager = this.objectManager;
+        return uploadDeltaWAL(context);
+    }
+
+    CompletableFuture<Void> uploadDeltaWAL(DeltaWALUploadTaskContext context) {
         TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        context.cf = cf;
         inflightWALUploadTasks.add(cf);
-        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(logCacheBlock, cf), cf, LOGGER, "uploadDeltaWAL"));
+        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
             OperationMetricsStats.getHistogram(S3Operation.UPLOAD_STORAGE_WAL).update(timerUtil.elapsed());
             inflightWALUploadTasks.remove(cf);
@@ -418,13 +438,8 @@ public class S3Storage implements Storage {
         return cf;
     }
 
-    private void uploadDeltaWAL0(LogCache.LogCacheBlock logCacheBlock, CompletableFuture<Void> cf) {
-        DeltaWALUploadTask deltaWALUploadTask = DeltaWALUploadTask.of(config, logCacheBlock.records(), objectManager, s3Operator, uploadWALExecutor);
-        WALObjectUploadTaskContext context = new WALObjectUploadTaskContext();
-        context.task = deltaWALUploadTask;
-        context.cache = logCacheBlock;
-        context.cf = cf;
-
+    private void uploadDeltaWAL0(DeltaWALUploadTaskContext context) {
+        context.task = DeltaWALUploadTask.of(config, context.cache.records(), context.objectManager, s3Operator, uploadWALExecutor);
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {
@@ -434,10 +449,10 @@ public class S3Storage implements Storage {
         prepareDeltaWALUpload(context);
     }
 
-    private void prepareDeltaWALUpload(WALObjectUploadTaskContext context) {
+    private void prepareDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.prepare().thenAcceptAsync(nil -> {
             // 1. poll out current task and trigger upload.
-            WALObjectUploadTaskContext peek = walPrepareQueue.poll();
+            DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
             Objects.requireNonNull(peek).task.upload();
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();
@@ -446,14 +461,14 @@ public class S3Storage implements Storage {
                 commitDeltaWALUpload(peek);
             }
             // 3. trigger next task to prepare.
-            WALObjectUploadTaskContext next = walPrepareQueue.peek();
+            DeltaWALUploadTaskContext next = walPrepareQueue.peek();
             if (next != null) {
                 prepareDeltaWALUpload(next);
             }
         }, backgroundExecutor);
     }
 
-    private void commitDeltaWALUpload(WALObjectUploadTaskContext context) {
+    private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.commit().thenAcceptAsync(nil -> {
             // 1. poll out current task
             walCommitQueue.poll();
@@ -466,7 +481,7 @@ public class S3Storage implements Storage {
             context.cf.complete(null);
 
             // 2. trigger next task to commit.
-            WALObjectUploadTaskContext next = walCommitQueue.peek();
+            DeltaWALUploadTaskContext next = walCommitQueue.peek();
             if (next != null) {
                 commitDeltaWALUpload(next);
             }
@@ -576,9 +591,14 @@ public class S3Storage implements Storage {
         }
     }
 
-    static class WALObjectUploadTaskContext {
-        DeltaWALUploadTask task;
+    public static class DeltaWALUploadTaskContext {
         LogCache.LogCacheBlock cache;
+        DeltaWALUploadTask task;
         CompletableFuture<Void> cf;
+        ObjectManager objectManager;
+
+        public DeltaWALUploadTaskContext(LogCache.LogCacheBlock cache) {
+            this.cache = cache;
+        }
     }
 }
