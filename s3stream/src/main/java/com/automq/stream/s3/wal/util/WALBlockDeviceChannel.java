@@ -124,6 +124,11 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     @Override
+    public void flush() {
+        // TODO
+    }
+
+    @Override
     public int read(ByteBuf buf, long position) throws IOException {
         ByteBuffer dst = buf.nioBuffer();
         // FIXME: a small dst will lead to a zero size read

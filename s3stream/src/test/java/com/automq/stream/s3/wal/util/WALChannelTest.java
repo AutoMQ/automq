@@ -62,14 +62,14 @@ class WALChannelTest {
         ByteBuf data = TestUtils.random(1024 * 3);
         for (int i = 0; i < 100; i++) {
             try {
-                walChannel.write(data, (long) i * data.readableBytes());
+                walChannel.writeAndFlush(data, (long) i * data.readableBytes());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
 
         final String content = "Hello World";
-        walChannel.write(Unpooled.wrappedBuffer(content.getBytes()), 100);
+        walChannel.writeAndFlush(Unpooled.wrappedBuffer(content.getBytes()), 100);
 
         ByteBuf readBuffer = Unpooled.buffer(content.length());
         int read = walChannel.read(readBuffer, 100);

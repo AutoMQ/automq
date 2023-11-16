@@ -34,7 +34,8 @@ public class Config {
     private long walWindowInitial = 1048576L;
     private long walWindowIncrement = 4194304L;
     private long walWindowMax = 536870912L;
-    private long walBlockSoftLimit = 128 * 1024;
+    private long walBlockSoftLimit = 256 * 1024;
+    private int walWriteRateLimit = 3000;
     private long walUploadThreshold = 100 * 1024 * 1024;
     private int streamSplitSize = 16777216;
     private int objectBlockSize = 8388608;
@@ -114,6 +115,10 @@ public class Config {
 
     public long walBlockSoftLimit() {
         return walBlockSoftLimit;
+    }
+
+    public int walWriteRateLimit() {
+        return walWriteRateLimit;
     }
 
     public long walUploadThreshold() {
@@ -283,6 +288,11 @@ public class Config {
 
     public Config walBlockSoftLimit(long s3WALBlockSoftLimit) {
         this.walBlockSoftLimit = s3WALBlockSoftLimit;
+        return this;
+    }
+
+    public Config walWriteRateLimit(int s3WALWriteRateLimit) {
+        this.walWriteRateLimit = s3WALWriteRateLimit;
         return this;
     }
 
