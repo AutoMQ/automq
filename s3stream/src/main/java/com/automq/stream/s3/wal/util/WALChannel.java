@@ -28,8 +28,8 @@ import java.io.IOException;
  */
 public interface WALChannel {
 
-    static WALChannelBuilder builder(String path, long capacity) {
-        return new WALChannelBuilder(path, capacity);
+    static WALChannelBuilder builder(String path) {
+        return new WALChannelBuilder(path);
     }
 
     void open() throws IOException;
@@ -70,18 +70,28 @@ public interface WALChannel {
 
     class WALChannelBuilder {
         private final String path;
-        private final long capacity;
+        private long capacity;
+        private boolean readOnly;
 
-        private WALChannelBuilder(String path, long capacity) {
+        private WALChannelBuilder(String path) {
             this.path = path;
+        }
+
+        public WALChannelBuilder capacity(long capacity) {
             this.capacity = capacity;
+            return this;
+        }
+
+        public WALChannelBuilder readOnly(boolean readOnly) {
+            this.readOnly = readOnly;
+            return this;
         }
 
         public WALChannel build() {
             if (path.startsWith("/dev/")) {
                 return new WALBlockDeviceChannel(path, capacity);
             } else {
-                return new WALFileChannel(path, capacity);
+                return new WALFileChannel(path, capacity, readOnly);
             }
         }
     }

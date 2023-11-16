@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.wal.WALNotInitializedException;
 import io.netty.buffer.ByteBuf;
 
 import java.io.File;
@@ -29,12 +30,14 @@ public class WALFileChannel implements WALChannel {
     final String filePath;
     final long fileCapacityWant;
     long fileCapacityFact = 0;
+    boolean readOnly;
     RandomAccessFile randomAccessFile;
     FileChannel fileChannel;
 
-    public WALFileChannel(String filePath, long fileCapacityWant) {
+    public WALFileChannel(String filePath, long fileCapacityWant, boolean readOnly) {
         this.filePath = filePath;
         this.fileCapacityWant = fileCapacityWant;
+        this.readOnly = readOnly;
     }
 
     @Override
@@ -43,10 +46,10 @@ public class WALFileChannel implements WALChannel {
         if (file.exists()) {
             randomAccessFile = new RandomAccessFile(file, "rw");
             fileCapacityFact = randomAccessFile.length();
-            if (fileCapacityFact != fileCapacityWant) {
+            if (!readOnly && fileCapacityFact != fileCapacityWant) {
                 throw new IOException("file " + filePath + " capacity " + fileCapacityFact + " not equal to requested " + fileCapacityWant);
             }
-        } else {
+        } else if (!readOnly) {
             if (!file.getParentFile().exists()) {
                 if (!file.getParentFile().mkdirs()) {
                     throw new IOException("mkdirs " + file.getParentFile() + " fail");
@@ -61,6 +64,8 @@ public class WALFileChannel implements WALChannel {
             randomAccessFile = new RandomAccessFile(file, "rw");
             randomAccessFile.setLength(fileCapacityWant);
             fileCapacityFact = fileCapacityWant;
+        } else {
+            throw new WALNotInitializedException("read only open uninitialized WAL " + filePath);
         }
 
         fileChannel = randomAccessFile.getChannel();
