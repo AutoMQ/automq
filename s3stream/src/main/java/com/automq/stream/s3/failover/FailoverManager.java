@@ -15,14 +15,12 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.failover;
 
-import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
-public class WALNotInitializedException extends IOException {
+public interface FailoverManager {
 
-    public WALNotInitializedException(String message) {
-        super(message);
-    }
+    CompletableFuture<Void> completeFailover(CompleteFailoverRequest request);
 
 }

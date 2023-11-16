@@ -15,14 +15,30 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.failover;
 
-import java.io.IOException;
+public class CompleteFailoverRequest {
+    private int nodeId;
+    private String volumeId;
 
-public class WALNotInitializedException extends IOException {
-
-    public WALNotInitializedException(String message) {
-        super(message);
+    public CompleteFailoverRequest(int nodeId, String volumeId) {
+        this.nodeId = nodeId;
+        this.volumeId = volumeId;
     }
 
+    public int getNodeId() {
+        return nodeId;
+    }
+
+    public void setNodeId(int nodeId) {
+        this.nodeId = nodeId;
+    }
+
+    public String getVolumeId() {
+        return volumeId;
+    }
+
+    public void setVolumeId(String volumeId) {
+        this.volumeId = volumeId;
+    }
 }

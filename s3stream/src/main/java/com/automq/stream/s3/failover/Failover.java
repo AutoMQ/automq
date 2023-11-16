@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3.failover;
 
-import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
@@ -46,11 +45,13 @@ public class Failover {
     private static final Logger LOGGER = LoggerFactory.getLogger(Failover.class);
     private final ExecutorService executor = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("wal-failover-%d", true), LOGGER);
     private final FailoverFactory factory;
-    private final S3Storage s3Storage;
+    private final FailoverManager failoverManager;
+    private final WALRecover walRecover;
 
-    public Failover(FailoverFactory factory, S3Storage s3Storage) {
+    public Failover(FailoverFactory factory, FailoverManager failoverManager, WALRecover walRecover) {
         this.factory = factory;
-        this.s3Storage = s3Storage;
+        this.failoverManager = failoverManager;
+        this.walRecover = walRecover;
     }
 
     public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
@@ -66,6 +67,10 @@ public class Failover {
         return cf;
     }
 
+    protected void fence(FailoverRequest request) {
+        // TODO: run command to fence the device
+    }
+
     class FailoverTask {
         private final FailoverRequest request;
         private int nodeId = NOOP_NODE_ID;
@@ -76,21 +81,30 @@ public class Failover {
         }
 
         public FailoverResponse failover() throws Throwable {
-            BlockWALService wal = BlockWALService.builder(request.getDevice()).readOnly().build();
+            LOGGER.info("failover start {}", request);
             FailoverResponse resp = new FailoverResponse();
+            // fence the device to ensure the old node stops writing to the delta WAL
+            fence(request);
+            // recover WAL data and upload to S3
+            BlockWALService wal = BlockWALService.builder(request.getDevice()).readOnly().build();
+            wal.start();
             try {
-                LOGGER.info("failover start {}", request);
-                wal.start();
                 WALMetadata metadata = wal.metadata();
                 this.nodeId = metadata.nodeId();
                 this.epoch = metadata.epoch();
+                if (nodeId != request.getNodeId()) {
+                    throw new IllegalArgumentException(String.format("nodeId mismatch, request=%s, wal=%s", request, metadata));
+                }
                 resp.setNodeId(nodeId);
                 resp.setEpoch(epoch);
                 Logger taskLogger = new LogContext(String.format("[Failover nodeId=%s epoch=%s]", nodeId, epoch)).logger(FailoverTask.class);
                 StreamManager streamManager = factory.getStreamManager(nodeId, epoch);
                 ObjectManager objectManager = factory.getObjectManager(nodeId, epoch);
                 LOGGER.info("failover start recover {}", request);
-                s3Storage.recover(wal, streamManager, objectManager, taskLogger);
+                walRecover.recover(wal, streamManager, objectManager, taskLogger);
+
+                // notify controller failover completed and controller could delete the volume.
+                failoverManager.completeFailover(new CompleteFailoverRequest(nodeId, request.getVolumeId())).get();
                 LOGGER.info("failover done {}", request);
             } finally {
                 wal.shutdownGracefully();
