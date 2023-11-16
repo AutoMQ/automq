@@ -121,20 +121,20 @@ public class CompactionManager {
     private void scheduleNextCompaction(long delayMillis) {
         logger.info("Next Compaction started in {} ms", delayMillis);
         this.compactScheduledExecutor.schedule(() -> {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+            TimerUtil timerUtil = new TimerUtil();
             try {
                 logger.info("Compaction started");
                 this.compact()
-                        .thenAccept(result -> logger.info("Compaction complete, total cost {} ms", timerUtil.elapsed()))
+                        .thenAccept(result -> logger.info("Compaction complete, total cost {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS)))
                         .exceptionally(ex -> {
-                            logger.error("Compaction failed, cost {} ms, ", timerUtil.elapsed(), ex);
+                            logger.error("Compaction failed, cost {} ms, ", timerUtil.elapsedAs(TimeUnit.MILLISECONDS), ex);
                             return null;
                         })
                         .join();
             } catch (Exception ex) {
                 logger.error("Error while compacting objects ", ex);
             }
-            long nextDelay = Math.max(0, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsed());
+            long nextDelay = Math.max(0, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             scheduleNextCompaction(nextDelay);
         }, delayMillis, TimeUnit.MILLISECONDS);
     }
@@ -182,7 +182,7 @@ public class CompactionManager {
 
     private void forceSplitObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToForceSplit) {
         logger.info("Force split {} stream set objects", objectsToForceSplit.size());
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         for (int i = 0; i < objectsToForceSplit.size(); i++) {
             timerUtil.reset();
             S3ObjectMetadata objectToForceSplit = objectsToForceSplit.get(i);
@@ -193,11 +193,11 @@ public class CompactionManager {
                 continue;
             }
             logger.info("Build force split request for object {} complete, generated {} stream objects, time cost: {} ms, start committing objects",
-                    objectToForceSplit.objectId(), request.getStreamObjects().size(), timerUtil.elapsed());
+                    objectToForceSplit.objectId(), request.getStreamObjects().size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             timerUtil.reset();
             objectManager.commitStreamSetObject(request)
                     .thenAccept(resp -> {
-                        logger.info("Commit force split request succeed, time cost: {} ms", timerUtil.elapsed());
+                        logger.info("Commit force split request succeed, time cost: {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                         if (s3ObjectLogEnable) {
                             s3ObjectLogger.trace("[Compact] {}", request);
                         }
@@ -221,7 +221,7 @@ public class CompactionManager {
             objectsToCompact = objectsToCompact.subList(0, maxObjectNumToCompact);
         }
         logger.info("Compact {} stream set objects", objectsToCompact.size());
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         CommitStreamSetObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
         if (request == null) {
             return;
@@ -231,11 +231,11 @@ public class CompactionManager {
             return;
         }
         logger.info("Build compact request for {} stream set objects complete, stream set object id: {}, stresam set object size: {}, stream object num: {}, time cost: {}, start committing objects",
-                request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), timerUtil.elapsed());
+                request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         timerUtil.reset();
         objectManager.commitStreamSetObject(request)
                 .thenAccept(resp -> {
-                    logger.info("Commit compact request succeed, time cost: {} ms", timerUtil.elapsed());
+                    logger.info("Commit compact request succeed, time cost: {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                     if (s3ObjectLogEnable) {
                         s3ObjectLogger.trace("[Compact] {}", request);
                     }

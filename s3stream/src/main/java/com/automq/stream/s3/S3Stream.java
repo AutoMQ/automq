@@ -135,7 +135,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         writeLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+            TimerUtil timerUtil = new TimerUtil();
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
@@ -144,7 +144,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(timerUtil.elapsed());
+                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
             });
             return cf;
@@ -181,14 +181,14 @@ public class S3Stream implements Stream {
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
         readLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+            TimerUtil timerUtil = new TimerUtil();
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsed());
+                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
 
-                if (timerUtil.elapsed() > 1000) {
-                    LOGGER.warn("{} stream fetch [{}, {}) {} takes {} ms", logIdent, startOffset, endOffset, maxBytes, timerUtil.elapsed());
+                if (timerUtil.elapsedAs(TimeUnit.MILLISECONDS) > 1000) {
+                    LOGGER.warn("{} stream fetch [{}, {}) {} takes {} ms", logIdent, startOffset, endOffset, maxBytes, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 }
 
                 if (ex != null) {
@@ -235,13 +235,13 @@ public class S3Stream implements Stream {
     public CompletableFuture<Void> trim(long newStartOffset) {
         writeLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+            TimerUtil timerUtil = new TimerUtil();
             return exec(() -> {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
                 cf.whenComplete((nil, ex) -> {
-                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(timerUtil.elapsed());
+                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 });
                 return cf;
             }, LOGGER, "trim");

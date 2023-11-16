@@ -69,11 +69,11 @@ public class LogCache {
     }
 
     public boolean put(StreamRecordBatch recordBatch) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         tryRealFree();
         size.addAndGet(recordBatch.size());
         boolean full = activeBlock.put(recordBatch);
-        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_LOG_CACHE).update(timerUtil.elapsed());
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_LOG_CACHE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         return full;
     }
 
@@ -102,7 +102,7 @@ public class LogCache {
      * Note: the records is retained, the caller should release it.
      */
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         List<StreamRecordBatch> records = get0(streamId, startOffset, endOffset, maxBytes);
         records.forEach(StreamRecordBatch::retain);
         if (!records.isEmpty() && records.get(0).getBaseOffset() <= startOffset) {
@@ -110,7 +110,7 @@ public class LogCache {
         } else {
             OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_LOG_CACHE_MISS).inc();
         }
-        OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_LOG_CACHE).update(timerUtil.elapsed());
+        OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_LOG_CACHE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         return records;
     }
 

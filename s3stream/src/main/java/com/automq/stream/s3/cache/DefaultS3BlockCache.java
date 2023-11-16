@@ -77,7 +77,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
         // submit read task to mainExecutor to avoid read slower the caller thread.
         mainExecutor.execute(() -> FutureUtil.exec(() ->
@@ -95,7 +95,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
             } else {
                 OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_BLOCK_CACHE_MISS).inc();
             }
-            OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_BLOCK_CACHE).update(timerUtil.elapsedAndReset());
+            OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_BLOCK_CACHE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         });
         return readCf;
     }
