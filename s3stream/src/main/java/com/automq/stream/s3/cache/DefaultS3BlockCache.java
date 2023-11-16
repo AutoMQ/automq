@@ -77,7 +77,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
         // submit read task to mainExecutor to avoid read slower the caller thread.
         mainExecutor.execute(() -> FutureUtil.exec(() ->
