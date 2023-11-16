@@ -135,7 +135,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         writeLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
@@ -181,7 +181,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
         readLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
@@ -235,7 +235,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<Void> trim(long newStartOffset) {
         writeLock.lock();
         try {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
             return exec(() -> {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));

@@ -82,7 +82,7 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
             OperationMetricsStats.getHistogram(S3Operation.CREATE_STREAM).update(timerUtil.elapsed());
             return openStream0(streamId, options.epoch());
@@ -136,7 +136,7 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
                     OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsed());
@@ -171,7 +171,7 @@ public class S3StreamClient implements StreamClient {
             LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
         }
 
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         Map<Long, CompletableFuture<Void>> streamCloseFutures = new ConcurrentHashMap<>();
         openedStreams.forEach((streamId, stream) -> streamCloseFutures.put(streamId, stream.close()));
         for (; ; ) {

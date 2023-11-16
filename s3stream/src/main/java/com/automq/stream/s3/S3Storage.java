@@ -234,7 +234,7 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // encoded before append to free heap ByteBuf.
         streamRecord.encoded();
@@ -317,7 +317,7 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         mainReadExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
         cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsed()));
@@ -423,7 +423,7 @@ public class S3Storage implements Storage {
     }
 
     CompletableFuture<Void> uploadDeltaWAL(DeltaWALUploadTaskContext context) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
         CompletableFuture<Void> cf = new CompletableFuture<>();
         context.cf = cf;
         inflightWALUploadTasks.add(cf);

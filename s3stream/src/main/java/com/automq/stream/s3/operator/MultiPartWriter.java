@@ -49,7 +49,7 @@ public class MultiPartWriter implements Writer {
      */
     private final long minPartSize;
     private ObjectPart objectPart = null;
-    private final TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+    private final TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
     private final ThrottleStrategy throttleStrategy;
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
@@ -212,7 +212,7 @@ public class MultiPartWriter implements Writer {
         }
 
         private void upload0() {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.MILLISECONDS);
+            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getHistogram(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsed()));
         }
