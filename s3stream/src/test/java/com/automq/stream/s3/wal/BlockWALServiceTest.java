@@ -133,7 +133,7 @@ class BlockWALServiceTest {
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
         try {
-            WriteBench.FlushedOffset flushedOffset = new WriteBench.FlushedOffset();
+            WriteBench.TrimOffset trimOffset = new WriteBench.TrimOffset();
             for (int i = 0; i < recordCount; i++) {
                 ByteBuf data = TestUtils.random(recordSize);
                 AppendResult appendResult;
@@ -143,7 +143,7 @@ class BlockWALServiceTest {
                         appendResult = wal.append(data.retainedDuplicate());
                     } catch (OverCapacityException e) {
                         Thread.yield();
-                        wal.trim(flushedOffset.get()).join();
+                        wal.trim(trimOffset.get()).join();
                         continue;
                     }
                     break;
@@ -153,6 +153,7 @@ class BlockWALServiceTest {
                 if (!mergeWrite) {
                     assertEquals(0, recordOffset % WALUtil.BLOCK_SIZE);
                 }
+                trimOffset.appended(recordOffset);
                 appendResult.future().whenComplete((callbackResult, throwable) -> {
                     assertNull(throwable);
                     maxFlushedOffset.accumulateAndGet(callbackResult.flushedOffset(), Math::max);
@@ -163,7 +164,7 @@ class BlockWALServiceTest {
                         assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
                     }
 
-                    flushedOffset.update(callbackResult.flushedOffset());
+                    trimOffset.flushed(callbackResult.flushedOffset());
                 }).whenComplete((callbackResult, throwable) -> {
                     if (null != throwable) {
                         throwable.printStackTrace();
@@ -378,14 +379,14 @@ class BlockWALServiceTest {
     private static List<Long> appendAsync(WriteAheadLog wal, int recordSize, int recordCount) {
         List<Long> appended = new ArrayList<>(recordCount);
         List<CompletableFuture<Void>> appendFutures = new LinkedList<>();
-        WriteBench.FlushedOffset flushedOffset = new WriteBench.FlushedOffset();
+        WriteBench.TrimOffset trimOffset = new WriteBench.TrimOffset();
         for (int i = 0; i < recordCount; i++) {
             ByteBuf data = TestUtils.random(recordSize);
             AppendResult appendResult;
             try {
                 appendResult = wal.append(data.retainedDuplicate());
             } catch (OverCapacityException e) {
-                long offset = flushedOffset.get();
+                long offset = trimOffset.get();
                 wal.trim(offset).join();
                 appended = appended.stream()
                         .filter(recordOffset -> recordOffset > offset)
@@ -394,10 +395,11 @@ class BlockWALServiceTest {
                 continue;
             }
             appended.add(appendResult.recordOffset());
+            trimOffset.appended(appendResult.recordOffset());
             appendFutures.add(appendResult.future().whenComplete((callbackResult, throwable) -> {
                 assertNull(throwable);
                 assertEquals(0, callbackResult.flushedOffset() % WALUtil.BLOCK_SIZE);
-                flushedOffset.update(callbackResult.flushedOffset());
+                trimOffset.flushed(callbackResult.flushedOffset());
             }).whenComplete((callbackResult, throwable) -> {
                 if (null != throwable) {
                     throwable.printStackTrace();
@@ -472,7 +474,7 @@ class BlockWALServiceTest {
 
         // TODO: make this beautiful
         long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
-        walChannel.write(record, position);
+        walChannel.writeAndFlush(record, position);
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long startOffset, long nextOffset, long maxLength) throws IOException {
@@ -483,7 +485,7 @@ class BlockWALServiceTest {
                 .setSlidingWindowNextWriteOffset(nextOffset)
                 .setSlidingWindowMaxLength(maxLength)
                 .marshal();
-        walChannel.write(header, 0);
+        walChannel.writeAndFlush(header, 0);
     }
 
     private static class RecoverFromDisasterParam {
