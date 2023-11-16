@@ -234,7 +234,7 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // encoded before append to free heap ByteBuf.
         streamRecord.encoded();
@@ -243,7 +243,7 @@ public class S3Storage implements Storage {
         append0(writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE).update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         });
         return cf;
     }
@@ -317,10 +317,10 @@ public class S3Storage implements Storage {
 
     @Override
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         mainReadExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
-        cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsed()));
+        cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -423,13 +423,13 @@ public class S3Storage implements Storage {
     }
 
     CompletableFuture<Void> uploadDeltaWAL(DeltaWALUploadTaskContext context) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         context.cf = cf;
         inflightWALUploadTasks.add(cf);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
-            OperationMetricsStats.getHistogram(S3Operation.UPLOAD_STORAGE_WAL).update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.UPLOAD_STORAGE_WAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             inflightWALUploadTasks.remove(cf);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);

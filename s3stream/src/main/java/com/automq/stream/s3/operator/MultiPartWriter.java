@@ -49,7 +49,7 @@ public class MultiPartWriter implements Writer {
      */
     private final long minPartSize;
     private ObjectPart objectPart = null;
-    private final TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+    private final TimerUtil timerUtil = new TimerUtil();
     private final ThrottleStrategy throttleStrategy;
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
 
@@ -140,12 +140,12 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3ObjectMetricsStats.getHistogram(S3ObjectStage.READY_CLOSE).update(timerUtil.elapsed());
+        S3ObjectMetricsStats.getHistogram(S3ObjectStage.READY_CLOSE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3ObjectMetricsStats.getHistogram(S3ObjectStage.TOTAL).update(timerUtil.elapsed());
+            S3ObjectMetricsStats.getHistogram(S3ObjectStage.TOTAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             S3ObjectMetricsStats.S3_OBJECT_COUNT.inc();
             S3ObjectMetricsStats.S3_OBJECT_UPLOAD_SIZE.update(totalWriteSize.get());
         });
@@ -212,9 +212,9 @@ public class MultiPartWriter implements Writer {
         }
 
         private void upload0() {
-            TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+            TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
-            partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getHistogram(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsed()));
+            partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getHistogram(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         }
 
         public long size() {

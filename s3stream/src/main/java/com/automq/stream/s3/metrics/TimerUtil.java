@@ -20,11 +20,9 @@ package com.automq.stream.s3.metrics;
 import java.util.concurrent.TimeUnit;
 
 public class TimerUtil {
-    private final TimeUnit timeUnit;
     private long last;
 
-    public TimerUtil(TimeUnit timeUnit) {
-        this.timeUnit = timeUnit;
+    public TimerUtil() {
         reset();
     }
 
@@ -32,11 +30,11 @@ public class TimerUtil {
         last = System.nanoTime();
     }
 
-    public long elapsed() {
+    public long elapsedAs(TimeUnit timeUnit) {
         return timeUnit.convert(System.nanoTime() - last, TimeUnit.NANOSECONDS);
     }
 
-    public long elapsedAndReset() {
+    public long elapsedAndResetAs(TimeUnit timeUnit) {
         long now = System.nanoTime();
         long elapsed = timeUnit.convert(now - last, TimeUnit.NANOSECONDS);
         last = now;
