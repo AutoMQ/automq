@@ -615,6 +615,7 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALService build() {
             // TODO: BlockWALService support readOnly mode
+            // TODO: readOnly mode: throw WALNotInitializedException when WAL is not initialized
             BlockWALService blockWALService = new BlockWALService();
 
             // make blockDeviceCapacityWant align to BLOCK_SIZE

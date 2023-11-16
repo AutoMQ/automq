@@ -15,35 +15,7 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.failover;
+package com.automq.stream.s3.wal;
 
-public class FailoverRequest {
-    private int nodeId;
-    private String volumeId;
-    private String device;
-
-    public String getVolumeId() {
-        return volumeId;
-    }
-
-    public void setVolumeId(String volumeId) {
-        this.volumeId = volumeId;
-    }
-
-    public String getDevice() {
-        return device;
-    }
-
-    public void setDevice(String device) {
-        this.device = device;
-    }
-
-    @Override
-    public String toString() {
-        return "FailoverRequest{" +
-                "nodeId=" + nodeId +
-                ", volumeId='" + volumeId + '\'' +
-                ", device='" + device + '\'' +
-                '}';
-    }
+public class WALNotInitializedException extends RuntimeException {
 }
