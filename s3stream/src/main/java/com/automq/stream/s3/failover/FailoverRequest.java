@@ -22,6 +22,14 @@ public class FailoverRequest {
     private String volumeId;
     private String device;
 
+    public void setNodeId(int nodeId) {
+        this.nodeId = nodeId;
+    }
+
+    public int getNodeId() {
+        return nodeId;
+    }
+
     public String getVolumeId() {
         return volumeId;
     }

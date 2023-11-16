@@ -724,7 +724,7 @@ class BlockWALServiceTest {
             List<Long> recoveredOffsets
     ) throws IOException {
         final String tempFilePath = TestUtils.tempFilePath();
-        final WALChannel walChannel = WALChannel.builder(tempFilePath, capacity).build();
+        final WALChannel walChannel = WALChannel.builder(tempFilePath).capacity(capacity).build();
 
         // Simulate disaster
         walChannel.open();

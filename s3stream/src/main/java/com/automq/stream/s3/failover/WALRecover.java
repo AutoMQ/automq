@@ -14,15 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.automq.stream.s3.failover;
 
-package com.automq.stream.s3.wal;
+import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.WriteAheadLog;
+import org.slf4j.Logger;
 
-import java.io.IOException;
-
-public class WALNotInitializedException extends IOException {
-
-    public WALNotInitializedException(String message) {
-        super(message);
-    }
-
+public interface WALRecover {
+    void recover(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager, Logger logger);
 }
