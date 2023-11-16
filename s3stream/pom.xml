@@ -51,17 +51,6 @@
             <version>8.5.0</version>
         </dependency>
         <dependency>
-            <groupId>moe.cnkirito.kdio</groupId>
-            <artifactId>kdio-core</artifactId>
-            <version>1.0.0</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>log4j</groupId>
-                    <artifactId>log4j</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>3.13.0</version>
@@ -100,6 +89,11 @@
             <artifactId>argparse4j</artifactId>
             <version>0.9.0</version>
         </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.2.0</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -118,6 +112,7 @@
                             <failsOnError>true</failsOnError>
                             <includeTestSourceDirectory>true</includeTestSourceDirectory>
                             <excludes>**/generated*/**/*</excludes>
+                            <excludes>**/thirdparty/**/*</excludes>
                         </configuration>
                         <goals>
                             <goal>check</goal>
@@ -171,6 +166,18 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <compilerArgs>
+                        <arg>--add-exports=java.base/sun.nio.ch=ALL-UNNAMED</arg>
+                        <arg>--add-exports=java.base/jdk.internal.access=ALL-UNNAMED</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
