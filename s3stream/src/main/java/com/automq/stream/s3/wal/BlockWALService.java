@@ -421,7 +421,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     public AppendResult append0(ByteBuf body, int crc) throws OverCapacityException {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         checkReadyToServe();
 
         final long recordSize = RECORD_HEADER_SIZE + body.readableBytes();
@@ -444,7 +444,7 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL).update(timerUtil.elapsed()));
+        appendResult.future().whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         return appendResult;
     }
 

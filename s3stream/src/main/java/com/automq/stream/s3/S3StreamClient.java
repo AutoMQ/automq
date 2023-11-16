@@ -82,9 +82,9 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            OperationMetricsStats.getHistogram(S3Operation.CREATE_STREAM).update(timerUtil.elapsed());
+            OperationMetricsStats.getHistogram(S3Operation.CREATE_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return openStream0(streamId, options.epoch());
         }), LOGGER, "createAndOpenStream");
     }
@@ -136,10 +136,10 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
-                    OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsed());
+                    OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                             .compactedStreamObjectMaxSizeInBytes(config.streamObjectCompactionMaxSizeBytes())
                             .eligibleStreamObjectLivingTimeInMs(config.streamObjectCompactionLivingTimeMinutes() * 60L * 1000)
@@ -171,7 +171,7 @@ public class S3StreamClient implements StreamClient {
             LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
         }
 
-        TimerUtil timerUtil = new TimerUtil(TimeUnit.NANOSECONDS);
+        TimerUtil timerUtil = new TimerUtil();
         Map<Long, CompletableFuture<Void>> streamCloseFutures = new ConcurrentHashMap<>();
         openedStreams.forEach((streamId, stream) -> streamCloseFutures.put(streamId, stream.close()));
         for (; ; ) {
@@ -182,7 +182,7 @@ public class S3StreamClient implements StreamClient {
                 break;
             }
         }
-        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsed());
+        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private static class CompactionTasksSummary {
