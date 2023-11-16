@@ -71,14 +71,14 @@ class WALHeader {
             + 4 // node epoch
             + 8; // crc
     public static final int WAL_HEADER_WITHOUT_CRC_SIZE = WAL_HEADER_SIZE - 4;
-    private int magicCode0 = WAL_HEADER_MAGIC_CODE;
-    private long capacity1;
     private final AtomicLong trimOffset2 = new AtomicLong(-1);
     private final AtomicLong flushedTrimOffset = new AtomicLong(0);
-    private long lastWriteTimestamp3 = System.nanoTime();
     private final AtomicLong slidingWindowNextWriteOffset4 = new AtomicLong(0);
     private final AtomicLong slidingWindowStartOffset5 = new AtomicLong(0);
     private final AtomicLong slidingWindowMaxLength6 = new AtomicLong(0);
+    private int magicCode0 = WAL_HEADER_MAGIC_CODE;
+    private long capacity1;
+    private long lastWriteTimestamp3 = System.nanoTime();
     private ShutdownType shutdownType7 = ShutdownType.UNGRACEFULLY;
     private int nodeId8;
     private long epoch9;

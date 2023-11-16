@@ -41,10 +41,24 @@ public interface WALChannel {
     /**
      * Write bytes from the given buffer to the given position of the channel from the current reader index
      * to the end of the buffer. It only returns when all bytes are written successfully.
+     * {@link #flush()} should be called after this method to ensure data is flushed to disk.
      * This method will change the reader index of the given buffer to the end of the written bytes.
      * This method will not change the writer index of the given buffer.
      */
     void write(ByteBuf src, long position) throws IOException;
+
+    /**
+     * Flush to disk.
+     */
+    void flush() throws IOException;
+
+    /**
+     * Call {@link #write(ByteBuf, long)} and {@link #flush()}.
+     */
+    default void writeAndFlush(ByteBuf src, long position) throws IOException {
+        write(src, position);
+        flush();
+    }
 
     /**
      * Read bytes from the given position of the channel to the given buffer from the current writer index

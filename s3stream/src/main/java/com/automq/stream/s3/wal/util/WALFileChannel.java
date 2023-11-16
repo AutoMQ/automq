@@ -88,6 +88,10 @@ public class WALFileChannel implements WALChannel {
             int bytesWritten = write(nioBuffer, position);
             position += bytesWritten;
         }
+    }
+
+    @Override
+    public void flush() throws IOException {
         fileChannel.force(false);
     }
 

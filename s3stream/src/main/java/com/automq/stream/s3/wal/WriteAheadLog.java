@@ -33,6 +33,7 @@ public interface WriteAheadLog {
 
     /**
      * Get write ahead log metadata
+     *
      * @return {@link WALMetadata}
      */
     WALMetadata metadata();

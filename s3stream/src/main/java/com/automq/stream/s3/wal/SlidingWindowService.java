@@ -28,11 +28,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -57,35 +58,43 @@ public class SlidingWindowService {
     private final long upperLimit;
     private final long scaleUnit;
     private final long blockSoftLimit;
+    private final long minWriteIntervalNanos;
     private final WALChannel walChannel;
     private final WALHeaderFlusher walHeaderFlusher;
     private final WindowCoreData windowCoreData = new WindowCoreData();
+
     /**
      * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
      */
     private final Lock blockLock = new ReentrantLock();
     /**
-     * Blocks that are waiting to be written.
-     * All blocks in this queue are ordered by the start offset.
-     */
-    private final Queue<Block> pendingBlocks = new LinkedList<>();
-    /**
      * Blocks that are being written.
      */
     private final TreeSet<Long> writingBlocks = new TreeSet<>();
-    private ExecutorService executorService;
-    private Semaphore semaphore;
+    /**
+     * Blocks that are waiting to be written.
+     * All blocks in this queue are ordered by the start offset.
+     */
+    private Queue<Block> pendingBlocks = new LinkedList<>();
     /**
      * The current block, records are added to this block.
      */
     private Block currentBlock;
 
-    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, long blockSoftLimit, WALHeaderFlusher flusher) {
+    private ExecutorService ioExecutor;
+
+    /**
+     * The last time when a batch of blocks is written to the disk.
+     */
+    private long lastWriteTimeNanos = 0;
+
+    public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit, long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
         this.ioThreadNums = ioThreadNums;
         this.upperLimit = upperLimit;
         this.scaleUnit = scaleUnit;
         this.blockSoftLimit = blockSoftLimit;
+        this.minWriteIntervalNanos = TimeUnit.SECONDS.toNanos(1) / writeRateLimit;
         this.walHeaderFlusher = flusher;
     }
 
@@ -105,19 +114,21 @@ public class SlidingWindowService {
     }
 
     public void start() throws IOException {
-        this.executorService = Threads.newFixedThreadPool(ioThreadNums,
+        this.ioExecutor = Threads.newFixedThreadPool(ioThreadNums,
                 ThreadUtils.createThreadFactory("block-wal-io-thread-%d", false), LOGGER);
-        this.semaphore = new Semaphore(ioThreadNums);
+        ScheduledExecutorService pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
+        pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, minWriteIntervalNanos, TimeUnit.NANOSECONDS);
     }
 
     public boolean shutdown(long timeout, TimeUnit unit) {
         boolean gracefulShutdown;
 
-        this.executorService.shutdown();
+        this.ioExecutor.shutdown();
         try {
-            gracefulShutdown = this.executorService.awaitTermination(timeout, unit);
+            gracefulShutdown = this.ioExecutor.awaitTermination(timeout, unit);
         } catch (InterruptedException e) {
-            this.executorService.shutdownNow();
+            this.ioExecutor.shutdownNow();
             gracefulShutdown = false;
         }
 
@@ -129,17 +140,28 @@ public class SlidingWindowService {
     }
 
     /**
-     * Try to write a block. If the semaphore is not available, it will return immediately.
+     * Try to write a block. If it exceeds the rate limit, it will return immediately.
      */
     public void tryWriteBlock() {
-        if (semaphore.tryAcquire()) {
-            Block block = pollBlock();
-            if (block != null) {
-                executorService.submit(new WriteBlockProcessor(block));
-            } else {
-                semaphore.release();
-            }
+        if (!tryAcquireWriteRateLimit()) {
+            return;
         }
+        BlockBatch blocks = pollBlocks();
+        if (blocks != null) {
+            ioExecutor.submit(new WriteBlockProcessor(blocks));
+        }
+    }
+
+    /**
+     * Try to acquire the write rate limit.
+     */
+    synchronized private boolean tryAcquireWriteRateLimit() {
+        long now = System.nanoTime();
+        if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
+            return false;
+        }
+        lastWriteTimeNanos = now;
+        return true;
     }
 
     public Lock getBlockLock() {
@@ -172,8 +194,8 @@ public class SlidingWindowService {
         // The size of the block should not be larger than writable size of the ring buffer
         // Let capacity=100, start=148, trim=49, then maxSize=100-148+49=1
         maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, maxSize);
-        // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
         // The size of the block should not be larger than the end of the physical device
+        // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
         maxSize = Math.min(recordSectionCapacity - startOffset % recordSectionCapacity, maxSize);
 
         Block newBlock = new BlockImpl(startOffset, maxSize, blockSoftLimit);
@@ -234,58 +256,68 @@ public class SlidingWindowService {
     }
 
     /**
-     * Get the first block to be written. If there is no non-empty block, return null.
+     * Get all blocks to be written. If there is no non-empty block, return null.
      */
-    private Block pollBlock() {
+    private BlockBatch pollBlocks() {
         blockLock.lock();
         try {
-            return pollBlockLocked();
+            return pollBlocksLocked();
         } finally {
             blockLock.unlock();
         }
     }
 
     /**
-     * Get the first block to be written. If there is no non-empty block, return null.
+     * Get all blocks to be written. If there is no non-empty block, return null.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private Block pollBlockLocked() {
-        Block pendingBlock = pendingBlocks.poll();
-        if (null != pendingBlock) {
-            writingBlocks.add(pendingBlock.startOffset());
-            return pendingBlock;
-        }
+    private BlockBatch pollBlocksLocked() {
+        // TODO ugly code
+        Block currentBlock = this.currentBlock;
 
-        Block currentBlock = getCurrentBlockLocked();
-        if (currentBlock.isEmpty()) {
+        boolean isPendingBlockEmpty = pendingBlocks.isEmpty();
+        boolean isCurrentBlockEmpty = currentBlock == null || currentBlock.isEmpty();
+        if (isPendingBlockEmpty && isCurrentBlockEmpty) {
             // No record to be written
             return null;
         }
 
-        Block newCurrentBlock = nextBlock(currentBlock);
-        setCurrentBlockLocked(newCurrentBlock);
-        writingBlocks.add(currentBlock.startOffset());
-        return currentBlock;
+        Collection<Block> blocks;
+        if (!isPendingBlockEmpty) {
+            blocks = pendingBlocks;
+            pendingBlocks = new LinkedList<>();
+        } else {
+            blocks = new LinkedList<>();
+        }
+        if (!isCurrentBlockEmpty) {
+            blocks.add(currentBlock);
+            setCurrentBlockLocked(nextBlock(currentBlock));
+        }
+
+        BlockBatch blockBatch = new BlockBatch(blocks);
+        writingBlocks.add(blockBatch.startOffset());
+
+        return blockBatch;
     }
 
     /**
-     * Calculate the start offset of the first block which has not been flushed yet.
+     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      */
-    private long calculateStartOffset(Block wroteBlock) {
+    private long wroteBlocks(BlockBatch wroteBlocks) {
         blockLock.lock();
         try {
-            return calculateStartOffsetLocked(wroteBlock);
+            return wroteBlocksLocked(wroteBlocks);
         } finally {
             blockLock.unlock();
         }
     }
 
     /**
-     * Calculate the start offset of the first block which has not been flushed yet.
+     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private long calculateStartOffsetLocked(Block wroteBlock) {
-        boolean removed = writingBlocks.remove(wroteBlock.startOffset());
+    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
+        boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
@@ -293,15 +325,16 @@ public class SlidingWindowService {
         return writingBlocks.first();
     }
 
-    private void writeBlockData(Block block) throws IOException {
-        // TODO: make this beautiful
-        long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
-
-        walChannel.write(block.data(), position);
+    private void writeBlockData(BlockBatch blocks) throws IOException {
+        for (Block block : blocks.blocks()) {
+            // TODO: make this beautiful
+            long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
+            walChannel.write(block.data(), position);
+        }
+        walChannel.flush();
     }
 
-    private boolean makeWriteOffsetMatchWindow(final Block block) throws IOException {
-        long newWindowEndOffset = block.startOffset() + block.size();
+    private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException, OverCapacityException {
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getWindowStartOffset();
@@ -317,14 +350,11 @@ public class SlidingWindowService {
                     // the new window length is bigger than upper limit, reject this write request
                     LOGGER.error("new windows size {} exceeds upper limit {}, reject this write request, window start offset: {}, new window end offset: {}",
                             newWindowMaxLength, upperLimit, windowStartOffset, newWindowEndOffset);
-                    FutureUtil.completeExceptionally(block.futures(),
-                            new OverCapacityException(String.format("new windows size exceeds upper limit %d", upperLimit)));
-                    return false;
+                    throw new OverCapacityException(String.format("new windows size exceeds upper limit %d", upperLimit));
                 }
             }
             windowCoreData.scaleOutWindow(walHeaderFlusher, newWindowMaxLength);
         }
-        return true;
     }
 
     public interface WALHeaderFlusher {
@@ -482,47 +512,41 @@ public class SlidingWindowService {
     }
 
     class WriteBlockProcessor implements Runnable {
-        private final Block block;
+        private final BlockBatch blocks;
 
-        public WriteBlockProcessor(Block block) {
-            this.block = block;
+        public WriteBlockProcessor(BlockBatch blocks) {
+            this.blocks = blocks;
         }
 
         @Override
         public void run() {
-            Block block = this.block;
-            do {
-                writeBlock(block);
-                block = pollBlock();
-            } while (block != null);
-            semaphore.release();
+            writeBlock(this.blocks);
         }
 
-        private void writeBlock(Block block) {
+        private void writeBlock(BlockBatch blocks) {
             try {
-                if (makeWriteOffsetMatchWindow(block)) {
-                    writeBlockData(block);
+                makeWriteOffsetMatchWindow(blocks.endOffset());
+                writeBlockData(blocks);
 
-                    // Update the start offset of the sliding window after finishing writing the record.
-                    windowCoreData.updateWindowStartOffset(calculateStartOffset(block));
+                // Update the start offset of the sliding window after finishing writing the record.
+                windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
 
-                    FutureUtil.complete(block.futures(), new AppendResult.CallbackResult() {
-                        @Override
-                        public long flushedOffset() {
-                            return windowCoreData.getWindowStartOffset();
-                        }
+                FutureUtil.complete(blocks.futures(), new AppendResult.CallbackResult() {
+                    @Override
+                    public long flushedOffset() {
+                        return windowCoreData.getWindowStartOffset();
+                    }
 
-                        @Override
-                        public String toString() {
-                            return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
-                        }
-                    });
-                }
+                    @Override
+                    public String toString() {
+                        return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
+                    }
+                });
             } catch (Exception e) {
-                FutureUtil.completeExceptionally(block.futures(), e);
-                LOGGER.error(String.format("failed to write record, offset: %s", block.startOffset()), e);
+                FutureUtil.completeExceptionally(blocks.futures(), e);
+                LOGGER.error(String.format("failed to write blocks, startOffset: %s", blocks.startOffset()), e);
             } finally {
-                block.release();
+                blocks.release();
             }
         }
     }
