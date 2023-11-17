@@ -100,15 +100,15 @@ class DefaultS3OperatorTest {
         // obj0_0_1024 obj_1_1024_2048 obj_0_16776192_16777216 obj_0_2048_4096 obj_0_16777216_16778240
         CompletableFuture<ByteBuf> cf1 = operator.rangeRead("obj0", 0, 1024);
         CompletableFuture<ByteBuf> cf2 = operator.rangeRead("obj1", 1024, 3072);
-        CompletableFuture<ByteBuf> cf3 = operator.rangeRead("obj0", 16773120, 16777216);
+        CompletableFuture<ByteBuf> cf3 = operator.rangeRead("obj0", 31457280, 31461376);
         CompletableFuture<ByteBuf> cf4 = operator.rangeRead("obj0", 2048, 4096);
-        CompletableFuture<ByteBuf> cf5 = operator.rangeRead("obj0", 16777216, 16777728);
+        CompletableFuture<ByteBuf> cf5 = operator.rangeRead("obj0", 33554432, 33554944);
 
         operator.tryMergeRead();
 
-        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(0L), eq(16777216L));
+        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(0L), eq(31461376L));
         verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj1"), eq(1024L), eq(3072L));
-        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(16777216L), eq(16777728L));
+        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(33554432L), eq(33554944L));
 
         ByteBuf buf = cf1.get();
         assertEquals(1024, buf.readableBytes());

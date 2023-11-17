@@ -237,6 +237,9 @@ public class ObjectReader implements AutoCloseable {
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
                     int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
                     rst.add(new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount));
+
+                    // we consider first block as not matched because we do not know exactly how many bytes are within
+                    // the range in first block, as a result we may read one more block than expected.
                     if (matched) {
                         nextMaxBytes -= Math.min(nextMaxBytes, blockSize);
                     }
