@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.s3.metrics.TimerUtil
 import com.yammer.metrics.core.Histogram
 import kafka.admin.AdminUtils
 import kafka.api.ElectLeadersRequestOps
@@ -81,7 +82,7 @@ import org.apache.kafka.server.common.MetadataVersion.{IBP_0_11_0_IV0, IBP_2_3_I
 import java.lang.{Long => JLong}
 import java.nio.ByteBuffer
 import java.util
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -622,7 +623,7 @@ class KafkaApis(val requestChannel: RequestChannel,
    * Handle a produce request
    */
   def handleProduceRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
-    val startNanos = System.nanoTime()
+    val timerTotal: TimerUtil = new TimerUtil()
     val produceRequest = request.body[ProduceRequest]
 
     if (RequestUtils.hasTransactionalRecords(produceRequest)) {
@@ -669,8 +670,8 @@ class KafkaApis(val requestChannel: RequestChannel,
     @nowarn("cat=deprecation")
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
       // AutoMQ for Kafka inject start
-      val callbackStartNanos = System.nanoTime()
-      PRODUCE_CALLBACK_TIME_HIST.update((callbackStartNanos - startNanos) / 1000)
+      val timerCallback: TimerUtil = new TimerUtil()
+      PRODUCE_CALLBACK_TIME_HIST.update(timerTotal.elapsedAs(TimeUnit.MICROSECONDS))
       // AutoMQ for Kafka inject end
 
 
@@ -732,11 +733,11 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
 
       // AutoMQ for Kafka inject start
-      PRODUCE_ACK_TIME_HIST.update((System.nanoTime() - callbackStartNanos) / 1000)
+      PRODUCE_ACK_TIME_HIST.update(timerCallback.elapsedAs(TimeUnit.MICROSECONDS))
       val now = System.currentTimeMillis()
       val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get();
       if (now - lastRecordTimestamp > 60000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
-        info(s"produce cost, produce=${KafkaMetricsUtil.histToString(PRODUCE_TIME_HIST)} " +
+        info(s"produce cost (in microseconds), produce=${KafkaMetricsUtil.histToString(PRODUCE_TIME_HIST)} " +
           s"callback=${KafkaMetricsUtil.histToString(PRODUCE_CALLBACK_TIME_HIST)} " +
           s"ack=${KafkaMetricsUtil.histToString(PRODUCE_ACK_TIME_HIST)}")
         PRODUCE_TIME_HIST.clear()
@@ -773,7 +774,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
         // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
         produceRequest.clearPartitionRecords()
-        PRODUCE_TIME_HIST.update((System.nanoTime() - startNanos) / 1000)
+        PRODUCE_TIME_HIST.update(timerTotal.elapsedAs(TimeUnit.MICROSECONDS))
       }
       // TODO: quick throttle when underline permit is not enough
       // TODO: isolate to a separate thread pool to avoid blocking io thread. Connection should be bind to certain async thread to keep the order
