@@ -20,9 +20,9 @@ import com.sun.jna.NativeLong;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
+import io.netty.util.internal.PlatformDependent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.nio.ch.DirectBuffer;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -256,7 +256,7 @@ public class DirectIOLib {
      */
     public int pread(int fd, ByteBuffer buf, long offset) throws IOException {
         buf.clear(); // so that we read an entire buffer
-        final long address = ((DirectBuffer) buf).address();
+        final long address = PlatformDependent.directBufferAddress(buf);
         Pointer pointer = new Pointer(address);
         int n = pread(fd, pointer, new NativeLong(buf.capacity()), new NativeLong(offset)).intValue();
         if (n < 0) {
@@ -285,7 +285,7 @@ public class DirectIOLib {
         assert start == blockStart(start);
         final int toWrite = blockEnd(buf.limit()) - start;
 
-        final long address = ((DirectBuffer) buf).address();
+        final long address = PlatformDependent.directBufferAddress(buf);
         Pointer pointer = new Pointer(address);
 
         int n = pwrite(fd, pointer.share(start), new NativeLong(toWrite), new NativeLong(offset)).intValue();

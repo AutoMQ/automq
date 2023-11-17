@@ -18,7 +18,7 @@ package com.automq.stream.thirdparty.moe.cnkirito.kdio;
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
-import jdk.internal.access.SharedSecrets;
+import io.netty.util.internal.PlatformDependent;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -56,7 +56,7 @@ public class DirectIOUtils {
      * @return Byte buffer wrapping the given memory.
      */
     public static ByteBuffer wrapPointer(long ptr, int len) {
-        ByteBuffer buf = SharedSecrets.getJavaNioAccess().newDirectByteBuffer(ptr, len, null, null);
+        ByteBuffer buf = PlatformDependent.directBuffer(ptr, len);
 
         assert buf.isDirect();
         return buf;
