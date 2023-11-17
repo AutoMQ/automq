@@ -45,12 +45,10 @@ public class Failover {
     private static final Logger LOGGER = LoggerFactory.getLogger(Failover.class);
     private final ExecutorService executor = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("wal-failover-%d", true), LOGGER);
     private final FailoverFactory factory;
-    private final FailoverManager failoverManager;
     private final WALRecover walRecover;
 
-    public Failover(FailoverFactory factory, FailoverManager failoverManager, WALRecover walRecover) {
+    public Failover(FailoverFactory factory, WALRecover walRecover) {
         this.factory = factory;
-        this.failoverManager = failoverManager;
         this.walRecover = walRecover;
     }
 
@@ -69,6 +67,10 @@ public class Failover {
 
     protected void fence(FailoverRequest request) {
         // TODO: run command to fence the device
+    }
+
+    protected void complete(FailoverRequest request) {
+        // TODO: run command to delete the volume
     }
 
     class FailoverTask {
@@ -102,9 +104,8 @@ public class Failover {
                 ObjectManager objectManager = factory.getObjectManager(nodeId, epoch);
                 LOGGER.info("failover start recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
-
-                // notify controller failover completed and controller could delete the volume.
-                failoverManager.completeFailover(new CompleteFailoverRequest(nodeId, request.getVolumeId())).get();
+                // delete the volume
+                complete(request);
                 LOGGER.info("failover done {}", request);
             } finally {
                 wal.shutdownGracefully();

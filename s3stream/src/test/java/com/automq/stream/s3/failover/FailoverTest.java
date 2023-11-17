@@ -27,22 +27,19 @@ import org.mockito.ArgumentCaptor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public class FailoverTest {
     String path;
     FailoverFactory failoverFactory;
-    FailoverManager failoverManager;
     WALRecover walRecover;
     Failover failover;
 
@@ -50,9 +47,8 @@ public class FailoverTest {
     public void setup() {
         path = "/tmp/" + System.currentTimeMillis() + "/failover_test_wal";
         failoverFactory = mock(FailoverFactory.class);
-        failoverManager = mock(FailoverManager.class);
         walRecover = mock(WALRecover.class);
-        failover = new Failover(failoverFactory, failoverManager, walRecover);
+        failover = spy(new Failover(failoverFactory, walRecover));
     }
 
     @AfterEach
@@ -84,13 +80,12 @@ public class FailoverTest {
         Assertions.assertTrue(exceptionThrown);
 
         // node match
-        when(failoverManager.completeFailover(any())).thenReturn(CompletableFuture.completedFuture(null));
         request.setNodeId(233);
         failover.failover(request).get(1, TimeUnit.SECONDS);
 
-        ArgumentCaptor<CompleteFailoverRequest> ac = ArgumentCaptor.forClass(CompleteFailoverRequest.class);
-        verify(failoverManager, times(1)).completeFailover(ac.capture());
-        CompleteFailoverRequest req = ac.getValue();
+        ArgumentCaptor<FailoverRequest> ac = ArgumentCaptor.forClass(FailoverRequest.class);
+        verify(failover, times(1)).complete(ac.capture());
+        FailoverRequest req = ac.getValue();
         assertEquals(233, req.getNodeId());
         assertEquals("test_volume_id", req.getVolumeId());
     }
