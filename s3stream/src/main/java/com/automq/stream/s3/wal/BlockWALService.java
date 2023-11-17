@@ -530,6 +530,7 @@ public class BlockWALService implements WriteAheadLog {
     public static class BlockWALServiceBuilder {
         private final String blockDevicePath;
         private long blockDeviceCapacityWant;
+        private boolean direct = false;
         private int flushHeaderIntervalSeconds = 10;
         private int ioThreadNums = 8;
         private long slidingWindowInitialSize = 1 << 20;
@@ -561,6 +562,11 @@ public class BlockWALService implements WriteAheadLog {
                     .writeRateLimit(config.walWriteRateLimit())
                     .nodeId(config.nodeId())
                     .epoch(config.nodeEpoch());
+        }
+
+        public BlockWALServiceBuilder direct(boolean direct) {
+            this.direct = direct;
+            return this;
         }
 
         public BlockWALServiceBuilder flushHeaderIntervalSeconds(int flushHeaderIntervalSeconds) {
@@ -628,7 +634,7 @@ public class BlockWALService implements WriteAheadLog {
             blockWALService.walHeaderFlushIntervalSeconds = flushHeaderIntervalSeconds;
             blockWALService.initialWindowSize = slidingWindowInitialSize;
 
-            blockWALService.walChannel = WALChannel.builder(blockDevicePath).capacity(blockDeviceCapacityWant).readOnly(readOnly).build();
+            blockWALService.walChannel = WALChannel.builder(blockDevicePath).capacity(blockDeviceCapacityWant).direct(direct).readOnly(readOnly).build();
 
             blockWALService.slidingWindowService = new SlidingWindowService(
                     blockWALService.walChannel,
