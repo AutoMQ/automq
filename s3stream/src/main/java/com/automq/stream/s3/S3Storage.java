@@ -77,9 +77,9 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<CompletableFuture<Void>> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
 
-    private final ScheduledExecutorService mainWriteExecutor = Threads.newSingleThreadScheduledExecutor(
+    private final ExecutorService mainWriteExecutor = Threads.newFixedThreadPool(1,
             ThreadUtils.createThreadFactory("s3-storage-main-write", false), LOGGER);
-    private final ScheduledExecutorService mainReadExecutor = Threads.newSingleThreadScheduledExecutor(
+    private final ExecutorService mainReadExecutor = Threads.newFixedThreadPool(1,
             ThreadUtils.createThreadFactory("s3-storage-main-read", false), LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
@@ -165,6 +165,7 @@ public class S3Storage implements Storage {
                         .toArray(CompletableFuture[]::new)
         ).get();
     }
+
     static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams) {
         return recoverContinuousRecords(it, openingStreams, LOGGER);
     }
