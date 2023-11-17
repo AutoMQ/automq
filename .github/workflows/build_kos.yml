@@ -45,7 +45,7 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/gradle-build-action@v2.9.0
       - name: Checkstyle
         run: ./gradlew --build-cache rat checkstyleMain checkstyleTest
   spotbugs:
@@ -64,7 +64,7 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/gradle-build-action@v2.9.0
       - name: Spotbugs
         run: ./gradlew --build-cache spotbugsMain spotbugsTest
   test:
@@ -83,6 +83,6 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/gradle-build-action@v2.9.0
       - name: Unit Test
         run: ./gradlew --build-cache metadata:S3UnitTest core:S3UnitTest
