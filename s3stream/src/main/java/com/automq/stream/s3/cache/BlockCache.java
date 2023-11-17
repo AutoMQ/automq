@@ -20,6 +20,7 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,21 +32,17 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     static final int BLOCK_SIZE = 1024 * 1024;
-    static final int MAX_READ_AHEAD_SIZE = 16 * 1024 * 1024;
     private final long maxSize;
     final Map<Long, StreamCache> stream2cache = new HashMap<>();
-    private final LRUCache<CacheKey, Integer> inactive = new LRUCache<>();
-    private final LRUCache<CacheKey, Integer> active = new LRUCache<>();
+    private final LRUCache<CacheBlockKey, Integer> inactive = new LRUCache<>();
+    private final LRUCache<CacheBlockKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
@@ -59,13 +56,22 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     public void put(long streamId, List<StreamRecordBatch> records) {
         try {
             writeLock.lock();
-            put0(streamId, records);
+            put0(streamId, -1, records);
         } finally {
             writeLock.unlock();
         }
     }
 
-    void put0(long streamId, List<StreamRecordBatch> records) {
+    public void put(long streamId, long raAsyncOffset, List<StreamRecordBatch> records) {
+        try {
+            writeLock.lock();
+            put0(streamId, raAsyncOffset, records);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    void put0(long streamId, long raAsyncOffset, List<StreamRecordBatch> records) {
         if (maxSize == 0 || records.isEmpty()) {
             records.forEach(StreamRecordBatch::release);
             return;
@@ -75,16 +81,27 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         long startOffset = records.get(0).getBaseOffset();
         long endOffset = records.get(records.size() - 1).getLastOffset();
 
-        // generate read ahead.
-        ReadAhead readahead = genReadahead(streamId, records);
+        if (raAsyncOffset == -1) {
+            raAsyncOffset = startOffset;
+        }
+
+        if (raAsyncOffset < startOffset || raAsyncOffset >= endOffset) {
+            LOGGER.error("raAsyncOffset out of range, raAsyncOffset: {}, startOffset: {}, endOffset: {}", raAsyncOffset, startOffset, endOffset);
+        }
+
+        int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
+
+        LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, size);
 
         // remove overlapped part.
-        Map.Entry<Long, CacheBlock> floorEntry = streamCache.blocks.floorEntry(startOffset);
-        SortedMap<Long, CacheBlock> tailMap = streamCache.blocks.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset);
+        SortedMap<Long, CacheBlock> tailMap = streamCache.tailBlocks(startOffset);
         for (Map.Entry<Long, CacheBlock> entry : tailMap.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
             if (cacheBlock.firstOffset >= endOffset) {
                 break;
+            }
+            if (isWithinRange(raAsyncOffset, cacheBlock.firstOffset, cacheBlock.lastOffset) && cacheBlock.readAheadRecord == null) {
+                cacheBlock.readAheadRecord = new ReadAheadRecord(endOffset, size);
             }
             // overlap is a rare case, so removeIf is fine for the performance.
             records.removeIf(record -> {
@@ -97,31 +114,71 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
 
         // ensure the cache size.
-        int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
         ensureCapacity(size);
 
         // split to 1MB cache blocks which one block contains sequential records.
         long expectStartOffset = -1L;
-        List<StreamRecordBatch> part = new ArrayList<>(records.size() / 2);
+        LinkedList<StreamRecordBatch> batchList = new LinkedList<>();
         int partSize = 0;
         for (StreamRecordBatch record : records) {
             if ((expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) && partSize < BLOCK_SIZE) {
-                part.add(record);
+                batchList.add(record);
                 partSize += record.size();
             } else {
-                // put read ahead to the first block.
-                put(streamId, streamCache, new CacheBlock(part, readahead));
-                readahead = null;
-                part = new ArrayList<>(records.size() / 2);
-                partSize = 0;
-                part.add(record);
+                ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
+                        new ReadAheadRecord(endOffset, size) : null;
+                put(streamId, streamCache, new CacheBlock(batchList, raRecord));
+                batchList = new LinkedList<>();
+                batchList.add(record);
+                partSize = record.size();
             }
             expectStartOffset = record.getLastOffset();
         }
-        if (!part.isEmpty()) {
-            put(streamId, streamCache, new CacheBlock(part, readahead));
+        if (!batchList.isEmpty()) {
+            ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
+                    new ReadAheadRecord(endOffset, size) : null;
+            put(streamId, streamCache, new CacheBlock(batchList, raRecord));
+        }
+    }
+
+    private boolean isWithinRange(long raAsyncOffset, long startOffset, long endOffset) {
+        return raAsyncOffset >= startOffset && raAsyncOffset < endOffset;
+    }
+
+    public boolean checkRange(long streamId, long startOffset, int maxBytes) {
+        if (maxBytes <= 0) {
+            return true;
+        }
+        try {
+            readLock.lock();
+            return checkRange0(streamId, startOffset, maxBytes);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    boolean checkRange0(long streamId, long startOffset, int maxBytes) {
+        StreamCache streamCache = stream2cache.get(streamId);
+        if (streamCache == null) {
+            return false;
         }
 
+        NavigableMap<Long, CacheBlock> streamCacheBlocks = streamCache.tailBlocks(startOffset);
+        long nextStartOffset = startOffset;
+        int nextMaxBytes = maxBytes;
+        LinkedList<StreamRecordBatch> records = new LinkedList<>();
+        for (Map.Entry<Long, CacheBlock> entry : streamCacheBlocks.entrySet()) {
+            CacheBlock cacheBlock = entry.getValue();
+            if (cacheBlock.lastOffset <= nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
+                break;
+            }
+            nextMaxBytes = readFromCacheBlock(records, cacheBlock, nextStartOffset, Long.MAX_VALUE, nextMaxBytes);
+            nextStartOffset = records.getLast().getLastOffset();
+            if (nextMaxBytes <= 0) {
+                return true;
+            }
+        }
+        return nextMaxBytes <= 0;
     }
 
 
@@ -146,31 +203,30 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         if (streamCache == null) {
             return GetCacheResult.empty();
         }
-        Map.Entry<Long, CacheBlock> floorEntry = streamCache.blocks.floorEntry(startOffset);
-        NavigableMap<Long, CacheBlock> streamCacheBlocks = streamCache.blocks.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset, true);
+        NavigableMap<Long, CacheBlock> streamCacheBlocks = streamCache.tailBlocks(startOffset);
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
-        ReadAhead readahead = null;
+        List<ReadAheadRecord> readAheadRecords = new ArrayList<>();
         LinkedList<StreamRecordBatch> records = new LinkedList<>();
         for (Map.Entry<Long, CacheBlock> entry : streamCacheBlocks.entrySet()) {
             CacheBlock cacheBlock = entry.getValue();
             if (cacheBlock.lastOffset <= nextStartOffset || nextStartOffset < cacheBlock.firstOffset) {
                 break;
             }
-            if (readahead == null && cacheBlock.readahead != null) {
-                readahead = cacheBlock.readahead;
-                cacheBlock.readahead = null;
+            if (cacheBlock.readAheadRecord != null) {
+                readAheadRecords.add(cacheBlock.readAheadRecord);
+                cacheBlock.readAheadRecord = null;
             }
             nextMaxBytes = readFromCacheBlock(records, cacheBlock, nextStartOffset, endOffset, nextMaxBytes);
             nextStartOffset = records.getLast().getLastOffset();
             boolean blockCompletedRead = nextStartOffset >= cacheBlock.lastOffset;
-            CacheKey cacheKey = new CacheKey(streamId, cacheBlock.firstOffset);
+            CacheBlockKey cacheBlockKey = new CacheBlockKey(streamId, cacheBlock.firstOffset);
             if (blockCompletedRead) {
-                active.remove(cacheKey);
-                inactive.put(cacheKey, cacheBlock.size);
+                active.remove(cacheBlockKey);
+                inactive.put(cacheBlockKey, cacheBlock.size);
             } else {
-                if (!active.touch(cacheKey)) {
-                    inactive.touch(cacheKey);
+                if (!active.touch(cacheBlockKey)) {
+                    inactive.touch(cacheBlockKey);
                 }
             }
 
@@ -181,7 +237,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
 
         records.forEach(StreamRecordBatch::retain);
-        return GetCacheResult.of(records, readahead);
+        return GetCacheResult.of(records, readAheadRecords);
     }
 
     private int readFromCacheBlock(LinkedList<StreamRecordBatch> records, CacheBlock cacheBlock,
@@ -219,10 +275,9 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
             return 0;
         }
         int evictBytes = 0;
-        boolean evictFromActive = false;
-        for (LRUCache<CacheKey, Integer> lru : List.of(inactive, active)) {
+        for (LRUCache<CacheBlockKey, Integer> lru : List.of(inactive, active)) {
             for (; ; ) {
-                Map.Entry<CacheKey, Integer> entry = lru.pop();
+                Map.Entry<CacheBlockKey, Integer> entry = lru.pop();
                 if (entry == null) {
                     break;
                 }
@@ -231,13 +286,10 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                     LOGGER.error("[BUG] Stream cache not found for streamId: {}", entry.getKey().streamId);
                     continue;
                 }
-                CacheBlock cacheBlock = streamCache.blocks.remove(entry.getKey().startOffset);
+                CacheBlock cacheBlock = streamCache.remove(entry.getKey().startOffset);
                 if (cacheBlock == null) {
                     LOGGER.error("[BUG] Cannot find stream cache block: {} {}", entry.getKey().streamId, entry.getKey().startOffset);
                 } else {
-                    if (evictFromActive) {
-                        streamCache.evict = true;
-                    }
                     cacheBlock.free();
                     evictBytes += cacheBlock.size;
                     if (forceEvict) {
@@ -249,45 +301,14 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                     }
                 }
             }
-            evictFromActive = true;
         }
         return evictBytes;
     }
 
     private void put(long streamId, StreamCache streamCache, CacheBlock cacheBlock) {
-        streamCache.blocks.put(cacheBlock.firstOffset, cacheBlock);
-        active.put(new CacheKey(streamId, cacheBlock.firstOffset), cacheBlock.size);
+        streamCache.put(cacheBlock);
+        active.put(new CacheBlockKey(streamId, cacheBlock.firstOffset), cacheBlock.size);
         size.getAndAdd(cacheBlock.size);
-    }
-
-
-    ReadAhead genReadahead(long streamId, List<StreamRecordBatch> records) {
-        if (records.isEmpty()) {
-            return null;
-        }
-        long startOffset = records.get(records.size() - 1).getLastOffset();
-        int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
-        size = alignBlockSize(size);
-        StreamCache streamCache = stream2cache.get(streamId);
-        if (streamCache != null && streamCache.evict) {
-            // exponential fallback when cache is tight.
-            size = alignBlockSize(size / 2);
-            streamCache.evict = false;
-        } else {
-            if (size < MAX_READ_AHEAD_SIZE / 2) {
-                // exponential growth
-                size = size * 2;
-            } else {
-                // linear growth
-                size += BLOCK_SIZE;
-            }
-        }
-        size = Math.min(Math.max(size, BLOCK_SIZE), MAX_READ_AHEAD_SIZE);
-        return new ReadAhead(startOffset, size);
-    }
-
-    int alignBlockSize(int size) {
-        return (size + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE;
     }
 
     @Override
@@ -300,40 +321,8 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
     }
 
-    static class StreamCache {
-        NavigableMap<Long, CacheBlock> blocks;
-        boolean evict;
+    record CacheBlockKey(long streamId, long startOffset) {
 
-        public StreamCache() {
-            blocks = new TreeMap<>();
-            evict = false;
-        }
-
-    }
-
-    static class CacheKey {
-        final long streamId;
-        final long startOffset;
-
-        public CacheKey(long streamId, long startOffset) {
-            this.streamId = streamId;
-            this.startOffset = startOffset;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(streamId, startOffset);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj instanceof CacheKey) {
-                CacheKey other = (CacheKey) obj;
-                return streamId == other.streamId && startOffset == other.startOffset;
-            } else {
-                return false;
-            }
-        }
     }
 
     public static class CacheBlock {
@@ -341,14 +330,14 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         long firstOffset;
         long lastOffset;
         int size;
-        ReadAhead readahead;
+        ReadAheadRecord readAheadRecord;
 
-        public CacheBlock(List<StreamRecordBatch> records, ReadAhead readahead) {
+        public CacheBlock(List<StreamRecordBatch> records, ReadAheadRecord readAheadRecord) {
             this.records = records;
             this.firstOffset = records.get(0).getBaseOffset();
             this.lastOffset = records.get(records.size() - 1).getLastOffset();
             this.size = records.stream().mapToInt(StreamRecordBatch::size).sum();
-            this.readahead = readahead;
+            this.readAheadRecord = readAheadRecord;
         }
 
         public void free() {
@@ -359,35 +348,27 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
 
     public static class GetCacheResult {
         private final List<StreamRecordBatch> records;
-        private final ReadAhead readahead;
+        private final List<ReadAheadRecord> readAheadRecords;
 
-        private GetCacheResult(List<StreamRecordBatch> records, ReadAhead readahead) {
+        private GetCacheResult(List<StreamRecordBatch> records, List<ReadAheadRecord> readAheadRecords) {
             this.records = records;
-            this.readahead = readahead;
+            this.readAheadRecords = readAheadRecords;
         }
 
         public static GetCacheResult empty() {
-            return new GetCacheResult(Collections.emptyList(), null);
+            return new GetCacheResult(Collections.emptyList(), Collections.emptyList());
         }
 
-        public static GetCacheResult of(List<StreamRecordBatch> records, ReadAhead readahead) {
-            return new GetCacheResult(records, readahead);
+        public static GetCacheResult of(List<StreamRecordBatch> records, List<ReadAheadRecord> readAheadRecords) {
+            return new GetCacheResult(records, readAheadRecords);
         }
 
         public List<StreamRecordBatch> getRecords() {
             return records;
         }
 
-        public Optional<ReadAhead> getReadAhead() {
-            if (readahead == null) {
-                return Optional.empty();
-            } else {
-                return Optional.of(readahead);
-            }
+        public List<ReadAheadRecord> getReadAheadRecords() {
+            return readAheadRecords;
         }
     }
-
-    public record ReadAhead(long startOffset, int size) {
-    }
-
 }

@@ -17,14 +17,27 @@
 
 package com.automq.stream.s3.cache;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 
-/**
- * Like linux page cache, S3BlockCache is responsible for:
- * 1. read from S3 when the data block is not in cache.
- * 2. caching the data blocks of S3 objects.
- */
-public interface S3BlockCache {
+public class StreamCache {
+    private final NavigableMap<Long, BlockCache.CacheBlock> blocks = new TreeMap<>();
 
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes);
+    public void put(BlockCache.CacheBlock cacheBlock) {
+        blocks.put(cacheBlock.firstOffset, cacheBlock);
+    }
+
+    public BlockCache.CacheBlock remove(long startOffset) {
+        return blocks.remove(startOffset);
+    }
+
+    NavigableMap<Long, BlockCache.CacheBlock> blocks() {
+        return blocks;
+    }
+
+    public NavigableMap<Long, BlockCache.CacheBlock> tailBlocks(long startOffset) {
+        Map.Entry<Long, BlockCache.CacheBlock> floorEntry = blocks.floorEntry(startOffset);
+        return blocks.tailMap(floorEntry != null ? floorEntry.getKey() : startOffset, true);
+    }
 }

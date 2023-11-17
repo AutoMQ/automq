@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -86,6 +87,38 @@ public class BlockCacheTest {
     }
 
     @Test
+    public void testPutGet3() {
+        BlockCache blockCache = createBlockCache();
+        blockCache.put(233L, 26L, List.of(
+                newRecord(233L, 26L, 4, 1),
+                newRecord(233L, 30L, 10, 4)
+        ));
+
+        BlockCache.GetCacheResult rst = blockCache.get(233L, 27L, 35L, BlockCache.BLOCK_SIZE * 2);
+        List<StreamRecordBatch> records = rst.getRecords();
+        assertEquals(2, records.size());
+        assertEquals(26L, records.get(0).getBaseOffset());
+        assertEquals(30L, records.get(1).getBaseOffset());
+        assertEquals(1, rst.getReadAheadRecords().size());
+        assertEquals(new DefaultS3BlockCache.ReadAheadRecord(40L, 5), rst.getReadAheadRecords().get(0));
+    }
+
+    @Test
+    public void testRangeCheck() {
+        BlockCache blockCache = createBlockCache();
+        blockCache.put(233L, List.of(
+                newRecord(233L, 26L, 4, 1),
+                newRecord(233L, 30L, 10, 4)
+        ));
+
+        assertTrue(blockCache.checkRange(233, 10, 2));
+        assertTrue(blockCache.checkRange(233, 11, BlockCache.BLOCK_SIZE));
+        assertTrue(blockCache.checkRange(233, 20, 3));
+        assertTrue(blockCache.checkRange(233, 26, 4));
+        assertFalse(blockCache.checkRange(233, 20, 6));
+    }
+
+    @Test
     public void testEvict() {
         BlockCache blockCache = new BlockCache(4);
         blockCache.put(233L, List.of(
@@ -117,7 +150,7 @@ public class BlockCacheTest {
     }
 
     @Test
-    public void testReadahead() {
+    public void testReadAhead() {
         BlockCache blockCache = new BlockCache(16 * 1024 * 1024);
         blockCache.put(233L, List.of(
                 newRecord(233L, 10, 1, 1024 * 1024),
@@ -128,41 +161,12 @@ public class BlockCacheTest {
         BlockCache.GetCacheResult rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
         assertEquals(1, rst.getRecords().size());
         assertEquals(10L, rst.getRecords().get(0).getBaseOffset());
-        assertEquals(12, rst.getReadAhead().get().startOffset());
-        assertEquals(1024 * 1024 * 2 * 2, rst.getReadAhead().get().size());
+        assertEquals(12, rst.getReadAheadRecords().get(0).nextRaOffset());
+        assertEquals(1025 * 1024, rst.getReadAheadRecords().get(0).currRaSize());
 
         // repeat read the block, the readahead mark is clear.
         rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
-        assertTrue(rst.getReadAhead().isEmpty());
-    }
-
-    @Test
-    public void testGenReadahead() {
-        BlockCache blockCache = new BlockCache(16 * 1024 * 1024);
-        BlockCache.ReadAhead readahead = blockCache.genReadahead(233L, List.of(
-                newRecord(233L, 10, 1, 1024 * 1024),
-                newRecord(233L, 11, 1, 1024)
-        ));
-        assertEquals(12, readahead.startOffset());
-        // exponential growth
-        assertEquals(BlockCache.BLOCK_SIZE * 2 * 2, readahead.size());
-
-
-        readahead = blockCache.genReadahead(233L, List.of(
-                newRecord(233L, 10, 1, BlockCache.MAX_READ_AHEAD_SIZE / 2 + 1)
-        ));
-        assertEquals(11, readahead.startOffset());
-        // linear growth
-        assertEquals(BlockCache.MAX_READ_AHEAD_SIZE / 2 + BlockCache.BLOCK_SIZE * 2, readahead.size());
-
-        BlockCache.StreamCache streamCache = new BlockCache.StreamCache();
-        streamCache.evict = true;
-        blockCache.stream2cache.put(233L, streamCache);
-        // exponential fallback
-        readahead = blockCache.genReadahead(233L, List.of(
-                newRecord(233L, 10, 1, 2 * BlockCache.BLOCK_SIZE)
-        ));
-        assertEquals(BlockCache.BLOCK_SIZE, readahead.size());
+        assertTrue(rst.getReadAheadRecords().isEmpty());
     }
 
     private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {

@@ -24,13 +24,11 @@ import com.automq.stream.utils.CloseableIterator;
 import org.junit.jupiter.api.Test;
 
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -44,9 +42,7 @@ public class DataBlockReadAccumulatorTest {
 
     @Test
     public void test() throws ExecutionException, InterruptedException, TimeoutException {
-        List<DataBlockRecords> consumedBlocks = new LinkedList<>();
-        Consumer<DataBlockRecords> consumer = consumedBlocks::add;
-        DataBlockReadAccumulator accumulator = new DataBlockReadAccumulator(consumer);
+        DataBlockReadAccumulator accumulator = new DataBlockReadAccumulator();
 
         ObjectReader reader = mock(ObjectReader.class);
         ObjectReader.DataBlockIndex dataBlockIndex = new ObjectReader.DataBlockIndex(10, 10, 100, 2);
@@ -86,16 +82,12 @@ public class DataBlockReadAccumulatorTest {
         readerCf.complete(dataBlock);
 
         verify(reader, times(1)).read(any());
-        assertEquals(1, consumedBlocks.size());
-        assertEquals(2, consumedBlocks.get(0).records().size());
-        assertEquals(2, consumedBlocks.get(0).refCount.get());
 
         assertEquals(2, dataBlockCf1.get(1, TimeUnit.SECONDS).records().size());
         assertEquals(12, dataBlockCf1.get(1, TimeUnit.SECONDS).records().get(1).getBaseOffset());
         dataBlockCf1.get().release();
         assertEquals(2, dataBlockCf2.get(1, TimeUnit.SECONDS).records().size());
         dataBlockCf2.get().release();
-        assertEquals(0, consumedBlocks.get(0).refCount.get());
 
         // next round read, expected new read
         CompletableFuture<DataBlockRecords> dataBlockCf3 = accumulator.readDataBlock(reader, dataBlockIndex);
