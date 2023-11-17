@@ -69,12 +69,19 @@ public interface WALChannel {
     int read(ByteBuf dst, long position) throws IOException;
 
     class WALChannelBuilder {
+        static final String DEVICE_PREFIX = "/dev/";
         private final String path;
+        private boolean direct;
         private long capacity;
         private boolean readOnly;
 
         private WALChannelBuilder(String path) {
             this.path = path;
+        }
+
+        public WALChannelBuilder direct(boolean direct) {
+            this.direct = direct;
+            return this;
         }
 
         public WALChannelBuilder capacity(long capacity) {
@@ -88,7 +95,7 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
-            if (path.startsWith("/dev/")) {
+            if (direct || path.startsWith(DEVICE_PREFIX)) {
                 return new WALBlockDeviceChannel(path, capacity);
             } else {
                 return new WALFileChannel(path, capacity, readOnly);
