@@ -150,6 +150,10 @@ public class DefaultS3Operator implements S3Operator {
             readS3Client.close();
         }
         scheduler.shutdown();
+        readLimiterCallbackExecutor.shutdown();
+        writeLimiterCallbackExecutor.shutdown();
+        readCallbackExecutor.shutdown();
+        writeCallbackExecutor.shutdown();
     }
 
     @Override
@@ -631,7 +635,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     static class MergedReadTask {
-        static final int MAX_MERGE_READ_SIZE = 16 * 1024 * 1024;
+        static final int MAX_MERGE_READ_SIZE = 32 * 1024 * 1024;
         final String path;
         final List<ReadTask> readTasks = new ArrayList<>();
         long start;
