@@ -25,10 +25,7 @@ import org.slf4j.spi.LocationAwareLogger;
 
 /**
  * This class provides a way to instrument loggers with a common context which can be used to
- * automatically enrich log messages. For example, in the KafkaConsumer, it is often useful to know
- * the groupId of the consumer, so this can be added to a context object which can then be passed to
- * all of the dependent components in order to build new loggers. This removes the need to manually
- * add the groupId to each message.
+ * automatically enrich log messages.
  */
 public class LogContext {
 
