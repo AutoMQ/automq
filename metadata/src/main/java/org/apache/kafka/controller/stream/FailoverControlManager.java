@@ -17,13 +17,13 @@
 package org.apache.kafka.controller.stream;
 
 import org.apache.kafka.common.metadata.FailoverContextRecord;
-import org.apache.kafka.common.metadata.RemoveFailoverContextRecord;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.BrokerRegistration;
+import org.apache.kafka.metadata.stream.FailoverStatus;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -127,11 +127,10 @@ public class FailoverControlManager {
                 .collect(Collectors.toSet());
         failoverContexts.forEach((nodeId, context) -> {
             if (!failedNodeIdSet.contains(nodeId)) {
+                FailoverContextRecord completedRecord = context.duplicate();
+                completedRecord.setStatus(FailoverStatus.DONE.name());
                 // the target node already complete the recover and delete the volume, so remove the failover context
-                records.add(new ApiMessageAndVersion(
-                        new RemoveFailoverContextRecord()
-                                .setNodeId(nodeId),
-                        (short) 0));
+                records.add(new ApiMessageAndVersion(completedRecord, (short) 0));
             }
         });
     }
@@ -193,10 +192,6 @@ public class FailoverControlManager {
         failoverContexts.put(record.failedNodeId(), record);
     }
 
-    public void replay(RemoveFailoverContextRecord record) {
-        failoverContexts.remove(record.nodeId());
-    }
-
     /**
      * Attach the failed node volume to the target node.
      *
@@ -235,7 +230,4 @@ public class FailoverControlManager {
         }
     }
 
-    enum FailoverStatus {
-        WAITING, RECOVERING, DONE
-    }
 }

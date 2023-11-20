@@ -114,7 +114,7 @@ public class StreamMetadataManagerTest {
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, walMetadataImage0));
-        image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
+        image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
 
         ranges = new HashMap<>(ranges);
         ranges.put(1, new RangeMetadata(STREAM0, 1L, 1, 100L, 150L, BROKER0));
@@ -123,7 +123,7 @@ public class StreamMetadataManagerTest {
         streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 1, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
-        image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
+        image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
 
         ranges = new HashMap<>(ranges);
         ranges.put(2, new RangeMetadata(STREAM0, 2L, 2, 150L, 200L, BROKER0));
@@ -132,7 +132,7 @@ public class StreamMetadataManagerTest {
         streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 2, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
-        image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
+        image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
     }
 
     @Test

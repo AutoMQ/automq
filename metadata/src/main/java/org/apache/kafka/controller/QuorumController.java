@@ -104,7 +104,6 @@ import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
-import org.apache.kafka.common.metadata.RemoveFailoverContextRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -1557,9 +1556,6 @@ public final class QuorumController implements Controller {
                 break;
             case FAILOVER_CONTEXT_RECORD:
                 failoverControlManager.replay((FailoverContextRecord) message);
-                break;
-            case REMOVE_FAILOVER_CONTEXT_RECORD:
-                failoverControlManager.replay((RemoveFailoverContextRecord) message);
                 break;
             // AutoMQ for Kafka inject end
             default:

@@ -21,6 +21,7 @@ import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.FailoverContextRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
@@ -97,6 +98,8 @@ public final class MetadataDelta {
     private S3ObjectsDelta s3ObjectsDelta = null;
 
     private KVDelta kvDelta = null;
+
+    private FailoverContextDelta failoverContextDelta = null;
 
     // AutoMQ for Kafka inject end
 
@@ -214,6 +217,13 @@ public final class MetadataDelta {
             kvDelta = new KVDelta(image.kv());
         }
         return kvDelta;
+    }
+
+    public FailoverContextDelta getOrCreateFailoverContextDelta() {
+        if (failoverContextDelta == null) {
+            failoverContextDelta = new FailoverContextDelta(image.failoverContext());
+        }
+        return failoverContextDelta;
     }
 
     // AutoMQ for Kafka inject end
@@ -481,6 +491,10 @@ public final class MetadataDelta {
         getOrCreateKVDelta().replay(record);
     }
 
+    public void replay(FailoverContextRecord record) {
+        getOrCreateFailoverContextDelta().replay(record);
+    }
+
     // AutoMQ for Kafka inject end
 
     /**
@@ -545,6 +559,7 @@ public final class MetadataDelta {
         S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
         S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
         KVImage newKVImage = getNewKVImage();
+        FailoverContextImage failoverContextImage = getNewFailoverContextImage();
         // AutoMQ for Kafka inject end
         return new MetadataImage(
             provenance,
@@ -557,7 +572,8 @@ public final class MetadataDelta {
             newAcls,
             newStreamMetadata,
             newS3ObjectsMetadata,
-            newKVImage
+            newKVImage,
+            failoverContextImage
         );
     }
 
@@ -576,6 +592,11 @@ public final class MetadataDelta {
     private KVImage getNewKVImage() {
         return kvDelta == null ?
             image.kv() : kvDelta.apply();
+    }
+
+    private FailoverContextImage getNewFailoverContextImage() {
+        return failoverContextDelta == null ?
+            image.failoverContext() : failoverContextDelta.apply();
     }
 
     // AutoMQ for Kafka inject end
