@@ -87,7 +87,7 @@ public class WALFileChannel implements WALChannel {
 
     @Override
     public void write(ByteBuf src, long position) throws IOException {
-        assert src.readableBytes() + position <= fileCapacityFact;
+        assert src.readableBytes() + position <= capacity();
         ByteBuffer[] nioBuffers = src.nioBuffers();
         for (ByteBuffer nioBuffer : nioBuffers) {
             int bytesWritten = write(nioBuffer, position);
@@ -102,9 +102,16 @@ public class WALFileChannel implements WALChannel {
 
     @Override
     public int read(ByteBuf dst, long position) throws IOException {
-        ByteBuffer nioBuffer = dst.nioBuffer(dst.writerIndex(), dst.writableBytes());
-        int bytesRead = read(nioBuffer, position);
-        dst.writerIndex(dst.writerIndex() + bytesRead);
+        assert dst.writableBytes() + position <= capacity();
+        int bytesRead = 0;
+        while (dst.isWritable()) {
+            int read = dst.writeBytes(fileChannel, position + bytesRead, dst.writableBytes());
+            if (read == -1) {
+                // EOF
+                break;
+            }
+            bytesRead += read;
+        }
         return bytesRead;
     }
 
@@ -118,18 +125,5 @@ public class WALFileChannel implements WALChannel {
             bytesWritten += written;
         }
         return bytesWritten;
-    }
-
-    private int read(ByteBuffer dst, long position) throws IOException {
-        int bytesRead = 0;
-        while (dst.hasRemaining()) {
-            int read = fileChannel.read(dst, position + bytesRead);
-            if (read == -1) {
-                // EOF
-                break;
-            }
-            bytesRead += read;
-        }
-        return bytesRead;
     }
 }
