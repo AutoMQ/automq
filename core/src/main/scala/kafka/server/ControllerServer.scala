@@ -21,6 +21,7 @@ import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.cluster.Broker.ServerInfo
+import kafka.log.stream.s3.ConfigUtils
 import kafka.metrics.{KafkaMetricsGroup, LinuxIoMetricsCollector}
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -42,7 +43,6 @@ import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
-import org.apache.kafka.metadata.stream.S3Config
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.ApiMessageAndVersion
@@ -213,7 +213,7 @@ class ControllerServer(
         val maxIdleIntervalNs = config.metadataMaxIdleIntervalNs.fold(OptionalLong.empty)(OptionalLong.of)
 
         // AutoMQ for Kafka inject start
-        val s3Config = new S3Config(config.s3Endpoint, config.s3Region, config.s3Bucket, config.s3ObjectRetentionTimeInSecond, config.s3MockEnable)
+        val streamConfig = ConfigUtils.to(config)
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
           "_kafka_" + clusterId
@@ -243,7 +243,7 @@ class ControllerServer(
           setBootstrapMetadata(bootstrapMetadata).
           setFatalFaultHandler(sharedServer.quorumControllerFaultHandler).
           setZkMigrationEnabled(config.migrationEnabled).
-          setS3Config(s3Config).
+          setStreamConfig(streamConfig).
           setQuorumVoters(config.quorumVoters)
       }
       authorizer match {

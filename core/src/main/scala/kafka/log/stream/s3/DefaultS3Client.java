@@ -43,10 +43,10 @@ import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.kafka.metadata.stream.S3Config.ACCESS_KEY_NAME;
-import static org.apache.kafka.metadata.stream.S3Config.SECRET_KEY_NAME;
-
 public class DefaultS3Client implements Client {
+    public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
+    public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
+
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     private final Config config;
     private final StreamMetadataManager metadataManager;

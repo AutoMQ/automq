@@ -63,11 +63,13 @@ public class FailoverControlManager {
     public FailoverControlManager(
             QuorumController quorumController,
             ClusterControlManager clusterControlManager,
-            SnapshotRegistry registry) {
+            SnapshotRegistry registry, boolean failoverEnable) {
         this.quorumController = quorumController;
         this.clusterControlManager = clusterControlManager;
         this.failoverContexts = new TimelineHashMap<>(registry, 0);
-        this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
+        if (failoverEnable) {
+            this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
+        }
     }
 
     void runFailoverTask() {
@@ -94,7 +96,7 @@ public class FailoverControlManager {
         List<FailedNode> failedNodes = this.failedNodes;
         addNewContext(failedNodes, records);
         doFailover(records);
-        deleteCompletedContext(failedNodes, records);
+        complete(failedNodes, records);
         return ControllerResult.of(records, null);
     }
 
@@ -121,7 +123,7 @@ public class FailoverControlManager {
         attached.clear();
     }
 
-    private void deleteCompletedContext(List<FailedNode> failedNodes, List<ApiMessageAndVersion> records) {
+    private void complete(List<FailedNode> failedNodes, List<ApiMessageAndVersion> records) {
         Set<Integer> failedNodeIdSet = failedNodes.stream()
                 .map(FailedNode::getNodeId)
                 .collect(Collectors.toSet());

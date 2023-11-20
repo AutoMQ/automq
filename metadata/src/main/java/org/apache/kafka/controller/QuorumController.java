@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -142,7 +143,6 @@ import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
-import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.EventQueue;
 import org.apache.kafka.queue.KafkaEventQueue;
@@ -243,7 +243,7 @@ public final class QuorumController implements Controller {
 
         // AutoMQ for Kafka inject start
 
-        private S3Config s3Config;
+        private Config streamConfig;
         private List<String> quorumVoters;
 
         // AutoMQ for Kafka inject end
@@ -369,8 +369,8 @@ public final class QuorumController implements Controller {
 
         // AutoMQ for Kafka inject start
 
-        public Builder setS3Config(S3Config s3Config) {
-            this.s3Config = s3Config;
+        public Builder setStreamConfig(Config streamConfig) {
+            this.streamConfig = streamConfig;
             return this;
         }
 
@@ -432,7 +432,7 @@ public final class QuorumController implements Controller {
                     bootstrapMetadata,
                     maxRecordsPerBatch,
                     zkMigrationEnabled,
-                    s3Config,
+                    streamConfig,
                     quorumVoters
                 );
             } catch (Exception e) {
@@ -1789,7 +1789,7 @@ public final class QuorumController implements Controller {
 
     // AutoMQ for Kafka inject start
 
-    private final S3Config s3Config;
+    private final Config streamConfig;
 
     /**
      * An object which stores the controller's view of the S3 objects.
@@ -1841,7 +1841,7 @@ public final class QuorumController implements Controller {
         BootstrapMetadata bootstrapMetadata,
         int maxRecordsPerBatch,
         boolean zkMigrationEnabled,
-        S3Config s3Config,
+        Config streamConfig,
         List<String> quorumVoters
     ) {
         this.fatalFaultHandler = fatalFaultHandler;
@@ -1923,21 +1923,21 @@ public final class QuorumController implements Controller {
         this.zkRecordConsumer = new MigrationRecordConsumer();
 
         // AutoMQ for Kafka inject start
-        this.s3Config = s3Config;
+        this.streamConfig = streamConfig;
         S3Operator s3Operator;
-        if (s3Config.mock()) {
+        if (streamConfig.mockEnable()) {
             // only use for test
             s3Operator = new MemoryS3Operator();
         } else {
             S3StreamMetricsRegistry.setMetricsGroup(new KafkaS3StreamMetricsGroup());
-            s3Operator = new DefaultS3Operator(s3Config.endpoint(), s3Config.region(), s3Config.bucket(), false,
-                    s3Config.getAccessKey(), s3Config.getSecretKey());
+            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), false,
+                    streamConfig.accessKey(), streamConfig.secretKey());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
-            this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);
+            this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
-        this.failoverControlManager = new FailoverControlManager(this, clusterControl, snapshotRegistry);
+        this.failoverControlManager = new FailoverControlManager(this, clusterControl, snapshotRegistry, streamConfig.failoverEnable());
         // AutoMQ for Kafka inject end
         updateWriteOffset(-1);
 

@@ -719,6 +719,7 @@ object KafkaConfig {
   val S3ObjectLogEnableProp = "s3.object.log.enable"
   val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
   val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
+  val S3FailoverEnableProp = "s3.failover.enable"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -755,6 +756,7 @@ object KafkaConfig {
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
+  val S3FailoverEnableDoc = "Failover mode: if enable, the controller will scan failed node and failover the failed node"
 
   // AutoMQ for Kafka inject end
 
@@ -1588,6 +1590,7 @@ object KafkaConfig {
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
+      .define(S3FailoverEnableProp, BOOLEAN, false, MEDIUM, S3FailoverEnableDoc)
     // AutoMQ for Kafka inject end
   }
 
@@ -2158,6 +2161,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
+  val s3FailoverEnable = getBoolean(KafkaConfig.S3FailoverEnableProp)
   // AutoMQ for Kafka inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {
