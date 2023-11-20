@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import com.automq.stream.s3.Config;
 import com.automq.stream.s3.operator.S3Operator;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
@@ -37,7 +38,6 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
-import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -59,7 +59,7 @@ public class S3ObjectControlManagerTest {
     private static final String S3_REGION = "us-east-1";
     private static final String S3_BUCKET = "kafka-on-S3-bucket";
 
-    private static final S3Config S3_CONFIG = new S3Config(S3_ENDPOINT, S3_REGION, S3_BUCKET, 5);
+    private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(5);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private S3Operator operator;

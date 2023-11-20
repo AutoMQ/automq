@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Timeout;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
-public class NodeS3StreamSetObjectMetadataImageTest {
+public class NodeMetadataImageTest {
 
     private static final int BROKER0 = 0;
 

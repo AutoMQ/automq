@@ -560,5 +560,10 @@ public class MockController implements Controller {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public CompletableFuture<Void> failover(ControllerRequestContext context) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ for Kafka inject end
 }

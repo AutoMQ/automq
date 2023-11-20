@@ -19,6 +19,7 @@ package org.apache.kafka.controller.stream;
 
 import java.util.Arrays;
 
+import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.operator.S3Operator;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
@@ -31,7 +32,6 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
-import org.apache.kafka.metadata.stream.S3Config;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -74,7 +74,7 @@ public class S3ObjectControlManager {
 
     private final String clusterId;
 
-    private final S3Config config;
+    private final Config config;
 
     /**
      * The objectId of the next object to be prepared. (start from 0)
@@ -99,7 +99,7 @@ public class S3ObjectControlManager {
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
         String clusterId,
-        S3Config config,
+        Config config,
         S3Operator operator) {
         this.quorumController = quorumController;
         this.snapshotRegistry = snapshotRegistry;
