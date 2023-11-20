@@ -17,8 +17,10 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -74,24 +76,25 @@ public class WriteBench implements AutoCloseable {
         }
         Config config = new Config(ns);
 
+        resetWALHeader(config.path);
         try (WriteBench bench = new WriteBench(config)) {
             bench.run(config);
         }
     }
 
-    private static void logIt(Config config, Stat stat) {
-        ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
-                ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
-        statExecutor.scheduleAtFixedRate(() -> {
-            Stat.Result result = stat.reset();
-            if (0 != result.count()) {
-                System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
-                        TimeUnit.SECONDS.toNanos(1) * result.count() / result.elapsedTimeNanos(),
-                        TimeUnit.SECONDS.toNanos(1) * (result.count() * config.recordSizeBytes) / result.elapsedTimeNanos() / 1024,
-                        (double) result.costNanos() / TimeUnit.MILLISECONDS.toNanos(1) / result.count(),
-                        (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
-            }
-        }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    private static void resetWALHeader(String path) throws IOException {
+        if (!path.startsWith(WALChannel.WALChannelBuilder.DEVICE_PREFIX)) {
+            return;
+        }
+        System.out.println("Resetting WAL header");
+        int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
+        WALChannel channel = WALChannel.builder(path).capacity(capacity).build();
+        channel.open();
+        ByteBuf buf = DirectByteBufAlloc.byteBuffer(capacity);
+        buf.writeZero(capacity);
+        channel.write(buf, 0);
+        buf.release();
+        channel.close();
     }
 
     private void run(Config config) {
@@ -188,6 +191,21 @@ public class WriteBench implements AutoCloseable {
         }
 
         System.out.printf("Append task %d finished\n", index);
+    }
+
+    private static void logIt(Config config, Stat stat) {
+        ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
+        statExecutor.scheduleAtFixedRate(() -> {
+            Stat.Result result = stat.reset();
+            if (0 != result.count()) {
+                System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
+                        TimeUnit.SECONDS.toNanos(1) * result.count() / result.elapsedTimeNanos(),
+                        TimeUnit.SECONDS.toNanos(1) * (result.count() * config.recordSizeBytes) / result.elapsedTimeNanos() / 1024,
+                        (double) result.costNanos() / TimeUnit.MILLISECONDS.toNanos(1) / result.count(),
+                        (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
+            }
+        }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
     @Override

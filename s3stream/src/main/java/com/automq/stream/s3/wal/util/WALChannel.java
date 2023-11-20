@@ -69,7 +69,7 @@ public interface WALChannel {
     int read(ByteBuf dst, long position) throws IOException;
 
     class WALChannelBuilder {
-        static final String DEVICE_PREFIX = "/dev/";
+        public static final String DEVICE_PREFIX = "/dev/";
         private final String path;
         private boolean direct;
         private long capacity;
