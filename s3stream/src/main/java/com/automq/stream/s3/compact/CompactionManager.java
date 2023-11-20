@@ -72,7 +72,7 @@ public class CompactionManager {
     private final ExecutorService compactThreadPool;
     private final ExecutorService forceSplitThreadPool;
     private final CompactionUploader uploader;
-    private final Config kafkaConfig;
+    private final Config config;
     private final int maxObjectNumToCompact;
     private final int compactionInterval;
     private final int forceSplitObjectPeriod;
@@ -87,7 +87,7 @@ public class CompactionManager {
         String logPrefix = String.format("[CompactionManager id=%d] ", config.nodeId());
         this.logger = new LogContext(logPrefix).logger(CompactionManager.class);
         this.s3ObjectLogger = S3ObjectLogger.logger(logPrefix);
-        this.kafkaConfig = config;
+        this.config = config;
         this.objectManager = objectManager;
         this.streamManager = streamManager;
         this.s3Operator = s3Operator;
@@ -355,7 +355,7 @@ public class CompactionManager {
                         List<CompletableFuture<Void>> cfs = new ArrayList<>();
                         for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : batchGroup) {
                             List<StreamDataBlock> blocks = pair.getLeft();
-                            DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, kafkaConfig.objectPartSize());
+                            DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
                             for (StreamDataBlock block : blocks) {
                                 writer.write(block);
                             }
