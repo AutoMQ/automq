@@ -40,15 +40,15 @@ public class CompactionUploader {
     private final ExecutorService streamObjectUploadPool;
     private final ExecutorService streamSetObjectUploadPool;
     private final S3Operator s3Operator;
-    private final Config kafkaConfig;
+    private final Config config;
     private CompletableFuture<Long> streamSetObjectIdCf = null;
     private DataBlockWriter streamSetObjectWriter = null;
 
-    public CompactionUploader(ObjectManager objectManager, S3Operator s3Operator, Config kafkaConfig) {
+    public CompactionUploader(ObjectManager objectManager, S3Operator s3Operator, Config config) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
-        this.kafkaConfig = kafkaConfig;
-        this.streamObjectUploadPool = Threads.newFixedThreadPool(kafkaConfig.streamSetObjectCompactionUploadConcurrency(),
+        this.config = config;
+        this.streamObjectUploadPool = Threads.newFixedThreadPool(config.streamSetObjectCompactionUploadConcurrency(),
                 ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
         this.streamSetObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
                 ThreadUtils.createThreadFactory("compaction-stream-set-object-uploader-%d", true), LOGGER);
@@ -84,7 +84,7 @@ public class CompactionUploader {
         }
         return streamSetObjectIdCf.thenAcceptAsync(objectId -> {
             if (streamSetObjectWriter == null) {
-                streamSetObjectWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.objectPartSize());
+                streamSetObjectWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
             }
             for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
                 streamSetObjectWriter.write(streamDataBlock);
@@ -105,7 +105,7 @@ public class CompactionUploader {
                         .toArray(CompletableFuture[]::new))
                 .thenComposeAsync(v -> objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                                 .thenComposeAsync(objectId -> {
-                                    DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, kafkaConfig.objectPartSize());
+                                    DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
                                     for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
                                         dataBlockWriter.write(streamDataBlock);
                                     }

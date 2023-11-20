@@ -60,6 +60,8 @@ public class Config {
     // 100MB/s
     private long networkBaselineBandwidth = 100 * 1024 * 1024;
     private int refillPeriodMs = 1000;
+    private long objectRetentionTimeInSecond = 10 * 60; // 10min
+    private boolean failoverEnable = false;
 
     public int nodeId() {
         return nodeId;
@@ -420,4 +422,23 @@ public class Config {
         this.refillPeriodMs = refillPeriodMs;
         return this;
     }
+
+    public Config objectRetentionTimeInSecond(long seconds) {
+        objectRetentionTimeInSecond = seconds;
+        return this;
+    }
+
+    public long objectRetentionTimeInSecond() {
+        return objectRetentionTimeInSecond;
+    }
+
+    public Config failoverEnable(boolean failoverEnable) {
+        this.failoverEnable = failoverEnable;
+        return this;
+    }
+
+    public boolean failoverEnable() {
+        return failoverEnable;
+    }
+
 }
