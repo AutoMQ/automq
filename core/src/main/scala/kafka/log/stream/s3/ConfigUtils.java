@@ -24,7 +24,7 @@ public class ConfigUtils {
 
     public static Config to(KafkaConfig s) {
         return new Config()
-                .nodeId(s.brokerId())
+                .nodeId(s.nodeId())
                 .endpoint(s.s3Endpoint())
                 .region(s.s3Region())
                 .bucket(s.s3Bucket())
@@ -56,8 +56,9 @@ public class ConfigUtils {
                 .mockEnable(s.s3MockEnable())
                 .objectLogEnable(s.s3ObjectLogEnable())
                 .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
-                .refillPeriodMs(s.s3RefillPeriodMsProp());
-
+                .refillPeriodMs(s.s3RefillPeriodMsProp())
+                .objectRetentionTimeInSecond(s.s3ObjectRetentionTimeInSecond())
+                .failoverEnable(s.s3FailoverEnable());
     }
 
 }

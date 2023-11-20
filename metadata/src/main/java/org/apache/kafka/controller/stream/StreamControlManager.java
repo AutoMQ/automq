@@ -19,8 +19,7 @@ package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import java.util.HashMap;
-import java.util.stream.Stream;
+import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -59,22 +58,21 @@ import org.apache.kafka.metadata.stream.Convertor;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
-import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
-import org.apache.kafka.timeline.TimelineInteger;
 import org.apache.kafka.timeline.TimelineLong;
-import org.apache.kafka.timeline.TimelineObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
@@ -84,110 +82,6 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 @SuppressWarnings("all")
 public class StreamControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
-
-    public static class S3StreamMetadata {
-
-        // current epoch, when created but not open, use -1 represent
-        private final TimelineLong currentEpoch;
-        // rangeIndex, when created but not open, there is no range, use -1 represent
-        private final TimelineInteger currentRangeIndex;
-        /**
-         * The visible start offset of stream, it may be larger than the start offset of current range.
-         */
-        private final TimelineLong startOffset;
-        private final TimelineObject<StreamState> currentState;
-        private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
-        private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
-
-        public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
-                                StreamState currentState, SnapshotRegistry registry) {
-            this.currentEpoch = new TimelineLong(registry);
-            this.currentEpoch.set(currentEpoch);
-            this.currentRangeIndex = new TimelineInteger(registry);
-            this.currentRangeIndex.set(currentRangeIndex);
-            this.startOffset = new TimelineLong(registry);
-            this.startOffset.set(startOffset);
-            this.currentState = new TimelineObject<StreamState>(registry, currentState);
-            this.ranges = new TimelineHashMap<>(registry, 0);
-            this.streamObjects = new TimelineHashMap<>(registry, 0);
-        }
-
-        public long currentEpoch() {
-            return currentEpoch.get();
-        }
-
-        public int currentRangeIndex() {
-            return currentRangeIndex.get();
-        }
-
-        public long startOffset() {
-            return startOffset.get();
-        }
-
-        public StreamState currentState() {
-            return currentState.get();
-        }
-
-        public Map<Integer, RangeMetadata> ranges() {
-            return ranges;
-        }
-
-        public RangeMetadata currentRangeMetadata() {
-            return ranges.get(currentRangeIndex.get());
-        }
-
-        public Map<Long, S3StreamObject> streamObjects() {
-            return streamObjects;
-        }
-
-        @Override
-        public String toString() {
-            return "S3StreamMetadata{" +
-                    "currentEpoch=" + currentEpoch.get() +
-                    ", currentState=" + currentState.get() +
-                    ", currentRangeIndex=" + currentRangeIndex.get() +
-                    ", startOffset=" + startOffset.get() +
-                    ", ranges=" + ranges +
-                    ", streamObjects=" + streamObjects +
-                    '}';
-        }
-    }
-
-    public static class NodeS3StreamSetObjectMetadata {
-
-        private final int nodeId;
-        private final TimelineLong nodeEpoch;
-        private final TimelineHashMap<Long/*objectId*/, S3StreamSetObject> streamSetObjects;
-
-        public NodeS3StreamSetObjectMetadata(int nodeId, long nodeEpoch, SnapshotRegistry registry) {
-            this.nodeId = nodeId;
-            this.nodeEpoch = new TimelineLong(registry);
-            this.nodeEpoch.set(nodeEpoch);
-            this.streamSetObjects = new TimelineHashMap<>(registry, 0);
-        }
-
-        public int getNodeId() {
-            return nodeId;
-        }
-
-        public long getNodeEpoch() {
-            return nodeEpoch.get();
-        }
-
-        public TimelineHashMap<Long, S3StreamSetObject> streamSetObjects() {
-            return streamSetObjects;
-        }
-
-        @Override
-        public String toString() {
-            return "NodeS3StreamSetObjectMetadata{" +
-                    "nodeId=" + nodeId +
-                    ", nodeEpoch=" + nodeEpoch +
-                    ", streamSetObjects=" + streamSetObjects +
-                    '}';
-        }
-    }
-
     private final SnapshotRegistry snapshotRegistry;
 
     private final Logger log;
@@ -201,7 +95,7 @@ public class StreamControlManager {
 
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
-    private final TimelineHashMap<Integer/*nodeId*/, NodeS3StreamSetObjectMetadata> nodesMetadata;
+    private final TimelineHashMap<Integer/*nodeId*/, NodeMetadata> nodesMetadata;
 
     public StreamControlManager(
             SnapshotRegistry snapshotRegistry,
@@ -223,20 +117,20 @@ public class StreamControlManager {
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[CreateStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // TODO: pre assigned a batch of stream id in controller
         long streamId = nextAssignedStreamId.get();
         // update assigned id
         ApiMessageAndVersion record0 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
-            .setAssignedStreamId(streamId), (short) 0);
+                .setAssignedStreamId(streamId), (short) 0);
         // create stream
         ApiMessageAndVersion record = new ApiMessageAndVersion(new S3StreamRecord()
-            .setStreamId(streamId)
-            .setEpoch(S3StreamConstant.INIT_EPOCH)
-            .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
-            .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
+                .setStreamId(streamId)
+                .setEpoch(S3StreamConstant.INIT_EPOCH)
+                .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
+                .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
         resp.setStreamId(streamId);
         log.info("[CreateStream] create streamId={} success", streamId);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
@@ -286,7 +180,7 @@ public class StreamControlManager {
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[OpenStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -298,26 +192,26 @@ public class StreamControlManager {
         }
         // verify epoch match
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-        if (streamMetadata.currentEpoch.get() > epoch) {
+        if (streamMetadata.currentEpoch() > epoch) {
             resp.setErrorCode(Errors.STREAM_FENCED.code());
             log.warn("[OpenStream] streamId={}'s epoch={} is larger than request epoch {}", streamId,
-                streamMetadata.currentEpoch.get(), epoch);
+                    streamMetadata.currentEpoch(), epoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        if (streamMetadata.currentEpoch.get() == epoch) {
+        if (streamMetadata.currentEpoch() == epoch) {
             // node may use the same epoch to open -> close -> open stream.
             // verify node
-            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
+            RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             if (rangeMetadata == null) {
                 // should not happen
                 log.error("[OpenStream] streamId={}'s current range={} not exist when open stream with epoch={}", streamId,
-                    streamMetadata.currentRangeIndex(), epoch);
+                        streamMetadata.currentRangeIndex(), epoch);
                 resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             if (rangeMetadata.nodeId() != nodeId) {
                 log.warn("[OpenStream] streamId={}'s current range={}'s nodeId={} is not equal to request nodeId={}",
-                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
+                        streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
                 resp.setErrorCode(Errors.STREAM_FENCED.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -327,11 +221,11 @@ public class StreamControlManager {
             List<ApiMessageAndVersion> records = new ArrayList<>();
             if (streamMetadata.currentState() == StreamState.CLOSED) {
                 records.add(new ApiMessageAndVersion(new S3StreamRecord()
-                    .setStreamId(streamId)
-                    .setEpoch(epoch)
-                    .setRangeIndex(streamMetadata.currentRangeIndex())
-                    .setStartOffset(streamMetadata.startOffset())
-                    .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+                        .setStreamId(streamId)
+                        .setEpoch(epoch)
+                        .setRangeIndex(streamMetadata.currentRangeIndex())
+                        .setStartOffset(streamMetadata.startOffset())
+                        .setStreamState(StreamState.OPENED.toByte()), (short) 0));
             }
             return ControllerResult.of(records, resp);
         }
@@ -346,27 +240,27 @@ public class StreamControlManager {
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
-            .setStreamId(streamId)
-            .setEpoch(epoch)
-            .setRangeIndex(newRangeIndex)
-            .setStartOffset(streamMetadata.startOffset())
-            .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+                .setStreamId(streamId)
+                .setEpoch(epoch)
+                .setRangeIndex(newRangeIndex)
+                .setStartOffset(streamMetadata.startOffset())
+                .setStreamState(StreamState.OPENED.toByte()), (short) 0));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
         long startOffset = 0;
         if (newRangeIndex > 0) {
             // means that the new range is not the first range in stream, get the last range's end offset
-            RangeMetadata lastRangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+            RangeMetadata lastRangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             startOffset = lastRangeMetadata.endOffset();
         }
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
-            .setStreamId(streamId)
-            .setNodeId(nodeId)
-            .setStartOffset(startOffset)
-            .setEndOffset(startOffset)
-            .setEpoch(epoch)
-            .setRangeIndex(newRangeIndex), (short) 0));
+                .setStreamId(streamId)
+                .setNodeId(nodeId)
+                .setStartOffset(startOffset)
+                .setEndOffset(startOffset)
+                .setEpoch(epoch)
+                .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
         log.info("[OpenStream] nodeId={} open streamId={} with epoch={} success", nodeId, streamId, epoch);
@@ -406,11 +300,11 @@ public class StreamControlManager {
         long epoch = request.streamEpoch();
 
         // verify node epoch
-        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[CloseStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -428,12 +322,12 @@ public class StreamControlManager {
         // now the request in valid, update the stream's state
         // stream update record
         List<ApiMessageAndVersion> records = List.of(
-            new ApiMessageAndVersion(new S3StreamRecord()
-                .setStreamId(streamId)
-                .setEpoch(epoch)
-                .setRangeIndex(streamMetadata.currentRangeIndex())
-                .setStartOffset(streamMetadata.startOffset())
-                .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
+                new ApiMessageAndVersion(new S3StreamRecord()
+                        .setStreamId(streamId)
+                        .setEpoch(epoch)
+                        .setRangeIndex(streamMetadata.currentRangeIndex())
+                        .setStartOffset(streamMetadata.startOffset())
+                        .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
         log.info("[CloseStream] nodeId={} close streamId={} with epochId={} success", nodeId, streamId, epoch);
         return ControllerResult.atomicOf(records, resp);
     }
@@ -450,7 +344,7 @@ public class StreamControlManager {
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[TrimStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -468,7 +362,7 @@ public class StreamControlManager {
         }
         if (streamMetadata.startOffset() > newStartOffset) {
             log.warn("[TrimStream] streamId={}'s start offset {} is larger than request new start offset {}",
-                streamId, streamMetadata.startOffset(), newStartOffset);
+                    streamId, streamMetadata.startOffset(), newStartOffset);
             resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -480,13 +374,13 @@ public class StreamControlManager {
         // update the stream metadata start offset
         List<ApiMessageAndVersion> records = new ArrayList<>();
         records.add(new ApiMessageAndVersion(new S3StreamRecord()
-            .setStreamId(streamId)
-            .setEpoch(epoch)
-            .setRangeIndex(streamMetadata.currentRangeIndex())
-            .setStartOffset(newStartOffset)
-            .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
+                .setStreamId(streamId)
+                .setEpoch(epoch)
+                .setRangeIndex(streamMetadata.currentRangeIndex())
+                .setStartOffset(newStartOffset)
+                .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
         // remove range or update range's start offset
-        streamMetadata.ranges.entrySet().stream().forEach(it -> {
+        streamMetadata.ranges().entrySet().stream().forEach(it -> {
             Integer rangeIndex = it.getKey();
             RangeMetadata range = it.getValue();
             if (newStartOffset <= range.startOffset()) {
@@ -500,32 +394,32 @@ public class StreamControlManager {
                 // 3. try to trim to 110, then current range will be [100, 100)
                 long newRangeStartOffset = newStartOffset < range.endOffset() ? newStartOffset : range.endOffset();
                 records.add(new ApiMessageAndVersion(new RangeRecord()
-                    .setStreamId(streamId)
-                    .setRangeIndex(rangeIndex)
-                    .setNodeId(range.nodeId())
-                    .setEpoch(range.epoch())
-                    .setStartOffset(newRangeStartOffset)
-                    .setEndOffset(range.endOffset()), (short) 0));
+                        .setStreamId(streamId)
+                        .setRangeIndex(rangeIndex)
+                        .setNodeId(range.nodeId())
+                        .setEpoch(range.epoch())
+                        .setStartOffset(newRangeStartOffset)
+                        .setEndOffset(range.endOffset()), (short) 0));
                 return;
             }
             if (newStartOffset >= range.endOffset()) {
                 // remove range
                 records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
-                    .setStreamId(streamId)
-                    .setRangeIndex(rangeIndex), (short) 0));
+                        .setStreamId(streamId)
+                        .setRangeIndex(rangeIndex), (short) 0));
                 return;
             }
             // update range's start offset
             records.add(new ApiMessageAndVersion(new RangeRecord()
-                .setStreamId(streamId)
-                .setNodeId(range.nodeId())
-                .setStartOffset(newStartOffset)
-                .setEndOffset(range.endOffset())
-                .setEpoch(range.epoch())
-                .setRangeIndex(rangeIndex), (short) 0));
+                    .setStreamId(streamId)
+                    .setNodeId(range.nodeId())
+                    .setStartOffset(newStartOffset)
+                    .setEndOffset(range.endOffset())
+                    .setEpoch(range.epoch())
+                    .setRangeIndex(rangeIndex), (short) 0));
         });
         // remove stream object
-        streamMetadata.streamObjects.entrySet().stream().forEach(it -> {
+        streamMetadata.streamObjects().entrySet().stream().forEach(it -> {
             Long objectId = it.getKey();
             S3StreamObject streamObject = it.getValue();
             long streamStartOffset = streamObject.streamOffsetRange().getStartOffset();
@@ -536,10 +430,10 @@ public class StreamControlManager {
             if (newStartOffset >= streamEndOffset) {
                 // remove stream object
                 records.add(new ApiMessageAndVersion(new RemoveS3StreamObjectRecord()
-                    .setStreamId(streamId)
-                    .setObjectId(objectId), (short) 0));
+                        .setStreamId(streamId)
+                        .setObjectId(objectId), (short) 0));
                 ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                    Collections.singletonList(objectId));
+                        Collections.singletonList(objectId));
                 if (!markDestroyResult.response()) {
                     log.error("[TrimStream] Mark destroy stream object: {} failed", objectId);
                     resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
@@ -554,38 +448,38 @@ public class StreamControlManager {
         // remove stream set object or remove stream range in stream set object
         // TODO: optimize
         this.nodesMetadata.values()
-            .stream()
-            .flatMap(entry -> entry.streamSetObjects.values().stream())
-            .filter(streamSetObject -> streamSetObject.offsetRanges().containsKey(streamId))
-            .filter(streamSetObject -> streamSetObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
-            .forEach(streamSetObj -> {
-                if (streamSetObj.offsetRanges().size() == 1) {
-                    // only this range, but we will remove this range, so now we can remove this stream set object
-                    records.add(new ApiMessageAndVersion(
-                        new RemoveStreamSetObjectRecord()
-                            .setNodeId(streamSetObj.nodeId())
-                            .setObjectId(streamSetObj.objectId()), (short) 0
-                    ));
-                    ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                        List.of(streamSetObj.objectId()));
-                    if (!markDestroyResult.response()) {
-                        log.error("[TrimStream] Mark destroy stream set object: {} failed", streamSetObj.objectId());
-                        resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                .stream()
+                .flatMap(entry -> entry.streamSetObjects().values().stream())
+                .filter(streamSetObject -> streamSetObject.offsetRanges().containsKey(streamId))
+                .filter(streamSetObject -> streamSetObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
+                .forEach(streamSetObj -> {
+                    if (streamSetObj.offsetRanges().size() == 1) {
+                        // only this range, but we will remove this range, so now we can remove this stream set object
+                        records.add(new ApiMessageAndVersion(
+                                new RemoveStreamSetObjectRecord()
+                                        .setNodeId(streamSetObj.nodeId())
+                                        .setObjectId(streamSetObj.objectId()), (short) 0
+                        ));
+                        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
+                                List.of(streamSetObj.objectId()));
+                        if (!markDestroyResult.response()) {
+                            log.error("[TrimStream] Mark destroy stream set object: {} failed", streamSetObj.objectId());
+                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                            return;
+                        }
+                        records.addAll(markDestroyResult.records());
                         return;
                     }
-                    records.addAll(markDestroyResult.records());
-                    return;
-                }
-                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
-                // remove offset range
-                newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-                    .setObjectId(streamSetObj.objectId())
-                    .setNodeId(streamSetObj.nodeId())
-                    .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                    .setDataTimeInMs(streamSetObj.dataTimeInMs())
-                    .setOrderId(streamSetObj.orderId()), (short) 0));
-            });
+                    Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
+                    // remove offset range
+                    newOffsetRange.remove(streamId);
+                    records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
+                            .setObjectId(streamSetObj.objectId())
+                            .setNodeId(streamSetObj.nodeId())
+                            .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
+                            .setDataTimeInMs(streamSetObj.dataTimeInMs())
+                            .setOrderId(streamSetObj.orderId()), (short) 0));
+                });
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -603,7 +497,7 @@ public class StreamControlManager {
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[DeleteStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -619,9 +513,9 @@ public class StreamControlManager {
         // generate remove stream record
         List<ApiMessageAndVersion> records = new ArrayList<>();
         records.add(new ApiMessageAndVersion(new RemoveS3StreamRecord()
-            .setStreamId(streamId), (short) 0));
+                .setStreamId(streamId), (short) 0));
         // generate stream objects destroy records
-        List<Long> streamObjectIds = streamMetadata.streamObjects.keySet().stream().collect(Collectors.toList());
+        List<Long> streamObjectIds = streamMetadata.streamObjects().keySet().stream().collect(Collectors.toList());
         ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
         if (!markDestroyResult.response()) {
             log.error("[DeleteStream]: Mark destroy stream objects: {} failed", streamObjectIds);
@@ -631,37 +525,37 @@ public class StreamControlManager {
         records.addAll(markDestroyResult.records());
         // remove stream set object or remove stream-offset-range in stream set object
         this.nodesMetadata.values()
-            .stream()
-            .flatMap(entry -> entry.streamSetObjects.values().stream())
-            .filter(streamsSetObject -> streamsSetObject.offsetRanges().containsKey(streamId))
-            .forEach(streamSetObj -> {
-                if (streamSetObj.offsetRanges().size() == 1) {
-                    // only this range, but we will remove this range, so now we can remove this stream set object
-                    records.add(new ApiMessageAndVersion(
-                        new RemoveStreamSetObjectRecord()
-                            .setNodeId(streamSetObj.nodeId())
-                            .setObjectId(streamSetObj.objectId()), (short) 0
-                    ));
-                    ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
-                        List.of(streamSetObj.objectId()));
-                    if (!result.response()) {
-                        log.error("[DeleteStream]: Mark destroy stream set object: {} failed", streamSetObj.objectId());
-                        resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                .stream()
+                .flatMap(entry -> entry.streamSetObjects().values().stream())
+                .filter(streamsSetObject -> streamsSetObject.offsetRanges().containsKey(streamId))
+                .forEach(streamSetObj -> {
+                    if (streamSetObj.offsetRanges().size() == 1) {
+                        // only this range, but we will remove this range, so now we can remove this stream set object
+                        records.add(new ApiMessageAndVersion(
+                                new RemoveStreamSetObjectRecord()
+                                        .setNodeId(streamSetObj.nodeId())
+                                        .setObjectId(streamSetObj.objectId()), (short) 0
+                        ));
+                        ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
+                                List.of(streamSetObj.objectId()));
+                        if (!result.response()) {
+                            log.error("[DeleteStream]: Mark destroy stream set object: {} failed", streamSetObj.objectId());
+                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+                            return;
+                        }
+                        records.addAll(result.records());
                         return;
                     }
-                    records.addAll(result.records());
-                    return;
-                }
-                Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
-                // remove offset range
-                newOffsetRange.remove(streamId);
-                records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-                    .setObjectId(streamSetObj.objectId())
-                    .setNodeId(streamSetObj.nodeId())
-                    .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                    .setDataTimeInMs(streamSetObj.dataTimeInMs())
-                    .setOrderId(streamSetObj.orderId()), (short) 0));
-            });
+                    Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
+                    // remove offset range
+                    newOffsetRange.remove(streamId);
+                    records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
+                            .setObjectId(streamSetObj.objectId())
+                            .setNodeId(streamSetObj.nodeId())
+                            .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
+                            .setDataTimeInMs(streamSetObj.dataTimeInMs())
+                            .setOrderId(streamSetObj.orderId()), (short) 0));
+                });
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -699,11 +593,11 @@ public class StreamControlManager {
         long orderId = data.orderId();
 
         // verify node epoch
-        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
+        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, !data.failoverMode());
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[CommitStreamSetObject] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -715,13 +609,13 @@ public class StreamControlManager {
         if (compactedObjectIds == null || compactedObjectIds.isEmpty()) {
             // verify stream continuity
             List<StreamOffsetRange> offsetRanges = Stream.concat(
-                    streamRanges
-                        .stream()
-                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
-                    streamObjects
-                        .stream()
-                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
-                .collect(Collectors.toList());
+                            streamRanges
+                                    .stream()
+                                    .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
+                            streamObjects
+                                    .stream()
+                                    .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
+                    .collect(Collectors.toList());
             Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
             if (continuityCheckResult != Errors.NONE) {
                 log.error("[CommitStreamSetObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
@@ -756,20 +650,13 @@ public class StreamControlManager {
             // update dataTs to the min compacted object's dataTs
             //noinspection OptionalGetWithoutIsPresent
             dataTs = compactedObjectIds.stream()
-                    .map(id -> this.nodesMetadata.get(nodeId).streamSetObjects.get(id))
+                    .map(id -> this.nodesMetadata.get(nodeId).streamSetObjects().get(id))
                     .map(S3StreamSetObject::dataTimeInMs)
                     .min(Long::compareTo).get();
         }
         List<StreamOffsetRange> indexes = streamRanges.stream()
                 .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
                 .collect(Collectors.toList());
-        // update node's stream set object
-        NodeS3StreamSetObjectMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
-        if (nodeMetadata == null) {
-            // first time commit stream set object, generate node's metadata record
-            records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
-                    .setNodeId(nodeId), (short) 0));
-        }
         if (objectId != NOOP_OBJECT_ID) {
             // generate node's stream set object record
             List<StreamIndex> streamIndexes = indexes.stream()
@@ -851,7 +738,7 @@ public class StreamControlManager {
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
             log.warn("[CommitStreamObject]: nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+                    nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -882,7 +769,7 @@ public class StreamControlManager {
             // update dataTs to the min compacted object's dataTs
             //noinspection OptionalGetWithoutIsPresent
             dataTs = sourceObjectIds.stream()
-                    .map(id -> this.streamsMetadata.get(streamId).streamObjects.get(id))
+                    .map(id -> this.streamsMetadata.get(streamId).streamObjects().get(id))
                     .map(S3StreamObject::dataTimeInMs)
                     .min(Long::compareTo).get();
         }
@@ -909,39 +796,53 @@ public class StreamControlManager {
         GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
         int nodeId = data.nodeId();
         long nodeEpoch = data.nodeEpoch();
+        boolean failoverMode = data.failoverMode();
+
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+
+        NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            // create a new node metadata if absent
+            records.add(new ApiMessageAndVersion(
+                    new NodeWALMetadataRecord().setNodeId(nodeId).setNodeEpoch(nodeEpoch).setFailoverMode(failoverMode),
+                    (short) 0));
+        }
 
         // verify and update node epoch
-        if (nodesMetadata.containsKey(nodeId) && nodeEpoch < nodesMetadata.get(nodeId).getNodeEpoch()) {
+        if (nodeMetadata != null && nodeEpoch < nodeMetadata.getNodeEpoch()) {
             // node epoch has been expired
             resp.setErrorCode(Errors.NODE_EPOCH_EXPIRED.code());
             log.warn("[GetOpeningStreams]: nodeId={}'s epoch={} has been expired", nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        // update node epoch
-        records.add(new ApiMessageAndVersion(new NodeWALMetadataRecord()
-            .setNodeId(nodeId)
-            .setNodeEpoch(nodeEpoch), (short) 0));
+
+        if (nodeMetadata != null) {
+            // update node epoch
+            records.add(new ApiMessageAndVersion(
+                    new NodeWALMetadataRecord().setNodeId(nodeId).setNodeEpoch(nodeEpoch).setFailoverMode(failoverMode),
+                    (short) 0));
+        }
+
 
         // The getOpeningStreams is invoked when node startup, so we just iterate all streams to get the node opening streams.
         List<StreamMetadata> streamStatusList = this.streamsMetadata.entrySet().stream().filter(entry -> {
             S3StreamMetadata streamMetadata = entry.getValue();
-            if (!StreamState.OPENED.equals(streamMetadata.currentState.get())) {
+            if (!StreamState.OPENED.equals(streamMetadata.currentState())) {
                 return false;
             }
-            int rangeIndex = streamMetadata.currentRangeIndex.get();
+            int rangeIndex = streamMetadata.currentRangeIndex();
             if (rangeIndex < 0) {
                 return false;
             }
-            RangeMetadata rangeMetadata = streamMetadata.ranges.get(rangeIndex);
+            RangeMetadata rangeMetadata = streamMetadata.ranges().get(rangeIndex);
             return rangeMetadata.nodeId() == nodeId;
         }).map(e -> {
             S3StreamMetadata streamMetadata = e.getValue();
-            RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex.get());
+            RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             return new StreamMetadata()
                     .setStreamId(e.getKey())
-                    .setEpoch(streamMetadata.currentEpoch.get())
-                    .setStartOffset(streamMetadata.startOffset.get())
+                    .setEpoch(streamMetadata.currentEpoch())
+                    .setStartOffset(streamMetadata.startOffset())
                     .setEndOffset(rangeMetadata.endOffset());
         }).collect(Collectors.toList());
         resp.setStreamMetadataList(streamStatusList);
@@ -962,26 +863,26 @@ public class StreamControlManager {
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata.currentEpoch() > epoch) {
             log.warn("[{}]: streamId={}'s epoch={} is larger than request epoch={}", operationName, streamId,
-                streamMetadata.currentEpoch.get(), epoch);
+                    streamMetadata.currentEpoch(), epoch);
             return Errors.STREAM_FENCED;
         }
         if (streamMetadata.currentEpoch() < epoch) {
             // should not happen
             log.error("[{}]: streamId={}'s epoch={} is smaller than request epoch={}", operationName, streamId,
-                streamMetadata.currentEpoch.get(), epoch);
+                    streamMetadata.currentEpoch(), epoch);
             return Errors.STREAM_INNER_ERROR;
         }
         // verify node
-        RangeMetadata rangeMetadata = streamMetadata.ranges.get(streamMetadata.currentRangeIndex());
+        RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
         if (rangeMetadata == null) {
             // should not happen
             log.error("[{}]: streamId={}'s current range={} not exist when trim stream with epoch={}", operationName, streamId,
-                streamMetadata.currentRangeIndex(), epoch);
+                    streamMetadata.currentRangeIndex(), epoch);
             return Errors.STREAM_INNER_ERROR;
         }
         if (rangeMetadata.nodeId() != nodeId) {
             log.warn("[{}]: streamId={}'s current range={}'s nodeId={} is not equal to request nodeId={}", operationName,
-                streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
+                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
             return Errors.STREAM_FENCED;
         }
         return Errors.NONE;
@@ -1022,7 +923,7 @@ public class StreamControlManager {
             if (rangeMetadata == null) {
                 // should not happen
                 log.error("[streamAdvanceCheck]: streamId={}'s current range={} not exist when stream has been ",
-                    range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex());
+                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex());
                 return Errors.STREAM_INNER_ERROR;
             } else if (rangeMetadata.nodeId() != nodeId) {
                 // should not happen
@@ -1032,27 +933,36 @@ public class StreamControlManager {
             }
             if (rangeMetadata.endOffset() != range.getStartOffset()) {
                 log.warn("[streamAdvanceCheck]: streamId={}'s current range={}'s end offset {} is not equal to request start offset {}",
-                    range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex(),
-                    rangeMetadata.endOffset(), range.getStartOffset());
+                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex(),
+                        rangeMetadata.endOffset(), range.getStartOffset());
                 return Errors.OFFSET_NOT_MATCHED;
             }
         }
         return Errors.NONE;
     }
 
+    private Errors nodeEpochCheck(int nodeId, long nodeEpoch) {
+        return nodeEpochCheck(nodeId, nodeEpoch, true);
+    }
+
     /**
      * Check whether this node is valid to operate the stream related resources.
      */
-    private Errors nodeEpochCheck(int nodeId, long nodeEpoch) {
-        if (!this.nodesMetadata.containsKey(nodeId)) {
+    private Errors nodeEpochCheck(int nodeId, long nodeEpoch, boolean checkFailover) {
+        NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
             // should not happen
             log.error("[NodeEpochCheck]: nodeId={} not exist when check node epoch", nodeId);
             return Errors.NODE_EPOCH_NOT_EXIST;
         }
-        if (this.nodesMetadata.get(nodeId).getNodeEpoch() > nodeEpoch) {
+        if (nodeMetadata.getNodeEpoch() > nodeEpoch) {
             log.warn("[NodeEpochCheck]: nodeId={}'s epoch={} is larger than request epoch={}", nodeId,
-                this.nodesMetadata.get(nodeId).getNodeEpoch(), nodeEpoch);
+                    this.nodesMetadata.get(nodeId).getNodeEpoch(), nodeEpoch);
             return Errors.NODE_EPOCH_EXPIRED;
+        }
+        if (checkFailover && nodeMetadata.getFailoverMode()) {
+            log.warn("[NodeEpochCheck]: nodeId={} epoch={} is fenced", nodeId, nodeEpoch);
+            return Errors.NODE_FENCED;
         }
         return Errors.NONE;
     }
@@ -1066,10 +976,10 @@ public class StreamControlManager {
         // already exist, update the stream's self metadata
         if (this.streamsMetadata.containsKey(streamId)) {
             S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
-            streamMetadata.startOffset.set(record.startOffset());
-            streamMetadata.currentEpoch.set(record.epoch());
-            streamMetadata.currentRangeIndex.set(record.rangeIndex());
-            streamMetadata.currentState.set(StreamState.fromByte(record.streamState()));
+            streamMetadata.startOffset(record.startOffset());
+            streamMetadata.currentEpoch(record.epoch());
+            streamMetadata.currentRangeIndex(record.rangeIndex());
+            streamMetadata.currentState(StreamState.fromByte(record.streamState()));
             return;
         }
         // not exist, create a new stream
@@ -1091,7 +1001,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay range record {}", streamId, record);
             return;
         }
-        streamMetadata.ranges.put(record.rangeIndex(), RangeMetadata.of(record));
+        streamMetadata.ranges().put(record.rangeIndex(), RangeMetadata.of(record));
     }
 
     public void replay(RemoveRangeRecord record) {
@@ -1102,7 +1012,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay remove range record {}", streamId, record);
             return;
         }
-        streamMetadata.ranges.remove(record.rangeIndex());
+        streamMetadata.ranges().remove(record.rangeIndex());
     }
 
     public void replay(NodeWALMetadataRecord record) {
@@ -1110,12 +1020,13 @@ public class StreamControlManager {
         long nodeEpoch = record.nodeEpoch();
         // already exist, update the node's self metadata
         if (this.nodesMetadata.containsKey(nodeId)) {
-            NodeS3StreamSetObjectMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
-            nodeMetadata.nodeEpoch.set(nodeEpoch);
+            NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+            nodeMetadata.setNodeEpoch(nodeEpoch);
+            nodeMetadata.setFailoverMode(record.failoverMode());
             return;
         }
         // not exist, create a new node
-        this.nodesMetadata.put(nodeId, new NodeS3StreamSetObjectMetadata(nodeId, nodeEpoch, this.snapshotRegistry));
+        this.nodesMetadata.put(nodeId, new NodeMetadata(nodeId, nodeEpoch, record.failoverMode(), this.snapshotRegistry));
     }
 
     public void replay(S3StreamSetObjectRecord record) {
@@ -1124,7 +1035,7 @@ public class StreamControlManager {
         long orderId = record.orderId();
         long dataTs = record.dataTimeInMs();
         List<StreamIndex> streamIndexes = record.streamsIndex();
-        NodeS3StreamSetObjectMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
+        NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeMetadata == null) {
             // should not happen
             log.error("nodeId={} not exist when replay stream set object record {}", nodeId, record);
@@ -1135,7 +1046,7 @@ public class StreamControlManager {
         Map<Long, StreamOffsetRange> indexMap = streamIndexes
                 .stream()
                 .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
-        nodeMetadata.streamSetObjects.put(objectId, new S3StreamSetObject(objectId, nodeId, indexMap, orderId, dataTs));
+        nodeMetadata.streamSetObjects().put(objectId, new S3StreamSetObject(objectId, nodeId, indexMap, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
@@ -1166,13 +1077,13 @@ public class StreamControlManager {
 
     public void replay(RemoveStreamSetObjectRecord record) {
         long objectId = record.objectId();
-        NodeS3StreamSetObjectMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
+        NodeMetadata walMetadata = this.nodesMetadata.get(record.nodeId());
         if (walMetadata == null) {
             // should not happen
             log.error("node {} not exist when replay remove stream set object record {}", record.nodeId(), record);
             return;
         }
-        walMetadata.streamSetObjects.remove(objectId);
+        walMetadata.streamSetObjects().remove(objectId);
     }
 
     public void replay(S3StreamObjectRecord record) {
@@ -1188,7 +1099,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects.put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
+        streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
         // update range
         RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
         if (rangeMetadata == null) {
@@ -1215,7 +1126,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay remove stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects.remove(objectId);
+        streamMetadata.streamObjects().remove(objectId);
     }
 
     public void replay(RemoveNodeWALMetadataRecord record) {
@@ -1228,7 +1139,7 @@ public class StreamControlManager {
         return streamsMetadata;
     }
 
-    public Map<Integer, NodeS3StreamSetObjectMetadata> nodesMetadata() {
+    public Map<Integer, NodeMetadata> nodesMetadata() {
         return nodesMetadata;
     }
 
@@ -1245,4 +1156,5 @@ public class StreamControlManager {
                 ", nodesMetadata=" + nodesMetadata +
                 '}';
     }
+
 }

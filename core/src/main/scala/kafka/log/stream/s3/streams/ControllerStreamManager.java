@@ -17,11 +17,13 @@
 
 package kafka.log.stream.s3.streams;
 
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.streams.StreamManager;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
-import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
+import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.KafkaConfig;
@@ -52,8 +54,6 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
-import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,9 +80,14 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
+        return getOpeningStreams(nodeId, nodeEpoch, false);
+    }
+
+    public CompletableFuture<List<StreamMetadata>> getOpeningStreams(int nodeId, long nodeEpoch, boolean failoverMode) {
         GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
-            .setNodeId(nodeId)
-            .setNodeEpoch(nodeEpoch);
+                .setNodeId(nodeId)
+                .setNodeEpoch(nodeEpoch)
+                .setFailoverMode(failoverMode);
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -97,22 +102,22 @@ public class ControllerStreamManager implements StreamManager {
 
         CompletableFuture<List<StreamMetadata>> future = new CompletableFuture<>();
         RequestTask<GetOpeningStreamsResponse, List<StreamMetadata>> task = new RequestTask<GetOpeningStreamsResponse, List<StreamMetadata>>(req, future,
-            response -> {
-                GetOpeningStreamsResponseData resp = response.data();
-                Errors code = Errors.forCode(resp.errorCode());
-                switch (code) {
-                    case NONE:
-                        return ResponseHandleResult.withSuccess(resp.streamMetadataList().stream()
-                            .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
-                            .collect(Collectors.toList()));
-                    case NODE_EPOCH_EXPIRED:
-                        LOGGER.error("Node epoch expired: {}, code: {}", req, code);
-                        throw code.exception();
-                    default:
-                        LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", req, code);
-                        return ResponseHandleResult.withRetry();
-                }
-            });
+                response -> {
+                    GetOpeningStreamsResponseData resp = response.data();
+                    Errors code = Errors.forCode(resp.errorCode());
+                    switch (code) {
+                        case NONE:
+                            return ResponseHandleResult.withSuccess(resp.streamMetadataList().stream()
+                                    .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
+                                    .collect(Collectors.toList()));
+                        case NODE_EPOCH_EXPIRED:
+                            LOGGER.error("Node epoch expired: {}, code: {}", req, code);
+                            throw code.exception();
+                        default:
+                            LOGGER.error("Error while getting streams offset: {}, code: {}, retry later", req, code);
+                            return ResponseHandleResult.withRetry();
+                    }
+                });
         this.requestSender.send(task);
         return future;
     }
@@ -141,9 +146,9 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public Builder toRequestBuilder() {
                 return new CreateStreamsRequest.Builder(
-                    new CreateStreamsRequestData()
-                        .setNodeId(nodeId)
-                        .setNodeEpoch(nodeEpoch)).addSubRequest(request);
+                        new CreateStreamsRequestData()
+                                .setNodeId(nodeId)
+                                .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
         };
         CompletableFuture<Long> future = new CompletableFuture<>();
@@ -167,8 +172,8 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
         OpenStreamRequest request = new OpenStreamRequest()
-            .setStreamId(streamId)
-            .setStreamEpoch(epoch);
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch);
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -185,9 +190,9 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public Builder toRequestBuilder() {
                 return new OpenStreamsRequest.Builder(
-                    new OpenStreamsRequestData()
-                        .setNodeId(nodeId)
-                        .setNodeEpoch(nodeEpoch)).addSubRequest(request);
+                        new OpenStreamsRequestData()
+                                .setNodeId(nodeId)
+                                .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
         };
         CompletableFuture<StreamMetadata> future = new CompletableFuture<>();
@@ -196,7 +201,7 @@ public class ControllerStreamManager implements StreamManager {
             switch (code) {
                 case NONE:
                     return ResponseHandleResult.withSuccess(
-                        new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
+                            new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
                 case NODE_EPOCH_EXPIRED:
                 case NODE_EPOCH_NOT_EXIST:
                     LOGGER.error("Node epoch expired or not exist: {}, code: {}", req, code);
@@ -219,9 +224,9 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
         TrimStreamRequest request = new TrimStreamRequest()
-            .setStreamId(streamId)
-            .setStreamEpoch(epoch)
-            .setNewStartOffset(newStartOffset);
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch)
+                .setNewStartOffset(newStartOffset);
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -238,9 +243,9 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public Builder toRequestBuilder() {
                 return new TrimStreamsRequest.Builder(
-                    new TrimStreamsRequestData()
-                        .setNodeId(nodeId)
-                        .setNodeEpoch(nodeEpoch)).addSubRequest(request);
+                        new TrimStreamsRequestData()
+                                .setNodeId(nodeId)
+                                .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
         };
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -271,8 +276,8 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
         CloseStreamRequest request = new CloseStreamRequest()
-            .setStreamId(streamId)
-            .setStreamEpoch(epoch);
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch);
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -289,9 +294,9 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public Builder toRequestBuilder() {
                 return new CloseStreamsRequest.Builder(
-                    new CloseStreamsRequestData()
-                        .setNodeId(nodeId)
-                        .setNodeEpoch(nodeEpoch)).addSubRequest(request);
+                        new CloseStreamsRequestData()
+                                .setNodeId(nodeId)
+                                .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
         };
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -320,8 +325,8 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
         DeleteStreamRequest request = new DeleteStreamRequest()
-            .setStreamId(streamId)
-            .setStreamEpoch(epoch);
+                .setStreamId(streamId)
+                .setStreamEpoch(epoch);
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -338,9 +343,9 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public Builder toRequestBuilder() {
                 return new DeleteStreamsRequest.Builder(
-                    new DeleteStreamsRequestData()
-                        .setNodeId(nodeId)
-                        .setNodeEpoch(nodeEpoch)).addSubRequest(request);
+                        new DeleteStreamsRequestData()
+                                .setNodeId(nodeId)
+                                .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
         };
         CompletableFuture<Void> future = new CompletableFuture<>();
