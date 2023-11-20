@@ -156,6 +156,7 @@ public class WALBlockDeviceChannel implements WALChannel {
         long alignedStart = WALUtil.alignSmallByBlockSize(start);
         long alignedEnd = WALUtil.alignLargeByBlockSize(end);
         int alignedSize = (int) (alignedEnd - alignedStart);
+        assert alignedEnd <= capacity();
 
         ByteBuffer tmpBuf = getBuffer(alignedSize);
         tmpBuf.position(0).limit(alignedSize);
