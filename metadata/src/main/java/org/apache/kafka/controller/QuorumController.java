@@ -91,6 +91,7 @@ import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
+import org.apache.kafka.common.metadata.FailoverContextRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -103,6 +104,7 @@ import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveFailoverContextRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -127,6 +129,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.controller.stream.FailoverControlManager;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -1552,6 +1555,12 @@ public final class QuorumController implements Controller {
             case UPDATE_NEXT_NODE_ID_RECORD:
                 clusterControl.replay((UpdateNextNodeIdRecord) message);
                 break;
+            case FAILOVER_CONTEXT_RECORD:
+                failoverControlManager.replay((FailoverContextRecord) message);
+                break;
+            case REMOVE_FAILOVER_CONTEXT_RECORD:
+                failoverControlManager.replay((RemoveFailoverContextRecord) message);
+                break;
             // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unhandled record type " + type);
@@ -1804,6 +1813,11 @@ public final class QuorumController implements Controller {
      */
     private final KVControlManager kvControlManager;
 
+    /**
+     * Failover control manager which handles the failover of the failed node.
+     */
+    private final FailoverControlManager failoverControlManager;
+
     // AutoMQ for Kafka inject end
 
     private QuorumController(
@@ -1927,6 +1941,7 @@ public final class QuorumController implements Controller {
             this, snapshotRegistry, logContext, clusterId, s3Config, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
+        this.failoverControlManager = new FailoverControlManager(this, clusterControl, snapshotRegistry);
         // AutoMQ for Kafka inject end
         updateWriteOffset(-1);
 
@@ -2446,6 +2461,12 @@ public final class QuorumController implements Controller {
             new DeleteKVsResponseData().setDeleteKVResponses(
                 batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
         );
+    }
+
+    @Override
+    public CompletableFuture<Void> failover(ControllerRequestContext context) {
+        return appendWriteEvent("failover", context.deadlineNs(),
+                failoverControlManager::failover);
     }
 
     // AutoMQ for Kafka inject end

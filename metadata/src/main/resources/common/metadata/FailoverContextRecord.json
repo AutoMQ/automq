@@ -14,33 +14,41 @@
 // limitations under the License.
 
 {
-  "apiKey": 508,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "GetOpeningStreamsRequest",
+  "apiKey": 601,
+  "type": "metadata",
+  "name": "FailoverContextRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "NodeId",
+      "name": "FailedNodeId",
       "type": "int32",
       "versions": "0+",
-      "about": "The node id."
+      "about": "The failed node id."
     },
     {
-      "name": "NodeEpoch",
-      "type": "int64",
+      "name": "VolumeId",
+      "type": "string",
       "versions": "0+",
-      "about": "The node epoch."
+      "about": "The failed node data volume id."
     },
     {
-      "name": "FailoverMode",
-      "type": "bool",
+      "name": "Device",
+      "type": "string",
       "versions": "0+",
-      "about": "The failover mode enabled or not."
+      "about": "The device name of volume attach to the new node."
+    },
+    {
+      "name": "TargetNodeId",
+      "type": "int32",
+      "versions": "0+",
+      "about": "The target node which is responsible for failover."
+    },
+    {
+      "name": "Status",
+      "type": "string",
+      "versions": "0+",
+      "about": "The failover status: WAITING | RECOVERING | DONE."
     }
   ]
 }

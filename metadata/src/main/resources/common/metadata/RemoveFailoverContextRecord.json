@@ -14,13 +14,9 @@
 // limitations under the License.
 
 {
-  "apiKey": 508,
-  "type": "request",
-  "listeners": [
-    "controller",
-    "broker"
-  ],
-  "name": "GetOpeningStreamsRequest",
+  "apiKey": 602,
+  "type": "metadata",
+  "name": "RemoveFailoverContextRecord",
   "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
@@ -28,19 +24,7 @@
       "name": "NodeId",
       "type": "int32",
       "versions": "0+",
-      "about": "The node id."
-    },
-    {
-      "name": "NodeEpoch",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The node epoch."
-    },
-    {
-      "name": "FailoverMode",
-      "type": "bool",
-      "versions": "0+",
-      "about": "The failover mode enabled or not."
+      "about": "The node id of the node that is completed failover."
     }
   ]
 }

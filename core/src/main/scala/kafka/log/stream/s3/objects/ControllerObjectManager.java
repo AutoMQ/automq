@@ -29,10 +29,10 @@ import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.KafkaConfig;
-import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
-import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -102,6 +102,11 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
+        return commitStreamSetObject(commitStreamSetObjectRequest, nodeId, nodeId, false);
+    }
+
+    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest,
+                                                                                  int nodeId, long nodeEpoch, boolean failoverMode) {
         CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
                 .setNodeId(nodeId)
                 .setNodeEpoch(nodeEpoch)
@@ -114,7 +119,8 @@ public class ControllerObjectManager implements ObjectManager {
                 .setStreamObjects(commitStreamSetObjectRequest.getStreamObjects()
                         .stream()
                         .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
-                .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds());
+                .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
+                .setFailoverMode(failoverMode);
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
