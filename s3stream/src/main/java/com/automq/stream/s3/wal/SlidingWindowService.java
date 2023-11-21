@@ -114,8 +114,8 @@ public class SlidingWindowService {
     }
 
     public void start() throws IOException {
-        this.ioExecutor = Threads.newFixedThreadPool(ioThreadNums,
-                ThreadUtils.createThreadFactory("block-wal-io-thread-%d", false), LOGGER);
+        this.ioExecutor = Threads.newFixedThreadPoolWithMonitor(ioThreadNums,
+                "block-wal-io-thread", false, LOGGER);
         ScheduledExecutorService pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
                 ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
         pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, minWriteIntervalNanos, TimeUnit.NANOSECONDS);

@@ -26,7 +26,6 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.FutureUtil;
-import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,9 +59,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     public DefaultS3BlockCache(long cacheBytesSize, ObjectManager objectManager, S3Operator s3Operator) {
         this.cache = new BlockCache(cacheBytesSize);
-        this.mainExecutor = Threads.newFixedThreadPool(
+        this.mainExecutor = Threads.newFixedThreadPoolWithMonitor(
                 2,
-                ThreadUtils.createThreadFactory("s3-block-cache-main-%d", false),
+                "s3-block-cache-main",
+                false,
                 LOGGER);
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
