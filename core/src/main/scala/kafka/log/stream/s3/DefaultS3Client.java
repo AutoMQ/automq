@@ -35,6 +35,8 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import kafka.log.stream.s3.failover.FailoverListener;
+import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
+import com.automq.stream.utils.LogContext;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
@@ -43,6 +45,8 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.TimeUnit;
 
 public class DefaultS3Client implements Client {
     public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
@@ -106,6 +110,8 @@ public class DefaultS3Client implements Client {
         if (config.failoverEnable()) {
             this.failover = new FailoverListener((ControllerStreamManager) streamManager, (ControllerObjectManager) objectManager, (S3Storage) storage, brokerServer);
         }
+        S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
+        S3StreamThreadPoolMonitor.init();
     }
 
     @Override
