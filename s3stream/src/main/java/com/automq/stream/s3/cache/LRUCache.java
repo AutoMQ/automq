@@ -23,8 +23,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class LRUCache<K, V> {
-    private final LinkedHashMap<K, V> cache;
-    private final Set<Map.Entry<K, V>> cacheEntrySet;
+    protected final LinkedHashMap<K, V> cache;
+    protected final Set<Map.Entry<K, V>> cacheEntrySet;
 
     public LRUCache() {
         cache = new LinkedHashMap<>(16, .75f, true);

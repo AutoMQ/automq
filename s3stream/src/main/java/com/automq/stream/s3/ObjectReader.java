@@ -124,30 +124,13 @@ public class ObjectReader implements AutoCloseable {
         basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
     }
 
-    public static class BasicObjectInfo {
-        /**
-         * The total size of the data blocks, which equals to index start position.
-         */
-        private final long dataBlockSize;
-        /**
-         * raw index data.
-         */
-        private final IndexBlock indexBlock;
-        /**
-         * The number of data blocks in the object.
-         */
-        private final int blockCount;
-        /**
-         * The size of the index blocks.
-         */
-        private final int indexBlockSize;
-
-        public BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
-            this.dataBlockSize = dataBlockSize;
-            this.indexBlock = indexBlock;
-            this.blockCount = blockCount;
-            this.indexBlockSize = indexBlockSize;
-        }
+    /**
+     * @param dataBlockSize  The total size of the data blocks, which equals to index start position.
+     * @param indexBlock     raw index data.
+     * @param blockCount     The number of data blocks in the object.
+     * @param indexBlockSize The size of the index blocks.
+     */
+    public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
@@ -167,20 +150,8 @@ public class ObjectReader implements AutoCloseable {
             }
         }
 
-        public long dataBlockSize() {
-            return dataBlockSize;
-        }
-
-        public IndexBlock indexBlock() {
-            return indexBlock;
-        }
-
-        public int blockCount() {
-            return blockCount;
-        }
-
-        public int indexBlockSize() {
-            return indexBlockSize;
+        public int size() {
+            return indexBlock.size();
         }
 
         void close() {
@@ -191,10 +162,12 @@ public class ObjectReader implements AutoCloseable {
     public static class IndexBlock {
         private final ByteBuf blocks;
         private final ByteBuf streamRanges;
+        private final int size;
 
         public IndexBlock(ByteBuf blocks, ByteBuf streamRanges) {
             this.blocks = blocks;
             this.streamRanges = streamRanges;
+            this.size = blocks.readableBytes() + streamRanges.readableBytes();
         }
 
         public ByteBuf blocks() {
@@ -252,6 +225,10 @@ public class ObjectReader implements AutoCloseable {
                 }
             }
             return rst;
+        }
+
+        int size() {
+            return size;
         }
 
         void close() {
