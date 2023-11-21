@@ -87,6 +87,13 @@ public class FailoverControlManager {
 
     void scanFailedNodes() {
         // TODO: run command to get failed nodes
+//        ObjectMapper mapper = new ObjectMapper();
+//        try {
+//            FailedNode failedNode = mapper.readValue(new File("/tmp/kos_scan.json"), FailedNode.class);
+//            this.failedNodes = List.of(failedNode);
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
     }
 
 
@@ -106,6 +113,7 @@ public class FailoverControlManager {
                 // the failed node is already in failover mode, skip
                 continue;
             }
+            LOGGER.info("scan new failed node {}", failedNode);
             records.add(new ApiMessageAndVersion(
                     new FailoverContextRecord()
                             .setFailedNodeId(failedNode.getNodeId())
@@ -203,12 +211,16 @@ public class FailoverControlManager {
      */
     CompletableFuture<String> attach(FailedNode failedNode, int targetNodeId) {
         // TODO: run command to attach
-        return CompletableFuture.completedFuture("");
+//        return CompletableFuture.completedFuture(failedNode.getVolumeId());
+        return CompletableFuture.completedFuture("noop");
     }
 
     static class FailedNode {
         private int nodeId;
         private String volumeId;
+
+        public FailedNode() {
+        }
 
         public FailedNode(int nodeId, String volumeId) {
             this.nodeId = nodeId;
@@ -229,6 +241,14 @@ public class FailoverControlManager {
 
         public void setVolumeId(String volumeId) {
             this.volumeId = volumeId;
+        }
+
+        @Override
+        public String toString() {
+            return "FailedNode{" +
+                    "nodeId=" + nodeId +
+                    ", volumeId='" + volumeId + '\'' +
+                    '}';
         }
     }
 

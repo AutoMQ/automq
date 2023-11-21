@@ -16,8 +16,7 @@
  */
 package kafka.server.metadata
 
-import kafka.log.stream.s3.metadata.StreamMetadataManager.StreamMetadataListener
-
+import kafka.log.stream.s3.metadata.MetadataListener
 import java.util
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CompletableFuture
@@ -99,7 +98,7 @@ class BrokerMetadataListener(
 
   // AutoMQ for Kafka inject start
 
-  private var _streamMetadataListener: Option[StreamMetadataListener] = None
+  private val _metadataListeners = new util.ArrayList[MetadataListener]()
 
   // AutoMQ for Kafka inject end
 
@@ -359,7 +358,7 @@ class BrokerMetadataListener(
 
     // AutoMQ for Kafka inject start
 
-    _streamMetadataListener.foreach(_.onChange(delta, _image))
+    _metadataListeners.forEach(_.onChange(delta, _image))
 
     // AutoMQ for Kafka inject end
 
@@ -408,8 +407,8 @@ class BrokerMetadataListener(
 
   // AutoMQ for Kafka inject start
 
-  def registerStreamMetadataListener(listener: StreamMetadataListener): Unit = {
-    _streamMetadataListener = Some(listener)
+  def registerMetadataListener(listener: MetadataListener): Unit = {
+    _metadataListeners.add(listener)
   }
 
   // AutoMQ for Kafka inject end

@@ -34,6 +34,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import kafka.log.stream.s3.failover.FailoverListener;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
@@ -68,6 +69,8 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
+    private FailoverListener failover;
+
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
@@ -99,6 +102,10 @@ public class DefaultS3Client implements Client {
         // stream object compactions share the same s3Operator with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionS3Operator, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
+
+        if (config.failoverEnable()) {
+            this.failover = new FailoverListener((ControllerStreamManager) streamManager, (ControllerObjectManager) objectManager, (S3Storage) storage, brokerServer);
+        }
     }
 
     @Override

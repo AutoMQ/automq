@@ -76,7 +76,7 @@ public class ControllerRequestSenderTest {
         Mockito.when(brokerServer.clientToControllerChannelManager()).thenReturn(channelManager);
         KafkaConfig config = Mockito.mock(KafkaConfig.class);
         Mockito.when(config.brokerId()).thenReturn(1);
-        Mockito.when(config.brokerEpoch()).thenReturn(1L);
+        Mockito.when(config.nodeEpoch()).thenReturn(1L);
         Mockito.when(brokerServer.config()).thenReturn(config);
         retryPolicyContext = new RetryPolicyContext(2, 100L);
         requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
