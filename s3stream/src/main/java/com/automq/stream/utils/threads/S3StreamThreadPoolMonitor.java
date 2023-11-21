@@ -32,8 +32,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-public class ThreadPoolMonitor {
-    private static Logger waterMarkLogger = LoggerFactory.getLogger(ThreadPoolMonitor.class);
+public class S3StreamThreadPoolMonitor {
+    private static Logger waterMarkLogger = LoggerFactory.getLogger(S3StreamThreadPoolMonitor.class);
 
     private static final List<ThreadPoolWrapper> MONITOR_EXECUTOR = new CopyOnWriteArrayList<>();
     private static final ScheduledExecutorService MONITOR_SCHEDULED = Executors.newSingleThreadScheduledExecutor(
@@ -127,7 +127,7 @@ public class ThreadPoolMonitor {
     }
 
     public static void init() {
-        MONITOR_SCHEDULED.scheduleAtFixedRate(ThreadPoolMonitor::logThreadPoolStatus, 20,
+        MONITOR_SCHEDULED.scheduleAtFixedRate(S3StreamThreadPoolMonitor::logThreadPoolStatus, 20,
             threadPoolStatusPeriodTime, TimeUnit.MILLISECONDS);
     }
 

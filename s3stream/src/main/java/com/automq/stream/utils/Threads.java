@@ -17,7 +17,7 @@
 
 package com.automq.stream.utils;
 
-import com.automq.stream.utils.threads.ThreadPoolMonitor;
+import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import org.slf4j.Logger;
 
 import java.util.concurrent.ExecutorService;
@@ -42,7 +42,7 @@ public class Threads {
     }
 
     public static ExecutorService newFixedThreadPoolWithMonitor(int nThreads, String namePrefix, boolean isDaemen, Logger logger) {
-        return ThreadPoolMonitor.createAndMonitor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, namePrefix, isDaemen, Integer.MAX_VALUE, throwable -> {
+        return S3StreamThreadPoolMonitor.createAndMonitor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, namePrefix, isDaemen, Integer.MAX_VALUE, throwable -> {
             if (throwable != null) {
                 logger.error("[FATAL] Uncaught exception in executor thread {}", Thread.currentThread().getName(), throwable);
             }
