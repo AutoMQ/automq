@@ -345,6 +345,9 @@ public final class MetadataDelta {
             case REMOVE_KVRECORD:
                 replay((RemoveKVRecord) record);
                 break;
+            case FAILOVER_CONTEXT_RECORD:
+                replay((FailoverContextRecord) record);
+                break;
                 // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);

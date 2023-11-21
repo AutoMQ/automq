@@ -69,7 +69,7 @@ public class DefaultFailoverFactory implements FailoverFactory {
 
             @Override
             public CompletableFuture<Void> closeStream(long streamId, long streamEpoch) {
-                return streamManager.closeStream(streamId, streamEpoch);
+                return streamManager.closeStream(streamId, streamEpoch, nodeId, epoch);
             }
 
             @Override

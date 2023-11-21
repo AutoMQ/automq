@@ -73,7 +73,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         this.streamsImage = currentImage.streamsMetadata();
         this.objectsImage = currentImage.objectsMetadata();
         this.version = currentImage.highestOffsetAndEpoch();
-        this.broker.metadataListener().registerStreamMetadataListener(this::onImageChanged);
+        this.broker.metadataListener().registerMetadataListener(this::onImageChanged);
         // TODO: optimize by more suitable data structure for pending tasks
         this.pendingGetObjectsTasks = new HashMap<>();
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
@@ -300,11 +300,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
             this.endOffset = endOffset;
             this.limit = limit;
         }
-    }
-
-    public interface StreamMetadataListener {
-
-        void onChange(MetadataDelta delta, MetadataImage image);
     }
 
 }

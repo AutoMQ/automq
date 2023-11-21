@@ -65,7 +65,7 @@ public class ControllerObjectManager implements ObjectManager {
         this.metadataManager = metadataManager;
         this.config = config;
         this.nodeId = config.brokerId();
-        this.nodeEpoch = config.brokerEpoch();
+        this.nodeEpoch = config.nodeEpoch();
     }
 
     @Override
@@ -102,7 +102,7 @@ public class ControllerObjectManager implements ObjectManager {
 
     @Override
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
-        return commitStreamSetObject(commitStreamSetObjectRequest, nodeId, nodeId, false);
+        return commitStreamSetObject(commitStreamSetObjectRequest, nodeId, nodeEpoch, false);
     }
 
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest,
