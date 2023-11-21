@@ -91,14 +91,14 @@ public class DefaultS3Operator implements S3Operator {
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3operator", true), LOGGER);
-    private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("s3-read-limiter-cb-executor-%d", true), LOGGER);
-    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("s3-write-limiter-cb-executor-%d", true), LOGGER);
-    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("s3-read-cb-executor-%d", true), LOGGER);
-    private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("s3-write-cb-executor-%d", true), LOGGER);
+    private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            "s3-read-limiter-cb-executor", true, LOGGER);
+    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            "s3-write-limiter-cb-executor", true, LOGGER);
+    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            "s3-read-cb-executor", true, LOGGER);
+    private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            "s3-write-cb-executor", true, LOGGER);
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
         this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);

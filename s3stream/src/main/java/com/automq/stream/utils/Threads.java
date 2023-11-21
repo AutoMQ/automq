@@ -17,6 +17,7 @@
 
 package com.automq.stream.utils;
 
+import com.automq.stream.utils.threads.ThreadPoolMonitor;
 import org.slf4j.Logger;
 
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,15 @@ public class Threads {
                 }
             }
         };
+    }
+
+    public static ExecutorService newFixedThreadPoolWithMonitor(int nThreads, String namePrefix, boolean isDaemen, Logger logger) {
+        return ThreadPoolMonitor.createAndMonitor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, namePrefix, isDaemen, Integer.MAX_VALUE, throwable -> {
+            if (throwable != null) {
+                logger.error("[FATAL] Uncaught exception in executor thread {}", Thread.currentThread().getName(), throwable);
+            }
+            return null;
+        });
     }
 
     public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
