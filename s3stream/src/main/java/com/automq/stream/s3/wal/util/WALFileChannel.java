@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.wal.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.WALNotInitializedException;
 import io.netty.buffer.ByteBuf;
 
@@ -26,18 +27,28 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
+import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+
 public class WALFileChannel implements WALChannel {
     final String filePath;
     final long fileCapacityWant;
     long fileCapacityFact = 0;
-    boolean readOnly;
+    /**
+     * When set to true, the file should exist and the file size does not need to be verified.
+     */
+    boolean recoveryMode;
     RandomAccessFile randomAccessFile;
     FileChannel fileChannel;
 
-    public WALFileChannel(String filePath, long fileCapacityWant, boolean readOnly) {
+    public WALFileChannel(String filePath, long fileCapacityWant, boolean recoveryMode) {
         this.filePath = filePath;
-        this.fileCapacityWant = fileCapacityWant;
-        this.readOnly = readOnly;
+        this.recoveryMode = recoveryMode;
+        if (recoveryMode) {
+            this.fileCapacityWant = CAPACITY_NOT_SET;
+        } else {
+            assert fileCapacityWant > 0;
+            this.fileCapacityWant = fileCapacityWant;
+        }
     }
 
     @Override
@@ -46,14 +57,16 @@ public class WALFileChannel implements WALChannel {
         if (file.exists()) {
             randomAccessFile = new RandomAccessFile(file, "rw");
             fileCapacityFact = randomAccessFile.length();
-            if (!readOnly && fileCapacityFact != fileCapacityWant) {
-                throw new IOException("file " + filePath + " capacity " + fileCapacityFact + " not equal to requested " + fileCapacityWant);
+            if (!recoveryMode && fileCapacityFact != fileCapacityWant) {
+                // the file exists but not the same size as requested
+                throw new WALCapacityMismatchException(filePath, fileCapacityWant, fileCapacityFact);
             }
-        } else if (!readOnly) {
-            if (!file.getParentFile().exists()) {
-                if (!file.getParentFile().mkdirs()) {
-                    throw new IOException("mkdirs " + file.getParentFile() + " fail");
-                }
+        } else {
+            if (recoveryMode) {
+                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode. path: " + filePath);
+            }
+            if (!file.getParentFile().exists() && !file.getParentFile().mkdirs()) {
+                throw new IOException("mkdirs " + file.getParentFile() + " fail");
             }
             if (!file.createNewFile()) {
                 throw new IOException("create " + filePath + " fail");
@@ -64,8 +77,6 @@ public class WALFileChannel implements WALChannel {
             randomAccessFile = new RandomAccessFile(file, "rw");
             randomAccessFile.setLength(fileCapacityWant);
             fileCapacityFact = fileCapacityWant;
-        } else {
-            throw new WALNotInitializedException("read only open uninitialized WAL " + filePath);
         }
 
         fileChannel = randomAccessFile.getChannel();
@@ -83,6 +94,11 @@ public class WALFileChannel implements WALChannel {
     @Override
     public long capacity() {
         return fileCapacityFact;
+    }
+
+    @Override
+    public String path() {
+        return filePath;
     }
 
     @Override

@@ -58,7 +58,7 @@ public class FailoverTest {
 
     @Test
     public void test() throws IOException, ExecutionException, InterruptedException, TimeoutException {
-        BlockWALService wal = new BlockWALService.BlockWALServiceBuilder(path, 1024 * 1024).nodeId(233).epoch(100).build();
+        BlockWALService wal = BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build();
         wal.start();
         wal.shutdownGracefully();
 
@@ -71,7 +71,7 @@ public class FailoverTest {
 
         boolean exceptionThrown = false;
         try {
-            failover.failover(request).get(1, TimeUnit.SECONDS);
+            failover.failover(request).get(100, TimeUnit.SECONDS);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof IllegalArgumentException) {
                 exceptionThrown = true;

@@ -14,10 +14,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.automq.stream.s3;
 
-public class Constants {
-    public static final int CAPACITY_NOT_SET = -1;
-    public static final int NOOP_NODE_ID = -1;
-    public static final long NOOP_EPOCH = -1L;
+package com.automq.stream.s3.wal;
+
+import java.io.IOException;
+
+public class WALCapacityMismatchException extends IOException {
+
+    public WALCapacityMismatchException(String path, long expected, long actual) {
+        super(String.format("WAL capacity mismatch for %s: expected %d, actual %d", path, expected, actual));
+    }
+
 }

@@ -88,7 +88,7 @@ public class Failover {
             // fence the device to ensure the old node stops writing to the delta WAL
             fence(request);
             // recover WAL data and upload to S3
-            BlockWALService wal = BlockWALService.builder(request.getDevice()).readOnly().build();
+            BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
             wal.start();
             try {
                 WALMetadata metadata = wal.metadata();

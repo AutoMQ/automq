@@ -29,7 +29,8 @@ public class Config {
     private String walPath = "/tmp/s3stream_wal";
     private long walCacheSize = 200 * 1024 * 1024;
     private long walCapacity = 1024L * 1024 * 1024;
-    private int walHeaderFlushIntervalSeconds = 10;
+    private int walInitBufferSize = 1024 * 1024;
+    private int walMaxBufferSize = 16 * 1024 * 1024;
     private int walThread = 8;
     private long walWindowInitial = 1048576L;
     private long walWindowIncrement = 4194304L;
@@ -95,8 +96,12 @@ public class Config {
         return walCapacity;
     }
 
-    public int walHeaderFlushIntervalSeconds() {
-        return walHeaderFlushIntervalSeconds;
+    public int walInitBufferSize() {
+        return walInitBufferSize;
+    }
+
+    public int walMaxBufferSize() {
+        return walMaxBufferSize;
     }
 
     public int walThread() {
@@ -263,8 +268,13 @@ public class Config {
         return this;
     }
 
-    public Config walHeaderFlushIntervalSeconds(int s3WALHeaderFlushIntervalSeconds) {
-        this.walHeaderFlushIntervalSeconds = s3WALHeaderFlushIntervalSeconds;
+    public Config walInitBufferSize(int walInitBufferSize) {
+        this.walInitBufferSize = walInitBufferSize;
+        return this;
+    }
+
+    public Config walMaxBufferSize(int walMaxBufferSize) {
+        this.walMaxBufferSize = walMaxBufferSize;
         return this;
     }
 
