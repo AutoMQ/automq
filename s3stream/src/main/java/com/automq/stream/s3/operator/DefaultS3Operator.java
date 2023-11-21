@@ -383,7 +383,7 @@ public class DefaultS3Operator implements S3Operator {
                 cf.completeExceptionally(ex);
             } else {
                 LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, ex);
-                scheduler.schedule(() -> createMultipartUpload0(path, cf), 100, TimeUnit.SECONDS);
+                scheduler.schedule(() -> createMultipartUpload0(path, cf), 100, TimeUnit.MILLISECONDS);
             }
             return null;
         });
