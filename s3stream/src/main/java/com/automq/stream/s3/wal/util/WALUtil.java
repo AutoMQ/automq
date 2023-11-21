@@ -64,4 +64,8 @@ public class WALUtil {
     public static long alignSmallByBlockSize(long offset) {
         return offset % BLOCK_SIZE == 0 ? offset : offset - offset % BLOCK_SIZE;
     }
+
+    public static boolean isAligned(long offset) {
+        return offset % BLOCK_SIZE == 0;
+    }
 }

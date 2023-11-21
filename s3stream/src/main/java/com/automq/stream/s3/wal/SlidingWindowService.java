@@ -98,22 +98,14 @@ public class SlidingWindowService {
         this.walHeaderFlusher = flusher;
     }
 
-    public void resetWindowWhenRecoverOver(long startOffset, long nextWriteOffset, long maxLength) {
-        windowCoreData.setWindowStartOffset(startOffset);
-        windowCoreData.setWindowNextWriteOffset(nextWriteOffset);
-        windowCoreData.setWindowMaxLength(maxLength);
-    }
-
-    public void resetWindow(long offset) {
-        windowCoreData.setWindowStartOffset(offset);
-        windowCoreData.setWindowNextWriteOffset(offset);
-    }
-
     public WindowCoreData getWindowCoreData() {
         return windowCoreData;
     }
 
-    public void start() throws IOException {
+    public void start(long windowMaxLength, long windowStartOffset) {
+        windowCoreData.setWindowMaxLength(windowMaxLength);
+        windowCoreData.setWindowStartOffset(windowStartOffset);
+        windowCoreData.setWindowNextWriteOffset(windowStartOffset);
         this.ioExecutor = Threads.newFixedThreadPoolWithMonitor(ioThreadNums,
                 "block-wal-io-thread", false, LOGGER);
         ScheduledExecutorService pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
@@ -122,8 +114,11 @@ public class SlidingWindowService {
     }
 
     public boolean shutdown(long timeout, TimeUnit unit) {
-        boolean gracefulShutdown;
+        if (this.ioExecutor == null) {
+            return true;
+        }
 
+        boolean gracefulShutdown;
         this.ioExecutor.shutdown();
         try {
             gracefulShutdown = this.ioExecutor.awaitTermination(timeout, unit);
@@ -131,11 +126,6 @@ public class SlidingWindowService {
             this.ioExecutor.shutdownNow();
             gracefulShutdown = false;
         }
-
-        if (gracefulShutdown) {
-            this.getWindowCoreData().setWindowNextWriteOffset(this.getWindowCoreData().getWindowStartOffset());
-        }
-
         return gracefulShutdown;
     }
 

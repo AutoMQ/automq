@@ -58,6 +58,7 @@ import static com.automq.stream.s3.wal.WriteAheadLog.RecoverResult;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
@@ -97,6 +98,7 @@ class BlockWALServiceTest {
             builder.blockSoftLimit(0);
         }
         final WriteAheadLog wal = builder.build().start();
+        recoverAndReset(wal);
 
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
@@ -171,6 +173,7 @@ class BlockWALServiceTest {
             builder.blockSoftLimit(0);
         }
         final WriteAheadLog wal = builder.build().start();
+        recoverAndReset(wal);
 
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
         AtomicLong maxRecordOffset = new AtomicLong(-1);
@@ -252,6 +255,7 @@ class BlockWALServiceTest {
             builder.blockSoftLimit(0);
         }
         final WriteAheadLog wal = builder.build().start();
+        recoverAndReset(wal);
 
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
         AtomicLong maxFlushedOffset = new AtomicLong(-1);
@@ -386,9 +390,9 @@ class BlockWALServiceTest {
         // Append records
         final WriteAheadLog previousWAL = BlockWALService.builder(path, blockDeviceCapacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
+        recoverAndReset(previousWAL);
         List<Long> appended = append(previousWAL, recordSize, recordCount);
         if (shutdown) {
             previousWAL.shutdownGracefully();
@@ -459,9 +463,9 @@ class BlockWALServiceTest {
         // Append records
         final WriteAheadLog previousWAL = BlockWALService.builder(path, blockDeviceCapacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
+        recoverAndReset(previousWAL);
         List<Long> appended = appendAsync(previousWAL, recordSize, recordCount);
         if (shutdown) {
             previousWAL.shutdownGracefully();
@@ -546,9 +550,9 @@ class BlockWALServiceTest {
 
         final WriteAheadLog previousWAL = BlockWALService.builder(path, 1 << 20)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
+        recoverAndReset(previousWAL);
         // Append 2 records
         long appended0 = append(previousWAL, recordSize);
         assertEquals(0, appended0);
@@ -557,7 +561,6 @@ class BlockWALServiceTest {
 
         final WriteAheadLog wal = BlockWALService.builder(path, 1 << 20)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 20)
                 .build()
                 .start();
         try {
@@ -607,12 +610,10 @@ class BlockWALServiceTest {
         walChannel.writeAndFlush(record, position);
     }
 
-    private void writeWALHeader(WALChannel walChannel, long trimOffset, long startOffset, long nextOffset, long maxLength) throws IOException {
+    private void writeWALHeader(WALChannel walChannel, long trimOffset, long maxLength) throws IOException {
         ByteBuf header = new WALHeader()
                 .setCapacity(walChannel.capacity())
                 .updateTrimOffset(trimOffset)
-                .setSlidingWindowStartOffset(startOffset)
-                .setSlidingWindowNextWriteOffset(nextOffset)
                 .setSlidingWindowMaxLength(maxLength)
                 .marshal();
         walChannel.writeAndFlush(header, 0);
@@ -623,8 +624,6 @@ class BlockWALServiceTest {
         long capacity;
         // WAL header
         long trimOffset;
-        long startOffset;
-        long nextOffset;
         long maxLength;
         // WAL records
         List<Long> writeOffsets;
@@ -634,8 +633,6 @@ class BlockWALServiceTest {
                 int recordSize,
                 long capacity,
                 long trimOffset,
-                long startOffset,
-                long nextOffset,
                 long maxLength,
                 List<Long> writeOffsets,
                 List<Long> recoveredOffsets,
@@ -644,15 +641,13 @@ class BlockWALServiceTest {
             this.recordSize = recordSize;
             this.capacity = capacity * unit + WAL_HEADER_TOTAL_CAPACITY;
             this.trimOffset = trimOffset * unit;
-            this.startOffset = startOffset * unit;
-            this.nextOffset = nextOffset * unit;
             this.maxLength = maxLength * unit;
             this.writeOffsets = writeOffsets.stream().map(offset -> offset * unit).collect(Collectors.toList());
             this.recoveredOffsets = recoveredOffsets.stream().map(offset -> offset * unit).collect(Collectors.toList());
         }
 
         public Arguments toArguments(String name) {
-            return Arguments.of(name, recordSize, capacity, trimOffset, startOffset, nextOffset, maxLength, writeOffsets, recoveredOffsets);
+            return Arguments.of(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets);
         }
     }
 
@@ -662,8 +657,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         -1L,
-                        0L,
-                        0L,
                         50L,
                         Arrays.asList(0L, 2L, 4L),
                         Arrays.asList(0L, 2L, 4L),
@@ -673,8 +666,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         0L,
-                        10L,
-                        10L,
                         50L,
                         Arrays.asList(0L, 2L, 4L),
                         Arrays.asList(2L, 4L),
@@ -684,8 +675,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         2L,
-                        10L,
-                        10L,
                         50L,
                         Arrays.asList(0L, 2L, 4L, 6L),
                         Arrays.asList(4L, 6L),
@@ -695,8 +684,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         2L,
-                        3L,
-                        3L,
                         50L,
                         Arrays.asList(0L, 2L, 4L, 6L, 8L, 10L, 12L, 14L, 16L, 18L, 20L),
                         Arrays.asList(4L, 6L, 8L, 10L, 12L, 14L, 16L, 18L, 20L),
@@ -706,8 +693,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         2L,
-                        3L,
-                        3L,
                         50L,
                         Arrays.asList(0L, 2L, 8L, 10L, 14L, 20L),
                         Arrays.asList(8L, 10L, 14L, 20L),
@@ -717,8 +702,6 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         2L,
-                        3L,
-                        3L,
                         50L,
                         Arrays.asList(14L, 8L, 10L, 20L, 0L, 2L),
                         Arrays.asList(8L, 10L, 14L, 20L),
@@ -728,10 +711,8 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         20230920L,
-                        20230920L,
-                        20230920L,
                         50L,
-                        Arrays.asList(20230900L, 20230910L, 20230916L, 20230920L, 20230930L, 20230940L, 20230950L, 20230960L, 20230970L),
+                        Arrays.asList(20230900L, 20230910L, 20230916L, 20230920L, 20230930L, 20230940L, 20230950L, 20230960L, 20230970L, 20230980L),
                         Arrays.asList(20230930L, 20230940L, 20230950L, 20230960L, 20230970L),
                         WALUtil.BLOCK_SIZE
                 ).toArguments("big logic offset"),
@@ -739,32 +720,88 @@ class BlockWALServiceTest {
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         180L,
-                        210L,
-                        240L,
                         50L,
                         Arrays.asList(150L, 160L, 170L, 180L, 190L, 200L, 202L, 210L, 220L, 230L, 240L),
-                        Arrays.asList(190L, 200L, 202L, 210L, 220L, 230L, 240L),
+                        Arrays.asList(190L, 200L, 202L, 210L, 220L, 230L),
                         WALUtil.BLOCK_SIZE
                 ).toArguments("round robin"),
                 new RecoverFromDisasterParam(
                         WALUtil.BLOCK_SIZE + 1,
                         100L,
                         210L,
-                        250L,
-                        290L,
                         50L,
                         Arrays.asList(111L, 113L, 115L, 117L, 119L, 120L, 130L,
                                 210L, 215L, 220L, 230L, 240L, 250L, 260L, 270L, 280L, 290L),
-                        Arrays.asList(215L, 220L, 230L, 240L, 250L, 260L, 270L, 280L, 290L),
+                        Arrays.asList(215L, 220L, 230L, 240L, 250L, 260L),
                         WALUtil.BLOCK_SIZE
                 ).toArguments("overwrite"),
-                // TODO: test window max length
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        -1L,
+                        1L,
+                        Arrays.asList(0L, 2L, 5L, 7L),
+                        List.of(0L, 2L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("small window - record size not aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        10L,
+                        3L,
+                        Arrays.asList(10L, 12L, 15L, 17L, 19L),
+                        List.of(12L, 15L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("invalid record in window - record size not aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE + 1,
+                        100L,
+                        10L,
+                        9L,
+                        Arrays.asList(9L, 14L, 18L, 20L),
+                        List.of(14L, 18L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("trim at an invalid record - record size not aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE,
+                        100L,
+                        -1L,
+                        1L,
+                        Arrays.asList(0L, 1L, 3L, 4L, 5L),
+                        List.of(0L, 1L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("small window - record size aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE,
+                        100L,
+                        10L,
+                        3L,
+                        Arrays.asList(10L, 11L, 13L, 14L, 15L, 16L),
+                        List.of(11L, 13L, 14L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("invalid record in window - record size aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE,
+                        100L,
+                        10L,
+                        5L,
+                        Arrays.asList(9L, 11L, 13L, 15L, 16L, 17L),
+                        List.of(11L, 13L, 15L, 16L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("trim at an invalid record - record size aligned"),
+                new RecoverFromDisasterParam(
+                        WALUtil.BLOCK_SIZE,
+                        100L,
+                        10L,
+                        0L,
+                        Arrays.asList(10L, 11L, 12L, 14L),
+                        List.of(11L, 12L),
+                        WALUtil.BLOCK_SIZE
+                ).toArguments("zero window"),
                 new RecoverFromDisasterParam(
                         42,
                         8192L,
                         -1L,
-                        0L,
-                        0L,
                         8192L,
                         Arrays.asList(0L, 42L, 84L),
                         Arrays.asList(0L, 42L, 84L),
@@ -774,9 +811,7 @@ class BlockWALServiceTest {
                         42,
                         8192L,
                         42L,
-                        0L,
-                        0L,
-                        50L,
+                        8192L,
                         Arrays.asList(0L, 42L, 84L, 126L),
                         Arrays.asList(84L, 126L),
                         1
@@ -785,9 +820,7 @@ class BlockWALServiceTest {
                         42,
                         8192L,
                         42L,
-                        4096L,
-                        4096L,
-                        50L,
+                        8192L,
                         Arrays.asList(0L, 42L, 42 * 2L, 42 * 4L, 4096L, 4096L + 42L, 4096L + 42 * 3L),
                         Arrays.asList(42 * 2L, 4096L, 4096L + 42L),
                         1
@@ -796,9 +829,7 @@ class BlockWALServiceTest {
                         42,
                         8192L,
                         42L,
-                        4096L,
-                        4096L,
-                        50L,
+                        8192L,
                         Arrays.asList(42L, 42 * 4L, 42 * 2L, 4096L + 42 * 3L, 0L, 4096L, 4096L + 42L),
                         Arrays.asList(42 * 2L, 4096L, 4096L + 42L),
                         1
@@ -807,9 +838,7 @@ class BlockWALServiceTest {
                         1000,
                         8192L,
                         2000L,
-                        4096L,
-                        4096L,
-                        50L,
+                        8192L,
                         Arrays.asList(0L, 1000L, 2000L, 3000L, 4000L, 5000L, 7000L),
                         Arrays.asList(3000L, 4000L, 5000L),
                         1
@@ -818,9 +847,7 @@ class BlockWALServiceTest {
                         42,
                         8192L,
                         8192L + 4096L + 42L,
-                        16384L,
-                        16384L,
-                        50L,
+                        8192L,
                         Arrays.asList(8192L + 4096L, 8192L + 4096L + 42L, 8192L + 4096L + 42 * 2L, 8192L + 4096L + 42 * 4L, 16384L, 16384L + 42L, 16384L + 42 * 3L),
                         Arrays.asList(8192L + 4096L + 42 * 2L, 16384L, 16384L + 42L),
                         1
@@ -829,14 +856,61 @@ class BlockWALServiceTest {
                         1000,
                         8192L,
                         12000L,
-                        16384L,
-                        16384L,
-                        50L,
+                        8192L,
                         Arrays.asList(1000L, 2000L, 3000L, 4000L, 5000L, 6000L, 7000L,
                                 9000L, 10000L, 11000L, 12000L, 13000L, 14000L, 15000L),
                         Arrays.asList(13000L, 14000L, 15000L),
                         1
-                ).toArguments("merge write - overwrite")
+                ).toArguments("merge write - overwrite"),
+                new RecoverFromDisasterParam(
+                        42,
+                        4096L * 20,
+                        -1L,
+                        4096L,
+                        Arrays.asList(0L, 42L, 42 * 3L, 4096L, 4096L + 42L, 4096L + 42 * 3L, 12288L, 12288L + 42L, 12288L + 42 * 3L, 16384L),
+                        Arrays.asList(0L, 42L, 4096L, 4096L + 42L),
+                        1
+                ).toArguments("merge write - small window"),
+                new RecoverFromDisasterParam(
+                        42,
+                        4096L * 20,
+                        4096L * 2,
+                        4096L * 4,
+                        Arrays.asList(4096L * 2, 4096L * 2 + 42L, 4096L * 2 + 42 * 3L,
+                                4096L * 4, 4096L * 4 + 42L, 4096L * 4 + 42 * 3L,
+                                4096L * 5, 4096L * 5 + 42L, 4096L * 5 + 42 * 3L,
+                                4096L * 6, 4096L * 6 + 42L, 4096L * 6 + 42 * 3L,
+                                4096L * 7, 4096L * 7 + 42L, 4096L * 7 + 42 * 3L,
+                                4096L * 8),
+                        Arrays.asList(4096L * 2 + 42L, 4096L * 4, 4096L * 4 + 42L,
+                                4096L * 5, 4096L * 5 + 42L, 4096L * 6, 4096L * 6 + 42L),
+                        1
+                ).toArguments("merge write - invalid record in window"),
+                new RecoverFromDisasterParam(
+                        42,
+                        4096L * 20,
+                        4096L * 2 + 42 * 2L,
+                        4096L * 2,
+                        Arrays.asList(4096L * 2, 4096L * 2 + 42L, 4096L * 2 + 42 * 3L,
+                                4096L * 3, 4096L * 3 + 42L, 4096L * 3 + 42 * 3L,
+                                4096L * 5, 4096L * 5 + 42L, 4096L * 5 + 42 * 3L,
+                                4096L * 6, 4096L * 6 + 42L, 4096L * 6 + 42 * 3L,
+                                4096L * 7),
+                        Arrays.asList(4096L * 3, 4096L * 3 + 42L, 4096L * 5, 4096L * 5 + 42L),
+                        1
+                ).toArguments("merge write - trim at an invalid record"),
+                new RecoverFromDisasterParam(
+                        42,
+                        4096L * 20,
+                        4096L * 2,
+                        0L,
+                        Arrays.asList(4096L * 2, 4096L * 2 + 42L, 4096L * 2 + 42 * 3L,
+                                4096L * 3, 4096L * 3 + 42L, 4096L * 3 + 42 * 3L,
+                                4096L * 5, 4096L * 5 + 42L, 4096L * 5 + 42 * 3L,
+                                4096L * 6),
+                        Arrays.asList(4096L * 2 + 42L, 4096L * 3, 4096L * 3 + 42L),
+                        1
+                ).toArguments("merge write - zero window")
         );
     }
 
@@ -847,13 +921,11 @@ class BlockWALServiceTest {
             int recordSize,
             long capacity,
             long trimOffset,
-            long startOffset,
-            long nextOffset,
             long maxLength,
             List<Long> writeOffsets,
             List<Long> recoveredOffsets
     ) throws IOException {
-        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, startOffset, nextOffset, maxLength, writeOffsets, recoveredOffsets, false);
+        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, false);
     }
 
     @ParameterizedTest(name = "Test {index} {0}")
@@ -864,13 +936,11 @@ class BlockWALServiceTest {
             int recordSize,
             long capacity,
             long trimOffset,
-            long startOffset,
-            long nextOffset,
             long maxLength,
             List<Long> writeOffsets,
             List<Long> recoveredOffsets
     ) throws IOException {
-        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, startOffset, nextOffset, maxLength, writeOffsets, recoveredOffsets, true);
+        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, true);
     }
 
     private void testRecoverFromDisaster0(
@@ -878,8 +948,6 @@ class BlockWALServiceTest {
             int recordSize,
             long capacity,
             long trimOffset,
-            long startOffset,
-            long nextOffset,
             long maxLength,
             List<Long> writeOffsets,
             List<Long> recoveredOffsets,
@@ -900,7 +968,7 @@ class BlockWALServiceTest {
 
         // Simulate disaster
         walChannel.open();
-        writeWALHeader(walChannel, trimOffset, startOffset, nextOffset, maxLength);
+        writeWALHeader(walChannel, trimOffset, maxLength);
         for (long writeOffset : writeOffsets) {
             if (directIO && TEST_BLOCK_DEVICE != null && writeOffset % WALUtil.BLOCK_SIZE != 0) {
                 // skip the test as we can't write to un-aligned position on block device
@@ -912,7 +980,6 @@ class BlockWALServiceTest {
 
         final WriteAheadLog wal = BlockWALService.builder(path, capacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 30)
                 .build()
                 .start();
         try {
@@ -958,15 +1025,14 @@ class BlockWALServiceTest {
         // 1. append and force shutdown
         final WriteAheadLog wal1 = BlockWALService.builder(path, blockDeviceCapacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 30)
                 .build()
                 .start();
+        recoverAndReset(wal1);
         List<Long> appended1 = appendWithoutTrim(wal1, recordSize, recordCount);
 
         // 2. recover and reset
         final WriteAheadLog wal2 = BlockWALService.builder(path, blockDeviceCapacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 30)
                 .build()
                 .start();
         Iterator<RecoverResult> recover = wal2.recover();
@@ -986,7 +1052,6 @@ class BlockWALServiceTest {
         // 4. recover again
         final WriteAheadLog wal3 = BlockWALService.builder(path, blockDeviceCapacity)
                 .direct(directIO)
-                .flushHeaderIntervalSeconds(1 << 30)
                 .build()
                 .start();
         recover = wal3.recover();
@@ -1005,6 +1070,7 @@ class BlockWALServiceTest {
         final WriteAheadLog wal = BlockWALService.builder(TestUtils.tempFilePath(), 16384)
                 .build()
                 .start();
+        recoverAndReset(wal);
         try {
             long appended = append(wal, 42);
             Assertions.assertThrows(IllegalArgumentException.class, () -> wal.trim(appended + 4096 + 1).join());
@@ -1019,12 +1085,48 @@ class BlockWALServiceTest {
                 .slidingWindowUpperLimit(WALUtil.BLOCK_SIZE * 4L)
                 .build()
                 .start();
+        recoverAndReset(wal);
         try {
             append(wal, 42);
             Assertions.assertThrows(OverCapacityException.class, () -> append(wal, 42));
         } finally {
             wal.shutdownGracefully();
         }
+    }
+
+    @Test
+    public void testRecoveryMode() throws IOException, OverCapacityException {
+        final String path = TestUtils.tempFilePath();
+        final int nodeId = 10;
+        final long epoch = 100;
+
+        // simulate a crash
+        WriteAheadLog wal1 = BlockWALService.builder(path, 1 << 20)
+                .nodeId(nodeId)
+                .epoch(epoch)
+                .build()
+                .start();
+        recoverAndReset(wal1);
+        wal1.append(TestUtils.random(4097)).future().join();
+
+        // open in recovery mode
+        WriteAheadLog wal2 = BlockWALService.recoveryBuilder(path)
+                .build()
+                .start();
+        assertEquals(nodeId, wal2.metadata().nodeId());
+        assertEquals(epoch, wal2.metadata().epoch());
+        // we can recover and reset the WAL
+        recoverAndReset(wal2);
+        // but we can't append to or trim it
+        assertThrows(IllegalStateException.class, () -> wal2.append(TestUtils.random(4097)).future().join());
+        assertThrows(IllegalStateException.class, () -> wal2.trim(0).join());
+    }
+
+    private static void recoverAndReset(WriteAheadLog wal) {
+        for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
+            it.next().record().release();
+        }
+        wal.reset().join();
     }
 
     /**
