@@ -21,6 +21,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WALMetadata;
+import com.automq.stream.s3.wal.WALNotInitializedException;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
@@ -85,11 +86,18 @@ public class Failover {
         public FailoverResponse failover() throws Throwable {
             LOGGER.info("failover start {}", request);
             FailoverResponse resp = new FailoverResponse();
+            resp.setNodeId(request.getNodeId());
             // fence the device to ensure the old node stops writing to the delta WAL
             fence(request);
             // recover WAL data and upload to S3
             BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
-            wal.start();
+            try {
+                wal.start();
+            } catch (WALNotInitializedException ex) {
+                LOGGER.info("fail over empty wal {}", request);
+                complete(request);
+                return resp;
+            }
             try {
                 WALMetadata metadata = wal.metadata();
                 this.nodeId = metadata.nodeId();
