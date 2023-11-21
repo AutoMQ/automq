@@ -56,7 +56,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
@@ -126,15 +125,14 @@ public class S3Storage implements Storage {
      * Upload WAL to S3 and close opening streams.
      */
     public void recover() throws Throwable {
-        recover0(this.deltaWAL, this.streamManager, this.objectManager, this::uploadDeltaWAL, LOGGER);
+        recover0(this.deltaWAL, this.streamManager, this.objectManager, LOGGER);
     }
 
     public void recover(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager, Logger logger) throws Throwable {
-        recover0(deltaWAL, streamManager, objectManager, this::uploadDeltaWAL, logger);
+        recover0(deltaWAL, streamManager, objectManager, logger);
     }
 
-    static void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
-                         Function<DeltaWALUploadTaskContext, CompletableFuture<Void>> upload, Logger logger) throws Throwable {
+    void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager, Logger logger) throws Throwable {
         deltaWAL.start();
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
 
@@ -148,9 +146,8 @@ public class S3Storage implements Storage {
 
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(cacheBlock);
-            context.objectManager = objectManager;
-            upload.apply(context).get();
+            DeltaWALUploadTask task = DeltaWALUploadTask.of(config, cacheBlock.records(), objectManager, s3Operator, uploadWALExecutor);
+            task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
         deltaWAL.reset().get();
