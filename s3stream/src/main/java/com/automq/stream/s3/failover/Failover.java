@@ -102,7 +102,7 @@ public class Failover {
                 Logger taskLogger = new LogContext(String.format("[Failover nodeId=%s epoch=%s]", nodeId, epoch)).logger(FailoverTask.class);
                 StreamManager streamManager = factory.getStreamManager(nodeId, epoch);
                 ObjectManager objectManager = factory.getObjectManager(nodeId, epoch);
-                LOGGER.info("failover start recover {}", request);
+                LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
                 // delete the volume
                 complete(request);
