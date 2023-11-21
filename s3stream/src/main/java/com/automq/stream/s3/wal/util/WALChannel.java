@@ -38,6 +38,8 @@ public interface WALChannel {
 
     long capacity();
 
+    String path();
+
     /**
      * Write bytes from the given buffer to the given position of the channel from the current reader index
      * to the end of the buffer. It only returns when all bytes are written successfully.
@@ -73,7 +75,9 @@ public interface WALChannel {
         private final String path;
         private boolean direct;
         private long capacity;
-        private boolean readOnly;
+        private int initBufferSize;
+        private int maxBufferSize;
+        private boolean recoveryMode;
 
         private WALChannelBuilder(String path) {
             this.path = path;
@@ -89,16 +93,27 @@ public interface WALChannel {
             return this;
         }
 
-        public WALChannelBuilder readOnly(boolean readOnly) {
-            this.readOnly = readOnly;
+        public WALChannelBuilder initBufferSize(int initBufferSize) {
+            this.initBufferSize = initBufferSize;
+            return this;
+        }
+
+        public WALChannelBuilder maxBufferSize(int maxBufferSize) {
+            this.maxBufferSize = maxBufferSize;
+            return this;
+        }
+
+        public WALChannelBuilder recoveryMode(boolean recoveryMode) {
+            this.recoveryMode = recoveryMode;
             return this;
         }
 
         public WALChannel build() {
+            // TODO: If the OS supports O_DIRECT, we use it by default. Otherwise, we use file system.
             if (direct || path.startsWith(DEVICE_PREFIX)) {
-                return new WALBlockDeviceChannel(path, capacity);
+                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize);
             } else {
-                return new WALFileChannel(path, capacity, readOnly);
+                return new WALFileChannel(path, capacity, recoveryMode);
             }
         }
     }

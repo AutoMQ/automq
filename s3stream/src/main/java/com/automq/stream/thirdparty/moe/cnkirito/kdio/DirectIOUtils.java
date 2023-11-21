@@ -65,7 +65,8 @@ public class DirectIOUtils {
     /**
      * Release the memory of the buffer.
      */
-    public static void release(ByteBuffer buffer) {
+    public static void releaseDirectBuffer(ByteBuffer buffer) {
+        assert buffer.isDirect();
         PlatformDependent.freeDirectBuffer(buffer);
     }
 }

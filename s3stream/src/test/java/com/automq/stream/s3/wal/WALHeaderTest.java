@@ -29,8 +29,6 @@ public class WALHeaderTest {
         header.setCapacity(128 * 1024);
         header.updateTrimOffset(10);
         header.setLastWriteTimestamp(11);
-        header.setSlidingWindowNextWriteOffset(20);
-        header.setSlidingWindowStartOffset(15);
         header.setSlidingWindowMaxLength(100);
         header.setShutdownType(ShutdownType.GRACEFULLY);
         header.setNodeId(233);
@@ -40,8 +38,6 @@ public class WALHeaderTest {
         assertEquals(header.getCapacity(), unmarshal.getCapacity());
         assertEquals(header.getTrimOffset(), unmarshal.getTrimOffset());
         assertEquals(header.getLastWriteTimestamp(), unmarshal.getLastWriteTimestamp());
-        assertEquals(header.getSlidingWindowNextWriteOffset(), unmarshal.getSlidingWindowNextWriteOffset());
-        assertEquals(header.getSlidingWindowStartOffset(), unmarshal.getSlidingWindowStartOffset());
         assertEquals(header.getSlidingWindowMaxLength(), unmarshal.getSlidingWindowMaxLength());
         assertEquals(header.getShutdownType(), unmarshal.getShutdownType());
         assertEquals(header.getNodeId(), unmarshal.getNodeId());

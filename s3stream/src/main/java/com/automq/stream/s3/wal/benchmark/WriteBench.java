@@ -32,6 +32,7 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.NavigableSet;
 import java.util.Random;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -60,7 +61,10 @@ public class WriteBench implements AutoCloseable {
         }
         this.log = builder.build();
         this.log.start();
-        this.log.reset();
+        for (Iterator<WriteAheadLog.RecoverResult> it = this.log.recover(); it.hasNext(); ) {
+            it.next().record().release();
+        }
+        this.log.reset().join();
     }
 
     public static void main(String[] args) throws IOException {
