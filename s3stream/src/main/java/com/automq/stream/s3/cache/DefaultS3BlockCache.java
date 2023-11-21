@@ -35,7 +35,6 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -47,8 +46,9 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
 public class DefaultS3BlockCache implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3BlockCache.class);
+    private static final Integer MAX_OBJECT_READER_SIZE = 100 * 1024 * 1024; // 100MB;
     public static final Integer MAX_READ_AHEAD_SIZE = 40 * 1024 * 1024; // 40MB
-    private final LRUCache<Long, ObjectReader> objectReaderLRU = new LRUCache<>();
+    private final ObjectReaderLRUCache objectReaderLRU = new ObjectReaderLRUCache(MAX_OBJECT_READER_SIZE);
     private final Map<ReadAheadTaskKey, CompletableFuture<Void>> inflightReadAheadTasks = new ConcurrentHashMap<>();
     private final Semaphore readAheadLimiter = new Semaphore(16);
     private final BlockCache cache;
@@ -295,10 +295,6 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     private ObjectReader getObjectReader(S3ObjectMetadata metadata) {
         synchronized (objectReaderLRU) {
-            // TODO: evict by object readers index cache size
-            while (objectReaderLRU.size() > 128) {
-                Optional.ofNullable(objectReaderLRU.pop()).ifPresent(entry -> entry.getValue().close());
-            }
             ObjectReader objectReader = objectReaderLRU.get(metadata.objectId());
             if (objectReader == null) {
                 objectReader = new ObjectReader(metadata, s3Operator);
