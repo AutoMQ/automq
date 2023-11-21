@@ -635,6 +635,9 @@ public class BlockWALService implements WriteAheadLog {
                     .maxBufferSize(maxBufferSize)
                     .recoveryMode(recoveryMode)
                     .build();
+            if (!blockWALService.walChannel.useDirectIO()) {
+                LOGGER.info("block wal not using direct IO");
+            }
 
             // TODO: in recovery mode, no need to create sliding window service
             // make sure window size is less than capacity
