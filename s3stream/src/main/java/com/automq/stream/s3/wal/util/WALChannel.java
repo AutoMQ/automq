@@ -70,10 +70,14 @@ public interface WALChannel {
      */
     int read(ByteBuf dst, long position) throws IOException;
 
+    default boolean useDirectIO() {
+        return this instanceof WALBlockDeviceChannel;
+    }
+
     class WALChannelBuilder {
         public static final String DEVICE_PREFIX = "/dev/";
         private final String path;
-        private boolean direct;
+        private Boolean direct;
         private long capacity;
         private int initBufferSize;
         private int maxBufferSize;
@@ -109,8 +113,24 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
-            // TODO: If the OS supports O_DIRECT, we use it by default. Otherwise, we use file system.
-            if (direct || path.startsWith(DEVICE_PREFIX)) {
+            String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable();
+            boolean useDirect = false;
+            if (direct != null) {
+                // Set by user.
+                useDirect = direct;
+            } else if (path.startsWith(DEVICE_PREFIX)) {
+                // We can only use direct IO for block devices.
+                useDirect = true;
+            } else if (directNotAvailableMsg == null) {
+                // If direct IO is available, we use it by default.
+                useDirect = true;
+            }
+
+            if (useDirect && directNotAvailableMsg != null) {
+                throw new IllegalArgumentException(directNotAvailableMsg);
+            }
+
+            if (useDirect) {
                 return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize);
             } else {
                 return new WALFileChannel(path, capacity, recoveryMode);

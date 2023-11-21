@@ -28,17 +28,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 
 public class WALBlockDeviceChannel implements WALChannel {
-    // TODO: move these to config
-    @Deprecated
-    private static final int PRE_ALLOCATED_BYTE_BUFFER_SIZE = Integer.parseInt(System.getProperty(
-            "automq.ebswal.preAllocatedByteBufferSize",
-            String.valueOf(1024 * 1024 * 2)
-    ));
-    @Deprecated
-    private static final int PRE_ALLOCATED_BYTE_BUFFER_MAX_SIZE = Integer.parseInt(System.getProperty(
-            "automq.ebswal.preAllocatedByteBufferMaxSize",
-            String.valueOf(1024 * 1024 * 16)
-    ));
 
     final String blockDevicePath;
     final long capacity;
@@ -61,6 +50,22 @@ public class WALBlockDeviceChannel implements WALChannel {
         }
     };
 
+    /**
+     * Check whether the {@link WALBlockDeviceChannel} is available.
+     *
+     * @return null if available, otherwise the reason why it's not available
+     */
+    public static String checkAvailable() {
+        if (!DirectIOLib.binit) {
+            return "O_DIRECT not supported";
+        }
+        if (!DirectIOUtils.allocatorAvailable()) {
+            return "java.nio.DirectByteBuffer.<init>(long, int) not available." +
+                    " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
+        }
+        return null;
+    }
+
     public WALBlockDeviceChannel(String blockDevicePath, long blockDeviceCapacityWant) {
         this(blockDevicePath, blockDeviceCapacityWant, 0, 0);
     }
@@ -78,7 +83,7 @@ public class WALBlockDeviceChannel implements WALChannel {
         this.maxTempBufferSize = maxTempBufferSize;
 
         DirectIOLib lib = DirectIOLib.getLibForPath(blockDevicePath);
-        if (null == lib || !DirectIOLib.binit) {
+        if (null == lib) {
             throw new RuntimeException("O_DIRECT not supported");
         } else {
             this.directIOLib = lib;

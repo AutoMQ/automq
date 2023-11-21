@@ -21,10 +21,8 @@ import com.sun.jna.ptr.PointerByReference;
 import io.netty.util.internal.PlatformDependent;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 public class DirectIOUtils {
-    public static final ByteOrder NATIVE_BYTE_ORDER = ByteOrder.nativeOrder();
 
     /**
      * Allocate <tt>capacity</tt> bytes of native memory for use as a buffer, and
@@ -60,6 +58,10 @@ public class DirectIOUtils {
 
         assert buf.isDirect();
         return buf;
+    }
+
+    public static boolean allocatorAvailable() {
+        return PlatformDependent.hasDirectBufferNoCleanerConstructor();
     }
 
     /**
