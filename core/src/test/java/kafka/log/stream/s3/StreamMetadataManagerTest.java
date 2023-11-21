@@ -18,7 +18,7 @@
 package kafka.log.stream.s3;
 
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
-import kafka.log.stream.s3.metadata.StreamMetadataManager.StreamMetadataListener;
+import kafka.log.stream.s3.metadata.MetadataListener;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.metadata.BrokerMetadataListener;
@@ -68,7 +68,7 @@ public class StreamMetadataManagerTest {
     private BrokerServer mockBroker;
     private KRaftMetadataCache mockMetadataCache;
     private BrokerMetadataListener mockBrokerMetadataListener;
-    private StreamMetadataListener streamMetadataListener;
+    private MetadataListener streamMetadataListener;
     private StreamMetadataManager manager;
 
     @BeforeEach
@@ -81,7 +81,7 @@ public class StreamMetadataManagerTest {
         Mockito.doAnswer(invocation -> {
             this.streamMetadataListener = invocation.getArgument(0);
             return null;
-        }).when(this.mockBrokerMetadataListener).registerStreamMetadataListener(ArgumentMatchers.any());
+        }).when(this.mockBrokerMetadataListener).registerMetadataListener(ArgumentMatchers.any());
         Mockito.when(this.mockMetadataCache.currentImage()).thenReturn(MetadataImage.EMPTY);
         KafkaConfig config = Mockito.mock(KafkaConfig.class);
         Mockito.when(config.brokerId()).thenReturn(BROKER0);

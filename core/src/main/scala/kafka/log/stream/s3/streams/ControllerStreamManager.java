@@ -75,7 +75,7 @@ public class ControllerStreamManager implements StreamManager {
         this.config = config;
         this.requestSender = requestSender;
         this.nodeId = config.brokerId();
-        this.nodeEpoch = config.brokerEpoch();
+        this.nodeEpoch = config.nodeEpoch();
     }
 
     @Override
@@ -275,6 +275,10 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
+        return closeStream(streamId, epoch, nodeId, nodeEpoch);
+    }
+
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch) {
         CloseStreamRequest request = new CloseStreamRequest()
                 .setStreamId(streamId)
                 .setStreamEpoch(epoch);
