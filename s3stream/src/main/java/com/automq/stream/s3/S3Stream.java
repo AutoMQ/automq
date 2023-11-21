@@ -133,9 +133,10 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        TimerUtil timerUtil = new TimerUtil();
         writeLock.lock();
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM_WRITE_LOCK).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         try {
-            TimerUtil timerUtil = new TimerUtil();
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
@@ -179,18 +180,14 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
+        TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
+        OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM_READ_LOCK).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         try {
-            TimerUtil timerUtil = new TimerUtil();
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
                 OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-
-                if (timerUtil.elapsedAs(TimeUnit.MILLISECONDS) > 1000) {
-                    LOGGER.warn("{} stream fetch [{}, {}) {} takes {} ms", logIdent, startOffset, endOffset, maxBytes, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                }
-
                 if (ex != null) {
                     LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                 } else if (networkOutboundLimiter != null) {
