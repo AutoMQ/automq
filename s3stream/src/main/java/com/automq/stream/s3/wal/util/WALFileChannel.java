@@ -32,11 +32,11 @@ import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 public class WALFileChannel implements WALChannel {
     final String filePath;
     final long fileCapacityWant;
-    long fileCapacityFact = 0;
     /**
      * When set to true, the file should exist and the file size does not need to be verified.
      */
-    boolean recoveryMode;
+    final boolean recoveryMode;
+    long fileCapacityFact = 0;
     RandomAccessFile randomAccessFile;
     FileChannel fileChannel;
 
@@ -52,9 +52,12 @@ public class WALFileChannel implements WALChannel {
     }
 
     @Override
-    public void open() throws IOException {
+    public void open(CapacityReader reader) throws IOException {
         File file = new File(filePath);
         if (file.exists()) {
+            if (!file.isFile()) {
+                throw new IOException(filePath + " is not a file");
+            }
             randomAccessFile = new RandomAccessFile(file, "rw");
             fileCapacityFact = randomAccessFile.length();
             if (!recoveryMode && fileCapacityFact != fileCapacityWant) {
@@ -62,24 +65,33 @@ public class WALFileChannel implements WALChannel {
                 throw new WALCapacityMismatchException(filePath, fileCapacityWant, fileCapacityFact);
             }
         } else {
+            // the file does not exist
             if (recoveryMode) {
-                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode. path: " + filePath);
+                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode: file not exists: " + filePath);
             }
-            if (!file.getParentFile().exists() && !file.getParentFile().mkdirs()) {
-                throw new IOException("mkdirs " + file.getParentFile() + " fail");
-            }
-            if (!file.createNewFile()) {
-                throw new IOException("create " + filePath + " fail");
-            }
-            if (!file.setWritable(true)) {
-                throw new IOException("set " + filePath + " writable fail");
-            }
-            randomAccessFile = new RandomAccessFile(file, "rw");
-            randomAccessFile.setLength(fileCapacityWant);
+            WALUtil.createFile(filePath, fileCapacityWant);
+            randomAccessFile = new RandomAccessFile(filePath, "rw");
             fileCapacityFact = fileCapacityWant;
         }
 
         fileChannel = randomAccessFile.getChannel();
+
+        checkCapacity(reader);
+    }
+
+    private void checkCapacity(CapacityReader reader) throws IOException {
+        if (null == reader) {
+            return;
+        }
+        Long capacity = reader.capacity(this);
+        if (null == capacity) {
+            if (recoveryMode) {
+                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode: empty header. path: " + filePath);
+            }
+        } else if (fileCapacityFact != capacity) {
+            throw new WALCapacityMismatchException(filePath, fileCapacityFact, capacity);
+        }
+        assert fileCapacityFact != CAPACITY_NOT_SET;
     }
 
     @Override

@@ -35,6 +35,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -72,6 +73,11 @@ public class SlidingWindowService {
      */
     private final TreeSet<Long> writingBlocks = new TreeSet<>();
     /**
+     * Whether the service is initialized.
+     * After the service is initialized, data in {@link #windowCoreData} is valid.
+     */
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
+    /**
      * Blocks that are waiting to be written.
      * All blocks in this queue are ordered by the start offset.
      */
@@ -99,6 +105,7 @@ public class SlidingWindowService {
     }
 
     public WindowCoreData getWindowCoreData() {
+        assert initialized();
         return windowCoreData;
     }
 
@@ -111,6 +118,11 @@ public class SlidingWindowService {
         ScheduledExecutorService pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
                 ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
         pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, minWriteIntervalNanos, TimeUnit.NANOSECONDS);
+        initialized.set(true);
+    }
+
+    public boolean initialized() {
+        return initialized.get();
     }
 
     public boolean shutdown(long timeout, TimeUnit unit) {
@@ -133,6 +145,7 @@ public class SlidingWindowService {
      * Try to write a block. If it exceeds the rate limit, it will return immediately.
      */
     public void tryWriteBlock() {
+        assert initialized();
         if (!tryAcquireWriteRateLimit()) {
             return;
         }
@@ -155,6 +168,7 @@ public class SlidingWindowService {
     }
 
     public Lock getBlockLock() {
+        assert initialized();
         return blockLock;
     }
 
@@ -165,6 +179,7 @@ public class SlidingWindowService {
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
     public Block sealAndNewBlockLocked(Block previousBlock, long minSize, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        assert initialized();
         long startOffset = nextBlockStartOffset(previousBlock);
 
         // If the end of the physical device is insufficient for this block, jump to the start of the physical device
@@ -205,6 +220,7 @@ public class SlidingWindowService {
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
     public Block getCurrentBlockLocked() {
+        assert initialized();
         // The current block is null only when no record has been written
         if (null == currentBlock) {
             currentBlock = nextBlock(windowCoreData.getWindowNextWriteOffset());
@@ -262,8 +278,7 @@ public class SlidingWindowService {
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
     private BlockBatch pollBlocksLocked() {
-        // TODO ugly code
-        Block currentBlock = this.currentBlock;
+        Block currentBlock = getCurrentBlockLocked();
 
         boolean isPendingBlockEmpty = pendingBlocks.isEmpty();
         boolean isCurrentBlockEmpty = currentBlock == null || currentBlock.isEmpty();
@@ -317,8 +332,7 @@ public class SlidingWindowService {
 
     private void writeBlockData(BlockBatch blocks) throws IOException {
         for (Block block : blocks.blocks()) {
-            // TODO: make this beautiful
-            long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
+            long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
             walChannel.write(block.data(), position);
         }
         walChannel.flush();

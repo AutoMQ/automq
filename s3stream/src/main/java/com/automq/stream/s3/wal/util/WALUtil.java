@@ -19,6 +19,9 @@ package com.automq.stream.s3.wal.util;
 
 import io.netty.buffer.ByteBuf;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
@@ -49,8 +52,9 @@ public class WALUtil {
         return (int) (crc32.getValue() & 0x7FFFFFFF);
     }
 
-    public static long recordOffsetToPosition(long offset, long recordSectionCapacity, long headerSize) {
-        return offset % recordSectionCapacity + headerSize;
+    public static long recordOffsetToPosition(long offset, long physicalCapacity, long headerSize) {
+        long capacity = physicalCapacity - headerSize;
+        return offset % capacity + headerSize;
     }
 
     public static long alignLargeByBlockSize(long offset) {
@@ -67,5 +71,33 @@ public class WALUtil {
 
     public static boolean isAligned(long offset) {
         return offset % BLOCK_SIZE == 0;
+    }
+
+    /**
+     * Create a file with the given path and length.
+     * Note {@code path} must NOT exist.
+     */
+    public static void createFile(String path, long length) throws IOException {
+        File file = new File(path);
+        assert !file.exists();
+
+        File parent = file.getParentFile();
+        if (null != parent && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("mkdirs " + parent + " fail");
+        }
+        if (!file.createNewFile()) {
+            throw new IOException("create " + path + " fail");
+        }
+        if (!file.setReadable(true)) {
+            throw new IOException("set " + path + " readable fail");
+        }
+        if (!file.setWritable(true)) {
+            throw new IOException("set " + path + " writable fail");
+        }
+
+        // set length
+        try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+            raf.setLength(length);
+        }
     }
 }

@@ -17,6 +17,8 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.wal.WALCapacityMismatchException;
+import com.automq.stream.s3.wal.WALNotInitializedException;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
@@ -32,7 +34,20 @@ public interface WALChannel {
         return new WALChannelBuilder(path);
     }
 
-    void open() throws IOException;
+    /**
+     * Open the channel for read and write.
+     * If {@code reader} is null, checks will be skipped.
+     *
+     * @param reader the reader to get the capacity of the channel
+     * @throws WALCapacityMismatchException if the capacity of the channel does not match the expected capacity
+     * @throws WALNotInitializedException   if try to open an un-initialized channel in recovery mode
+     * @throws IOException                  if any I/O error happens
+     */
+    void open(CapacityReader reader) throws IOException;
+
+    default void open() throws IOException {
+        open(null);
+    }
 
     void close();
 
@@ -72,6 +87,14 @@ public interface WALChannel {
 
     default boolean useDirectIO() {
         return this instanceof WALBlockDeviceChannel;
+    }
+
+    interface CapacityReader {
+        /**
+         * Get the capacity of the given channel.
+         * It returns null if the channel has not been initialized before.
+         */
+        Long capacity(WALChannel channel);
     }
 
     class WALChannelBuilder {
@@ -131,7 +154,7 @@ public interface WALChannel {
             }
 
             if (useDirect) {
-                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize);
+                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
             } else {
                 return new WALFileChannel(path, capacity, recoveryMode);
             }

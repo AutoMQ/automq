@@ -20,6 +20,7 @@ package com.automq.stream.s3.wal;
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.wal.benchmark.WriteBench;
+import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
@@ -605,8 +606,7 @@ class BlockWALServiceTest {
         CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
         record.addComponents(true, recordHeader, recordBody);
 
-        // TODO: make this beautiful
-        long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity() - WAL_HEADER_TOTAL_CAPACITY, WAL_HEADER_TOTAL_CAPACITY);
+        long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
         walChannel.writeAndFlush(record, position);
     }
 
@@ -960,20 +960,22 @@ class BlockWALServiceTest {
             resetBlockDevice(path, capacity);
         }
 
-        final WALChannel walChannel = WALChannel.builder(path)
-                .capacity(capacity)
-                // we may write to un-aligned position here, so we need to disable directIO
-                .direct(false)
-                .build();
+        WALChannel walChannel;
+        if (directIO) {
+            WALBlockDeviceChannel blockDeviceChannel = new WALBlockDeviceChannel(path, capacity);
+            blockDeviceChannel.unalignedWrite = true;
+            walChannel = blockDeviceChannel;
+        } else {
+            walChannel = WALChannel.builder(path)
+                    .capacity(capacity)
+                    .direct(false)
+                    .build();
+        }
 
         // Simulate disaster
         walChannel.open();
         writeWALHeader(walChannel, trimOffset, maxLength);
         for (long writeOffset : writeOffsets) {
-            if (directIO && TEST_BLOCK_DEVICE != null && writeOffset % WALUtil.BLOCK_SIZE != 0) {
-                // skip the test as we can't write to un-aligned position on block device
-                return;
-            }
             write(walChannel, writeOffset, recordSize);
         }
         walChannel.close();
@@ -1096,14 +1098,31 @@ class BlockWALServiceTest {
 
     @Test
     public void testRecoveryMode() throws IOException, OverCapacityException {
-        final String path = TestUtils.tempFilePath();
+        testRecoveryMode0(false);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX})
+    public void testRecoveryModeDirectIO() throws IOException, OverCapacityException {
+        testRecoveryMode0(true);
+    }
+
+    private void testRecoveryMode0(boolean directIO) throws IOException, OverCapacityException {
+        final long capacity = 1 << 20;
         final int nodeId = 10;
         final long epoch = 100;
+        String path = TestUtils.tempFilePath();
+
+        if (directIO && TEST_BLOCK_DEVICE != null) {
+            path = TEST_BLOCK_DEVICE;
+            resetBlockDevice(path, capacity);
+        }
 
         // simulate a crash
-        WriteAheadLog wal1 = BlockWALService.builder(path, 1 << 20)
+        WriteAheadLog wal1 = BlockWALService.builder(path, capacity)
                 .nodeId(nodeId)
                 .epoch(epoch)
+                .direct(directIO)
                 .build()
                 .start();
         recoverAndReset(wal1);
@@ -1111,6 +1130,7 @@ class BlockWALServiceTest {
 
         // open in recovery mode
         WriteAheadLog wal2 = BlockWALService.recoveryBuilder(path)
+                .direct(directIO)
                 .build()
                 .start();
         assertEquals(nodeId, wal2.metadata().nodeId());
@@ -1122,6 +1142,149 @@ class BlockWALServiceTest {
         assertThrows(IllegalStateException.class, () -> wal2.trim(0).join());
     }
 
+    @Test
+    public void testCapacityMismatchFileSize() throws IOException {
+        testCapacityMismatchFileSize0(false);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX})
+    public void testCapacityMismatchFileSizeDirectIO() throws IOException {
+        testCapacityMismatchFileSize0(true);
+    }
+
+    private void testCapacityMismatchFileSize0(boolean directIO) throws IOException {
+        final long capacity1 = 1 << 20;
+        final long capacity2 = 1 << 21;
+        final String path = TestUtils.tempFilePath();
+
+        // init a WAL with capacity1
+        WriteAheadLog wal1 = BlockWALService.builder(path, capacity1)
+                .direct(directIO)
+                .build()
+                .start();
+        recoverAndReset(wal1);
+        wal1.shutdownGracefully();
+
+        // try to open it with capacity2
+        WriteAheadLog wal2 = BlockWALService.builder(path, capacity2)
+                .direct(directIO)
+                .build();
+        assertThrows(WALCapacityMismatchException.class, wal2::start);
+    }
+
+    @Test
+    public void testCapacityMismatchInHeader() throws IOException {
+        testCapacityMismatchInHeader0(false);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX})
+    public void testCapacityMismatchInHeaderDirectIO() throws IOException {
+        testCapacityMismatchInHeader0(true);
+    }
+
+    private void testCapacityMismatchInHeader0(boolean directIO) throws IOException {
+        final long capacity1 = 1 << 20;
+        final long capacity2 = 1 << 21;
+        String path = TestUtils.tempFilePath();
+
+        if (directIO && TEST_BLOCK_DEVICE != null) {
+            path = TEST_BLOCK_DEVICE;
+            resetBlockDevice(path, capacity1);
+        }
+
+        // init a WAL with capacity1
+        WriteAheadLog wal1 = BlockWALService.builder(path, capacity1)
+                .direct(directIO)
+                .build()
+                .start();
+        recoverAndReset(wal1);
+        wal1.shutdownGracefully();
+
+        // overwrite the capacity in the header with capacity2
+        WALChannel walChannel = WALChannel.builder(path)
+                .capacity(capacity1)
+                .direct(directIO)
+                .build();
+        walChannel.open();
+        walChannel.writeAndFlush(new WALHeader().setCapacity(capacity2).marshal(), 0);
+        walChannel.close();
+
+        // try to open it with capacity1
+        WriteAheadLog wal2 = BlockWALService.builder(path, capacity1)
+                .direct(directIO)
+                .build();
+        assertThrows(WALCapacityMismatchException.class, wal2::start);
+    }
+
+    @Test
+    public void testRecoveryModeWALFileNotExist() throws IOException {
+        testRecoveryModeWALFileNotExist0(false);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX})
+    public void testRecoveryModeWALFileNotExistDirectIO() throws IOException {
+        testRecoveryModeWALFileNotExist0(true);
+    }
+
+    private void testRecoveryModeWALFileNotExist0(boolean directIO) throws IOException {
+        final String path = TestUtils.tempFilePath();
+
+        WriteAheadLog wal = BlockWALService.recoveryBuilder(path)
+                .direct(directIO)
+                .build();
+        assertThrows(WALNotInitializedException.class, wal::start);
+    }
+
+    @Test
+    public void testRecoveryModeNoHeader() throws IOException {
+        testRecoveryModeNoHeader0(false);
+    }
+
+    @Test
+    @EnabledOnOs({OS.LINUX})
+    public void testRecoveryModeNoHeaderDirectIO() throws IOException {
+        testRecoveryModeNoHeader0(true);
+    }
+
+    private void testRecoveryModeNoHeader0(boolean directIO) throws IOException {
+        final long capacity = 1 << 20;
+        String path = TestUtils.tempFilePath();
+
+        if (directIO && TEST_BLOCK_DEVICE != null) {
+            path = TEST_BLOCK_DEVICE;
+            resetBlockDevice(path, capacity);
+        }
+
+        // init a WAL
+        WriteAheadLog wal1 = BlockWALService.builder(path, capacity)
+                .direct(directIO)
+                .build()
+                .start();
+        recoverAndReset(wal1);
+        wal1.shutdownGracefully();
+
+        // clear the WAL header
+        WALChannel walChannel = WALChannel.builder(path)
+                .capacity(capacity)
+                .direct(directIO)
+                .build();
+        walChannel.open();
+        walChannel.writeAndFlush(Unpooled.buffer(WAL_HEADER_TOTAL_CAPACITY).writeZero(WAL_HEADER_TOTAL_CAPACITY), 0);
+        walChannel.close();
+
+        // try to open it in recovery mode
+        WriteAheadLog wal2 = BlockWALService.recoveryBuilder(path)
+                .direct(directIO)
+                .build();
+        assertThrows(WALNotInitializedException.class, wal2::start);
+    }
+
+    /**
+     * Call {@link WriteAheadLog#recover()} {@link WriteAheadLog#reset()} and drop all records.
+     */
     private static void recoverAndReset(WriteAheadLog wal) {
         for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
             it.next().record().release();
