@@ -24,14 +24,16 @@ import java.util.List;
 public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
 
     private final List<ComparableStreamRecordBatch> records;
+    private final int size;
 
     public StreamRecordBatchList(List<StreamRecordBatch> records) {
         this.records = records.stream().map(ComparableStreamRecordBatch::new).toList();
+        this.size = records.size();
     }
 
     @Override
     int size() {
-        return records.size();
+        return size;
     }
 
     @Override
