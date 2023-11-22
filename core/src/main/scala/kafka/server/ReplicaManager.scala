@@ -1279,7 +1279,9 @@ class ReplicaManager(val config: KafkaConfig,
         val partitionData = readPartitionInfo(partitionIndex)._2
         val readCf = read(tp, partitionData, partitionData.maxBytes, minOneMessage)
         readCf.thenAccept(rst => {
-          result += (tp -> rst)
+          result.synchronized {
+            result += (tp -> rst)
+          }
           remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
         })
         readCfArray += readCf
@@ -1297,7 +1299,9 @@ class ReplicaManager(val config: KafkaConfig,
       val partitionData = readPartitionInfo(partitionIndex)._2
       val readCf = read(tp, partitionData, 0, minOneMessage)
       readCf.thenAccept(rst => {
-        result += (tp -> rst)
+        result.synchronized {
+          result += (tp -> rst)
+        }
         remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
       })
       remainingCfArray += readCf
