@@ -102,10 +102,6 @@ class WALHeader {
         return walHeader;
     }
 
-    public long recordSectionCapacity() {
-        return capacity1 - BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-    }
-
     public long getCapacity() {
         return capacity1;
     }

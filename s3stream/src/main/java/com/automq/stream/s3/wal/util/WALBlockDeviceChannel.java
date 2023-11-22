@@ -17,6 +17,8 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.wal.WALCapacityMismatchException;
+import com.automq.stream.s3.wal.WALNotInitializedException;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;
@@ -24,13 +26,14 @@ import io.netty.buffer.ByteBuf;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 
-public class WALBlockDeviceChannel implements WALChannel {
+import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
-    final String blockDevicePath;
-    final long capacity;
+public class WALBlockDeviceChannel implements WALChannel {
+    final String path;
+    final long capacityWant;
+    final boolean recoveryMode;
     final DirectIOLib directIOLib;
     /**
      * 0 means allocate on demand
@@ -40,7 +43,13 @@ public class WALBlockDeviceChannel implements WALChannel {
      * 0 means no limit
      */
     final int maxTempBufferSize;
+    /**
+     * Flag indicating whether unaligned write is allowed.
+     * Currently, it is only allowed when testing.
+     */
+    public boolean unalignedWrite = false;
 
+    long capacityFact = 0;
     DirectRandomAccessFile randomAccessFile;
 
     ThreadLocal<ByteBuffer> threadLocalByteBuffer = new ThreadLocal<>() {
@@ -49,6 +58,33 @@ public class WALBlockDeviceChannel implements WALChannel {
             return DirectIOUtils.allocateForDirectIO(directIOLib, initTempBufferSize);
         }
     };
+
+    public WALBlockDeviceChannel(String path, long capacityWant) {
+        this(path, capacityWant, 0, 0, false);
+    }
+
+    public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize, boolean recoveryMode) {
+        this.path = path;
+        this.recoveryMode = recoveryMode;
+        if (recoveryMode) {
+            this.capacityWant = CAPACITY_NOT_SET;
+        } else {
+            assert capacityWant > 0;
+            this.capacityWant = capacityWant;
+            if (!WALUtil.isAligned(capacityWant)) {
+                throw new RuntimeException("wal capacity must be aligned by block size when using block device");
+            }
+        }
+        this.initTempBufferSize = initTempBufferSize;
+        this.maxTempBufferSize = maxTempBufferSize;
+
+        DirectIOLib lib = DirectIOLib.getLibForPath(path);
+        if (null == lib) {
+            throw new RuntimeException("O_DIRECT not supported");
+        } else {
+            this.directIOLib = lib;
+        }
+    }
 
     /**
      * Check whether the {@link WALBlockDeviceChannel} is available.
@@ -66,41 +102,61 @@ public class WALBlockDeviceChannel implements WALChannel {
         return null;
     }
 
-    public WALBlockDeviceChannel(String blockDevicePath, long blockDeviceCapacityWant) {
-        this(blockDevicePath, blockDeviceCapacityWant, 0, 0);
-    }
-
-    public WALBlockDeviceChannel(String blockDevicePath, long blockDeviceCapacityWant, int initTempBufferSize, int maxTempBufferSize) {
-        this.blockDevicePath = blockDevicePath;
-        // We cannot get the actual capacity of the block device here, so we just use the capacity we want
-        // And it's the caller's responsibility to make sure the capacity is right
-        // FIXME: in recovery mode, `capacity` will be set to CAPACITY_NOT_SET here. It should be corrected after recovery.
-        this.capacity = blockDeviceCapacityWant;
-        if (!WALUtil.isAligned(blockDeviceCapacityWant)) {
-            throw new RuntimeException("wal capacity must be aligned by block size when using block device");
-        }
-        this.initTempBufferSize = initTempBufferSize;
-        this.maxTempBufferSize = maxTempBufferSize;
-
-        DirectIOLib lib = DirectIOLib.getLibForPath(blockDevicePath);
-        if (null == lib) {
-            throw new RuntimeException("O_DIRECT not supported");
-        } else {
-            this.directIOLib = lib;
-        }
-    }
-
     @Override
-    public void open() throws IOException {
-        if (!blockDevicePath.startsWith(WALChannelBuilder.DEVICE_PREFIX)) {
-            // If the block device path is not a device, we create a file with the capacity we want
-            // This is ONLY for test purpose, so we don't check the capacity of the file
-            try (RandomAccessFile raf = new RandomAccessFile(blockDevicePath, "rw")) {
-                raf.setLength(capacity);
-            }
+    public void open(CapacityReader reader) throws IOException {
+        if (!path.startsWith(WALChannelBuilder.DEVICE_PREFIX)) {
+            openAndCheckFile();
+        } else {
+            // We could not get the real capacity of the block device, so we just use the `capacityWant` as the capacity here
+            // It will be checked and updated in `checkCapacity` later
+            capacityFact = capacityWant;
         }
 
-        randomAccessFile = new DirectRandomAccessFile(new File(blockDevicePath), "rw");
+        randomAccessFile = new DirectRandomAccessFile(new File(path), "rw");
+
+        checkCapacity(reader);
+    }
+
+    /**
+     * Create the file and set length if not exists, and check the file size if exists.
+     */
+    private void openAndCheckFile() throws IOException {
+        File file = new File(path);
+        if (file.exists()) {
+            if (!file.isFile()) {
+                throw new IOException(path + " is not a file");
+            }
+            capacityFact = file.length();
+            if (!recoveryMode && capacityFact != capacityWant) {
+                // the file exists but not the same size as requested
+                throw new WALCapacityMismatchException(path, capacityWant, capacityFact);
+            }
+        } else {
+            // the file does not exist
+            if (recoveryMode) {
+                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode: file not exists. path: " + path);
+            }
+            WALUtil.createFile(path, capacityWant);
+            capacityFact = capacityWant;
+        }
+    }
+
+    private void checkCapacity(CapacityReader reader) throws IOException {
+        if (null == reader) {
+            return;
+        }
+        Long capacity = reader.capacity(this);
+        if (null == capacity) {
+            if (recoveryMode) {
+                throw new WALNotInitializedException("try to open an uninitialized WAL in recovery mode: empty header. path: " + path);
+            }
+        } else if (capacityFact == CAPACITY_NOT_SET) {
+            // recovery mode on block device
+            capacityFact = capacity;
+        } else if (capacityFact != capacity) {
+            throw new WALCapacityMismatchException(path, capacityFact, capacity);
+        }
+        assert capacityFact != CAPACITY_NOT_SET;
     }
 
     @Override
@@ -115,12 +171,12 @@ public class WALBlockDeviceChannel implements WALChannel {
 
     @Override
     public long capacity() {
-        return capacity;
+        return capacityFact;
     }
 
     @Override
     public String path() {
-        return blockDevicePath;
+        return path;
     }
 
     private ByteBuffer getBuffer(int alignedSize) {
@@ -142,6 +198,11 @@ public class WALBlockDeviceChannel implements WALChannel {
 
     @Override
     public void write(ByteBuf src, long position) throws IOException {
+        if (unalignedWrite) {
+            // unaligned write, just used for testing
+            unalignedWrite(src, position);
+            return;
+        }
         assert WALUtil.isAligned(position);
 
         int alignedSize = (int) WALUtil.alignLargeByBlockSize(src.readableBytes());
@@ -155,6 +216,30 @@ public class WALBlockDeviceChannel implements WALChannel {
         tmpBuf.position(0).limit(alignedSize);
 
         write(tmpBuf, position);
+    }
+
+    private void unalignedWrite(ByteBuf src, long position) throws IOException {
+        long start = position;
+        long end = position + src.readableBytes();
+        long alignedStart = WALUtil.alignSmallByBlockSize(start);
+        long alignedEnd = WALUtil.alignLargeByBlockSize(end);
+        int alignedSize = (int) (alignedEnd - alignedStart);
+
+        // read the data in the range [alignedStart, alignedEnd) to tmpBuf
+        ByteBuffer tmpBuf = getBuffer(alignedSize);
+        tmpBuf.position(0).limit(alignedSize);
+        read(tmpBuf, alignedStart);
+
+        // overwrite the data in the range [start, end) in tmpBuf
+        for (ByteBuffer buffer : src.nioBuffers()) {
+            tmpBuf.position((int) (start - alignedStart));
+            start += buffer.remaining();
+            tmpBuf.put(buffer);
+        }
+        tmpBuf.position(0).limit(alignedSize);
+
+        // write it
+        write(tmpBuf, alignedStart);
     }
 
     private int write(ByteBuffer src, long position) throws IOException {
@@ -180,7 +265,7 @@ public class WALBlockDeviceChannel implements WALChannel {
         long alignedStart = WALUtil.alignSmallByBlockSize(start);
         long alignedEnd = WALUtil.alignLargeByBlockSize(end);
         int alignedSize = (int) (alignedEnd - alignedStart);
-        assert alignedEnd <= capacity();
+        assert CAPACITY_NOT_SET == capacity() || alignedEnd <= capacity();
 
         ByteBuffer tmpBuf = getBuffer(alignedSize);
         tmpBuf.position(0).limit(alignedSize);

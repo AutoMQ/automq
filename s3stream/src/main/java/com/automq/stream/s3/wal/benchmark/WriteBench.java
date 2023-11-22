@@ -31,6 +31,7 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.NavigableSet;
@@ -87,18 +88,39 @@ public class WriteBench implements AutoCloseable {
     }
 
     private static void resetWALHeader(String path) throws IOException {
-        if (!path.startsWith(WALChannel.WALChannelBuilder.DEVICE_PREFIX)) {
-            return;
-        }
         System.out.println("Resetting WAL header");
-        int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-        WALChannel channel = WALChannel.builder(path).capacity(capacity).build();
-        channel.open();
-        ByteBuf buf = DirectByteBufAlloc.byteBuffer(capacity);
-        buf.writeZero(capacity);
-        channel.write(buf, 0);
-        buf.release();
-        channel.close();
+        if (path.startsWith(WALChannel.WALChannelBuilder.DEVICE_PREFIX)) {
+            // block device
+            int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
+            WALChannel channel = WALChannel.builder(path).capacity(capacity).build();
+            channel.open();
+            ByteBuf buf = DirectByteBufAlloc.byteBuffer(capacity);
+            buf.writeZero(capacity);
+            channel.write(buf, 0);
+            buf.release();
+            channel.close();
+        } else {
+            // normal file
+            File file = new File(path);
+            if (file.isFile() && !file.delete()) {
+                throw new IOException("Failed to delete existing file " + file);
+            }
+        }
+    }
+
+    private static void logIt(Config config, Stat stat) {
+        ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
+        statExecutor.scheduleAtFixedRate(() -> {
+            Stat.Result result = stat.reset();
+            if (0 != result.count()) {
+                System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
+                        TimeUnit.SECONDS.toNanos(1) * result.count() / result.elapsedTimeNanos(),
+                        TimeUnit.SECONDS.toNanos(1) * (result.count() * config.recordSizeBytes) / result.elapsedTimeNanos() / 1024,
+                        (double) result.costNanos() / TimeUnit.MILLISECONDS.toNanos(1) / result.count(),
+                        (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
+            }
+        }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
     private void run(Config config) {
@@ -195,21 +217,6 @@ public class WriteBench implements AutoCloseable {
         }
 
         System.out.printf("Append task %d finished\n", index);
-    }
-
-    private static void logIt(Config config, Stat stat) {
-        ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
-                ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
-        statExecutor.scheduleAtFixedRate(() -> {
-            Stat.Result result = stat.reset();
-            if (0 != result.count()) {
-                System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %.3f ms\n",
-                        TimeUnit.SECONDS.toNanos(1) * result.count() / result.elapsedTimeNanos(),
-                        TimeUnit.SECONDS.toNanos(1) * (result.count() * config.recordSizeBytes) / result.elapsedTimeNanos() / 1024,
-                        (double) result.costNanos() / TimeUnit.MILLISECONDS.toNanos(1) / result.count(),
-                        (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
-            }
-        }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
     }
 
     @Override
