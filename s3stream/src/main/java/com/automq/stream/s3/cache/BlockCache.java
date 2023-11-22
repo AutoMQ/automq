@@ -86,12 +86,14 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
 
         if (raAsyncOffset < startOffset || raAsyncOffset >= endOffset) {
-            LOGGER.error("raAsyncOffset out of range, raAsyncOffset: {}, startOffset: {}, endOffset: {}", raAsyncOffset, startOffset, endOffset);
+            LOGGER.error("raAsyncOffset out of range, stream={}, raAsyncOffset: {}, startOffset: {}, endOffset: {}", streamId, raAsyncOffset, startOffset, endOffset);
         }
 
         int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
 
-        LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, size);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, size);
+        }
 
         // remove overlapped part.
         SortedMap<Long, CacheBlock> tailMap = streamCache.tailBlocks(startOffset);
