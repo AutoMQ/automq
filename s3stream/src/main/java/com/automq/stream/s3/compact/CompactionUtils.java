@@ -41,14 +41,15 @@ public class CompactionUtils {
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
             if (currObjectStreamRange == null) {
                 currObjectStreamRange = new ObjectStreamRange(streamDataBlock.getStreamId(), -1L,
-                        streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset());
+                        streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(), streamDataBlock.getBlockSize());
             } else {
                 if (currObjectStreamRange.getStreamId() == streamDataBlock.getStreamId()) {
                     currObjectStreamRange.setEndOffset(streamDataBlock.getEndOffset());
+                    currObjectStreamRange.setSize(currObjectStreamRange.getSize() + streamDataBlock.getBlockSize());
                 } else {
                     objectStreamRanges.add(currObjectStreamRange);
                     currObjectStreamRange = new ObjectStreamRange(streamDataBlock.getStreamId(), -1L,
-                            streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset());
+                            streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(), streamDataBlock.getBlockSize());
                 }
             }
         }
