@@ -64,9 +64,7 @@ public class S3Storage implements Storage {
     private final long maxDeltaWALCacheSize;
     private final Config config;
     private final WriteAheadLog deltaWAL;
-    /**
-     * WAL log cache. Single thread mainReadExecutor will ensure the memory safety.
-     */
+    /** WAL log cache */
     private final LogCache deltaWALCache;
     /**
      * WAL out of order callback sequencer. Single thread mainWriteExecutor will ensure the memory safety.
@@ -78,8 +76,6 @@ public class S3Storage implements Storage {
 
     private final ExecutorService mainWriteExecutor = Threads.newFixedThreadPoolWithMonitor(1,
             "s3-storage-main-write", false, LOGGER);
-    private final ExecutorService mainReadExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-storage-main-read", false, LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
@@ -225,7 +221,6 @@ public class S3Storage implements Storage {
         }
         deltaWAL.shutdownGracefully();
         backgroundExecutor.shutdown();
-        mainReadExecutor.shutdown();
         mainWriteExecutor.shutdown();
     }
 
@@ -317,7 +312,7 @@ public class S3Storage implements Storage {
     public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        mainReadExecutor.execute(() -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf));
+        FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf);
         cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         return cf;
     }
@@ -346,7 +341,7 @@ public class S3Storage implements Storage {
             }
             continuousCheck(rst);
             return new ReadDataBlock(rst, readDataBlock.getCacheAccessType());
-        }, mainReadExecutor).whenComplete((rst, ex) -> {
+        }).whenComplete((rst, ex) -> {
             if (ex != null) {
                 logCacheRecords.forEach(StreamRecordBatch::release);
             }
@@ -380,7 +375,7 @@ public class S3Storage implements Storage {
             }
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.toArray(new CompletableFuture[0])), cf);
             mainWriteExecutor.execute(() -> callbackSequencer.tryFree(streamId));
-        }, mainReadExecutor);
+        });
         return cf;
     }
 
@@ -396,16 +391,14 @@ public class S3Storage implements Storage {
         List<WalWriteRequest> waitingAckRequests = callbackSequencer.after(request);
         long walConfirmOffset = callbackSequencer.getWALConfirmOffset();
         waitingAckRequests.forEach(r -> r.record.retain());
-        mainReadExecutor.execute(() -> {
-            for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
-                if (deltaWALCache.put(waitingAckRequest.record)) {
-                    // cache block is full, trigger WAL upload.
-                    deltaWALCache.setConfirmOffset(walConfirmOffset);
-                    LogCache.LogCacheBlock logCacheBlock = deltaWALCache.archiveCurrentBlock();
-                    uploadDeltaWAL(logCacheBlock);
-                }
+        for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
+            if (deltaWALCache.put(waitingAckRequest.record)) {
+                // cache block is full, trigger WAL upload.
+                deltaWALCache.setConfirmOffset(walConfirmOffset);
+                LogCache.LogCacheBlock logCacheBlock = deltaWALCache.archiveCurrentBlock();
+                uploadDeltaWAL(logCacheBlock);
             }
-        });
+        }
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
@@ -495,7 +488,7 @@ public class S3Storage implements Storage {
     }
 
     private void freeCache(LogCache.LogCacheBlock cacheBlock) {
-        mainReadExecutor.execute(() -> deltaWALCache.markFree(cacheBlock));
+        deltaWALCache.markFree(cacheBlock);
     }
 
     /**
@@ -581,7 +574,7 @@ public class S3Storage implements Storage {
         public int handle(int memoryRequired) {
             try {
                 CompletableFuture<Integer> cf = new CompletableFuture<>();
-                mainReadExecutor.submit(() -> FutureUtil.exec(() -> cf.complete(deltaWALCache.forceFree(memoryRequired)), cf, LOGGER, "handleOOM"));
+                FutureUtil.exec(() -> cf.complete(deltaWALCache.forceFree(memoryRequired)), cf, LOGGER, "handleOOM");
                 return cf.get();
             } catch (Throwable e) {
                 return 0;
