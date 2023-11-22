@@ -49,9 +49,6 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.TimeUnit;
 
 public class DefaultS3Client implements Client {
-    public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
-    public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
-
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     private final Config config;
     private final StreamMetadataManager metadataManager;
@@ -88,8 +85,8 @@ public class DefaultS3Client implements Client {
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
-        String accessKey = System.getenv(ACCESS_KEY_NAME);
-        String secretKey = System.getenv(SECRET_KEY_NAME);
+        String accessKey = this.config.accessKey();
+        String secretKey = this.config.secretKey();
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
         S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
