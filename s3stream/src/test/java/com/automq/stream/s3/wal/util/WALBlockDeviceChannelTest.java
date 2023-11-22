@@ -29,6 +29,7 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -41,13 +42,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledOnOs(OS.LINUX)
 public class WALBlockDeviceChannelTest {
 
+    static final String TEST_BLOCK_DEVICE = System.getenv("WAL_TEST_BLOCK_DEVICE");
+
+    private String getTestPath() {
+        return Optional.ofNullable(TEST_BLOCK_DEVICE).orElse(TestUtils.tempFilePath());
+    }
+
     @Test
     public void testSingleThreadWriteBasic() throws IOException {
         final int size = 4096 + 1;
         final int count = 100;
         final long capacity = WALUtil.alignLargeByBlockSize(size) * count;
 
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), capacity);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), capacity);
         channel.open();
 
         for (int i = 0; i < count; i++) {
@@ -66,7 +73,7 @@ public class WALBlockDeviceChannelTest {
         final int batch = 10;
         final long capacity = WALUtil.alignLargeByBlockSize(maxSize) * count;
 
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), capacity);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), capacity);
         channel.open();
 
         for (int i = 0; i < count; i += batch) {
@@ -89,7 +96,7 @@ public class WALBlockDeviceChannelTest {
         final int threads = 8;
         final long capacity = WALUtil.alignLargeByBlockSize(size) * count;
 
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), capacity);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), capacity);
         channel.open();
 
         ExecutorService executor = Threads.newFixedThreadPool(threads,
@@ -114,7 +121,7 @@ public class WALBlockDeviceChannelTest {
 
     @Test
     public void testWriteNotAlignedBufferSize() throws IOException {
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), 1 << 20);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), 1 << 20);
         channel.open();
 
         ByteBuf data = TestUtils.random(42);
@@ -126,7 +133,7 @@ public class WALBlockDeviceChannelTest {
 
     @Test
     public void testWriteNotAlignedPosition() throws IOException {
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), 1 << 20);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), 1 << 20);
         channel.open();
 
         ByteBuf data = TestUtils.random(4096);
@@ -137,7 +144,7 @@ public class WALBlockDeviceChannelTest {
 
     @Test
     public void testWriteOutOfBound() throws IOException {
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), 4096);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), 4096);
         channel.open();
 
         ByteBuf data = TestUtils.random(4096);
@@ -151,7 +158,7 @@ public class WALBlockDeviceChannelTest {
         final int size = 4096 + 1;
         final int count = 100;
         final long capacity = WALUtil.alignLargeByBlockSize(size) * count;
-        final String path = TestUtils.tempFilePath();
+        final String path = getTestPath();
 
         WALBlockDeviceChannel wChannel = new WALBlockDeviceChannel(path, capacity);
         wChannel.open();
@@ -179,7 +186,7 @@ public class WALBlockDeviceChannelTest {
         final int size = 4096 * 4 + 1;
         final int count = 100;
         final long capacity = WALUtil.alignLargeByBlockSize(size) * count;
-        final String path = TestUtils.tempFilePath();
+        final String path = getTestPath();
 
         WALBlockDeviceChannel wChannel = new WALBlockDeviceChannel(path, capacity);
         wChannel.open();
@@ -206,7 +213,7 @@ public class WALBlockDeviceChannelTest {
 
     @Test
     public void testReadNotAlignedBufferSize() throws IOException {
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), 1 << 20);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), 1 << 20);
         channel.open();
 
         ByteBuf data = Unpooled.buffer(42);
@@ -218,7 +225,7 @@ public class WALBlockDeviceChannelTest {
 
     @Test
     public void testReadNotAlignedPosition() throws IOException {
-        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(TestUtils.tempFilePath(), 1 << 20);
+        WALBlockDeviceChannel channel = new WALBlockDeviceChannel(getTestPath(), 1 << 20);
         channel.open();
 
         ByteBuf data = Unpooled.buffer(4096);
