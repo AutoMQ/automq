@@ -336,7 +336,7 @@ fi
 
 KAFKA_JDK_COMPATIBILITY_OPTS=""
 if [[ "$JAVA_MAJOR_VERSION" -ge "9" ]] ; then
-  KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED"
+  KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Dio.netty.tryReflectionSetAccessible=true"
 fi
 if [[ "$JAVA_MAJOR_VERSION" -ge "16" ]]; then
   KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-exports=java.security.jgss/sun.security.krb5=ALL-UNNAMED"

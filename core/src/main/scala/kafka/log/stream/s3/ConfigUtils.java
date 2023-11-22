@@ -21,8 +21,12 @@ import com.automq.stream.s3.Config;
 import kafka.server.KafkaConfig;
 
 public class ConfigUtils {
+    public static final String ACCESS_KEY_NAME = "KAFKA_S3_ACCESS_KEY";
+    public static final String SECRET_KEY_NAME = "KAFKA_S3_SECRET_KEY";
 
     public static Config to(KafkaConfig s) {
+        String accessKey = System.getenv(ACCESS_KEY_NAME);
+        String secretKey = System.getenv(SECRET_KEY_NAME);
         return new Config()
                 .nodeId(s.nodeId())
                 .nodeEpoch(s.nodeEpoch())
@@ -58,7 +62,9 @@ public class ConfigUtils {
                 .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
                 .refillPeriodMs(s.s3RefillPeriodMsProp())
                 .objectRetentionTimeInSecond(s.s3ObjectRetentionTimeInSecond())
-                .failoverEnable(s.s3FailoverEnable());
+                .failoverEnable(s.s3FailoverEnable())
+                .accessKey(accessKey)
+                .secretKey(secretKey);
     }
 
 }
