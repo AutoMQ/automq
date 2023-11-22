@@ -256,7 +256,6 @@ public interface ObjectWriter {
         private final int size;
 
         public DataBlock(long streamId, List<StreamRecordBatch> records) {
-            this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset());
             this.recordCount = records.size();
             this.encodedBuf = DirectByteBufAlloc.compositeByteBuffer();
             ByteBuf header = DirectByteBufAlloc.byteBuffer(2);
@@ -265,6 +264,7 @@ public interface ObjectWriter {
             encodedBuf.addComponent(true, header);
             records.forEach(r -> encodedBuf.addComponent(true, r.encoded().retain()));
             this.size = encodedBuf.readableBytes();
+            this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset(), size);
         }
 
         public CompletableFuture<Void> close() {

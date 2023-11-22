@@ -22,15 +22,17 @@ public class ObjectStreamRange {
     private long epoch;
     private long startOffset;
     private long endOffset;
+    private int size;
 
     public ObjectStreamRange() {
     }
 
-    public ObjectStreamRange(long streamId, long epoch, long startOffset, long endOffset) {
+    public ObjectStreamRange(long streamId, long epoch, long startOffset, long endOffset, int size) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
+        this.size = size;
     }
 
     public long getStreamId() {
@@ -49,6 +51,10 @@ public class ObjectStreamRange {
         return endOffset;
     }
 
+    public int getSize() {
+        return size;
+    }
+
     public void setStreamId(long streamId) {
         this.streamId = streamId;
     }
@@ -65,8 +71,12 @@ public class ObjectStreamRange {
         this.endOffset = endOffset;
     }
 
+    public void setSize(int size) {
+        this.size = size;
+    }
+
     @Override
     public String toString() {
-        return "(" + streamId + "-" + epoch + "," + startOffset + "-" + endOffset + ")";
+        return "(" + streamId + "-" + epoch + "," + startOffset + "-" + endOffset + "-" + size + ")";
     }
 }

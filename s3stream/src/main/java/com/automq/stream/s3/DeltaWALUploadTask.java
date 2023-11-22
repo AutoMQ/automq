@@ -124,7 +124,7 @@ public class DeltaWALUploadTask {
 
         for (Long streamId : streamIds) {
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
-            long streamSize = streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
+            int streamSize = streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
             if (forceSplit || streamSize >= streamSplitSizeThreshold) {
                 streamObjectCfList.add(writeStreamObject(streamRecords).thenAccept(so -> {
                     synchronized (request) {
@@ -135,7 +135,7 @@ public class DeltaWALUploadTask {
                 streamSetObject.write(streamId, streamRecords);
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
-                request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
+                request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
             }
         }
         request.setObjectId(objectId);
