@@ -511,7 +511,7 @@ public class BlockWALService implements WriteAheadLog {
     public static class BlockWALServiceBuilder {
         private final String blockDevicePath;
         private long blockDeviceCapacityWant = CAPACITY_NOT_SET;
-        private boolean direct = false;
+        private Boolean direct = null;
         private int initBufferSize = 1 << 20; // 1MiB
         private int maxBufferSize = 1 << 24; // 16MiB
         private int ioThreadNums = 8;
@@ -621,13 +621,15 @@ public class BlockWALService implements WriteAheadLog {
 
             BlockWALService blockWALService = new BlockWALService();
 
-            blockWALService.walChannel = WALChannel.builder(blockDevicePath)
+            WALChannel.WALChannelBuilder walChannelBuilder = WALChannel.builder(blockDevicePath)
                     .capacity(blockDeviceCapacityWant)
-                    .direct(direct)
                     .initBufferSize(initBufferSize)
                     .maxBufferSize(maxBufferSize)
-                    .recoveryMode(recoveryMode)
-                    .build();
+                    .recoveryMode(recoveryMode);
+            if (direct != null) {
+                walChannelBuilder.direct(direct);
+            }
+            blockWALService.walChannel = walChannelBuilder.build();
             if (!blockWALService.walChannel.useDirectIO()) {
                 LOGGER.info("block wal not using direct IO");
             }
