@@ -18,6 +18,7 @@
 package kafka.log.stream.s3.failover;
 
 import com.automq.stream.s3.S3Storage;
+import com.automq.stream.s3.failover.DefaultServerless;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.utils.ThreadUtils;
@@ -54,7 +55,7 @@ public class FailoverListener implements MetadataListener {
             } catch (Throwable e) {
                 throw new RuntimeException(e);
             }
-        });
+        }, new DefaultServerless());
     }
 
     @Override
