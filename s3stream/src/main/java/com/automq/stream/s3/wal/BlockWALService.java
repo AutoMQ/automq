@@ -135,8 +135,8 @@ public class BlockWALService implements WriteAheadLog {
         return new BlockWALServiceBuilder(path);
     }
 
-    private void flushWALHeader(long windowMaxLength, ShutdownType shutdownType) throws IOException {
-        walHeader.setSlidingWindowMaxLength(windowMaxLength).setShutdownType(shutdownType);
+    private void flushWALHeader(ShutdownType shutdownType) throws IOException {
+        walHeader.setShutdownType(shutdownType);
         flushWALHeader();
     }
 
@@ -276,6 +276,7 @@ public class BlockWALService implements WriteAheadLog {
 
         WALHeader header = tryReadWALHeader(walChannel);
         if (null == header) {
+            assert !recoveryMode;
             header = newWALHeader();
             firstStart = true;
             LOGGER.info("no available WALHeader, create a new one: {}", header);
@@ -316,10 +317,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private WALHeader newWALHeader() {
-        return new WALHeader()
-                .setCapacity(walChannel.capacity())
-                .setSlidingWindowMaxLength(initialWindowSize)
-                .setShutdownType(ShutdownType.UNGRACEFULLY);
+        return new WALHeader(walChannel.capacity(), initialWindowSize);
     }
 
     private void walHeaderReady(WALHeader header) throws IOException {
@@ -348,12 +346,11 @@ public class BlockWALService implements WriteAheadLog {
             walHeaderFlusher.shutdownNow();
         }
 
-        long maxLength = slidingWindowService.initialized()
-                ? slidingWindowService.getWindowCoreData().getWindowMaxLength()
-                : walHeader.getSlidingWindowMaxLength();
-        boolean gracefulShutdown = slidingWindowService.shutdown(1, TimeUnit.DAYS);
+        boolean gracefulShutdown = Optional.ofNullable(slidingWindowService)
+                .map(s -> s.shutdown(1, TimeUnit.DAYS))
+                .orElse(true);
         try {
-            flushWALHeader(maxLength, gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY);
+            flushWALHeader(gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY);
         } catch (IOException e) {
             LOGGER.error("failed to flush WALHeader when shutdown gracefully", e);
         }
@@ -447,7 +444,10 @@ public class BlockWALService implements WriteAheadLog {
         checkStarted();
         checkRecoverFinished();
 
-        slidingWindowService.start(walHeader.getSlidingWindowMaxLength(), recoveryCompleteOffset);
+        if (!recoveryMode) {
+            // in recovery mode, no need to start sliding window service
+            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), recoveryCompleteOffset);
+        }
         LOGGER.info("reset sliding window to offset: {}", recoveryCompleteOffset);
         return trim(recoveryCompleteOffset - 1, true).thenRun(() -> resetFinished.set(true));
     }
@@ -462,16 +462,13 @@ public class BlockWALService implements WriteAheadLog {
         if (!internal) {
             checkWriteMode();
             checkResetFinished();
-        }
-
-        if (offset >= slidingWindowService.getWindowCoreData().getWindowStartOffset()) {
-            throw new IllegalArgumentException("failed to trim: record at offset " + offset + " has not been flushed yet");
+            if (offset >= slidingWindowService.getWindowCoreData().getStartOffset()) {
+                throw new IllegalArgumentException("failed to trim: record at offset " + offset + " has not been flushed yet");
+            }
         }
 
         walHeader.updateTrimOffset(offset);
         return CompletableFuture.runAsync(() -> {
-            // TODO: more beautiful
-            this.walHeader.setSlidingWindowMaxLength(slidingWindowService.getWindowCoreData().getWindowMaxLength());
             try {
                 flushWALHeader();
             } catch (IOException e) {
@@ -505,7 +502,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private SlidingWindowService.WALHeaderFlusher flusher() {
-        return windowMaxLength -> flushWALHeader(windowMaxLength, ShutdownType.UNGRACEFULLY);
+        return () -> flushWALHeader(ShutdownType.UNGRACEFULLY);
     }
 
     public static class BlockWALServiceBuilder {
@@ -634,20 +631,22 @@ public class BlockWALService implements WriteAheadLog {
                 LOGGER.info("block wal not using direct IO");
             }
 
-            // TODO: in recovery mode, no need to create sliding window service
-            // make sure window size is less than capacity
-            slidingWindowInitialSize = Math.min(slidingWindowInitialSize, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
-            slidingWindowUpperLimit = Math.min(slidingWindowUpperLimit, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
-            blockWALService.initialWindowSize = slidingWindowInitialSize;
-            blockWALService.slidingWindowService = new SlidingWindowService(
-                    blockWALService.walChannel,
-                    ioThreadNums,
-                    slidingWindowUpperLimit,
-                    slidingWindowScaleUnit,
-                    blockSoftLimit,
-                    writeRateLimit,
-                    blockWALService.flusher()
-            );
+            if (!recoveryMode) {
+                // in recovery mode, no need to create sliding window service
+                // make sure window size is less than capacity
+                slidingWindowInitialSize = Math.min(slidingWindowInitialSize, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
+                slidingWindowUpperLimit = Math.min(slidingWindowUpperLimit, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
+                blockWALService.initialWindowSize = slidingWindowInitialSize;
+                blockWALService.slidingWindowService = new SlidingWindowService(
+                        blockWALService.walChannel,
+                        ioThreadNums,
+                        slidingWindowUpperLimit,
+                        slidingWindowScaleUnit,
+                        blockSoftLimit,
+                        writeRateLimit,
+                        blockWALService.flusher()
+                );
+            }
 
             blockWALService.recoveryMode = recoveryMode;
 

@@ -62,7 +62,6 @@ public class SlidingWindowService {
     private final long minWriteIntervalNanos;
     private final WALChannel walChannel;
     private final WALHeaderFlusher walHeaderFlusher;
-    private final WindowCoreData windowCoreData = new WindowCoreData();
 
     /**
      * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
@@ -77,6 +76,11 @@ public class SlidingWindowService {
      * After the service is initialized, data in {@link #windowCoreData} is valid.
      */
     private final AtomicBoolean initialized = new AtomicBoolean(false);
+
+    /**
+     * The core data of the sliding window. Initialized when the service is started.
+     */
+    private WindowCoreData windowCoreData;
     /**
      * Blocks that are waiting to be written.
      * All blocks in this queue are ordered by the start offset.
@@ -109,10 +113,8 @@ public class SlidingWindowService {
         return windowCoreData;
     }
 
-    public void start(long windowMaxLength, long windowStartOffset) {
-        windowCoreData.setWindowMaxLength(windowMaxLength);
-        windowCoreData.setWindowStartOffset(windowStartOffset);
-        windowCoreData.setWindowNextWriteOffset(windowStartOffset);
+    public void start(AtomicLong windowMaxLength, long windowStartOffset) {
+        this.windowCoreData = new WindowCoreData(windowMaxLength, windowStartOffset, windowStartOffset);
         this.ioExecutor = Threads.newFixedThreadPoolWithMonitor(ioThreadNums,
                 "block-wal-io-thread", false, LOGGER);
         ScheduledExecutorService pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
@@ -223,7 +225,7 @@ public class SlidingWindowService {
         assert initialized();
         // The current block is null only when no record has been written
         if (null == currentBlock) {
-            currentBlock = nextBlock(windowCoreData.getWindowNextWriteOffset());
+            currentBlock = nextBlock(windowCoreData.getNextWriteOffset());
         }
         return currentBlock;
     }
@@ -341,8 +343,8 @@ public class SlidingWindowService {
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException, OverCapacityException {
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
-        long windowStartOffset = windowCoreData.getWindowStartOffset();
-        long windowMaxLength = windowCoreData.getWindowMaxLength();
+        long windowStartOffset = windowCoreData.getStartOffset();
+        long windowMaxLength = windowCoreData.getMaxLength();
         if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
             long newWindowMaxLength = newWindowEndOffset - windowStartOffset + scaleUnit;
             if (newWindowMaxLength > upperLimit) {
@@ -362,7 +364,7 @@ public class SlidingWindowService {
     }
 
     public interface WALHeaderFlusher {
-        void flush(long windowMaxLength) throws IOException;
+        void flush() throws IOException;
     }
 
     public static class RecordHeaderCoreData {
@@ -453,61 +455,59 @@ public class SlidingWindowService {
 
     public static class WindowCoreData {
         private final Lock scaleOutLock = new ReentrantLock();
-        private final AtomicLong windowMaxLength = new AtomicLong(0);
+        private final AtomicLong maxLength;
         /**
          * Next write offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
          */
-        private final AtomicLong windowNextWriteOffset = new AtomicLong(0);
+        private final AtomicLong nextWriteOffset;
         /**
          * Start offset of sliding window, always aligned to the {@link WALUtil#BLOCK_SIZE}.
          * The data before this offset has already been written to the disk.
          */
-        private final AtomicLong windowStartOffset = new AtomicLong(0);
+        private final AtomicLong startOffset;
 
-        public long getWindowMaxLength() {
-            return windowMaxLength.get();
+        public WindowCoreData(AtomicLong maxLength, long nextWriteOffset, long startOffset) {
+            this.maxLength = maxLength;
+            this.nextWriteOffset = new AtomicLong(nextWriteOffset);
+            this.startOffset = new AtomicLong(startOffset);
         }
 
-        public void setWindowMaxLength(long windowMaxLength) {
-            this.windowMaxLength.set(windowMaxLength);
+        public long getMaxLength() {
+            return maxLength.get();
         }
 
-        public long getWindowNextWriteOffset() {
-            return windowNextWriteOffset.get();
+        public void setMaxLength(long maxLength) {
+            this.maxLength.set(maxLength);
         }
 
-        public void setWindowNextWriteOffset(long windowNextWriteOffset) {
-            this.windowNextWriteOffset.set(windowNextWriteOffset);
+        public long getNextWriteOffset() {
+            return nextWriteOffset.get();
         }
 
-        public long getWindowStartOffset() {
-            return windowStartOffset.get();
-        }
-
-        public void setWindowStartOffset(long windowStartOffset) {
-            this.windowStartOffset.set(windowStartOffset);
+        public long getStartOffset() {
+            return startOffset.get();
         }
 
         public void updateWindowStartOffset(long offset) {
-            this.windowStartOffset.accumulateAndGet(offset, Math::max);
+            this.startOffset.accumulateAndGet(offset, Math::max);
         }
 
-        public void scaleOutWindow(WALHeaderFlusher flusher, long newWindowMaxLength) throws IOException {
+        public void scaleOutWindow(WALHeaderFlusher flusher, long newMaxLength) throws IOException {
             boolean scaleWindowHappened = false;
             scaleOutLock.lock();
             try {
-                if (newWindowMaxLength < getWindowMaxLength()) {
+                if (newMaxLength < getMaxLength()) {
                     // Another thread has already scaled out the window.
                     return;
                 }
 
-                flusher.flush(newWindowMaxLength);
-                setWindowMaxLength(newWindowMaxLength);
+                setMaxLength(newMaxLength);
+                flusher.flush();
                 scaleWindowHappened = true;
             } finally {
                 scaleOutLock.unlock();
                 if (scaleWindowHappened) {
-                    LOGGER.info("window scale out to {}", newWindowMaxLength);
+                    LOGGER.info("window scale out to {}", newMaxLength);
                 } else {
                     LOGGER.debug("window already scale out, ignore");
                 }
@@ -538,7 +538,7 @@ public class SlidingWindowService {
                 FutureUtil.complete(blocks.futures(), new AppendResult.CallbackResult() {
                     @Override
                     public long flushedOffset() {
-                        return windowCoreData.getWindowStartOffset();
+                        return windowCoreData.getStartOffset();
                     }
 
                     @Override
