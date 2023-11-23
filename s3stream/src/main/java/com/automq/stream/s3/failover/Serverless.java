@@ -18,34 +18,39 @@
 package com.automq.stream.s3.failover;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public interface Serverless {
 
     /**
      * Attach volume to the target node.
+     *
      * @param volumeId volume id
-     * @param nodeId target node id
+     * @param nodeId   target node id
      * @return attached device name
      */
-    String attach(String volumeId, String nodeId);
+    String attach(String volumeId, int nodeId) throws ExecutionException;
 
     /**
      * Delete the volume
+     *
      * @param volumeId volume id
      */
-    void delete(String volumeId);
+    void delete(String volumeId) throws ExecutionException;
 
     /**
      * Fence the first attached node access to the volume
+     *
      * @param volumeId volume id
      */
-    void fence(String volumeId);
+    void fence(String volumeId) throws ExecutionException;
 
     /**
      * Scan failed node
+     *
      * @return {@link FailedNode} list
      */
-    List<FailedNode> scan();
+    List<FailedNode> scan() throws ExecutionException;
 
     class FailedNode {
         private int nodeId;

@@ -22,7 +22,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.automq.elasticstream</groupId>
     <artifactId>s3stream</artifactId>
-    <version>0.5.2-SNAPSHOT</version>
+    <version>0.5.3-SNAPSHOT</version>
     <properties>
         <mockito-core.version>5.5.0</mockito-core.version>
         <junit-jupiter.version>5.10.0</junit-jupiter.version>
@@ -98,6 +98,11 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>32.0.1-jre</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.16.0</version>
         </dependency>
     </dependencies>
 
