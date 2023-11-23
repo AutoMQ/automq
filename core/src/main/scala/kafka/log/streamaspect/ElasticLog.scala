@@ -182,12 +182,12 @@ class ElasticLog(val metaStream: MetaStream,
       while (!APPEND_PERMIT_SEMAPHORE.tryAcquire(permit, 1, TimeUnit.SECONDS)) {
         tryAppendStatistics()
       }
-      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
+      APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
     }
 
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
-    APPEND_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
+    APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
     val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
@@ -195,7 +195,7 @@ class ElasticLog(val metaStream: MetaStream,
       APPEND_PERMIT_SEMAPHORE.release(permit)
     })
     cf.thenAccept(_ => {
-      APPEND_CALLBACK_TIME_HIST.update((System.nanoTime() - startTimestamp) / 1000)
+      APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
       // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
       // append callback executor is single thread executor, so the callback will be executed in order.
       val startNanos = System.nanoTime()
@@ -234,7 +234,7 @@ class ElasticLog(val metaStream: MetaStream,
     }
     appendAckQueue.clear()
     confirmOffsetChangeListener.foreach(_.apply())
-    APPEND_ACK_TIME_HIST.update((System.nanoTime() - startNanos) / 1000)
+    APPEND_ACK_TIME_HIST.update(System.nanoTime() - startNanos)
 
     tryAppendStatistics()
   }
