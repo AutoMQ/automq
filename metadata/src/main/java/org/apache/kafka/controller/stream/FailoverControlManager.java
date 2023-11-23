@@ -16,6 +16,9 @@
  */
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.failover.DefaultServerless;
+import com.automq.stream.s3.failover.Serverless;
+import com.automq.stream.s3.failover.Serverless.FailedNode;
 import org.apache.kafka.common.metadata.FailoverContextRecord;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ClusterControlManager;
@@ -39,6 +42,8 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -47,9 +52,6 @@ import java.util.stream.Collectors;
 public class FailoverControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(FailoverControlManager.class);
     private static final int MAX_VOLUME_ATTACH_COUNT = 1;
-    private final QuorumController quorumController;
-    private final ClusterControlManager clusterControlManager;
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("failover-controller", true));
     /**
      * failover contexts: failedNodeId -> context
      */
@@ -60,12 +62,20 @@ public class FailoverControlManager {
      */
     private final Map<Integer, FailoverContextRecord> attached = new ConcurrentHashMap<>();
 
+    private final Serverless serverless;
+    private final QuorumController quorumController;
+    private final ClusterControlManager clusterControlManager;
+
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("failover-controller", true));
+    private final ExecutorService attachExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("failover-attach-%d", true));
+
     public FailoverControlManager(
             QuorumController quorumController,
             ClusterControlManager clusterControlManager,
             SnapshotRegistry registry, boolean failoverEnable) {
         this.quorumController = quorumController;
         this.clusterControlManager = clusterControlManager;
+        this.serverless = new DefaultServerless();
         this.failoverContexts = new TimelineHashMap<>(registry, 0);
         if (failoverEnable) {
             this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
@@ -85,15 +95,8 @@ public class FailoverControlManager {
         }
     }
 
-    void scanFailedNodes() {
-        // TODO: run command to get failed nodes
-//        ObjectMapper mapper = new ObjectMapper();
-//        try {
-//            FailedNode failedNode = mapper.readValue(new File("/tmp/kos_scan.json"), FailedNode.class);
-//            this.failedNodes = List.of(failedNode);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
+    void scanFailedNodes() throws ExecutionException {
+        failedNodes = serverless.scan();
     }
 
 
@@ -104,7 +107,24 @@ public class FailoverControlManager {
         addNewContext(failedNodes, records);
         doFailover(records);
         complete(failedNodes, records);
+        resetFailover(records);
         return ControllerResult.of(records, null);
+    }
+
+    /**
+     * Reset the failover context whose target node is not alive
+     */
+    private void resetFailover(List<ApiMessageAndVersion> records) {
+        for (FailoverContextRecord record : failoverContexts.values()) {
+            if (FailoverStatus.RECOVERING.name().equals(record.status()) && !clusterControlManager.isActive(record.targetNodeId())) {
+                records.add(new ApiMessageAndVersion(
+                        new FailoverContextRecord()
+                                .setFailedNodeId(record.failedNodeId())
+                                .setVolumeId(record.volumeId())
+                                .setStatus(FailoverStatus.WAITING.name()),
+                        (short) 0));
+            }
+        }
     }
 
     private void addNewContext(List<FailedNode> failedNodes, List<ApiMessageAndVersion> records) {
@@ -180,7 +200,7 @@ public class FailoverControlManager {
                 BrokerRegistration broker = brokers.get(Math.abs((attachIndex + i) % brokers.size()));
                 long attachedCount = Optional.ofNullable(attachedCounts.get(broker.id())).orElse(0L);
                 if (attachedCount < MAX_VOLUME_ATTACH_COUNT) {
-                    CompletableFuture<String> attachCf = attach(new FailedNode(failedNodeId, context.volumeId()), broker.id());
+                    CompletableFuture<String> attachCf = attach(context.volumeId(), broker.id());
                     attachCfList.add(attachCf.thenAccept(device -> {
                         FailoverContextRecord attachedRecord = context.duplicate();
                         attachedRecord.setTargetNodeId(broker.id());
@@ -205,51 +225,20 @@ public class FailoverControlManager {
     /**
      * Attach the failed node volume to the target node.
      *
-     * @param failedNode   {@link FailedNode}
+     * @param volumeId     volume id
      * @param targetNodeId target node id
      * @return the device name of volume attached to the target node
      */
-    CompletableFuture<String> attach(FailedNode failedNode, int targetNodeId) {
-        // TODO: run command to attach
-//        return CompletableFuture.completedFuture(failedNode.getVolumeId());
-        return CompletableFuture.completedFuture("noop");
-    }
-
-    static class FailedNode {
-        private int nodeId;
-        private String volumeId;
-
-        public FailedNode() {
-        }
-
-        public FailedNode(int nodeId, String volumeId) {
-            this.nodeId = nodeId;
-            this.volumeId = volumeId;
-        }
-
-        public int getNodeId() {
-            return nodeId;
-        }
-
-        public void setNodeId(int nodeId) {
-            this.nodeId = nodeId;
-        }
-
-        public String getVolumeId() {
-            return volumeId;
-        }
-
-        public void setVolumeId(String volumeId) {
-            this.volumeId = volumeId;
-        }
-
-        @Override
-        public String toString() {
-            return "FailedNode{" +
-                    "nodeId=" + nodeId +
-                    ", volumeId='" + volumeId + '\'' +
-                    '}';
-        }
+    CompletableFuture<String> attach(String volumeId, int targetNodeId) {
+        CompletableFuture<String> cf = new CompletableFuture<>();
+        attachExecutor.submit(() -> {
+            try {
+                cf.complete(serverless.attach(volumeId, targetNodeId));
+            } catch (Throwable e) {
+                cf.completeExceptionally(e);
+            }
+        });
+        return cf;
     }
 
 }
