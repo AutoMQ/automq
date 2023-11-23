@@ -47,10 +47,12 @@ public class Failover {
     private final ExecutorService executor = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("wal-failover-%d", true), LOGGER);
     private final FailoverFactory factory;
     private final WALRecover walRecover;
+    private final Serverless serverless;
 
-    public Failover(FailoverFactory factory, WALRecover walRecover) {
+    public Failover(FailoverFactory factory, WALRecover walRecover, Serverless serverless) {
         this.factory = factory;
         this.walRecover = walRecover;
+        this.serverless = serverless;
     }
 
     public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
@@ -64,14 +66,6 @@ public class Failover {
             }
         }, cf, LOGGER, "failover"));
         return cf;
-    }
-
-    protected void fence(FailoverRequest request) {
-        // TODO: run command to fence the device
-    }
-
-    protected void complete(FailoverRequest request) {
-        // TODO: run command to delete the volume
     }
 
     class FailoverTask {
@@ -88,14 +82,14 @@ public class Failover {
             FailoverResponse resp = new FailoverResponse();
             resp.setNodeId(request.getNodeId());
             // fence the device to ensure the old node stops writing to the delta WAL
-            fence(request);
+            serverless.fence(request.getVolumeId());
             // recover WAL data and upload to S3
             BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
             try {
                 wal.start();
             } catch (WALNotInitializedException ex) {
                 LOGGER.info("fail over empty wal {}", request);
-                complete(request);
+                serverless.delete(request.getVolumeId());
                 return resp;
             }
             try {
@@ -113,7 +107,7 @@ public class Failover {
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
                 // delete the volume
-                complete(request);
+                serverless.delete(request.getVolumeId());
                 LOGGER.info("failover done {}", request);
             } finally {
                 wal.shutdownGracefully();
