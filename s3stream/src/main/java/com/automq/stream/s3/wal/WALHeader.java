@@ -74,8 +74,13 @@ class WALHeader {
     private long epoch7;
     private int crc8;
 
+    public WALHeader(long capacity, long windowMaxLength) {
+        this.capacity1 = capacity;
+        this.slidingWindowMaxLength4.set(windowMaxLength);
+    }
+
     public static WALHeader unmarshal(ByteBuf buf) throws UnmarshalException {
-        WALHeader walHeader = new WALHeader();
+        WALHeader walHeader = new WALHeader(0, 0);
         buf.markReaderIndex();
         walHeader.magicCode0 = buf.readInt();
         walHeader.capacity1 = buf.readLong();
@@ -104,11 +109,6 @@ class WALHeader {
 
     public long getCapacity() {
         return capacity1;
-    }
-
-    public WALHeader setCapacity(long capacity) {
-        this.capacity1 = capacity;
-        return this;
     }
 
     public long getTrimOffset() {
@@ -142,9 +142,8 @@ class WALHeader {
         return slidingWindowMaxLength4.get();
     }
 
-    public WALHeader setSlidingWindowMaxLength(long slidingWindowMaxLength) {
-        this.slidingWindowMaxLength4.set(slidingWindowMaxLength);
-        return this;
+    public AtomicLong getAtomicSlidingWindowMaxLength() {
+        return slidingWindowMaxLength4;
     }
 
     public ShutdownType getShutdownType() {

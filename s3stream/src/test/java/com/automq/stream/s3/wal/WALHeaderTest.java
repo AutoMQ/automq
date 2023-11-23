@@ -25,11 +25,9 @@ public class WALHeaderTest {
 
     @Test
     public void test() throws UnmarshalException {
-        WALHeader header = new WALHeader();
-        header.setCapacity(128 * 1024);
+        WALHeader header = new WALHeader(128 * 1024, 100);
         header.updateTrimOffset(10);
         header.setLastWriteTimestamp(11);
-        header.setSlidingWindowMaxLength(100);
         header.setShutdownType(ShutdownType.GRACEFULLY);
         header.setNodeId(233);
         header.setEpoch(234);
