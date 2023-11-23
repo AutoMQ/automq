@@ -41,6 +41,7 @@ public class FailoverTest {
     String path;
     FailoverFactory failoverFactory;
     WALRecover walRecover;
+    Serverless serverless;
     Failover failover;
 
     @BeforeEach
@@ -48,7 +49,8 @@ public class FailoverTest {
         path = "/tmp/" + System.currentTimeMillis() + "/failover_test_wal";
         failoverFactory = mock(FailoverFactory.class);
         walRecover = mock(WALRecover.class);
-        failover = spy(new Failover(failoverFactory, walRecover));
+        serverless = mock(Serverless.class);
+        failover = spy(new Failover(failoverFactory, walRecover, serverless));
     }
 
     @AfterEach
@@ -83,11 +85,10 @@ public class FailoverTest {
         request.setNodeId(233);
         failover.failover(request).get(1, TimeUnit.SECONDS);
 
-        ArgumentCaptor<FailoverRequest> ac = ArgumentCaptor.forClass(FailoverRequest.class);
-        verify(failover, times(1)).complete(ac.capture());
-        FailoverRequest req = ac.getValue();
-        assertEquals(233, req.getNodeId());
-        assertEquals("test_volume_id", req.getVolumeId());
+        ArgumentCaptor<String> ac = ArgumentCaptor.forClass(String.class);
+        verify(serverless, times(1)).delete(ac.capture());
+        String req = ac.getValue();
+        assertEquals("test_volume_id", req);
     }
 
 }
