@@ -611,10 +611,8 @@ class BlockWALServiceTest {
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long maxLength) throws IOException {
-        ByteBuf header = new WALHeader()
-                .setCapacity(walChannel.capacity())
+        ByteBuf header = new WALHeader(walChannel.capacity(), maxLength)
                 .updateTrimOffset(trimOffset)
-                .setSlidingWindowMaxLength(maxLength)
                 .marshal();
         walChannel.writeAndFlush(header, 0);
     }
@@ -1208,7 +1206,7 @@ class BlockWALServiceTest {
                 .direct(directIO)
                 .build();
         walChannel.open();
-        walChannel.writeAndFlush(new WALHeader().setCapacity(capacity2).marshal(), 0);
+        walChannel.writeAndFlush(new WALHeader(capacity2, 42).marshal(), 0);
         walChannel.close();
 
         // try to open it with capacity1
