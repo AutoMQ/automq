@@ -21,7 +21,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 
 public class CommandUtils {
-    public CommandResult run(String... cmd) {
+    public static CommandResult run(String... cmd) {
         try {
             Process p = Runtime.getRuntime().exec(cmd);
             try (BufferedReader inputReader = p.inputReader();
