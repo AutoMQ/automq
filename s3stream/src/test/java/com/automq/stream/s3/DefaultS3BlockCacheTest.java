@@ -49,12 +49,15 @@ public class DefaultS3BlockCacheTest {
     ObjectManager objectManager;
     S3Operator s3Operator;
     DefaultS3BlockCache s3BlockCache;
+    Config config;
 
     @BeforeEach
     public void setup() {
+        config = new Config();
+        config.blockCacheSize(0);
         objectManager = Mockito.mock(ObjectManager.class);
         s3Operator = new MemoryS3Operator();
-        s3BlockCache = new DefaultS3BlockCache(0, objectManager, s3Operator);
+        s3BlockCache = new DefaultS3BlockCache(config, objectManager, s3Operator);
     }
 
     @Test
@@ -96,7 +99,8 @@ public class DefaultS3BlockCacheTest {
     public void testRead_readAhead() throws ExecutionException, InterruptedException {
         objectManager = Mockito.mock(ObjectManager.class);
         s3Operator = Mockito.spy(new MemoryS3Operator());
-        s3BlockCache = new DefaultS3BlockCache(1024 * 1024, objectManager, s3Operator);
+        config.blockCacheSize(1024 * 1024);
+        s3BlockCache = new DefaultS3BlockCache(config, objectManager, s3Operator);
 
         ObjectWriter objectWriter = ObjectWriter.writer(0, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(
