@@ -18,6 +18,7 @@
 package com.automq.stream.s3.metrics.stats;
 
 import com.automq.stream.s3.metrics.Histogram;
+import com.automq.stream.s3.metrics.NoopHistogram;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 
 import java.util.Map;
@@ -27,9 +28,10 @@ public class ByteBufMetricsStats {
     private static final Map<String, Histogram> SOURCE_TO_HISTOGRAM = new ConcurrentHashMap<>();
 
     public static Histogram getHistogram(String source) {
-        return SOURCE_TO_HISTOGRAM.computeIfAbsent(source, k -> {
+        Histogram hist = SOURCE_TO_HISTOGRAM.computeIfAbsent(source, k -> {
             Map<String, String> tags = Map.of("source", k);
             return S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_stream_byte_buf_size", tags);
         });
+        return hist == null ? new NoopHistogram() : hist;
     }
 }

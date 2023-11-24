@@ -17,23 +17,19 @@
 
 package com.automq.stream.s3.metrics;
 
-import java.util.Map;
-
-public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
+public class NoopCounter implements Counter {
     @Override
-    public Counter newCounter(String name, Map<String, String> tags) {
-        return null;
+    public void inc() {
+
     }
 
     @Override
-    public Histogram newHistogram(String name, Map<String, String> tags) {
-        return null;
+    public void inc(long n) {
+
     }
 
     @Override
-    public void newGauge(String name, Map<String, String> tags, Gauge gauge) {
-
+    public long count() {
+        return 0;
     }
-
-
 }
