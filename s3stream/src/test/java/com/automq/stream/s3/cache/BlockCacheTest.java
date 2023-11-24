@@ -100,7 +100,7 @@ public class BlockCacheTest {
         assertEquals(26L, records.get(0).getBaseOffset());
         assertEquals(30L, records.get(1).getBaseOffset());
         assertEquals(1, rst.getReadAheadRecords().size());
-        assertEquals(new DefaultS3BlockCache.ReadAheadRecord(40L, 5), rst.getReadAheadRecords().get(0));
+        assertEquals(new DefaultS3BlockCache.ReadAheadRecord(40L), rst.getReadAheadRecords().get(0));
     }
 
     @Test
@@ -161,8 +161,7 @@ public class BlockCacheTest {
         BlockCache.GetCacheResult rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
         assertEquals(1, rst.getRecords().size());
         assertEquals(10L, rst.getRecords().get(0).getBaseOffset());
-        assertEquals(12, rst.getReadAheadRecords().get(0).nextRaOffset());
-        assertEquals(1025 * 1024, rst.getReadAheadRecords().get(0).currRaSize());
+        assertEquals(12, rst.getReadAheadRecords().get(0).nextRAOffset());
 
         // repeat read the block, the readahead mark is clear.
         rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);

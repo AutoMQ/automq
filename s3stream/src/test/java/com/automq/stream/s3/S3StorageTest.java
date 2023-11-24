@@ -62,14 +62,17 @@ public class S3StorageTest {
     StreamManager streamManager;
     ObjectManager objectManager;
     S3Storage storage;
+    Config config;
 
     @BeforeEach
     public void setup() {
+        config = new Config();
+        config.blockCacheSize(0);
         objectManager = mock(ObjectManager.class);
         streamManager = mock(StreamManager.class);
         S3Operator s3Operator = new MemoryS3Operator();
-        storage = new S3Storage(new Config(), new MemoryWriteAheadLog(),
-                streamManager, objectManager, new DefaultS3BlockCache(0L, objectManager, s3Operator), s3Operator);
+        storage = new S3Storage(config, new MemoryWriteAheadLog(),
+                streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, s3Operator), s3Operator);
     }
 
     @Test

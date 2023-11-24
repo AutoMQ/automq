@@ -47,19 +47,19 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    private final List<CacheEvictListener> cacheEvictListeners = new ArrayList<>();
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
         DirectByteBufAlloc.registerOOMHandlers(this);
     }
 
+    public void registerListener(CacheEvictListener listener) {
+        cacheEvictListeners.add(listener);
+    }
+
     public void put(long streamId, List<StreamRecordBatch> records) {
-        try {
-            writeLock.lock();
-            put0(streamId, -1, records);
-        } finally {
-            writeLock.unlock();
-        }
+        put(streamId, -1, records);
     }
 
     public void put(long streamId, long raAsyncOffset, List<StreamRecordBatch> records) {
@@ -86,13 +86,13 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
 
         if (raAsyncOffset < startOffset || raAsyncOffset >= endOffset) {
-            LOGGER.error("raAsyncOffset out of range, stream={}, raAsyncOffset: {}, startOffset: {}, endOffset: {}", streamId, raAsyncOffset, startOffset, endOffset);
+            LOGGER.warn("raAsyncOffset out of range, stream={}, raAsyncOffset: {}, startOffset: {}, endOffset: {}", streamId, raAsyncOffset, startOffset, endOffset);
         }
 
         int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
 
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, size);
+            LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, raAsyncOffset: {}, total bytes: {} ", streamId, startOffset, endOffset, raAsyncOffset, size);
         }
 
         // remove overlapped part.
@@ -103,7 +103,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                 break;
             }
             if (isWithinRange(raAsyncOffset, cacheBlock.firstOffset, cacheBlock.lastOffset) && cacheBlock.readAheadRecord == null) {
-                cacheBlock.readAheadRecord = new ReadAheadRecord(endOffset, size);
+                cacheBlock.readAheadRecord = new ReadAheadRecord(endOffset);
             }
             // overlap is a rare case, so removeIf is fine for the performance.
             records.removeIf(record -> {
@@ -128,7 +128,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                 partSize += record.size();
             } else {
                 ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
-                        new ReadAheadRecord(endOffset, size) : null;
+                        new ReadAheadRecord(endOffset) : null;
                 put(streamId, streamCache, new CacheBlock(batchList, raRecord));
                 batchList = new LinkedList<>();
                 batchList.add(record);
@@ -138,7 +138,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
         if (!batchList.isEmpty()) {
             ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
-                    new ReadAheadRecord(endOffset, size) : null;
+                    new ReadAheadRecord(endOffset) : null;
             put(streamId, streamCache, new CacheBlock(batchList, raRecord));
         }
     }
@@ -182,7 +182,6 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
         return nextMaxBytes <= 0;
     }
-
 
     /**
      * Get records from cache.
@@ -273,6 +272,10 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     }
 
     private int ensureCapacity0(int size, boolean forceEvict) {
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("[S3BlockCache] block cache size: {}/{}, ensure size: {} ", this.size.get(), maxSize, size);
+        }
+
         if (!forceEvict && (maxSize - this.size.get() >= size)) {
             return 0;
         }
@@ -294,6 +297,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                 } else {
                     cacheBlock.free();
                     evictBytes += cacheBlock.size;
+                    cacheEvictListeners.forEach(listener -> listener.onCacheEvict(entry.getKey().streamId, cacheBlock.firstOffset, cacheBlock.lastOffset, cacheBlock.size));
                     if (forceEvict) {
                         if (evictBytes >= size) {
                             return evictBytes;
@@ -372,5 +376,9 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         public List<ReadAheadRecord> getReadAheadRecords() {
             return readAheadRecords;
         }
+    }
+
+    public interface CacheEvictListener {
+        void onCacheEvict(long streamId, long startOffset, long endOffset, int size);
     }
 }
