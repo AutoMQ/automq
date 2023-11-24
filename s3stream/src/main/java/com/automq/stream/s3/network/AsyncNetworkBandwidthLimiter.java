@@ -155,9 +155,9 @@ public class AsyncNetworkBandwidthLimiter {
 
     private void logMetrics(long size) {
         if (type == Type.INBOUND) {
-            NetworkMetricsStats.NETWORK_INBOUND_USAGE.inc(size);
+            NetworkMetricsStats.getOrCreateNetworkInboundUsageCounter().inc(size);
         } else {
-            NetworkMetricsStats.NETWORK_OUTBOUND_USAGE.inc(size);
+            NetworkMetricsStats.getOrCreateNetworkOutboundUsageCounter().inc(size);
         }
     }
 

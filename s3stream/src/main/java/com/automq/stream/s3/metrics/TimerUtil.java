@@ -18,27 +18,26 @@
 package com.automq.stream.s3.metrics;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class TimerUtil {
-    private long last;
+    private final AtomicLong last = new AtomicLong(System.nanoTime());
 
     public TimerUtil() {
         reset();
     }
 
     public void reset() {
-        last = System.nanoTime();
+        last.set(System.nanoTime());
     }
 
     public long elapsedAs(TimeUnit timeUnit) {
-        return timeUnit.convert(System.nanoTime() - last, TimeUnit.NANOSECONDS);
+        return timeUnit.convert(System.nanoTime() - last.get(), TimeUnit.NANOSECONDS);
     }
 
     public long elapsedAndResetAs(TimeUnit timeUnit) {
         long now = System.nanoTime();
-        long elapsed = timeUnit.convert(now - last, TimeUnit.NANOSECONDS);
-        last = now;
-        return elapsed;
+        return timeUnit.convert(now - last.getAndSet(now), TimeUnit.NANOSECONDS);
     }
 
 }

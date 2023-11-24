@@ -254,7 +254,7 @@ public class DefaultS3Operator implements S3Operator {
                 .thenAccept(responsePublisher -> {
                     OperationMetricsStats.getHistogram(S3Operation.GET_OBJECT).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     long size = end - start + 1;
-                    S3ObjectMetricsStats.S3_OBJECT_DOWNLOAD_SIZE.update(size);
+                    S3ObjectMetricsStats.getOrCreates3ObjectDownloadSizeHist().update(size);
                     ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) size, "merge_read");
                     responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
                 })

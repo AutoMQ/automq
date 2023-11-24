@@ -19,6 +19,7 @@ package com.automq.stream.s3.metrics.stats;
 
 import com.automq.stream.s3.metrics.Counter;
 import com.automq.stream.s3.metrics.Gauge;
+import com.automq.stream.s3.metrics.NoopCounter;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 
@@ -26,11 +27,25 @@ import java.util.Collections;
 
 public class NetworkMetricsStats {
 
-    public static final Counter NETWORK_INBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup()
-            .newCounter("network_inbound_usage" + Counter.SUFFIX, Collections.emptyMap());
+    public static Counter networkInboundUsageCounter = null;
 
-    public static final Counter NETWORK_OUTBOUND_USAGE = S3StreamMetricsRegistry.getMetricsGroup()
-            .newCounter("network_outbound_usage" + Counter.SUFFIX, Collections.emptyMap());
+    public static Counter networkOutboundUsageCounter = null;
+
+    public static Counter getOrCreateNetworkInboundUsageCounter() {
+        if (networkInboundUsageCounter == null) {
+            networkInboundUsageCounter = S3StreamMetricsRegistry.getMetricsGroup()
+                    .newCounter("network_inbound_usage" + Counter.SUFFIX, Collections.emptyMap());
+        }
+        return networkInboundUsageCounter == null ? new NoopCounter() : networkInboundUsageCounter;
+    }
+
+    public static Counter getOrCreateNetworkOutboundUsageCounter() {
+        if (networkOutboundUsageCounter == null) {
+            networkOutboundUsageCounter = S3StreamMetricsRegistry.getMetricsGroup()
+                    .newCounter("network_outbound_usage" + Counter.SUFFIX, Collections.emptyMap());
+        }
+        return networkOutboundUsageCounter == null ? new NoopCounter() : networkOutboundUsageCounter;
+    }
 
     public static void registerNetworkInboundAvailableBandwidth(AsyncNetworkBandwidthLimiter.Type type, Gauge gauge) {
         String metricName = String.format("network_%s_available_bandwidth", type.getName().toLowerCase());

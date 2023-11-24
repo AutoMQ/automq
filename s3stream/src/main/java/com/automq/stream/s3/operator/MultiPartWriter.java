@@ -146,8 +146,8 @@ public class MultiPartWriter implements Writer {
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
             S3ObjectMetricsStats.getHistogram(S3ObjectStage.TOTAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            S3ObjectMetricsStats.S3_OBJECT_COUNT.inc();
-            S3ObjectMetricsStats.S3_OBJECT_UPLOAD_SIZE.update(totalWriteSize.get());
+            S3ObjectMetricsStats.getOrCreateS3ObjectCounter().inc();
+            S3ObjectMetricsStats.getOrCreates3ObjectUploadSizeHist().update(totalWriteSize.get());
         });
         return closeCf;
     }

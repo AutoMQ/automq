@@ -19,6 +19,8 @@ package com.automq.stream.s3.metrics.stats;
 
 import com.automq.stream.s3.metrics.Counter;
 import com.automq.stream.s3.metrics.Histogram;
+import com.automq.stream.s3.metrics.NoopCounter;
+import com.automq.stream.s3.metrics.NoopHistogram;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 
@@ -38,13 +40,15 @@ public class OperationMetricsStats {
     }
 
     private static Counter getOrCreateCounterMetrics(S3Operation s3Operation) {
-        return OPERATION_COUNTER_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
+        Counter counter = OPERATION_COUNTER_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
                 .newCounter("operation_count" + Counter.SUFFIX, tags(s3Operation)));
+        return counter == null ? new NoopCounter() : counter;
     }
 
     private static Histogram getOrCreateHistMetrics(S3Operation s3Operation) {
-        return OPERATION_HIST_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
+        Histogram hist = OPERATION_HIST_MAP.computeIfAbsent(s3Operation.getUniqueKey(), id -> S3StreamMetricsRegistry.getMetricsGroup()
                 .newHistogram("operation_time", tags(s3Operation)));
+        return hist == null ? new NoopHistogram() : hist;
     }
 
     private static Map<String, String> tags(S3Operation s3Operation) {
