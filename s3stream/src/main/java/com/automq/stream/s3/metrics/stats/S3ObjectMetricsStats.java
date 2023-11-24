@@ -19,6 +19,8 @@ package com.automq.stream.s3.metrics.stats;
 
 import com.automq.stream.s3.metrics.Counter;
 import com.automq.stream.s3.metrics.Histogram;
+import com.automq.stream.s3.metrics.NoopCounter;
+import com.automq.stream.s3.metrics.NoopHistogram;
 import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 
@@ -28,14 +30,36 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class S3ObjectMetricsStats {
     private static final Map<String, Histogram> S3_OBJECT_TIME_MAP = new ConcurrentHashMap<>();
-    public static final Counter S3_OBJECT_COUNT = S3StreamMetricsRegistry.getMetricsGroup().newCounter("s3_object_count" + Counter.SUFFIX, Collections.emptyMap());
-    public static final Histogram S3_OBJECT_UPLOAD_SIZE = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_upload_size", Collections.emptyMap());
-    public static final Histogram S3_OBJECT_DOWNLOAD_SIZE = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_download_size", Collections.emptyMap());
+    public static Counter s3ObjectCounter = null;
+    public static Histogram s3ObjectUploadSizeHist = null;
+    public static Histogram s3ObjectDownloadSizeHist = null;
+
+    public static Counter getOrCreateS3ObjectCounter() {
+        if (s3ObjectCounter == null) {
+            s3ObjectCounter = S3StreamMetricsRegistry.getMetricsGroup().newCounter("s3_object_count" + Counter.SUFFIX, Collections.emptyMap());
+        }
+        return s3ObjectCounter == null ? new NoopCounter() : s3ObjectCounter;
+    }
+
+    public static Histogram getOrCreates3ObjectUploadSizeHist() {
+        if (s3ObjectUploadSizeHist == null) {
+            s3ObjectUploadSizeHist = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_upload_size", Collections.emptyMap());
+        }
+        return s3ObjectUploadSizeHist == null ? new NoopHistogram() : s3ObjectUploadSizeHist;
+    }
+
+    public static Histogram getOrCreates3ObjectDownloadSizeHist() {
+        if (s3ObjectDownloadSizeHist == null) {
+            s3ObjectDownloadSizeHist = S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_download_size", Collections.emptyMap());
+        }
+        return s3ObjectDownloadSizeHist == null ? new NoopHistogram() : s3ObjectDownloadSizeHist;
+    }
 
     public static Histogram getHistogram(S3ObjectStage stage) {
-        return S3_OBJECT_TIME_MAP.computeIfAbsent(stage.getName(), op -> {
+        Histogram hist = S3_OBJECT_TIME_MAP.computeIfAbsent(stage.getName(), op -> {
             Map<String, String> tags = Map.of("stage", stage.getName());
             return S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_object_stage_time", tags);
         });
+        return hist == null ? new NoopHistogram() : hist;
     }
 }
