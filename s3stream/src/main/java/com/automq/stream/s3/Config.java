@@ -39,7 +39,7 @@ public class Config {
     private int walWriteRateLimit = 3000;
     private long walUploadThreshold = 100 * 1024 * 1024;
     private int streamSplitSize = 16777216;
-    private int objectBlockSize = 8388608;
+    private int objectBlockSize = 1048576;
     private int objectPartSize = 16777216;
     private long blockCacheSize = 100 * 1024 * 1024;
     private int streamObjectCompactionIntervalMinutes = 60;
