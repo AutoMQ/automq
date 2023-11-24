@@ -184,7 +184,17 @@ public class LogCache {
         }
     }
 
+
     public Optional<LogCacheBlock> archiveCurrentBlockIfContains(long streamId) {
+        writeLock.lock();
+        try {
+            return archiveCurrentBlockIfContains0(streamId);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    Optional<LogCacheBlock> archiveCurrentBlockIfContains0(long streamId) {
         if (streamId == MATCH_ALL_STREAMS) {
             if (activeBlock.size > 0) {
                 return Optional.of(archiveCurrentBlock());

@@ -64,7 +64,9 @@ public class S3Storage implements Storage {
     private final long maxDeltaWALCacheSize;
     private final Config config;
     private final WriteAheadLog deltaWAL;
-    /** WAL log cache */
+    /**
+     * WAL log cache
+     */
     private final LogCache deltaWALCache;
     /**
      * WAL out of order callback sequencer. Single thread mainWriteExecutor will ensure the memory safety.
@@ -363,16 +365,12 @@ public class S3Storage implements Storage {
      * Force upload stream WAL cache to S3. Use group upload to avoid generate too many S3 objects when broker shutdown.
      */
     @Override
-    public synchronized CompletableFuture<Void> forceUpload(long streamId) {
+    public CompletableFuture<Void> forceUpload(long streamId) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         List<CompletableFuture<Void>> inflightWALUploadTasks = new ArrayList<>(this.inflightWALUploadTasks);
         // await inflight stream set object upload tasks to group force upload tasks.
         CompletableFuture.allOf(inflightWALUploadTasks.toArray(new CompletableFuture[0])).whenCompleteAsync((nil, ex) -> {
-            deltaWALCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
-            Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
-            if (blockOpt.isPresent()) {
-                blockOpt.ifPresent(this::uploadDeltaWAL);
-            }
+            uploadDeltaWAL(streamId);
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.toArray(new CompletableFuture[0])), cf);
             mainWriteExecutor.execute(() -> callbackSequencer.tryFree(streamId));
         });
@@ -389,14 +387,11 @@ public class S3Storage implements Storage {
 
     private void handleAppendCallback0(WalWriteRequest request) {
         List<WalWriteRequest> waitingAckRequests = callbackSequencer.after(request);
-        long walConfirmOffset = callbackSequencer.getWALConfirmOffset();
         waitingAckRequests.forEach(r -> r.record.retain());
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             if (deltaWALCache.put(waitingAckRequest.record)) {
                 // cache block is full, trigger WAL upload.
-                deltaWALCache.setConfirmOffset(walConfirmOffset);
-                LogCache.LogCacheBlock logCacheBlock = deltaWALCache.archiveCurrentBlock();
-                uploadDeltaWAL(logCacheBlock);
+                uploadDeltaWAL();
             }
         }
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
@@ -404,15 +399,36 @@ public class S3Storage implements Storage {
         }
     }
 
-    /**
-     * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
-     */
+    @SuppressWarnings("UnusedReturnValue")
+    CompletableFuture<Void> uploadDeltaWAL() {
+        return uploadDeltaWAL(LogCache.MATCH_ALL_STREAMS);
+    }
+
+    CompletableFuture<Void> uploadDeltaWAL(long streamId) {
+        synchronized (deltaWALCache) {
+            deltaWALCache.setConfirmOffset(callbackSequencer.getWALConfirmOffset());
+            Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
+            if (blockOpt.isPresent()) {
+                LogCache.LogCacheBlock logCacheBlock = blockOpt.get();
+                DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
+                context.objectManager = this.objectManager;
+                return uploadDeltaWAL(context);
+            } else {
+                return CompletableFuture.completedFuture(null);
+            }
+        }
+    }
+
+    // only for test
     CompletableFuture<Void> uploadDeltaWAL(LogCache.LogCacheBlock logCacheBlock) {
         DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
         context.objectManager = this.objectManager;
         return uploadDeltaWAL(context);
     }
 
+    /**
+     * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
+     */
     CompletableFuture<Void> uploadDeltaWAL(DeltaWALUploadTaskContext context) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
