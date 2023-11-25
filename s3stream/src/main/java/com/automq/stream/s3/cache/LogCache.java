@@ -25,6 +25,7 @@ import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static com.automq.stream.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
 
@@ -46,7 +48,7 @@ public class LogCache {
     private final long capacity;
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
-    private final List<LogCacheBlock> blocks = new ArrayList<>();
+    final List<LogCacheBlock> blocks = new ArrayList<>();
     private LogCacheBlock activeBlock;
     private long confirmOffset;
     private final AtomicLong size = new AtomicLong();
@@ -284,7 +286,7 @@ public class LogCache {
         private final long blockId;
         private final long maxSize;
         private final int maxStreamCount;
-        private final Map<Long, List<StreamRecordBatch>> map = new ConcurrentHashMap<>();
+        final Map<Long, StreamCache> map = new ConcurrentHashMap<>();
         private final AtomicLong size = new AtomicLong();
         private long confirmOffset;
         volatile boolean free;
@@ -305,65 +307,38 @@ public class LogCache {
         }
 
         public boolean put(StreamRecordBatch recordBatch) {
-            map.compute(recordBatch.getStreamId(), (id, records) -> {
-                if (records == null) {
-                    records = new ArrayList<>();
+            map.compute(recordBatch.getStreamId(), (id, cache) -> {
+                if (cache == null) {
+                    cache = new StreamCache();
                 }
-                synchronized (records) {
-                    records.add(recordBatch);
-                }
-                return records;
+                cache.add(recordBatch);
+                return cache;
             });
             int recordSize = recordBatch.size();
             return size.addAndGet(recordSize) >= maxSize || map.size() >= maxStreamCount;
         }
 
         public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
-            List<StreamRecordBatch> streamRecords = map.get(streamId);
-            if (streamRecords == null) {
+            StreamCache cache = map.get(streamId);
+            if (cache == null) {
                 return Collections.emptyList();
             }
-
-            synchronized (streamRecords) {
-                if (streamRecords.get(0).getBaseOffset() > startOffset || streamRecords.get(streamRecords.size() - 1).getLastOffset() <= startOffset) {
-                    return Collections.emptyList();
-                }
-                StreamRecordBatchList records = new StreamRecordBatchList(streamRecords);
-                int startIndex = records.search(startOffset);
-                if (startIndex == -1) {
-                    // mismatched
-                    return Collections.emptyList();
-                }
-                int endIndex = -1;
-                int remainingBytesSize = maxBytes;
-                for (int i = startIndex; i < streamRecords.size(); i++) {
-                    StreamRecordBatch record = streamRecords.get(i);
-                    endIndex = i + 1;
-                    remainingBytesSize -= Math.min(remainingBytesSize, record.size());
-                    if (record.getLastOffset() >= endOffset || remainingBytesSize == 0) {
-                        break;
-                    }
-                }
-                return new ArrayList<>(streamRecords.subList(startIndex, endIndex));
-            }
+            return cache.get(startOffset, endOffset, maxBytes);
         }
 
         StreamRange getStreamRange(long streamId) {
-            List<StreamRecordBatch> streamRecords = map.get(streamId);
-            if (streamRecords == null) {
+            StreamCache streamCache = map.get(streamId);
+            if (streamCache == null) {
                 return new StreamRange(NOOP_OFFSET, NOOP_OFFSET);
             } else {
-                synchronized (streamRecords) {
-                    if (streamRecords.isEmpty()) {
-                        return new StreamRange(NOOP_OFFSET, NOOP_OFFSET);
-                    }
-                    return new StreamRange(streamRecords.get(0).getBaseOffset(), streamRecords.get(streamRecords.size() - 1).getLastOffset());
-                }
+                return streamCache.range();
             }
         }
 
         public Map<Long, List<StreamRecordBatch>> records() {
-            return map;
+            return map.entrySet().stream()
+                    .map(e -> Map.entry(e.getKey(), e.getValue().records))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
         public long confirmOffset() {
@@ -379,7 +354,7 @@ public class LogCache {
         }
 
         public void free() {
-            map.forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            map.forEach((streamId, records) -> records.free());
             map.clear();
         }
     }
@@ -393,5 +368,104 @@ public class LogCache {
             this.startOffset = startOffset;
             this.endOffset = endOffset;
         }
+    }
+
+    static class StreamCache {
+        List<StreamRecordBatch> records = new ArrayList<>();
+        long startOffset = NOOP_OFFSET;
+        long endOffset = NOOP_OFFSET;
+        Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
+
+        synchronized void add(StreamRecordBatch recordBatch) {
+            records.add(recordBatch);
+            if (startOffset == NOOP_OFFSET) {
+                startOffset = recordBatch.getBaseOffset();
+            }
+            endOffset = recordBatch.getLastOffset();
+        }
+
+        synchronized List<StreamRecordBatch> get(long startOffset, long endOffset, int maxBytes) {
+            if (this.startOffset > startOffset || this.endOffset <= startOffset) {
+                return Collections.emptyList();
+            }
+            int startIndex = searchStartIndex(startOffset);
+            if (startIndex == -1) {
+                // mismatched
+                return Collections.emptyList();
+            }
+            int endIndex = -1;
+            int remainingBytesSize = maxBytes;
+            long rstEndOffset = NOOP_OFFSET;
+            for (int i = startIndex; i < records.size(); i++) {
+                StreamRecordBatch record = records.get(i);
+                endIndex = i + 1;
+                remainingBytesSize -= Math.min(remainingBytesSize, record.size());
+                rstEndOffset = record.getLastOffset();
+                if (record.getLastOffset() >= endOffset || remainingBytesSize == 0) {
+                    break;
+                }
+            }
+            if (rstEndOffset != NOOP_OFFSET) {
+                map(rstEndOffset, endIndex);
+            }
+            return new ArrayList<>(records.subList(startIndex, endIndex));
+        }
+
+        int searchStartIndex(long startOffset) {
+            IndexAndCount indexAndCount = offsetIndexMap.get(startOffset);
+            if (indexAndCount != null) {
+                unmap(startOffset, indexAndCount);
+                return indexAndCount.index;
+            } else {
+                // slow path
+                StreamRecordBatchList search = new StreamRecordBatchList(records);
+                return search.search(startOffset);
+            }
+        }
+
+        final void map(long offset, int index) {
+            offsetIndexMap.compute(offset, (k, v) -> {
+                if (v == null) {
+                    return new IndexAndCount(index);
+                } else {
+                    v.inc();
+                    return v;
+                }
+            });
+        }
+
+        final void unmap(long startOffset, IndexAndCount indexAndCount) {
+            if (indexAndCount.dec() == 0) {
+                offsetIndexMap.remove(startOffset);
+            }
+        }
+
+        synchronized StreamRange range() {
+            return new StreamRange(startOffset, endOffset);
+        }
+
+        synchronized void free() {
+            records.forEach(StreamRecordBatch::release);
+            records.clear();
+        }
+    }
+
+    static class IndexAndCount {
+        int index;
+        int count;
+
+        public IndexAndCount(int index) {
+            this.index = index;
+            this.count = 1;
+        }
+
+        public void inc() {
+            count++;
+        }
+
+        public int dec() {
+            return --count;
+        }
+
     }
 }

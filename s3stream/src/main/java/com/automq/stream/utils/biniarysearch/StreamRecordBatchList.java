@@ -32,7 +32,7 @@ public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
     }
 
     @Override
-    int size() {
+    public int size() {
         return size;
     }
 
