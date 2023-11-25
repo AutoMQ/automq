@@ -22,6 +22,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -58,6 +59,24 @@ public class LogCacheTest {
 
         records = logCache.get(233L, 12L, 16L, 1000);
         assertEquals(0, records.size());
+    }
+
+    @Test
+    public void testOffsetIndex() {
+        LogCache cache = new LogCache(Integer.MAX_VALUE, Integer.MAX_VALUE);
+
+        for (int i = 0; i < 100000; i++) {
+            cache.put(new StreamRecordBatch(233L, 0L, i, 1, TestUtils.random(1)));
+        }
+
+        long start = System.nanoTime();
+        for (int i = 0; i < 100000; i++) {
+            cache.get(233L, i, i + 1, 1000);
+        }
+        System.out.println("cost: " + (System.nanoTime() - start) / 1000 + "us");
+        Map<Long, LogCache.IndexAndCount> offsetIndexMap = cache.blocks.get(0).map.get(233L).offsetIndexMap;
+        assertEquals(1, offsetIndexMap.size());
+        assertEquals(100000, offsetIndexMap.get(100000L).index);
     }
 
 }
