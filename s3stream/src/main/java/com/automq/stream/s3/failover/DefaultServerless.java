@@ -33,7 +33,7 @@ public class DefaultServerless implements Serverless {
     @Override
     public String attach(String volumeId, int nodeId) throws ExecutionException {
         String[] cmd = new String[]{SERVERLESS_CMD, "volume", "attach", "-v", volumeId, "-n", Integer.toString(nodeId)};
-        CommandResult result = CommandUtils.run();
+        CommandResult result = CommandUtils.run(cmd);
         check(cmd, result);
         return jsonParse(result.stdout(), AttachResult.class).getDeviceName();
     }
@@ -41,21 +41,21 @@ public class DefaultServerless implements Serverless {
     @Override
     public void delete(String volumeId) throws ExecutionException {
         String[] cmd = new String[]{SERVERLESS_CMD, "volume", "delete", "-v", volumeId};
-        CommandResult result = CommandUtils.run();
+        CommandResult result = CommandUtils.run(cmd);
         check(cmd, result);
     }
 
     @Override
     public void fence(String volumeId) throws ExecutionException {
         String[] cmd = new String[]{SERVERLESS_CMD, "volume", "fence", "-v", volumeId};
-        CommandResult result = CommandUtils.run();
+        CommandResult result = CommandUtils.run(cmd);
         check(cmd, result);
     }
 
     @Override
     public List<FailedNode> scan() throws ExecutionException {
         String[] cmd = new String[]{SERVERLESS_CMD, "volume", "query"};
-        CommandResult result = CommandUtils.run();
+        CommandResult result = CommandUtils.run(cmd);
         check(cmd, result);
         QueryFailedNode[] nodes = jsonParse(result.stdout(), QueryFailedNode[].class);
         return Arrays.stream(nodes).map(n -> {
