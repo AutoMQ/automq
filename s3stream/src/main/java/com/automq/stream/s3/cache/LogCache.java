@@ -74,6 +74,10 @@ public class LogCache {
         this(capacity, cacheBlockMaxSize, maxCacheBlockStreamCount, DEFAULT_BLOCK_FREE_LISTENER);
     }
 
+    /**
+     * Put a record batch into the cache.
+     * record batched in the same stream should be put in order.
+     */
     public boolean put(StreamRecordBatch recordBatch) {
         TimerUtil timerUtil = new TimerUtil();
         tryRealFree();
@@ -196,7 +200,7 @@ public class LogCache {
 
     Optional<LogCacheBlock> archiveCurrentBlockIfContains0(long streamId) {
         if (streamId == MATCH_ALL_STREAMS) {
-            if (activeBlock.size > 0) {
+            if (activeBlock.size() > 0) {
                 return Optional.of(archiveCurrentBlock());
             } else {
                 return Optional.empty();
@@ -228,7 +232,7 @@ public class LogCache {
                     return false;
                 }
                 if (b.free) {
-                    size.addAndGet(-b.size);
+                    size.addAndGet(-b.size());
                     removed.add(b);
                 }
                 return b.free;
@@ -251,8 +255,9 @@ public class LogCache {
                 if (!block.free || freedBytes.get() >= required) {
                     return false;
                 }
-                size.addAndGet(-block.size);
-                freedBytes.addAndGet((int) block.size);
+                long blockSize = block.size();
+                size.addAndGet(-blockSize);
+                freedBytes.addAndGet((int) blockSize);
                 removed.add(block);
                 return true;
             });
@@ -280,7 +285,7 @@ public class LogCache {
         private final long maxSize;
         private final int maxStreamCount;
         private final Map<Long, List<StreamRecordBatch>> map = new ConcurrentHashMap<>();
-        private long size = 0;
+        private final AtomicLong size = new AtomicLong();
         private long confirmOffset;
         volatile boolean free;
 
@@ -310,8 +315,7 @@ public class LogCache {
                 return records;
             });
             int recordSize = recordBatch.size();
-            size += recordSize;
-            return size >= maxSize || map.size() >= maxStreamCount;
+            return size.addAndGet(recordSize) >= maxSize || map.size() >= maxStreamCount;
         }
 
         public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -371,7 +375,7 @@ public class LogCache {
         }
 
         public long size() {
-            return size;
+            return size.get();
         }
 
         public void free() {
