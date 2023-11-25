@@ -50,12 +50,15 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 
@@ -76,8 +79,6 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<CompletableFuture<Void>> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
 
-    private final ExecutorService mainWriteExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-storage-main-write", false, LOGGER);
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
@@ -91,6 +92,12 @@ public class S3Storage implements Storage {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
+    /**
+     * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
+     *
+     * @see #handleAppendCallback
+     */
+    private final Map<Long, Lock> streamCallbackLocks = new ConcurrentHashMap<>();
 
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
                      S3BlockCache blockCache, S3Operator s3Operator) {
@@ -223,7 +230,6 @@ public class S3Storage implements Storage {
         }
         deltaWAL.shutdownGracefully();
         backgroundExecutor.shutdown();
-        mainWriteExecutor.shutdown();
     }
 
 
@@ -372,31 +378,40 @@ public class S3Storage implements Storage {
         CompletableFuture.allOf(inflightWALUploadTasks.toArray(new CompletableFuture[0])).whenCompleteAsync((nil, ex) -> {
             uploadDeltaWAL(streamId);
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.toArray(new CompletableFuture[0])), cf);
-            mainWriteExecutor.execute(() -> callbackSequencer.tryFree(streamId));
+            callbackSequencer.tryFree(streamId);
         });
         return cf;
     }
 
     private void handleAppendRequest(WalWriteRequest request) {
-        mainWriteExecutor.execute(() -> callbackSequencer.before(request));
+        callbackSequencer.before(request);
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
-        mainWriteExecutor.execute(() -> handleAppendCallback0(request));
-    }
-
-    private void handleAppendCallback0(WalWriteRequest request) {
-        List<WalWriteRequest> waitingAckRequests = callbackSequencer.after(request);
-        waitingAckRequests.forEach(r -> r.record.retain());
-        for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
-            if (deltaWALCache.put(waitingAckRequest.record)) {
-                // cache block is full, trigger WAL upload.
-                uploadDeltaWAL();
+        TimerUtil timer = new TimerUtil();
+        List<WalWriteRequest> waitingAckRequests;
+        Lock lock = getStreamCallbackLock(request.record.getStreamId());
+        lock.lock();
+        try {
+            waitingAckRequests = callbackSequencer.after(request);
+            waitingAckRequests.forEach(r -> r.record.retain());
+            for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
+                if (deltaWALCache.put(waitingAckRequest.record)) {
+                    // cache block is full, trigger WAL upload.
+                    uploadDeltaWAL();
+                }
             }
+        } finally {
+            lock.unlock();
         }
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_APPEND_CALLBACK).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
+    }
+
+    private Lock getStreamCallbackLock(long streamId) {
+        return streamCallbackLocks.computeIfAbsent(streamId, id -> new ReentrantLock());
     }
 
     @SuppressWarnings("UnusedReturnValue")
@@ -508,21 +523,25 @@ public class S3Storage implements Storage {
     }
 
     /**
-     * WALCallbackSequencer is modified in single thread mainExecutor.
+     * WALCallbackSequencer is used to sequence the unordered returned persistent data.
      */
     static class WALCallbackSequencer {
         public static final long NOOP_OFFSET = -1L;
-        private final Map<Long, Queue<WalWriteRequest>> stream2requests = new HashMap<>();
+        private final Map<Long, BlockingQueue<WalWriteRequest>> stream2requests = new ConcurrentHashMap<>();
         private final BlockingQueue<WalWriteRequest> walRequests = new LinkedBlockingQueue<>();
         private long walConfirmOffset = NOOP_OFFSET;
 
         /**
          * Add request to stream sequence queue.
+         * When the {@code request.record.getStreamId()} is different, concurrent calls are allowed.
+         * When the {@code request.record.getStreamId()} is the same, concurrent calls are not allowed. And it is
+         * necessary to ensure that calls are made in the order of increasing offsets.
          */
         public void before(WalWriteRequest request) {
             try {
                 walRequests.put(request);
                 Queue<WalWriteRequest> streamRequests = stream2requests.computeIfAbsent(request.record.getStreamId(), s -> new LinkedBlockingQueue<>());
+                assert streamRequests.isEmpty() || streamRequests.peek().offset < request.offset;
                 streamRequests.add(request);
             } catch (Throwable ex) {
                 request.cf.completeExceptionally(ex);
@@ -531,12 +550,15 @@ public class S3Storage implements Storage {
 
         /**
          * Try pop sequence persisted request from stream queue and move forward wal inclusive confirm offset.
+         * When the {@code request.record.getStreamId()} is different, concurrent calls are allowed.
+         * When the {@code request.record.getStreamId()} is the same, concurrent calls are not allowed.
          *
          * @return popped sequence persisted request.
          */
         public List<WalWriteRequest> after(WalWriteRequest request) {
             request.persisted = true;
             // move the WAL inclusive confirm offset.
+            // FIXME: requests in walRequests may not be in order.
             for (; ; ) {
                 WalWriteRequest peek = walRequests.peek();
                 if (peek == null || !peek.persisted) {
@@ -548,19 +570,33 @@ public class S3Storage implements Storage {
 
             // pop sequence success stream request.
             long streamId = request.record.getStreamId();
-            Queue<WalWriteRequest> streamRequests = stream2requests.get(streamId);
+            BlockingQueue<WalWriteRequest> streamRequests = stream2requests.get(streamId);
             WalWriteRequest peek = streamRequests.peek();
             if (peek == null || peek.offset != request.offset) {
                 return Collections.emptyList();
             }
             List<WalWriteRequest> rst = new ArrayList<>();
-            rst.add(streamRequests.poll());
+            if (streamRequests.remove(request)) {
+                rst.add(request);
+            } else {
+                // Should not happen.
+                LOGGER.error("request was removed by other thread after it was persisted. streamId={}, offset={}",
+                        streamId, request.offset);
+                assert false;
+            }
             for (; ; ) {
                 peek = streamRequests.peek();
                 if (peek == null || !peek.persisted) {
                     break;
                 }
-                rst.add(streamRequests.poll());
+                if (streamRequests.remove(peek)) {
+                    rst.add(peek);
+                } else {
+                    // Should not happen.
+                    LOGGER.error("request was removed by other thread after it was persisted. streamId={}, offset={}, peekOffset={}",
+                            streamId, request.offset, peek.offset);
+                    assert false;
+                }
             }
             return rst;
         }

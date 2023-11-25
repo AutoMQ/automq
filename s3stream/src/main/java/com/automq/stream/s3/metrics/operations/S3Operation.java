@@ -32,6 +32,7 @@ public enum S3Operation {
     /* S3 storage operations start */
     APPEND_STORAGE(S3MetricsType.S3Storage, "append"),
     APPEND_STORAGE_WAL(S3MetricsType.S3Storage, "append_wal"),
+    APPEND_STORAGE_APPEND_CALLBACK(S3MetricsType.S3Storage, "append_callback"),
     APPEND_STORAGE_WAL_FULL(S3MetricsType.S3Storage, "append_wal_full"),
     APPEND_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "append_log_cache"),
     APPEND_STORAGE_LOG_CACHE_FULL(S3MetricsType.S3Storage, "append_log_cache_full"),
