@@ -64,7 +64,7 @@ public class JsonConverterTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper()
         .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-        .setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
+        .setNodeFactory(new JsonNodeFactory(true));
 
     private final JsonConverter converter = new JsonConverter();
 
