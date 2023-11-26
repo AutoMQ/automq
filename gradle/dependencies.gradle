@@ -66,8 +66,8 @@ versions += [
   grgit: "4.1.1",
   httpclient: "4.5.13",
   easymock: "4.3",
-  jackson: "2.13.4",
-  jacksonDatabind: "2.13.4.2",
+  jackson: "2.16.0",
+  jacksonDatabind: "2.16.0",
   jacoco: "0.8.7",
   javassist: "3.27.0-GA",
   jetty: "9.4.48.v20220622",
@@ -128,7 +128,7 @@ versions += [
   zookeeper: "3.6.3",
   zstd: "1.5.2-1",
   commonLang: "3.12.0",
-  s3stream: "0.5.5-SNAPSHOT",
+  s3stream: "0.5.6-SNAPSHOT",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
