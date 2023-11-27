@@ -60,6 +60,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 public class S3Storage implements Storage {
@@ -92,12 +93,13 @@ public class S3Storage implements Storage {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final S3BlockCache blockCache;
+    private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     /**
      * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
      *
      * @see #handleAppendCallback
      */
-    private final Map<Long, Lock> streamCallbackLocks = new ConcurrentHashMap<>();
+    private final Lock[] streamCallbackLocks = IntStream.range(0, NUM_STREAM_CALLBACK_LOCKS).mapToObj(i -> new ReentrantLock()).toArray(Lock[]::new);
 
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
                      S3BlockCache blockCache, S3Operator s3Operator) {
@@ -411,7 +413,7 @@ public class S3Storage implements Storage {
     }
 
     private Lock getStreamCallbackLock(long streamId) {
-        return streamCallbackLocks.computeIfAbsent(streamId, id -> new ReentrantLock());
+        return streamCallbackLocks[(int) ((streamId & Long.MAX_VALUE) % NUM_STREAM_CALLBACK_LOCKS)];
     }
 
     @SuppressWarnings("UnusedReturnValue")
