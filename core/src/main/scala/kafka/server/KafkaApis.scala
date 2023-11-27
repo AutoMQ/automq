@@ -1100,31 +1100,35 @@ class KafkaApis(val requestChannel: RequestChannel,
 
       if (ElasticLogManager.enabled()) {
         // The fetching is done is a separate thread pool to avoid blocking io thread.
-        try {
-          ReadHint.markReadAll()
-          ReadHint.markFastRead();
-          doFetchingRecords()
-          ReadHint.clear()
-        } catch {
-          case e: Throwable =>
-            val ex = FutureUtil.cause(e)
-            val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
-            if (fastReadFailFast) {
-              slowFetchExecutor.submit(new Runnable {
-                override def run(): Unit = {
-                  try {
-                    ReadHint.markReadAll()
-                    doFetchingRecords()
-                  } catch {
-                    case slowEx: Throwable =>
-                      handleError(slowEx)
-                  }
+        fastFetchExecutor.submit(new Runnable {
+          override def run(): Unit = {
+            try {
+              ReadHint.markReadAll()
+              ReadHint.markFastRead();
+              doFetchingRecords()
+              ReadHint.clear()
+            } catch {
+              case e: Throwable =>
+                val ex = FutureUtil.cause(e)
+                val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
+                if (fastReadFailFast) {
+                  slowFetchExecutor.submit(new Runnable {
+                    override def run(): Unit = {
+                      try {
+                        ReadHint.markReadAll()
+                        doFetchingRecords()
+                      } catch {
+                        case slowEx: Throwable =>
+                          handleError(slowEx)
+                      }
+                    }
+                  })
+                } else {
+                  handleError(e)
                 }
-              })
-            } else {
-              handleError(e)
             }
-        }
+          }
+        })
       } else {
         doFetchingRecords()
       }
@@ -1478,7 +1482,7 @@ class KafkaApis(val requestChannel: RequestChannel,
          controllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
          completeTopicMetadata.asJava,
          clusterAuthorizedOperations
-       ))
+      ))
   }
 
   /**
@@ -3094,10 +3098,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         .format(request.header.correlationId, request.header.clientId))
       requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
         new RenewDelegationTokenResponse(
-              new RenewDelegationTokenResponseData()
-                .setThrottleTimeMs(requestThrottleMs)
-                .setErrorCode(error.code)
-                .setExpiryTimestampMs(expiryTimestamp)))
+             new RenewDelegationTokenResponseData()
+               .setThrottleTimeMs(requestThrottleMs)
+               .setErrorCode(error.code)
+               .setExpiryTimestampMs(expiryTimestamp)))
     }
 
     if (!allowTokenRequests(request))
