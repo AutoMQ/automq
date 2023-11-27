@@ -15,34 +15,37 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3;
+package com.automq.stream.api;
 
-import com.automq.stream.api.ReadOptions;
-import com.automq.stream.s3.cache.ReadDataBlock;
-import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.api.exceptions.FastReadFailFastException;
 
-import java.util.concurrent.CompletableFuture;
+public class ReadOptions {
+    public static final ReadOptions DEFAULT = new ReadOptions();
 
-/**
- * Write ahead log for server.
- */
-public interface Storage {
+    private boolean fastRead;
 
-    void startup();
+    public boolean fastRead() {
+        return fastRead;
+    }
 
-    void shutdown();
+    public static Builder builder() {
+        return new Builder();
+    }
 
-    /**
-     * Append stream record.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
+    public static class Builder {
+        private final ReadOptions options = new ReadOptions();
 
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions);
+        /**
+         * Read from cache, if the data is not in cache, then fail fast with {@link FastReadFailFastException}.
+         */
+        public Builder fastRead(boolean fastRead) {
+            options.fastRead = fastRead;
+            return this;
+        }
 
-    /**
-     * Force stream record in WAL upload to s3
-     */
-    CompletableFuture<Void> forceUpload(long streamId);
+        public ReadOptions build() {
+            return options;
+        }
+    }
+
 }

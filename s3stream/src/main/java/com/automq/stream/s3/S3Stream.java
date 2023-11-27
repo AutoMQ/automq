@@ -20,12 +20,13 @@ package com.automq.stream.s3;
 import com.automq.stream.DefaultAppendResult;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
-import com.automq.stream.api.ErrorCode;
+import com.automq.stream.api.ReadOptions;
+import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
-import com.automq.stream.api.StreamClientException;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
@@ -179,12 +180,12 @@ public class S3Stream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes) {
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
         OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM_READ_LOCK).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         try {
-            CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes), LOGGER, "fetch");
+            CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes, readOptions), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
                 OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -202,11 +203,13 @@ public class S3Stream implements Stream {
         }
     }
 
-    private CompletableFuture<FetchResult> fetch0(long startOffset, long endOffset, int maxBytes) {
+    private CompletableFuture<FetchResult> fetch0(long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         if (!status.isReadable()) {
             return FutureUtil.failedFuture(new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is already closed"));
         }
-        LOGGER.trace("{} stream try fetch, startOffset: {}, endOffset: {}, maxBytes: {}", logIdent, startOffset, endOffset, maxBytes);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("{} stream try fetch, startOffset: {}, endOffset: {}, maxBytes: {}", logIdent, startOffset, endOffset, maxBytes);
+        }
         long confirmOffset = this.confirmOffset.get();
         if (startOffset < startOffset() || endOffset > confirmOffset) {
             return FutureUtil.failedFuture(
@@ -221,9 +224,11 @@ public class S3Stream implements Stream {
         if (startOffset == endOffset) {
             return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
-        return storage.read(streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
+        return storage.read(streamId, startOffset, endOffset, maxBytes, readOptions).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
-            LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
+            }
             return new DefaultFetchResult(records, dataBlock.getCacheAccessType());
         });
     }

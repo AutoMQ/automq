@@ -17,6 +17,8 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.api.ReadOptions;
+import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -65,6 +67,7 @@ import java.util.stream.IntStream;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
+    private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
     private final long maxDeltaWALCacheSize;
     private final Config config;
     private final WriteAheadLog deltaWAL;
@@ -319,18 +322,25 @@ public class S3Storage implements Storage {
     }
 
     @Override
-    public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+    public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes), cf);
+        FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, readOptions), cf);
         cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         return cf;
     }
 
-    private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes) {
+
+    private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
+        }
+        if (readOptions.fastRead()) {
+            // fast read fail fast when need read from block cache.
+            logCacheRecords.forEach(StreamRecordBatch::release);
+            logCacheRecords.clear();
+            return CompletableFuture.failedFuture(FAST_READ_FAIL_FAST_EXCEPTION);
         }
         if (!logCacheRecords.isEmpty()) {
             endOffset = logCacheRecords.get(0).getBaseOffset();

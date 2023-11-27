@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -95,9 +96,9 @@ public class S3StorageTest {
         cf2.get(3, TimeUnit.SECONDS);
         cf3.get(3, TimeUnit.SECONDS);
 
-        ReadDataBlock readRst = storage.read(233, 10, 13, 90).get();
+        ReadDataBlock readRst = storage.read(233, 10, 13, 90, ReadOptions.DEFAULT).get();
         assertEquals(1, readRst.getRecords().size());
-        readRst = storage.read(233, 10, 13, 200).get();
+        readRst = storage.read(233, 10, 13, 200, ReadOptions.DEFAULT).get();
         assertEquals(2, readRst.getRecords().size());
 
         storage.forceUpload(233L).get();

@@ -19,8 +19,8 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.CloseableIterator;
-import com.automq.stream.api.ErrorCode;
-import com.automq.stream.api.StreamClientException;
+import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.ByteBufferInputStream;
