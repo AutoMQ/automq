@@ -20,14 +20,16 @@ package kafka.log.streamaspect;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.CreateStreamOptions;
-import com.automq.stream.api.ErrorCode;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
-import com.automq.stream.api.StreamClientException;
+import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.FastReadFailFastException;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.utils.FutureUtil;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -43,9 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 
 import static com.automq.stream.utils.FutureUtil.cause;
 
@@ -274,9 +274,6 @@ public class AlwaysSuccessClient implements Client {
         /**
          * Append to stream without using async callback threadPools.
          * <strong> Used for tests only.</strong>
-         *
-         * @param recordBatch
-         * @param cf
          */
         private void append0WithSyncCallback(RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
             stream.append(recordBatch).whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
@@ -292,25 +289,24 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
-            fetch0(startOffset, endOffset, maxBytesHint, cf);
+            fetch0(startOffset, endOffset, maxBytesHint, readOptions, cf);
             return cf;
         }
 
-        private void fetch0(long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
-            stream.fetch(startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, ex) -> {
-                FutureUtil.suppress(() -> {
-                    if (ex != null) {
-                        if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                            LOGGER.error("Fetch stream[{}] [{},{}) fail, retry later", streamId(), startOffset, endOffset, ex);
-                            fetchRetryScheduler.schedule(() -> fetch0(startOffset, endOffset, maxBytesHint, cf), 3, TimeUnit.SECONDS);
-                        }
-                    } else {
-                        cf.complete(rst);
+        private void fetch0(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions, CompletableFuture<FetchResult> cf) {
+            stream.fetch(startOffset, endOffset, maxBytesHint, readOptions).whenCompleteAsync((rst, e) -> FutureUtil.suppress(() -> {
+                Throwable ex = FutureUtil.cause(e);
+                if (ex != null) {
+                    if (!(ex instanceof FastReadFailFastException)) {
+                        LOGGER.error("Fetch stream[{}] [{},{}) fail", streamId(), startOffset, endOffset, ex);
                     }
-                }, LOGGER);
-            }, fetchCallbackExecutors);
+                    cf.completeExceptionally(ex);
+                } else {
+                    cf.complete(rst);
+                }
+            }, LOGGER), fetchCallbackExecutors);
         }
 
         @Override
@@ -373,52 +369,6 @@ public class AlwaysSuccessClient implements Client {
                     cf.complete(rst);
                 }
             }, LOGGER), generalCallbackExecutors);
-        }
-    }
-
-
-    static final class Delayer {
-        private final ScheduledExecutorService delayFetchScheduler;
-
-        public Delayer(ScheduledExecutorService delayFetchScheduler) {
-            this.delayFetchScheduler = delayFetchScheduler;
-        }
-
-        public ScheduledFuture<?> delay(Runnable command, long delay,
-                                        TimeUnit unit) {
-            return delayFetchScheduler.schedule(command, delay, unit);
-        }
-    }
-
-    /**
-     * A BiConsumer that completes the FetchResult future and cancels the timeout check task.
-     */
-    static final class CompleteFetchingFutureAndCancelTimeoutCheck implements BiConsumer<FetchResult, Throwable> {
-        /**
-         * A ScheduledFuture that represents the timeout check task.
-         */
-        final ScheduledFuture<?> f;
-        /**
-         * A CompletableFuture waiting for the fetching result.
-         */
-        final CompletableFuture<FetchResult> waitingFuture;
-
-        CompleteFetchingFutureAndCancelTimeoutCheck(ScheduledFuture<?> f, CompletableFuture<FetchResult> waitingFuture) {
-            this.f = f;
-            this.waitingFuture = waitingFuture;
-        }
-
-        public void accept(FetchResult result, Throwable ex) {
-            // cancels the timeout check task.
-            if (ex == null && f != null && !f.isDone())
-                f.cancel(false);
-
-            // completes the waiting future right now.
-            if (ex == null) {
-                waitingFuture.complete(result);
-            } else {
-                waitingFuture.completeExceptionally(ex);
-            }
         }
     }
 }

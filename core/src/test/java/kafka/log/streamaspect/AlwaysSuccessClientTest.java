@@ -20,13 +20,14 @@ package kafka.log.streamaspect;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
-import com.automq.stream.api.StreamClientException;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.api.exceptions.StreamClientException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -305,7 +306,7 @@ class AlwaysSuccessClientTest {
             }
 
             @Override
-            public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
+            public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint, ReadOptions readOptions) {
                 Exception exception = exceptionHint.generateException();
                 if (exception != null) {
                     exceptionHint = exceptionHint.moveToNext();

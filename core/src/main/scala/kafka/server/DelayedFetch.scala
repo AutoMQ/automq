@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import kafka.log.streamaspect.ReadAllHint
+import kafka.log.streamaspect.ReadHint
 import java.util.concurrent.TimeUnit
 import kafka.metrics.KafkaMetricsGroup
 import org.apache.kafka.common.TopicIdPartition
@@ -163,14 +163,14 @@ class DelayedFetch(
     }
 
     // AutoMQ for Kafka inject start
-    ReadAllHint.mark()
-    val logReadResults = replicaManager.readAsyncFromLocalLog(
+    ReadHint.markReadAll()
+    val logReadResults = replicaManager.readFromLocalLogV2(
       params,
       fetchInfos,
       quota,
       readFromPurgatory = true
     )
-    ReadAllHint.reset()
+    ReadHint.clear()
     // AutoMQ for Kafka inject end
 
     val fetchPartitionData = logReadResults.map { case (tp, result) =>
