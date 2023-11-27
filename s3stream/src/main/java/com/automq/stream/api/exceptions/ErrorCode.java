@@ -15,34 +15,18 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3;
+package com.automq.stream.api.exceptions;
 
-import com.automq.stream.api.ReadOptions;
-import com.automq.stream.s3.cache.ReadDataBlock;
-import com.automq.stream.s3.model.StreamRecordBatch;
+public class ErrorCode {
 
-import java.util.concurrent.CompletableFuture;
+    public static final short UNEXPECTED = 99;
 
-/**
- * Write ahead log for server.
- */
-public interface Storage {
+    public static final short STREAM_ALREADY_CLOSED = 1;
+    public static final short STREAM_NOT_EXIST = 2;
+    public static final short EXPIRED_STREAM_EPOCH = 3;
+    public static final short STREAM_NOT_CLOSED = 4;
 
-    void startup();
+    public static final short OFFSET_OUT_OF_RANGE_BOUNDS = 10;
+    public static final short FAST_READ_FAIL_FAST = 11;
 
-    void shutdown();
-
-    /**
-     * Append stream record.
-     *
-     * @param streamRecord {@link StreamRecordBatch}
-     */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
-
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions);
-
-    /**
-     * Force stream record in WAL upload to s3
-     */
-    CompletableFuture<Void> forceUpload(long streamId);
 }

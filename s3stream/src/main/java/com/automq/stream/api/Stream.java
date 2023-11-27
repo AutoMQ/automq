@@ -17,6 +17,8 @@
 
 package com.automq.stream.api;
 
+import com.automq.stream.api.exceptions.StreamClientException;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -60,10 +62,15 @@ public interface Stream {
      * @param startOffset  start offset, if the startOffset in middle of a recordBatch, the recordBatch will be returned.
      * @param endOffset    exclusive end offset, if the endOffset in middle of a recordBatch, the recordBatch will be returned.
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
+     * @param readOptions  {@link ReadOptions}.
      * @return - complete success with {@link FetchResult}, when fetch success.
      * - complete exception with {@link StreamClientException}, when startOffset is bigger than stream end offset.
      */
-    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint);
+    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions);
+
+    default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        return fetch(startOffset, endOffset, maxBytesHint, ReadOptions.DEFAULT);
+    }
 
     /**
      * Trim stream.

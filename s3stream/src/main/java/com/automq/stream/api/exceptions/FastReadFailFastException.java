@@ -15,15 +15,13 @@
  * limitations under the License.
  */
 
-package com.automq.stream.api;
+package com.automq.stream.api.exceptions;
 
-public class ErrorCode {
-    public static final short UNEXPECTED = 1;
-    public static final short OFFSET_OUT_OF_RANGE_BOUNDS = 1463;
-    public static final short STREAM_ALREADY_CLOSED = 1478;
-    public static final short EXPIRED_STREAM_EPOCH = 1489;
-
-    public static final short STREAM_NOT_EXIST = 1490;
-
-    public static final short STREAM_NOT_CLOSED = 1491;
+/**
+ * Fail fast exception when fast read is enabled and read need read from S3.
+ */
+public class FastReadFailFastException extends StreamClientException {
+    public FastReadFailFastException() {
+        super(ErrorCode.FAST_READ_FAIL_FAST, "");
+    }
 }
