@@ -54,7 +54,7 @@ public class DefaultServerless implements Serverless {
 
     @Override
     public List<FailedNode> scan() throws ExecutionException {
-        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "query"};
+        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "queryFailover"};
         CommandResult result = CommandUtils.run(cmd);
         check(cmd, result);
         QueryFailedNode[] nodes = jsonParse(result.stdout(), QueryFailedNode[].class);
