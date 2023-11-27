@@ -128,7 +128,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
 
   val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
-  val slowFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+  val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
 
   def close(): Unit = {
