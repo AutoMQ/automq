@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package com.automq.stream.api;
+package com.automq.stream.api.exceptions;
 
 /**
  * All stream client exceptions will list extends StreamClientException and list here.
