@@ -26,6 +26,7 @@ import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
+import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -190,7 +191,10 @@ public class S3Stream implements Stream {
             cf.whenComplete((rs, ex) -> {
                 OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (ex != null) {
-                    LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
+                    Throwable cause = FutureUtil.cause(ex);
+                    if (!(cause instanceof FastReadFailFastException)) {
+                        LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
+                    }
                 } else if (networkOutboundLimiter != null) {
                     long totalSize = rs.recordBatchList().stream().mapToLong(record -> record.rawPayload().remaining()).sum();
                     networkOutboundLimiter.forceConsume(totalSize);
