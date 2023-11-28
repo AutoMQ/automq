@@ -32,6 +32,11 @@ public class StreamClientException extends RuntimeException {
         this.code = code;
     }
 
+    public StreamClientException(int code, String str, boolean writableStackTrace) {
+        super("code: " + code + ", " + str, null, false, writableStackTrace);
+        this.code = code;
+    }
+
     public int getCode() {
         return this.code;
     }
