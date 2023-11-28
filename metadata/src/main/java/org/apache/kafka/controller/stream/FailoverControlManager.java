@@ -207,6 +207,7 @@ public class FailoverControlManager {
                         attachedRecord.setDevice(device);
                         attachedRecord.setStatus(FailoverStatus.RECOVERING.name());
                         attached.put(failedNodeId, attachedRecord);
+                        LOGGER.info("attach failed node {} to target node {} success", failedNodeId, broker.id());
                     }).exceptionally(ex -> {
                         LOGGER.error("attach failed node {} to target node {} failed", context.failedNodeId(), broker.id(), ex);
                         return null;
