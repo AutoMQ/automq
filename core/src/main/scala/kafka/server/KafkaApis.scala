@@ -17,7 +17,9 @@
 
 package kafka.server
 
+import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.TimerUtil
+import com.automq.stream.utils.FutureUtil
 import com.yammer.metrics.core.Histogram
 import kafka.admin.AdminUtils
 import kafka.api.ElectLeadersRequestOps
@@ -26,7 +28,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.streamaspect.{ElasticLogManager, ReadAllHint}
+import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.message.ZStdCompressionCodec
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.network.RequestChannel
@@ -124,9 +126,9 @@ class KafkaApis(val requestChannel: RequestChannel,
   val requestHelper = new RequestHandlerHelper(requestChannel, quotas, time)
   val aclApis = new AclApis(authHelper, authorizer, requestHelper, "broker", config)
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
-  // These two executors separate the handling of `produce` and `fetch` requests in case of throttling.
-  val appendingExecutors = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("kafka-apis-appending-executor-%d", true))
-  val fetchingExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fetching-executor-%d", true))
+
+  val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
+  val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
 
   def close(): Unit = {
@@ -1090,13 +1092,41 @@ class KafkaApis(val requestChannel: RequestChannel,
         )
       }
 
+      def handleError(e: Throwable): Unit = {
+        error(s"Unexpected error handling request ${request.requestDesc(true)} " +
+          s"with context ${request.context}", e)
+        requestHelper.handleError(request, e)
+      }
+
       if (ElasticLogManager.enabled()) {
         // The fetching is done is a separate thread pool to avoid blocking io thread.
-        fetchingExecutors.submit(new Runnable {
+        fastFetchExecutor.submit(new Runnable {
           override def run(): Unit = {
-            ReadAllHint.mark()
-            doFetchingRecords()
-            ReadAllHint.reset()
+            try {
+              ReadHint.markReadAll()
+              ReadHint.markFastRead();
+              doFetchingRecords()
+              ReadHint.clear()
+            } catch {
+              case e: Throwable =>
+                val ex = FutureUtil.cause(e)
+                val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
+                if (fastReadFailFast) {
+                  slowFetchExecutor.submit(new Runnable {
+                    override def run(): Unit = {
+                      try {
+                        ReadHint.markReadAll()
+                        doFetchingRecords()
+                      } catch {
+                        case slowEx: Throwable =>
+                          handleError(slowEx)
+                      }
+                    }
+                  })
+                } else {
+                  handleError(e)
+                }
+            }
           }
         })
       } else {
@@ -1992,7 +2022,6 @@ class KafkaApis(val requestChannel: RequestChannel,
           .asScala
           .map(_.name)
           .toSet
-
           /* The cluster metatdata topic is an internal topic with a different implementation. The user should not be
            * allowed to create it as a regular topic.
            */

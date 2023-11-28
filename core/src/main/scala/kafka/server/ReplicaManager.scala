@@ -16,6 +16,7 @@
  */
 package kafka.server
 
+import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import com.yammer.metrics.core.Meter
 import kafka.api._
@@ -62,7 +63,7 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import java.util
 import java.util.Optional
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import java.util.concurrent.locks.Lock
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, TimeUnit}
 import scala.collection.mutable.ArrayBuffer
@@ -1066,7 +1067,7 @@ class ReplicaManager(val config: KafkaConfig,
   ): Unit = {
     // check if this fetch request can be satisfied right away
     // AutoMQ for Kafka inject start
-    val logReadResults = readAsyncFromLocalLog(params, fetchInfos, quota, readFromPurgatory = false)
+    val logReadResults = readFromLocalLogV2(params, fetchInfos, quota, readFromPurgatory = false)
     // AutoMQ for Kafka inject end
     var bytesReadable: Long = 0
     var errorReadingData = false
@@ -1129,14 +1130,16 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   /**
-   * Read asynchronously from multiple topic partitions at the given offset up to maxSize bytes
+   * Parallel read from multiple topic partitions at the given offset up to maxSize bytes
    */
-  def readAsyncFromLocalLog(
+  def readFromLocalLogV2(
                              params: FetchParams,
                              readPartitionInfo: Seq[(TopicIdPartition, PartitionData)],
                              quota: ReplicaQuota,
                              readFromPurgatory: Boolean): Seq[(TopicIdPartition, LogReadResult)] = {
     val traceEnabled = isTraceEnabled
+
+    val fastReadFastFail = new AtomicReference[FastReadFailFastException]()
 
     // AutoMQ for Kafka inject start
     def read(tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): CompletableFuture[LogReadResult] = {
@@ -1147,7 +1150,8 @@ class ReplicaManager(val config: KafkaConfig,
       val adjustedMaxBytes = math.min(fetchInfo.maxBytes, limitBytes)
 
       def exception2LogReadResult(throwable: Throwable): LogReadResult = {
-        throwable match {
+        val ex = FutureUtil.cause(throwable)
+        ex match {
           // NOTE: Failed fetch requests metric is not incremented for known exceptions since it
           // is supposed to indicate un-expected failure of a broker in handling a fetch request
           case e@(_: UnknownTopicOrPartitionException |
@@ -1157,7 +1161,13 @@ class ReplicaManager(val config: KafkaConfig,
                   _: ReplicaNotAvailableException |
                   _: KafkaStorageException |
                   _: OffsetOutOfRangeException |
-                  _: InconsistentTopicIdException) =>
+                  _: InconsistentTopicIdException |
+                  _: FastReadFailFastException) =>
+            e match {
+              case exception: FastReadFailFastException =>
+                fastReadFastFail.set(exception)
+              case _ =>
+            }
             LogReadResult(info = FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MemoryRecords.EMPTY),
               divergingEpoch = None,
               highWatermark = UnifiedLog.UnknownOffset,
@@ -1289,6 +1299,9 @@ class ReplicaManager(val config: KafkaConfig,
       }
       CompletableFuture.allOf(readCfArray.toArray: _*).get()
     }
+    if (fastReadFastFail.get() != null) {
+      throw fastReadFastFail.get()
+    }
 
     // The remaining partitions still need to be read, but we limit byte size to 0.
     // The corresponding futures are completed immediately with empty LogReadResult.
@@ -1306,6 +1319,9 @@ class ReplicaManager(val config: KafkaConfig,
       partitionIndex += 1
     }
     CompletableFuture.allOf(remainingCfArray.toArray: _*).get()
+    if (fastReadFastFail.get() != null) {
+      throw fastReadFastFail.get()
+    }
     result
   }
 

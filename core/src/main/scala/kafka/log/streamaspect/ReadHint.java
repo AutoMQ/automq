@@ -20,25 +20,42 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class ReadAllHint {
+public class ReadHint {
 
-    public static final FastThreadLocal<AtomicBoolean> HINT = new FastThreadLocal<AtomicBoolean>() {
+    public static final FastThreadLocal<AtomicBoolean> READ_ALL = new FastThreadLocal<>() {
         @Override
         protected AtomicBoolean initialValue() {
             return new AtomicBoolean(false);
         }
     };
 
-    public static boolean isMarked() {
-        return HINT.get().get();
+
+    public static final FastThreadLocal<AtomicBoolean> FAST_READ = new FastThreadLocal<>() {
+        @Override
+        protected AtomicBoolean initialValue() {
+            return new AtomicBoolean(false);
+        }
+    };
+
+    public static boolean isReadAll() {
+        return READ_ALL.get().get();
     }
 
-    public static void mark() {
-        HINT.get().set(true);
+    public static void markReadAll() {
+        READ_ALL.get().set(true);
     }
 
-    public static void reset() {
-        HINT.get().set(false);
+    public static boolean isFastRead() {
+        return FAST_READ.get().get();
+    }
+
+    public static void markFastRead() {
+        FAST_READ.get().set(true);
+    }
+
+    public static void clear() {
+        READ_ALL.get().set(false);
+        FAST_READ.get().set(false);
     }
 
 }

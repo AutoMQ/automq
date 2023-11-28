@@ -21,6 +21,7 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
@@ -125,8 +126,8 @@ public class LazyStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return inner.fetch(startOffset, endOffset, maxBytesHint);
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
+        return inner.fetch(startOffset, endOffset, maxBytesHint, readOptions);
     }
 
     @Override
@@ -188,7 +189,7 @@ public class LazyStream implements Stream {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
             return CompletableFuture.completedFuture(Collections::emptyList);
         }
 
