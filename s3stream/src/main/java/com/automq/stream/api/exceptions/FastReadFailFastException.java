@@ -22,6 +22,6 @@ package com.automq.stream.api.exceptions;
  */
 public class FastReadFailFastException extends StreamClientException {
     public FastReadFailFastException() {
-        super(ErrorCode.FAST_READ_FAIL_FAST, "");
+        super(ErrorCode.FAST_READ_FAIL_FAST, "", false);
     }
 }
