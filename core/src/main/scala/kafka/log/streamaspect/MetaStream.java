@@ -17,6 +17,7 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.ReadOptions;
 import io.netty.buffer.Unpooled;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
@@ -140,8 +141,8 @@ public class MetaStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return innerStream.fetch(startOffset, endOffset, maxBytesHint);
+    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
+        return innerStream.fetch(startOffset, endOffset, maxBytesHint, readOptions);
     }
 
     @Override

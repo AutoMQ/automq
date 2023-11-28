@@ -17,6 +17,7 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -99,7 +100,7 @@ public class ElasticLogFileRecords {
     }
 
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
-        if (ReadAllHint.isMarked()) {
+        if (ReadHint.isReadAll()) {
             return readAll0(startOffset, maxOffset, maxSize);
         } else {
             return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
@@ -113,17 +114,17 @@ public class ElasticLogFileRecords {
         if (nextFetchOffset >= endOffset) {
             return CompletableFuture.completedFuture(null);
         }
-        return fetch0(nextFetchOffset, endOffset, maxSize)
+        ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).build();
+        return fetch0(nextFetchOffset, endOffset, maxSize, readOptions)
                 .thenApply(PooledMemoryRecords::of);
     }
 
-    private CompletableFuture<LinkedList<FetchResult>> fetch0(long startOffset, long endOffset, int maxSize) {
+    private CompletableFuture<LinkedList<FetchResult>> fetch0(long startOffset, long endOffset, int maxSize, ReadOptions readOptions) {
         if (startOffset >= endOffset || maxSize <= 0) {
             return CompletableFuture.completedFuture(new LinkedList<>());
         }
-
         int adjustedMaxSize = Math.min(maxSize, 1024 * 1024);
-        return streamSlice.fetch(startOffset, endOffset, adjustedMaxSize)
+        return streamSlice.fetch(startOffset, endOffset, adjustedMaxSize, readOptions)
                 .thenCompose(rst -> {
                     long nextFetchOffset = startOffset;
                     int readSize = 0;
@@ -137,7 +138,7 @@ public class ElasticLogFileRecords {
                         }
                         readSize += recordBatchWithContext.rawPayload().remaining();
                     }
-                    return fetch0(nextFetchOffset, endOffset, maxSize - readSize)
+                    return fetch0(nextFetchOffset, endOffset, maxSize - readSize, readOptions)
                             .thenApply(rstList -> {
                                 // add to first since we need to reverse the order.
                                 rstList.addFirst(rst);

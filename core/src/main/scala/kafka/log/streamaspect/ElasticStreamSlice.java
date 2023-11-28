@@ -19,6 +19,7 @@ package kafka.log.streamaspect;
 
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 
@@ -46,7 +47,11 @@ public interface ElasticStreamSlice {
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
      * @return {@link FetchResult}
      */
-    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint);
+    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions);
+
+    default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
+        return fetch(startOffset, endOffset, maxBytesHint, ReadOptions.DEFAULT);
+    }
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset) {
         return fetch(startOffset, endOffset, (int) (endOffset - startOffset));

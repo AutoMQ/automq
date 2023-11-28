@@ -27,6 +27,7 @@ import com.automq.stream.api.KeyValue;
 import com.automq.stream.api.KeyValue.Key;
 import com.automq.stream.api.KeyValue.Value;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
@@ -104,7 +105,7 @@ public class MemoryClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint) {
+        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint, ReadOptions readOptions) {
             Long floorKey = recordMap.floorKey(startOffset);
             if (floorKey == null) {
                 return CompletableFuture.completedFuture(ArrayList::new);
