@@ -67,7 +67,9 @@ public class DefaultServerless implements Serverless {
     }
 
     private static void check(String[] cmd, CommandResult rst) throws ExecutionException {
-        throw new ExecutionException("Run " + Arrays.toString(cmd) + ", code:" + rst.code() + "  failed: " + rst.stderr(), null);
+        if (rst.code() != 0) {
+            throw new ExecutionException("Run " + Arrays.toString(cmd) + ", code:" + rst.code() + "  failed: " + rst.stderr(), null);
+        }
     }
 
     private static <T> T jsonParse(String raw, Class<T> clazz) throws ExecutionException {
@@ -75,7 +77,7 @@ public class DefaultServerless implements Serverless {
         try {
             return mapper.readValue(raw, clazz);
         } catch (JsonProcessingException e) {
-            throw new ExecutionException(e);
+            throw new ExecutionException("json parse (" + raw + ") fail", e);
         }
     }
 
