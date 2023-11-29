@@ -24,7 +24,7 @@ import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.common.RecordValidationException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
-import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
@@ -246,6 +246,11 @@ class ReplicaManager(val config: KafkaConfig,
   protected val stateChangeLogger = new StateChangeLogger(localBrokerId, inControllerContext = false, None)
 
   private var logDirFailureHandler: LogDirFailureHandler = _
+
+  val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
+  val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+  val fastFetchLimiter = new MemoryLimiter(100 * 1024 * 1024)
+  val slowFetchLimiter = new MemoryLimiter(100 * 1024 * 1024)
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
@@ -1060,6 +1065,83 @@ class ReplicaManager(val config: KafkaConfig,
    * Consumers may fetch from any replica, but followers can only fetch from the leader.
    */
   def fetchMessages(
+    params: FetchParams,
+    fetchInfos: Seq[(TopicIdPartition, PartitionData)],
+    quota: ReplicaQuota,
+    responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
+  ): Unit = {
+
+    def handleError(e: Throwable): Unit = {
+      error(s"Unexpected error handling request ${params} ${fetchInfos} ", e)
+      // convert fetchInfos to error Seq[(TopicPartition, FetchPartitionData)] for callback
+      val fetchPartitionData = fetchInfos.map { case (tp, _) =>
+        tp -> FetchPartitionData(
+          error = Errors.forException(e),
+          highWatermark = -1L,
+          lastStableOffset = None,
+          logStartOffset = -1L,
+          abortedTransactions = None,
+          preferredReadReplica = None,
+          records = MemoryRecords.EMPTY,
+          isReassignmentFetch = false,
+          divergingEpoch = None)
+      }
+      responseCallback(fetchPartitionData)
+    }
+
+    // sum the sizes of topics to fetch from fetchInfos
+    var bytesNeed = fetchInfos.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
+    bytesNeed = math.min(bytesNeed, params.maxBytes)
+
+    // The fetching is done is a separate thread pool to avoid blocking io thread.
+    fastFetchExecutor.submit(new Runnable {
+      override def run(): Unit = {
+        val fastFetchLimiterHandler = fastFetchLimiter.acquire(bytesNeed)
+        try {
+          ReadHint.markReadAll()
+          ReadHint.markFastRead()
+          fetchMessages0(params, fetchInfos, quota, response => {
+            try {
+              responseCallback.apply(response)
+            } finally {
+              fastFetchLimiterHandler.close()
+            }
+          })
+          ReadHint.clear()
+        } catch {
+          case e: Throwable =>
+            fastFetchLimiterHandler.close()
+            val ex = FutureUtil.cause(e)
+            val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
+            if (fastReadFailFast) {
+              slowFetchExecutor.submit(new Runnable {
+                override def run(): Unit = {
+                  val slowFetchLimiterHandler = slowFetchLimiter.acquire(bytesNeed)
+                  try {
+                    ReadHint.markReadAll()
+                    fetchMessages0(params, fetchInfos, quota, response => {
+                      try {
+                        responseCallback.apply(response)
+                      } finally {
+                        slowFetchLimiterHandler.close()
+                      }
+                    })
+                  } catch {
+                    case slowEx: Throwable =>
+                      slowFetchLimiterHandler.close()
+                      handleError(slowEx)
+                  }
+                }
+              })
+            } else {
+              error(s"Unexpected error handling request ${params} ${fetchInfos} ", e)
+            }
+        }
+      }
+    })
+  }
+
+  private def fetchMessages0(
     params: FetchParams,
     fetchInfos: Seq[(TopicIdPartition, PartitionData)],
     quota: ReplicaQuota,
