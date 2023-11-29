@@ -18,6 +18,7 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.stats.ByteBufMetricsStats;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -104,9 +105,12 @@ public class BlockImpl implements Block {
         }
 
         data = DirectByteBufAlloc.compositeByteBuffer();
-        for (Supplier<ByteBuf> record : records) {
-            data.addComponent(true, record.get());
+        for (Supplier<ByteBuf> supplier : records) {
+            ByteBuf record = supplier.get();
+            ByteBufMetricsStats.getHistogram("wal_record").update(record.readableBytes());
+            data.addComponent(true, record);
         }
+        ByteBufMetricsStats.getHistogram("wal_block").update(data.readableBytes());
         return data;
     }
 

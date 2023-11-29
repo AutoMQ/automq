@@ -403,6 +403,7 @@ public class BlockWALService implements WriteAheadLog {
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         appendResult.future().whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_BEFORE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         return appendResult;
     }
 
