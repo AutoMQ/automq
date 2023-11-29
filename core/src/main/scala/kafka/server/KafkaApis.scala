@@ -17,9 +17,7 @@
 
 package kafka.server
 
-import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.TimerUtil
-import com.automq.stream.utils.FutureUtil
 import com.yammer.metrics.core.Histogram
 import kafka.admin.AdminUtils
 import kafka.api.ElectLeadersRequestOps
@@ -28,7 +26,7 @@ import kafka.controller.ReplicaAssignment
 import kafka.coordinator.group._
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.log.AppendOrigin
-import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
+import kafka.log.streamaspect.ElasticLogManager
 import kafka.message.ZStdCompressionCodec
 import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
 import kafka.network.RequestChannel
@@ -127,8 +125,6 @@ class KafkaApis(val requestChannel: RequestChannel,
   val aclApis = new AclApis(authHelper, authorizer, requestHelper, "broker", config)
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
 
-  val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
-  val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
 
   def close(): Unit = {
@@ -1081,59 +1077,12 @@ class KafkaApis(val requestChannel: RequestChannel,
         clientMetadata = clientMetadata
       )
 
-      // AutoMQ for Kafka inject start
-      def doFetchingRecords(): Unit = {
-        // call the replica manager to fetch messages from the local replica
-        replicaManager.fetchMessages(
-          params = params,
-          fetchInfos = interesting,
-          quota = replicationQuota(fetchRequest),
-          responseCallback = processResponseCallback,
-        )
-      }
-
-      def handleError(e: Throwable): Unit = {
-        error(s"Unexpected error handling request ${request.requestDesc(true)} " +
-          s"with context ${request.context}", e)
-        requestHelper.handleError(request, e)
-      }
-
-      if (ElasticLogManager.enabled()) {
-        // The fetching is done is a separate thread pool to avoid blocking io thread.
-        fastFetchExecutor.submit(new Runnable {
-          override def run(): Unit = {
-            try {
-              ReadHint.markReadAll()
-              ReadHint.markFastRead();
-              doFetchingRecords()
-              ReadHint.clear()
-            } catch {
-              case e: Throwable =>
-                val ex = FutureUtil.cause(e)
-                val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
-                if (fastReadFailFast) {
-                  slowFetchExecutor.submit(new Runnable {
-                    override def run(): Unit = {
-                      try {
-                        ReadHint.markReadAll()
-                        doFetchingRecords()
-                      } catch {
-                        case slowEx: Throwable =>
-                          handleError(slowEx)
-                      }
-                    }
-                  })
-                } else {
-                  handleError(e)
-                }
-            }
-          }
-        })
-      } else {
-        doFetchingRecords()
-      }
-
-      // AutoMQ for Kafka inject end
+      replicaManager.fetchMessages(
+        params = params,
+        fetchInfos = interesting,
+        quota = replicationQuota(fetchRequest),
+        responseCallback = processResponseCallback,
+      )
     }
   }
 
