@@ -106,12 +106,12 @@ public class Failover {
                 ObjectManager objectManager = factory.getObjectManager(nodeId, epoch);
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
-                // delete the volume
-                serverless.delete(request.getVolumeId());
-                LOGGER.info("failover done {}", request);
             } finally {
                 wal.shutdownGracefully();
             }
+            // delete the volume
+            serverless.delete(request.getVolumeId());
+            LOGGER.info("failover done {}", request);
             return resp;
         }
 
