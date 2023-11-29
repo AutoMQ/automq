@@ -36,6 +36,7 @@ public enum S3Operation {
     APPEND_STORAGE_WAL_AWAIT(S3MetricsType.S3Storage, "append_wal_await"),
     APPEND_STORAGE_WAL_WRITE(S3MetricsType.S3Storage, "append_wal_write"),
     APPEND_STORAGE_WAL_AFTER(S3MetricsType.S3Storage, "append_wal_after"),
+    APPEND_STORAGE_WAL_BLOCK_POLLED(S3MetricsType.S3Storage, "append_wal_block_polled"),
     APPEND_STORAGE_APPEND_CALLBACK(S3MetricsType.S3Storage, "append_callback"),
     APPEND_STORAGE_WAL_FULL(S3MetricsType.S3Storage, "append_wal_full"),
     APPEND_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "append_log_cache"),

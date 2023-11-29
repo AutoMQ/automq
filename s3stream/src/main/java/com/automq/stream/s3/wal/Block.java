@@ -75,4 +75,10 @@ public interface Block {
             data.release();
         }
     }
+
+    /**
+     * Called when this block is polled and sent to the writer.
+     * Used for metrics.
+     */
+    void polled();
 }
