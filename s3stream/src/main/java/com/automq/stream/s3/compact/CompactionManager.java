@@ -20,7 +20,7 @@ import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3ObjectLogger;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;

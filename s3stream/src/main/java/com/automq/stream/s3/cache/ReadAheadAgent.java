@@ -32,13 +32,13 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ReadAheadAgent {
     private final Logger logger;
     private static final Integer MAX_READ_AHEAD_SIZE = 40 * 1024 * 1024; // 40MB
-    private static final Integer S3_OPERATION_DELAY = 400; // 400ms
+    private static final Integer S3_OPERATION_DELAY_MS = 400; // 400ms
     private final Lock lock = new ReentrantLock();
     private final TimerUtil timer;
     private final long streamId;
     private final int dataBlockSize;
     private final List<Pair<Long, Long>> evictedOffsetRanges = new ArrayList<>();
-    private double bytesPerMillis;
+    private double bytePerSecond;
     private long readCount;
     private long lastReadOffset;
     private int lastReadSize;
@@ -62,13 +62,13 @@ public class ReadAheadAgent {
                 logger.error("update read progress for stream={} failed, offset not match: expected offset {}, but get {}", streamId, lastReadOffset, startOffset);
                 return;
             }
-            long timeElapsed = timer.elapsedAs(TimeUnit.MILLISECONDS);
-            double lastReadSpeed = (double) this.lastReadSize / timeElapsed;
+            long timeElapsedNanos = timer.elapsedAs(TimeUnit.NANOSECONDS);
+            double bytesPerSec = (double) this.lastReadSize / timeElapsedNanos * TimeUnit.SECONDS.toNanos(1);
             readCount++;
             double factor = (double) readCount / (1 + readCount);
-            bytesPerMillis = (1 - factor) * bytesPerMillis + factor * lastReadSpeed;
+            bytePerSecond = (1 - factor) * bytePerSecond + factor * bytesPerSec;
             if (logger.isDebugEnabled()) {
-                logger.debug("update read progress offset {}, lastReadSpeed: {} bytes/s, corrected speed: {} bytes/s", startOffset, lastReadSpeed * 1000, bytesPerMillis * 1000);
+                logger.debug("update read progress offset {}, lastReadSpeed: {} bytes/s, corrected speed: {} bytes/s", startOffset, bytesPerSec, bytePerSecond);
             }
         } finally {
             lock.unlock();
@@ -130,7 +130,7 @@ public class ReadAheadAgent {
             return right - left;
         }).sum();
         double evictedFraction = (double) totalEvictedSize / (readAheadEndOffset - lastReadOffset);
-        int nextSize = (int) (bytesPerMillis * S3_OPERATION_DELAY * (1 - evictedFraction));
+        int nextSize = (int) (bytePerSecond * ((double) S3_OPERATION_DELAY_MS / TimeUnit.SECONDS.toMillis(1)) * (1 - evictedFraction));
         nextSize = Math.max(dataBlockSize, Math.min(nextSize, MAX_READ_AHEAD_SIZE));
         return nextSize;
     }
@@ -175,10 +175,10 @@ public class ReadAheadAgent {
         }
     }
 
-    public double getBytesPerMillis() {
+    public double getBytePerSecond() {
         try {
             lock.lock();
-            return bytesPerMillis;
+            return bytePerSecond;
         } finally {
             lock.unlock();
         }
@@ -189,8 +189,8 @@ public class ReadAheadAgent {
             lock.lock();
             if (startOffset >= endOffset
                     || lastReadOffset >= readAheadEndOffset
-                    || endOffset < lastReadOffset
-                    || startOffset > readAheadEndOffset) {
+                    || endOffset <= lastReadOffset
+                    || startOffset >= readAheadEndOffset) {
                 return;
             }
             logger.info("evict range [{}, {}], lastReadOffset: {}, readAheadOffset: {}", startOffset, endOffset, lastReadOffset, readAheadEndOffset);
@@ -217,7 +217,7 @@ public class ReadAheadAgent {
     public String toString() {
         return "ReadAheadAgent{" +
                 "stream=" + streamId +
-                ", bytesPerMillis=" + bytesPerMillis +
+                ", bytesPerSecond=" + bytePerSecond +
                 ", lastReadOffset=" + lastReadOffset +
                 ", lastReadSize=" + lastReadSize +
                 ", readAheadEndOffset=" + readAheadEndOffset +

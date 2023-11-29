@@ -65,11 +65,11 @@ public class ObjectReader implements AutoCloseable {
         return basicObjectInfoCf;
     }
 
-    public CompletableFuture<List<DataBlockIndex>> find(long streamId, long startOffset, long endOffset) {
+    public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset) {
         return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
     }
 
-    public CompletableFuture<List<DataBlockIndex>> find(long streamId, long startOffset, long endOffset, int maxBytes) {
+    public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset, int maxBytes) {
         return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
@@ -178,20 +178,21 @@ public class ObjectReader implements AutoCloseable {
             return streamRanges.slice();
         }
 
-        public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset) {
+        public FindIndexResult find(long streamId, long startOffset, long endOffset) {
             return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
         }
 
-        public List<DataBlockIndex> find(long streamId, long startOffset, long endOffset, int maxBytes) {
+        public FindIndexResult find(long streamId, long startOffset, long endOffset, int maxBytes) {
             long nextStartOffset = startOffset;
             int nextMaxBytes = maxBytes;
             boolean matched = false;
-            List<DataBlockIndex> rst = new LinkedList<>();
+            boolean isFulfilled = false;
+            List<StreamDataBlock> rst = new LinkedList<>();
             IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(streamRanges);
             int startIndex = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, startOffset));
             if (startIndex == -1) {
                 // mismatched
-                return rst;
+                return new FindIndexResult(false, nextStartOffset, nextMaxBytes, rst);
             }
             for (int i = startIndex * 24; i < streamRanges.readableBytes(); i += 24) {
                 long rangeStreamId = streamRanges.getLong(i);
@@ -209,7 +210,8 @@ public class ObjectReader implements AutoCloseable {
                     long blockPosition = blocks.getLong(rangeBlockId * 16);
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
                     int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
-                    rst.add(new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount));
+                    rst.add(new StreamDataBlock(streamId, rangeStartOffset, rangeEndOffset, -1,
+                            new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount)));
 
                     // we consider first block as not matched because we do not know exactly how many bytes are within
                     // the range in first block, as a result we may read one more block than expected.
@@ -218,13 +220,14 @@ public class ObjectReader implements AutoCloseable {
                     }
                     matched = true;
                     if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
+                        isFulfilled = true;
                         break;
                     }
                 } else if (matched) {
                     break;
                 }
             }
-            return rst;
+            return new FindIndexResult(isFulfilled, nextStartOffset, nextMaxBytes, rst);
         }
 
         int size() {
@@ -237,6 +240,11 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
+    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes,
+                                  List<StreamDataBlock> streamDataBlocks) {
+
+    }
+
     public static class IndexBlockParseException extends Exception {
         long indexBlockPosition;
 
@@ -246,44 +254,21 @@ public class ObjectReader implements AutoCloseable {
 
     }
 
-    static class BasicObjectInfoParseException extends Exception {
-        long indexBlockPosition;
-
-        public BasicObjectInfoParseException(long indexBlockPosition) {
-            this.indexBlockPosition = indexBlockPosition;
-        }
-
-    }
-
-
-    public static class DataBlockIndex {
+    public record DataBlockIndex(int blockId, long startPosition, int size, int recordCount) {
         public static final int BLOCK_INDEX_SIZE = 8 + 4 + 4;
-        private final int blockId;
-        private final long startPosition;
-        private final int size;
-        private final int recordCount;
-
-        public DataBlockIndex(int blockId, long startPosition, int size, int recordCount) {
-            this.blockId = blockId;
-            this.startPosition = startPosition;
-            this.size = size;
-            this.recordCount = recordCount;
-        }
-
-        public int blockId() {
-            return blockId;
-        }
-
-        public long startPosition() {
-            return startPosition;
-        }
 
         public long endPosition() {
             return startPosition + size;
         }
 
-        public int recordCount() {
-            return recordCount;
+        @Override
+        public String toString() {
+            return "DataBlockIndex{" +
+                    "blockId=" + blockId +
+                    ", startPosition=" + startPosition +
+                    ", size=" + size +
+                    ", recordCount=" + recordCount +
+                    '}';
         }
     }
 

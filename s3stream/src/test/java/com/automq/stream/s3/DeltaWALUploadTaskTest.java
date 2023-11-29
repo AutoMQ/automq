@@ -117,7 +117,8 @@ public class DeltaWALUploadTaskTest {
         {
             S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
             ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
-            ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get().get(0);
+            ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
+                    .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
             try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
                 StreamRecordBatch record = it.next();
@@ -131,7 +132,8 @@ public class DeltaWALUploadTaskTest {
         {
             S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
             ObjectReader objectReader = new ObjectReader(streamObjectMetadata, s3Operator);
-            ObjectReader.DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get().get(0);
+            ObjectReader.DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
+                    .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
             try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
                 StreamRecordBatch r1 = it.next();

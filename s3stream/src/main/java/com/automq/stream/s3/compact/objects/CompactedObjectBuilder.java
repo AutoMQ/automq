@@ -17,6 +17,8 @@
 
 package com.automq.stream.s3.compact.objects;
 
+import com.automq.stream.s3.StreamDataBlock;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;

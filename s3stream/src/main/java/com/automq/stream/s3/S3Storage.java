@@ -375,6 +375,8 @@ public class S3Storage implements Storage {
             return new ReadDataBlock(rst, readDataBlock.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
             if (ex != null) {
+                LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
+                        streamId, startOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
             }
         });
@@ -386,7 +388,8 @@ public class S3Storage implements Storage {
             if (expectStartOffset == -1L || record.getBaseOffset() == expectStartOffset) {
                 expectStartOffset = record.getLastOffset();
             } else {
-                throw new IllegalArgumentException("Continuous check fail" + records);
+                throw new IllegalArgumentException(String.format("Continuous check failed, expect offset: %d," +
+                        " actual: %d, records: %s", expectStartOffset, record.getBaseOffset() ,records));
             }
         }
     }

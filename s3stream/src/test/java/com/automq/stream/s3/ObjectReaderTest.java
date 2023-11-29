@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 public class ObjectReaderTest {
@@ -82,20 +84,28 @@ public class ObjectReaderTest {
 
         ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(blocks, streamRanges);
 
-        List<ObjectReader.DataBlockIndex> rst = indexBlock.find(1, 10, 300, 100000);
-        assertEquals(2, rst.size());
-        assertEquals(0, rst.get(0).blockId());
-        assertEquals(0, rst.get(0).startPosition());
-        assertEquals(1024, rst.get(0).endPosition());
-        assertEquals(1, rst.get(1).blockId());
-        assertEquals(1024, rst.get(1).startPosition());
-        assertEquals(1536, rst.get(1).endPosition());
+        ObjectReader.FindIndexResult rst = indexBlock.find(1, 10, 300, 100000);
+        assertTrue(rst.isFulfilled());
+        List<StreamDataBlock> streamDataBlocks = rst.streamDataBlocks();
+        assertEquals(2, streamDataBlocks.size());
+        assertEquals(0, streamDataBlocks.get(0).getBlockId());
+        assertEquals(0, streamDataBlocks.get(0).getBlockStartPosition());
+        assertEquals(1024, streamDataBlocks.get(0).getBlockEndPosition());
+        assertEquals(1, streamDataBlocks.get(1).getBlockId());
+        assertEquals(1024, streamDataBlocks.get(1).getBlockStartPosition());
+        assertEquals(1536, streamDataBlocks.get(1).getBlockEndPosition());
 
         rst = indexBlock.find(1, 10, 400);
-        assertEquals(3, rst.size());
+        assertTrue(rst.isFulfilled());
+        assertEquals(3, rst.streamDataBlocks().size());
 
         rst = indexBlock.find(1, 10, 400, 10);
-        assertEquals(2, rst.size());
+        assertTrue(rst.isFulfilled());
+        assertEquals(2, rst.streamDataBlocks().size());
+
+        rst = indexBlock.find(1, 10, 800);
+        assertFalse(rst.isFulfilled());
+        assertEquals(3, rst.streamDataBlocks().size());
     }
 
     @Test
