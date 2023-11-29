@@ -159,6 +159,7 @@ public class FailoverControlManager {
             if (!failedNodeIdSet.contains(nodeId)) {
                 FailoverContextRecord completedRecord = context.duplicate();
                 completedRecord.setStatus(FailoverStatus.DONE.name());
+                LOGGER.info("failed node failover complete, {}", completedRecord);
                 // the target node already complete the recover and delete the volume, so remove the failover context
                 records.add(new ApiMessageAndVersion(completedRecord, (short) 0));
             }
@@ -207,7 +208,7 @@ public class FailoverControlManager {
                         attachedRecord.setDevice(device);
                         attachedRecord.setStatus(FailoverStatus.RECOVERING.name());
                         attached.put(failedNodeId, attachedRecord);
-                        LOGGER.info("attach failed node {} to target node {} success", failedNodeId, broker.id());
+                        LOGGER.info("attach failed node {} to target node {} success, record {}", failedNodeId, broker.id(), attachedRecord);
                     }).exceptionally(ex -> {
                         LOGGER.error("attach failed node {} to target node {} failed", context.failedNodeId(), broker.id(), ex);
                         return null;
@@ -220,7 +221,11 @@ public class FailoverControlManager {
     }
 
     public void replay(FailoverContextRecord record) {
-        failoverContexts.put(record.failedNodeId(), record);
+        if (FailoverStatus.DONE.name().equals(record.status())) {
+            failoverContexts.remove(record.failedNodeId());
+        } else {
+            failoverContexts.put(record.failedNodeId(), record);
+        }
     }
 
     /**
