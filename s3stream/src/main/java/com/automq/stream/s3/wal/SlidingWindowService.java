@@ -18,6 +18,9 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
@@ -30,8 +33,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedList;
+import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -70,7 +73,7 @@ public class SlidingWindowService {
     /**
      * Blocks that are being written.
      */
-    private final TreeSet<Long> writingBlocks = new TreeSet<>();
+    private final Queue<Long> writingBlocks = new PriorityQueue<>();
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -329,15 +332,17 @@ public class SlidingWindowService {
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
         }
-        return writingBlocks.first();
+        return writingBlocks.peek();
     }
 
     private void writeBlockData(BlockBatch blocks) throws IOException {
+        TimerUtil timer = new TimerUtil();
         for (Block block : blocks.blocks()) {
             long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
             walChannel.write(block.data(), position);
         }
         walChannel.flush();
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_WRITE).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException, OverCapacityException {
@@ -517,13 +522,16 @@ public class SlidingWindowService {
 
     class WriteBlockProcessor implements Runnable {
         private final BlockBatch blocks;
+        private final TimerUtil timer;
 
         public WriteBlockProcessor(BlockBatch blocks) {
             this.blocks = blocks;
+            this.timer = new TimerUtil();
         }
 
         @Override
         public void run() {
+            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_AWAIT).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
             writeBlock(this.blocks);
         }
 
@@ -532,6 +540,7 @@ public class SlidingWindowService {
                 makeWriteOffsetMatchWindow(blocks.endOffset());
                 writeBlockData(blocks);
 
+                TimerUtil timer = new TimerUtil();
                 // Update the start offset of the sliding window after finishing writing the record.
                 windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
 
@@ -546,6 +555,7 @@ public class SlidingWindowService {
                         return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                     }
                 });
+                OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_AFTER).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
             } catch (Exception e) {
                 FutureUtil.completeExceptionally(blocks.futures(), e);
                 LOGGER.error(String.format("failed to write blocks, startOffset: %s", blocks.startOffset()), e);
