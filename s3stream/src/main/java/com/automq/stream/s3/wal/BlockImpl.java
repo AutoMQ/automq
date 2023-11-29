@@ -18,7 +18,10 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.ByteBufMetricsStats;
+import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -26,6 +29,7 @@ import io.netty.buffer.CompositeByteBuf;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -45,6 +49,7 @@ public class BlockImpl implements Block {
     private final long softLimit;
     private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
     private final List<Supplier<ByteBuf>> records = new LinkedList<>();
+    private final TimerUtil timer;
     /**
      * The next offset to write in this block.
      * Align to {@link WALUtil#BLOCK_SIZE}
@@ -60,6 +65,7 @@ public class BlockImpl implements Block {
         this.startOffset = startOffset;
         this.maxSize = maxSize;
         this.softLimit = softLimit;
+        this.timer = new TimerUtil();
     }
 
     @Override
@@ -117,5 +123,10 @@ public class BlockImpl implements Block {
     @Override
     public long size() {
         return nextOffset;
+    }
+
+    @Override
+    public void polled() {
+        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_BLOCK_POLLED).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 }

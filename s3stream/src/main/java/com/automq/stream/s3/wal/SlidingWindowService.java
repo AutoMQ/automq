@@ -156,6 +156,7 @@ public class SlidingWindowService {
         }
         BlockBatch blocks = pollBlocks();
         if (blocks != null) {
+            blocks.blocks().forEach(Block::polled);
             ioExecutor.submit(new WriteBlockProcessor(blocks));
         }
     }
