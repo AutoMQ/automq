@@ -198,11 +198,11 @@ public class DefaultS3Operator implements S3Operator {
      * Get adjacent read tasks and merge them into one read task which read range is not exceed 16MB.
      */
     private void tryMergeRead0() {
-        if (waitingReadTasks.isEmpty()) {
-            return;
-        }
         List<MergedReadTask> mergedReadTasks = new ArrayList<>();
         synchronized (waitingReadTasks) {
+            if (waitingReadTasks.isEmpty()) {
+                return;
+            }
             int readPermit = availableReadPermit();
             while (readPermit > 0 && !waitingReadTasks.isEmpty()) {
                 Iterator<ReadTask> it = waitingReadTasks.iterator();
@@ -252,11 +252,17 @@ public class DefaultS3Operator implements S3Operator {
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
-                    OperationMetricsStats.getHistogram(S3Operation.GET_OBJECT).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     long size = end - start + 1;
                     S3ObjectMetricsStats.getOrCreates3ObjectDownloadSizeHist().update(size);
                     ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) size, "merge_read");
-                    responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> cf.complete(buf));
+                    responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> {
+                        if (LOGGER.isDebugEnabled()) {
+                            LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
+                                    path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                        }
+                        OperationMetricsStats.getHistogram(S3Operation.GET_OBJECT).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                        cf.complete(buf);
+                    });
                 })
                 .exceptionally(ex -> {
                     OperationMetricsStats.getHistogram(S3Operation.GET_OBJECT_FAIL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -649,6 +655,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         boolean tryMerge(ReadTask readTask) {
+            //TODO: add data sparse rate check, 50%?
             if (!path.equals(readTask.path)) {
                 return false;
             }

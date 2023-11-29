@@ -19,7 +19,7 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;

@@ -91,7 +91,7 @@ public class S3Stream implements Stream {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
-        this.logIdent = "[Stream id=" + streamId + " epoch" + epoch + "]";
+        this.logIdent = "[Stream id=" + streamId + " epoch=" + epoch + "]";
         this.nextOffset = new AtomicLong(nextOffset);
         this.confirmOffset = new AtomicLong(nextOffset);
         this.status = new Status();
@@ -198,6 +198,10 @@ public class S3Stream implements Stream {
                 } else if (networkOutboundLimiter != null) {
                     long totalSize = rs.recordBatchList().stream().mapToLong(record -> record.rawPayload().remaining()).sum();
                     networkOutboundLimiter.forceConsume(totalSize);
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
+                                startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                    }
                 }
                 pendingFetches.remove(cf);
             });

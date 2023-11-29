@@ -18,7 +18,7 @@
 package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;

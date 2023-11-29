@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.compact.objects;
+package com.automq.stream.s3;
 
 import io.netty.buffer.ByteBuf;
 
@@ -26,30 +26,31 @@ import java.util.concurrent.CompletableFuture;
 public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);
     public static final Comparator<StreamDataBlock> BLOCK_POSITION_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getBlockStartPosition);
+    private final long objectId;
 
     // Stream attributes
     private final long streamId;
     private final long startOffset;
     private final long endOffset;
-    private final int blockId;
 
-    // Object attributes
-    private final long objectId;
-    private final long blockPosition;
-    private final int blockSize;
-    private final int recordCount;
+    private final ObjectReader.DataBlockIndex dataBlockIndex;
     private final CompletableFuture<ByteBuf> dataCf = new CompletableFuture<>();
+
+    public StreamDataBlock(long streamId, long startOffset, long endOffset, long objectId, ObjectReader.DataBlockIndex dataBlockIndex) {
+        this.streamId = streamId;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+        this.dataBlockIndex = dataBlockIndex;
+        this.objectId = objectId;
+    }
 
     public StreamDataBlock(long streamId, long startOffset, long endOffset, int blockId,
                            long objectId, long blockPosition, int blockSize, int recordCount) {
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
-        this.blockId = blockId;
         this.objectId = objectId;
-        this.blockPosition = blockPosition;
-        this.blockSize = blockSize;
-        this.recordCount = recordCount;
+        this.dataBlockIndex = new ObjectReader.DataBlockIndex(blockId, blockPosition, blockSize, recordCount);
     }
 
     public long getStreamId() {
@@ -69,7 +70,7 @@ public class StreamDataBlock {
     }
 
     public int getBlockId() {
-        return blockId;
+        return dataBlockIndex.blockId();
     }
 
     public long getObjectId() {
@@ -77,19 +78,23 @@ public class StreamDataBlock {
     }
 
     public long getBlockStartPosition() {
-        return blockPosition;
+        return dataBlockIndex.startPosition();
     }
 
     public long getBlockEndPosition() {
-        return blockPosition + blockSize;
+        return dataBlockIndex.endPosition();
     }
 
     public int getBlockSize() {
-        return blockSize;
+        return dataBlockIndex.size();
     }
 
     public int getRecordCount() {
-        return recordCount;
+        return dataBlockIndex.recordCount();
+    }
+
+    public ObjectReader.DataBlockIndex dataBlockIndex() {
+        return dataBlockIndex;
     }
 
     public CompletableFuture<ByteBuf> getDataCf() {
@@ -111,8 +116,8 @@ public class StreamDataBlock {
                 ", startOffset=" + startOffset +
                 ", endOffset=" + endOffset +
                 ", objectId=" + objectId +
-                ", blockPosition=" + blockPosition +
-                ", blockSize=" + blockSize +
+                ", blockPosition=" + getBlockEndPosition() +
+                ", blockSize=" + getBlockSize() +
                 '}';
     }
 
@@ -122,13 +127,12 @@ public class StreamDataBlock {
         if (o == null || getClass() != o.getClass()) return false;
         StreamDataBlock that = (StreamDataBlock) o;
         return streamId == that.streamId && startOffset == that.startOffset && endOffset == that.endOffset
-                && blockId == that.blockId && objectId == that.objectId && blockPosition == that.blockPosition
-                && blockSize == that.blockSize && recordCount == that.recordCount;
+                && objectId == that.objectId && dataBlockIndex.equals(that.dataBlockIndex);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, startOffset, endOffset, blockId, objectId, blockPosition, blockSize, recordCount);
+        return Objects.hash(streamId, startOffset, endOffset, objectId, dataBlockIndex);
     }
 
 }

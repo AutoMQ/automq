@@ -18,7 +18,7 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;

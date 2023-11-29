@@ -18,7 +18,7 @@
 package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.compact.objects.StreamDataBlock;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import io.github.bucket4j.Bucket;
@@ -222,23 +222,19 @@ public class DataBlockReader {
                     ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
                     int blockCount = indexBlockBuf.readInt();
                     ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
-                    List<DataBlockIndex> dataBlockIndices = new ArrayList<>();
-                    for (int i = 0; i < blockCount; i++) {
-                        long blockPosition = blocks.readLong();
-                        int blockSize = blocks.readInt();
-                        int recordCount = blocks.readInt();
-                        dataBlockIndices.add(new DataBlockIndex(blockPosition, blockSize, recordCount));
-                    }
                     indexBlockBuf.skipBytes(blockCount * 16);
                     ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
                     List<StreamDataBlock> streamDataBlocks = new ArrayList<>();
                     for (int i = 0; i < blockCount; i++) {
+                        long blockPosition = blocks.readLong();
+                        int blockSize = blocks.readInt();
+                        int recordCount = blocks.readInt();
                         long streamId = streamRanges.readLong();
                         long startOffset = streamRanges.readLong();
                         int rangeSize = streamRanges.readInt();
                         int blockIndex = streamRanges.readInt();
-                        streamDataBlocks.add(new StreamDataBlock(streamId, startOffset, startOffset + rangeSize, blockIndex,
-                                objectId, dataBlockIndices.get(i).startPosition, dataBlockIndices.get(i).size, dataBlockIndices.get(i).recordCount));
+                        streamDataBlocks.add(new StreamDataBlock(streamId, startOffset, startOffset + rangeSize,
+                                blockIndex, objectId, blockPosition, blockSize, recordCount));
                     }
                     return streamDataBlocks;
                 }
@@ -255,19 +251,5 @@ public class DataBlockReader {
             this.indexBlockPosition = indexBlockPosition;
         }
 
-    }
-
-
-    public static class DataBlockIndex {
-        public static final int BLOCK_INDEX_SIZE = 8 + 4 + 4;
-        private final long startPosition;
-        private final int size;
-        private final int recordCount;
-
-        public DataBlockIndex(long startPosition, int size, int recordCount) {
-            this.startPosition = startPosition;
-            this.size = size;
-            this.recordCount = recordCount;
-        }
     }
 }
