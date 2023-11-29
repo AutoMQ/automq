@@ -19,6 +19,7 @@ package com.automq.stream.s3.failover;
 
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -81,6 +82,7 @@ public class DefaultServerless implements Serverless {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     static class AttachResult {
         private String deviceName;
 
@@ -93,6 +95,7 @@ public class DefaultServerless implements Serverless {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     static class QueryFailedNode {
         private String firstBindNodeId;
         private String volumeId;
