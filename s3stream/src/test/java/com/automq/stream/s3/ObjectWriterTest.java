@@ -66,10 +66,10 @@ public class ObjectWriterTest {
 
         metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM_SET);
         ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
-        List<ObjectReader.DataBlockIndex> blockIndexes = objectReader.find(233, 10, 30).get();
-        assertEquals(2, blockIndexes.size());
+        List<StreamDataBlock> streamDataBlocks = objectReader.find(233, 10, 30).get().streamDataBlocks();
+        assertEquals(2, streamDataBlocks.size());
         {
-            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(0)).get().iterator();
+            Iterator<StreamRecordBatch> it = objectReader.read(streamDataBlocks.get(0).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(10L, r.getBaseOffset());
@@ -86,7 +86,7 @@ public class ObjectWriterTest {
         }
 
         {
-            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(1)).get().iterator();
+            Iterator<StreamRecordBatch> it = objectReader.read(streamDataBlocks.get(1).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(25L, r.getBaseOffset());
@@ -95,11 +95,11 @@ public class ObjectWriterTest {
             r.release();
         }
 
-        blockIndexes = objectReader.find(234, 1, 2).get();
-        assertEquals(1, blockIndexes.size());
-        assertEquals(2, blockIndexes.get(0).blockId());
+        streamDataBlocks = objectReader.find(234, 1, 2).get().streamDataBlocks();
+        assertEquals(1, streamDataBlocks.size());
+        assertEquals(2, streamDataBlocks.get(0).getBlockId());
         {
-            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(0)).get().iterator();
+            Iterator<StreamRecordBatch> it = objectReader.read(streamDataBlocks.get(0).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
             assertEquals(234L, r.getStreamId());
             assertEquals(0L, r.getBaseOffset());

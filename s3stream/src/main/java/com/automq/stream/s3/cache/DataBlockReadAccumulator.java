@@ -39,11 +39,14 @@ public class DataBlockReadAccumulator {
         BiConsumer<DataBlockRecords, Throwable> listener = (rst, ex) -> {
             if (ex != null) {
                 cf.completeExceptionally(ex);
+                rst.release();
             } else {
+                // consumer of DataBlockRecords should release it on completion
                 cf.complete(rst);
             }
         };
         Pair<String, Integer> key = Pair.of(reader.objectKey(), blockIndex.blockId());
+        // TODO: limit inflight memory usage
         synchronized (inflightDataBlockReads) {
             DataBlockRecords records = inflightDataBlockReads.get(key);
             if (records == null) {

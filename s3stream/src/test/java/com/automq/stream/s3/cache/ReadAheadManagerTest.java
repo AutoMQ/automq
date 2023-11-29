@@ -39,11 +39,11 @@ public class ReadAheadManagerTest {
         Assertions.assertEquals(1224, agent.getLastReadAheadSize());
         Assertions.assertEquals(512, agent.getLastReadOffset());
         Assertions.assertEquals(612, agent.getLastReadSize());
-        Assertions.assertEquals(0, agent.getBytesPerMillis());
+        Assertions.assertEquals(0, agent.getBytePerSecond());
 
         Threads.sleep(1000);
         manager.updateReadProgress(233L, 512);
-        Assertions.assertEquals(0.306, agent.getBytesPerMillis(), 0.01);
+        Assertions.assertEquals(306, agent.getBytePerSecond(), 10);
         Assertions.assertEquals(122, agent.getNextReadAheadSize(), 5);
         manager.updateReadResult(233L, 512, 1024, 612);
         agent.updateReadAheadResult(2048, 1224);

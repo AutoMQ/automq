@@ -65,4 +65,8 @@ public class LRUCache<K, V> {
     public synchronized int size() {
         return cache.size();
     }
+
+    public synchronized boolean containsKey(K key) {
+        return cache.containsKey(key);
+    }
 }

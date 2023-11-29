@@ -68,10 +68,10 @@ public class StreamObjectCopierTest {
         assertEquals(targetObjectSize, objectSize);
 
         ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
-        List<ObjectReader.DataBlockIndex> blockIndexes = objectReader.find(streamId, 10, 40).get();
+        List<StreamDataBlock> blockIndexes = objectReader.find(streamId, 10, 40).get().streamDataBlocks();
         assertEquals(2, blockIndexes.size());
         {
-            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(0)).get().iterator();
+            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(0).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(10L, r.getBaseOffset());
@@ -87,7 +87,7 @@ public class StreamObjectCopierTest {
         }
 
         {
-            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(1)).get().iterator();
+            Iterator<StreamRecordBatch> it = objectReader.read(blockIndexes.get(1).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(25L, r.getBaseOffset());
