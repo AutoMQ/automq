@@ -178,21 +178,6 @@ turn_on_auto_balancer() {
     fi
 }
 
-add_settings_for_s3() {
-    role=$1
-    file_name=$2
-    auto_balancer_setting_for_all "${file_name}"
-    if [[ "${role}" == "broker" || "${role}" == "server" ]]; then
-        add_or_setup_value "s3.wal.capacity" "4294967296" "${file_name}"
-        add_or_setup_value "s3.wal.cache.size" "1073741824" "${file_name}"
-        add_or_setup_value "s3.wal.upload.threshold" "536870912" "${file_name}"
-        add_or_setup_value "s3.stream.object.split.size" "16777216" "${file_name}"
-        add_or_setup_value "s3.object.block.size" "16777216" "${file_name}"
-        add_or_setup_value "s3.object.part.size" "33554432" "${file_name}"
-        add_or_setup_value "s3.block.cache.size" "1073741824" "${file_name}"
-        add_or_setup_value "stream.set.object.compaction.cache.size" "536870912" "${file_name}"
-    fi
-}
 
 # monitor and change advertised ip for kafka
 kafka_monitor_ip() {
@@ -290,8 +275,6 @@ kafka_up() {
       sed -i "s|Environment='KAFKA_S3_SECRET_KEY.*$|Environment='KAFKA_S3_SECRET_KEY=${s3_secret_key}'|" "${start_dir}/kafka.service"
       # turn on auto_balancer
       turn_on_auto_balancer "${role}" "${kafka_dir}/config/kraft/${role}.properties"
-      # change s3 related settings
-      add_settings_for_s3 "${role}" "${kafka_dir}/config/kraft/${role}.properties"
   done
 
   if [[ -n "${KAFKA_HEAP_OPTS}" ]]; then
