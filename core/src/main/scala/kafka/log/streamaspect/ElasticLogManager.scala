@@ -125,7 +125,7 @@ class ElasticLogManager(val client: Client) extends Logging {
 object ElasticLogManager {
   var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
-  private var turnedOn = false
+  private var isEnabled = false
 
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null): Boolean = {
     if (!config.elasticStreamEnabled) {
@@ -153,11 +153,11 @@ object ElasticLogManager {
     true
   }
 
-  def mark(shouldEnable: Boolean): Unit = {
-    turnedOn = shouldEnable
+  def enable(shouldEnable: Boolean): Unit = {
+    isEnabled = shouldEnable
   }
 
-  def enabled(): Boolean = turnedOn
+  def enabled(): Boolean = isEnabled
 
   def removeLog(topicPartition: TopicPartition): Unit = {
     INSTANCE.get.removeLog(topicPartition)
