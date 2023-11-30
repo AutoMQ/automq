@@ -30,6 +30,8 @@ import java.io.IOException;
  */
 public interface WALChannel {
 
+    String DEVICE_PREFIX = "/dev/";
+
     static WALChannelBuilder builder(String path) {
         return new WALChannelBuilder(path);
     }
@@ -98,7 +100,6 @@ public interface WALChannel {
     }
 
     class WALChannelBuilder {
-        public static final String DEVICE_PREFIX = "/dev/";
         private final String path;
         private Boolean direct;
         private long capacity;

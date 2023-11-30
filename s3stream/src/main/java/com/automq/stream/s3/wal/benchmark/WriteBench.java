@@ -89,7 +89,7 @@ public class WriteBench implements AutoCloseable {
 
     private static void resetWALHeader(String path) throws IOException {
         System.out.println("Resetting WAL header");
-        if (path.startsWith(WALChannel.WALChannelBuilder.DEVICE_PREFIX)) {
+        if (path.startsWith(WALChannel.DEVICE_PREFIX)) {
             // block device
             int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
             WALChannel channel = WALChannel.builder(path).capacity(capacity).build();

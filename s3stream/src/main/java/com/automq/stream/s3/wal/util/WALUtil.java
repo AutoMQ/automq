@@ -17,12 +17,15 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.utils.CommandResult;
+import com.automq.stream.utils.CommandUtils;
 import io.netty.buffer.ByteBuf;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
 
 public class WALUtil {
@@ -99,5 +102,25 @@ public class WALUtil {
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
             raf.setLength(length);
         }
+    }
+
+    /**
+     * Get the capacity of the given block device.
+     */
+    public static long getBlockDeviceCapacity(String path) throws ExecutionException {
+        String[] cmd = new String[]{
+            "lsblk",
+            "--bytes",
+            "--nodeps",
+            "--output", "SIZE",
+            "--noheadings",
+            "--raw",
+            path
+        };
+        CommandResult result = CommandUtils.run(cmd);
+        if (!result.success()) {
+            throw new ExecutionException("get block device capacity fail: " + result, null);
+        }
+        return Long.parseLong(result.stdout().trim());
     }
 }

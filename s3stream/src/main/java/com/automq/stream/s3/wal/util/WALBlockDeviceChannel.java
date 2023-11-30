@@ -23,14 +23,18 @@ import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;
 import io.netty.buffer.ByteBuf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutionException;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
 public class WALBlockDeviceChannel implements WALChannel {
+    private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -104,10 +108,19 @@ public class WALBlockDeviceChannel implements WALChannel {
 
     @Override
     public void open(CapacityReader reader) throws IOException {
-        if (!path.startsWith(WALChannelBuilder.DEVICE_PREFIX)) {
+        if (!path.startsWith(WALChannel.DEVICE_PREFIX)) {
             openAndCheckFile();
         } else {
-            // We could not get the real capacity of the block device, so we just use the `capacityWant` as the capacity here
+            try {
+                long capacity = WALUtil.getBlockDeviceCapacity(path);
+                if (!recoveryMode && capacityWant > capacity) {
+                    // the real capacity of the block device is smaller than requested
+                    throw new WALCapacityMismatchException(path, capacityWant, capacity);
+                }
+            } catch (ExecutionException e) {
+                LOGGER.warn("failed to get the real capacity of the block device {}, just skip checking", path, e);
+            }
+            // We could not get the real capacity of the WAL in block device, so we just use the `capacityWant` as the capacity here
             // It will be checked and updated in `checkCapacity` later
             capacityFact = capacityWant;
         }

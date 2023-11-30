@@ -28,6 +28,13 @@ public class CommandResult {
         this.stderr = stderr;
     }
 
+    /**
+     * Returns true if the command exited with a zero exit code.
+     */
+    public boolean success() {
+        return code == 0;
+    }
+
     public int code() {
         return code;
     }
