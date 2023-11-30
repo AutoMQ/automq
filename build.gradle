@@ -957,7 +957,9 @@ project(':core') {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
-
+    // https://github.com/netty/netty-tcnative/issues/716
+    // After 2.0.48, gradle project need explicitly declare the tcnative dependencies with classifiers
+    implementation 'io.netty:netty-tcnative-boringssl-static:2.0.48.Final'
 
     testImplementation project(':clients').sourceSets.test.output
     testImplementation project(':group-coordinator').sourceSets.test.output
