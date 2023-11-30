@@ -204,7 +204,7 @@ class BrokerServer(
 
       // AutoMQ for Kafka inject start
       // ElasticLogManager should be marked before LogManager is created.
-      ElasticLogManager.mark(config.elasticStreamEnabled)
+      ElasticLogManager.enable(config.elasticStreamEnabled)
       // AutoMQ for Kafka inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery

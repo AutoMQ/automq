@@ -415,12 +415,16 @@ class Partition(val topicPartition: TopicPartition,
     try {
       val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId, newLeaderEpoch)
       maybeLog = Some(log)
-      updateHighWatermark(log)
       // AutoMQ for Kafka inject start
       log match {
         case elasticUnifiedLog: ElasticUnifiedLog =>
           elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
+          // just update LEO to HW since we only have one replica
+          val initialHighWatermark = log.logEndOffset
+          log.updateHighWatermark(log.logEndOffset)
+          info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
         case _ =>
+          updateHighWatermark(log)
       }
       // AutoMQ for Kafka inject end
       log
