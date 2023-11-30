@@ -129,7 +129,6 @@ versions += [
   zstd: "1.5.2-1",
   commonLang: "3.12.0",
   s3stream: "0.6.5-SNAPSHOT",
-  boringssl: "2.0.62.Final",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -224,5 +223,4 @@ libs += [
   commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   s3stream: "com.automq.elasticstream:s3stream:$versions.s3stream",
-  boringssl: "io.netty:netty-tcnative-boringssl-static:$versions.boringssl",
 ]
