@@ -202,6 +202,11 @@ class BrokerServer(
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
 
+      // AutoMQ for Kafka inject start
+      // ElasticLogManager should be marked before LogManager is created.
+      ElasticLogManager.mark(config.elasticStreamEnabled)
+      // AutoMQ for Kafka inject end
+
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
       logManager = LogManager(config, initialOfflineDirs, metadataCache, kafkaScheduler, time,
