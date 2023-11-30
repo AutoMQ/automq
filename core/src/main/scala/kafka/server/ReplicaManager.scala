@@ -1071,12 +1071,11 @@ class ReplicaManager(val config: KafkaConfig,
     responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
   ): Unit = {
 
-    def handleError(e: Throwable): Unit = {
-      error(s"Unexpected error handling request ${params} ${fetchInfos} ", e)
-      // convert fetchInfos to error Seq[(TopicPartition, FetchPartitionData)] for callback
+    def responseEmpty(e: Throwable): Unit = {
+      val error = if (e == null) { Errors.NONE } else { Errors.forException(e) }
       val fetchPartitionData = fetchInfos.map { case (tp, _) =>
         tp -> FetchPartitionData(
-          error = Errors.forException(e),
+          error = error,
           highWatermark = -1L,
           lastStableOffset = None,
           logStartOffset = -1L,
@@ -1089,6 +1088,30 @@ class ReplicaManager(val config: KafkaConfig,
       responseCallback(fetchPartitionData)
     }
 
+    def handleError(e: Throwable): Unit = {
+      error(s"Unexpected error handling request ${params} ${fetchInfos} ", e)
+      // convert fetchInfos to error Seq[(TopicPartition, FetchPartitionData)] for callback
+      responseEmpty(e)
+    }
+
+    val start = System.nanoTime()
+
+    def checkMaxWaitMs(): Boolean = {
+      if (params.maxWaitMs <= 0) {
+        // If the max wait time is 0, then no need to check quota or linger.
+        true
+      } else {
+        val waitedTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+        if (waitedTimeMs < params.maxWaitMs) {
+          return true
+        }
+        warn(s"Returning emtpy fetch response for fetch request ${fetchInfos} since the " +
+          s"wait time ${waitedTimeMs} exceed ${params.maxWaitMs} ms.")
+        responseEmpty(new TimeoutException(s"wait time ${waitedTimeMs}ms exceed ${params.maxWaitMs}ms."))
+        false
+      }
+    }
+
     // sum the sizes of topics to fetch from fetchInfos
     var bytesNeed = fetchInfos.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
     bytesNeed = math.min(bytesNeed, params.maxBytes)
@@ -1097,6 +1120,10 @@ class ReplicaManager(val config: KafkaConfig,
     fastFetchExecutor.submit(new Runnable {
       override def run(): Unit = {
         val fastFetchLimiterHandler = fastFetchLimiter.acquire(bytesNeed)
+        if (!checkMaxWaitMs()) {
+          fastFetchLimiterHandler.close()
+          return
+        }
         try {
           ReadHint.markReadAll()
           ReadHint.markFastRead()
@@ -1117,6 +1144,10 @@ class ReplicaManager(val config: KafkaConfig,
               slowFetchExecutor.submit(new Runnable {
                 override def run(): Unit = {
                   val slowFetchLimiterHandler = slowFetchLimiter.acquire(bytesNeed)
+                  if (!checkMaxWaitMs()) {
+                    slowFetchLimiterHandler.close()
+                    return
+                  }
                   try {
                     ReadHint.markReadAll()
                     fetchMessages0(params, fetchInfos, quota, response => {
