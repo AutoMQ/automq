@@ -22,12 +22,13 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.automq.elasticstream</groupId>
     <artifactId>s3stream</artifactId>
-    <version>0.6.4-SNAPSHOT</version>
+    <version>0.6.5-SNAPSHOT</version>
     <properties>
         <mockito-core.version>5.5.0</mockito-core.version>
         <junit-jupiter.version>5.10.0</junit-jupiter.version>
         <assertj-core.version>3.24.2</assertj-core.version>
         <slf4j.version>2.0.9</slf4j.version>
+        <s3.version>2.20.127</s3.version>
 
         <maven-checkstyle-plugin.version>3.2.0</maven-checkstyle-plugin.version>
         <maven.compiler.source>17</maven.compiler.source>
@@ -38,7 +39,14 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
-            <version>2.20.127</version>
+            <version>${s3.version}</version>
+        </dependency>
+        <!-- https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/best-practices.html#bestpractice4 -->
+        <!-- https://netty.io/wiki/forked-tomcat-native.html -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-tcnative-boringssl-static</artifactId>
+            <version>2.0.53.Final</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
