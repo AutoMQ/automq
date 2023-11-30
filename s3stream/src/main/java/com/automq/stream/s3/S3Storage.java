@@ -233,7 +233,6 @@ public class S3Storage implements Storage {
     @Override
     public void shutdown() {
         drainBackoffTask.cancel(false);
-        FutureUtil.suppress(drainBackoffTask::get, LOGGER);
         for (WalWriteRequest request : backoffRecords) {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
