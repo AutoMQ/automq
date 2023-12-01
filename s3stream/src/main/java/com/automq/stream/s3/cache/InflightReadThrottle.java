@@ -49,7 +49,7 @@ public class InflightReadThrottle implements Runnable {
     private int remainingInflightReadBytes;
 
     public InflightReadThrottle() {
-        this((int) (MAX_INFLIGHT_READ_SIZE * Utils.getMaxMergeReadSparsityRate()));
+        this((int) (MAX_INFLIGHT_READ_SIZE * (1 - Utils.getMaxMergeReadSparsityRate())));
     }
 
     public InflightReadThrottle(int maxInflightReadBytes) {
@@ -123,14 +123,8 @@ public class InflightReadThrottle implements Runnable {
         while (true) {
             lock.lock();
             try {
-                while (remainingInflightReadBytes <= 0 || inflightReadQueue.isEmpty()) {
+                while (inflightReadQueue.isEmpty() || inflightReadQueue.peek().readSize > remainingInflightReadBytes) {
                     condition.await();
-                    if (!inflightReadQueue.isEmpty()) {
-                        InflightReadItem inflightReadItem = inflightReadQueue.peek();
-                        if (inflightReadItem.readSize < remainingInflightReadBytes) {
-                            break;
-                        }
-                    }
                 }
                 InflightReadItem inflightReadItem = inflightReadQueue.poll();
                 if (inflightReadItem == null) {
