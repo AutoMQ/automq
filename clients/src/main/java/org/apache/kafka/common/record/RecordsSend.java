@@ -39,11 +39,7 @@ public abstract class RecordsSend<T extends BaseRecords> implements Send {
 
     @Override
     public boolean completed() {
-        boolean completed = remaining <= 0 && !pending;
-        if (completed) {
-            release();
-        }
-        return completed;
+        return remaining <= 0 && !pending;
     }
 
     @Override
@@ -86,7 +82,7 @@ public abstract class RecordsSend<T extends BaseRecords> implements Send {
      */
     protected abstract long writeTo(TransferableChannel channel, long previouslyWritten, int remaining) throws IOException;
 
-    private void release() {
+    public void release() {
         if (records instanceof PooledResource) {
             ((PooledResource) records).release();
         }

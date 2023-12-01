@@ -25,7 +25,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
@@ -35,6 +37,7 @@ import java.util.Queue;
 public class MultiRecordsSend implements Send {
     private static final Logger log = LoggerFactory.getLogger(MultiRecordsSend.class);
 
+    private final List<Send> sendList;
     private final Queue<Send> sendQueue;
     private final long size;
     private Map<TopicPartition, RecordConversionStats> recordConversionStats;
@@ -47,6 +50,7 @@ public class MultiRecordsSend implements Send {
      * progresses (on completion, it will be empty).
      */
     public MultiRecordsSend(Queue<Send> sends) {
+        this.sendList = new ArrayList<>(sends);
         this.sendQueue = sends;
 
         long size = 0;
@@ -58,6 +62,7 @@ public class MultiRecordsSend implements Send {
     }
 
     public MultiRecordsSend(Queue<Send> sends, long size) {
+        this.sendList = new ArrayList<>(sends);
         this.sendQueue = sends;
         this.size = size;
         this.current = sendQueue.poll();
@@ -137,5 +142,10 @@ public class MultiRecordsSend implements Send {
             LazyDownConversionRecordsSend lazyRecordsSend = (LazyDownConversionRecordsSend) completedSend;
             recordConversionStats.put(lazyRecordsSend.topicPartition(), lazyRecordsSend.recordConversionStats());
         }
+    }
+
+    @Override
+    public void release() {
+        sendList.forEach(Send::release);
     }
 }

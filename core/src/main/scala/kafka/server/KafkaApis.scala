@@ -993,6 +993,14 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
+      def release(): Unit = {
+        partitions.values().forEach(data => {
+          if (data.records() != null) {
+            data.records().asInstanceOf[PooledResource].release()
+          }
+        })
+      }
+
       if (fetchRequest.isFromFollower) {
         // We've already evaluated against the quota and are good to go. Just need to record it now.
         unconvertedFetchResponse = fetchContext.updateAndGenerateResponseData(partitions)
@@ -1028,6 +1036,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
           // If throttling is required, return an empty response.
           unconvertedFetchResponse = fetchContext.getThrottledResponse(maxThrottleTimeMs)
+          release()
         } else {
           // Get the actual response. This will update the fetch context.
           unconvertedFetchResponse = fetchContext.updateAndGenerateResponseData(partitions)
