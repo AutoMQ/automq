@@ -165,12 +165,19 @@ public class CompactionManager {
 
         long totalSize = objectsToForceSplit.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         totalSize += objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
-        long expectReadBytesPerSec = totalSize / compactionInterval / 60;
-        compactionBucket = Bucket.builder().addLimit(limit -> limit
-                        .capacity(expectReadBytesPerSec)
-                        .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
-        logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
-                expectReadBytesPerSec, compactionInterval);
+        // throttle compaction read to half of compaction interval because of write overhead
+        int expectCompleteTime = compactionInterval / 2;
+        long expectReadBytesPerSec;
+        if (expectCompleteTime > 0) {
+            expectReadBytesPerSec = totalSize / expectCompleteTime / 60;
+            compactionBucket = Bucket.builder().addLimit(limit -> limit
+                    .capacity(expectReadBytesPerSec)
+                    .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
+            logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
+                    expectReadBytesPerSec, expectCompleteTime);
+        } else {
+            logger.warn("Compaction interval {}min is too small, there will be no throttle for compaction", compactionInterval);
+        }
 
         if (!objectsToForceSplit.isEmpty()) {
             // split stream set objects to seperated stream objects
