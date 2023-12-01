@@ -35,7 +35,6 @@ import java.util.NavigableMap;
 import java.util.SortedMap;
 
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class BlockCache implements DirectByteBufAlloc.OOMHandler {
@@ -51,7 +50,6 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final List<CacheEvictListener> cacheEvictListeners = new ArrayList<>();
-    private final Map<CacheBlockKey, Condition> conditionMap = new HashMap<>();
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
@@ -70,15 +68,6 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         writeLock.lock();
         try {
             put0(streamId, raAsyncOffset, raEndOffset, records);
-            if (!records.isEmpty()) {
-                long startOffset = records.get(0).getBaseOffset();
-                CacheBlockKey key = new CacheBlockKey(streamId, startOffset);
-                conditionMap.computeIfPresent(key, (k, condition) -> {
-                    condition.signalAll();
-                    return condition;
-                });
-                conditionMap.remove(key);
-            }
         } finally {
             writeLock.unlock();
         }
@@ -220,43 +209,16 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
      * Note: the records is retained, the caller should release it.
      */
     public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return get(streamId, startOffset, endOffset, maxBytes, false);
-    }
-
-    public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes, boolean waitOnEmpty) {
         if (startOffset >= endOffset || maxBytes <= 0) {
             return GetCacheResult.empty();
         }
 
-        GetCacheResult result;
         readLock.lock();
         try {
-            result = get0(streamId, startOffset, endOffset, maxBytes);
+            return get0(streamId, startOffset, endOffset, maxBytes);
         } finally {
             readLock.unlock();
         }
-        if (!waitOnEmpty || !result.getRecords().isEmpty()) {
-            return result;
-        }
-
-        // upgrade to write lock to wait for the cache to be filled.
-        writeLock.lock();
-        try {
-            CacheBlockKey key = new CacheBlockKey(streamId, startOffset);
-            Condition condition = conditionMap.computeIfAbsent(key, k -> writeLock.newCondition());
-            while (true) {
-                result = get0(streamId, startOffset, endOffset, maxBytes);
-                if (!result.getRecords().isEmpty()) {
-                    break;
-                }
-                condition.await();
-            }
-        } catch (Exception ignored) {
-
-        } finally {
-            writeLock.unlock();
-        }
-        return result;
     }
 
     public GetCacheResult get0(long streamId, long startOffset, long endOffset, int maxBytes) {

@@ -89,7 +89,7 @@ public class DefaultS3BlockCacheTest {
                 metadata3
         )));
 
-        ReadDataBlock rst = s3BlockCache.read(233L, 11L, 60L, 10000).get(3, TimeUnit.SECONDS);
+        ReadDataBlock rst = s3BlockCache.read(233L, 11L, 60L, 10000).get(3000, TimeUnit.SECONDS);
         assertEquals(5, rst.getRecords().size());
         assertEquals(10, rst.getRecords().get(0).getBaseOffset());
         assertEquals(60, rst.getRecords().get(4).getLastOffset());

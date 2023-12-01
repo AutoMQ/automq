@@ -18,9 +18,12 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.Iterator;
@@ -46,11 +49,19 @@ public class DataBlockReadAccumulatorTest {
 
         ObjectReader reader = mock(ObjectReader.class);
         ObjectReader.DataBlockIndex dataBlockIndex = new ObjectReader.DataBlockIndex(10, 10, 100, 2);
+        StreamDataBlock streamDataBlock = new StreamDataBlock(233L, 0, 12, 1, dataBlockIndex);
         CompletableFuture<ObjectReader.DataBlock> readerCf = new CompletableFuture<>();
         when(reader.read(eq(dataBlockIndex))).thenReturn(readerCf);
 
-        CompletableFuture<DataBlockRecords> dataBlockCf1 = accumulator.readDataBlock(reader, dataBlockIndex);
-        CompletableFuture<DataBlockRecords> dataBlockCf2 = accumulator.readDataBlock(reader, dataBlockIndex);
+        List<DataBlockReadAccumulator.ReserveResult> reserveResults = accumulator.reserveDataBlock(List.of(new ImmutablePair<>(reader, streamDataBlock)));
+        Assertions.assertEquals(1, reserveResults.size());
+        Assertions.assertEquals(100, reserveResults.get(0).reserveSize());
+
+        List<DataBlockReadAccumulator.ReserveResult> reserveResults2 = accumulator.reserveDataBlock(List.of(new ImmutablePair<>(reader, streamDataBlock)));
+        Assertions.assertEquals(1, reserveResults2.size());
+        Assertions.assertEquals(0, reserveResults2.get(0).reserveSize());
+
+        accumulator.readDataBlock(reader, dataBlockIndex);
 
         ObjectReader.DataBlock dataBlock = mock(ObjectReader.DataBlock.class);
         List<StreamRecordBatch> records = List.of(
@@ -83,6 +94,8 @@ public class DataBlockReadAccumulatorTest {
 
         verify(reader, times(1)).read(any());
 
+        CompletableFuture<DataBlockRecords> dataBlockCf1 = reserveResults.get(0).cf();
+        CompletableFuture<DataBlockRecords> dataBlockCf2 = reserveResults2.get(0).cf();
         assertEquals(2, dataBlockCf1.get(1, TimeUnit.SECONDS).records().size());
         assertEquals(12, dataBlockCf1.get(1, TimeUnit.SECONDS).records().get(1).getBaseOffset());
         dataBlockCf1.get().release();
@@ -90,9 +103,12 @@ public class DataBlockReadAccumulatorTest {
         dataBlockCf2.get().release();
 
         // next round read, expected new read
-        CompletableFuture<DataBlockRecords> dataBlockCf3 = accumulator.readDataBlock(reader, dataBlockIndex);
+        List<DataBlockReadAccumulator.ReserveResult> reserveResults3 = accumulator.reserveDataBlock(List.of(new ImmutablePair<>(reader, streamDataBlock)));
+        Assertions.assertEquals(1, reserveResults3.size());
+        Assertions.assertEquals(100, reserveResults3.get(0).reserveSize());
+        accumulator.readDataBlock(reader, dataBlockIndex);
         verify(reader, times(2)).read(any());
-        dataBlockCf3.get().release();
+        reserveResults3.get(0).cf().get().release();
     }
 
     private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {

@@ -26,6 +26,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -82,7 +83,7 @@ public class ObjectReaderTest {
         streamRanges.writeInt(90);
         streamRanges.writeInt(2);
 
-        ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(blocks, streamRanges);
+        ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(Mockito.mock(S3ObjectMetadata.class), blocks, streamRanges);
 
         ObjectReader.FindIndexResult rst = indexBlock.find(1, 10, 300, 100000);
         assertTrue(rst.isFulfilled());

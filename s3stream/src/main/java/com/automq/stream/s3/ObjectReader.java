@@ -86,7 +86,7 @@ public class ObjectReader implements AutoCloseable {
         CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
         cf.thenAccept(buf -> {
             try {
-                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata.objectSize());
+                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
                 basicObjectInfoCf.complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
                 asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
@@ -132,21 +132,21 @@ public class ObjectReader implements AutoCloseable {
      */
     public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
 
-        public static BasicObjectInfo parse(ByteBuf objectTailBuf, long objectSize) throws IndexBlockParseException {
+        public static BasicObjectInfo parse(ByteBuf objectTailBuf, S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-            if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
+            if (indexBlockPosition + objectTailBuf.readableBytes() < s3ObjectMetadata.objectSize()) {
                 objectTailBuf.release();
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
-                int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
+                int indexRelativePosition = objectTailBuf.readableBytes() - (int) (s3ObjectMetadata.objectSize() - indexBlockPosition);
                 ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
                 int blockCount = indexBlockBuf.readInt();
                 ByteBuf blocks = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), blockCount * 16);
                 indexBlockBuf.skipBytes(blockCount * 16);
                 ByteBuf streamRanges = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
                 objectTailBuf.release();
-                return new BasicObjectInfo(indexBlockPosition, new IndexBlock(blocks, streamRanges), blockCount, indexBlockSize);
+                return new BasicObjectInfo(indexBlockPosition, new IndexBlock(s3ObjectMetadata, blocks, streamRanges), blockCount, indexBlockSize);
             }
         }
 
@@ -160,11 +160,13 @@ public class ObjectReader implements AutoCloseable {
     }
 
     public static class IndexBlock {
+        private final S3ObjectMetadata s3ObjectMetadata;
         private final ByteBuf blocks;
         private final ByteBuf streamRanges;
         private final int size;
 
-        public IndexBlock(ByteBuf blocks, ByteBuf streamRanges) {
+        public IndexBlock(S3ObjectMetadata s3ObjectMetadata, ByteBuf blocks, ByteBuf streamRanges) {
+            this.s3ObjectMetadata = s3ObjectMetadata;
             this.blocks = blocks;
             this.streamRanges = streamRanges;
             this.size = blocks.readableBytes() + streamRanges.readableBytes();
@@ -210,7 +212,7 @@ public class ObjectReader implements AutoCloseable {
                     long blockPosition = blocks.getLong(rangeBlockId * 16);
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
                     int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
-                    rst.add(new StreamDataBlock(streamId, rangeStartOffset, rangeEndOffset, -1,
+                    rst.add(new StreamDataBlock(streamId, rangeStartOffset, rangeEndOffset, s3ObjectMetadata.objectId(),
                             new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount)));
 
                     // we consider first block as not matched because we do not know exactly how many bytes are within
@@ -240,8 +242,7 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
-    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes,
-                                  List<StreamDataBlock> streamDataBlocks) {
+    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes, List<StreamDataBlock> streamDataBlocks) {
 
     }
 

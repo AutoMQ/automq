@@ -34,6 +34,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -88,6 +90,38 @@ class DefaultS3OperatorTest {
     }
 
     @Test
+    public void testMergeTask() {
+        DefaultS3Operator.MergedReadTask mergedReadTask = new DefaultS3Operator.MergedReadTask(
+                new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0);
+        boolean ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 1024, 2048, new CompletableFuture<>()));
+        assertTrue(ret);
+        assertEquals(0, mergedReadTask.dataSparsityRate);
+        assertEquals(0, mergedReadTask.start);
+        assertEquals(2048, mergedReadTask.end);
+        ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 2049, 3000, new CompletableFuture<>()));
+        assertFalse(ret);
+        assertEquals(0, mergedReadTask.dataSparsityRate);
+        assertEquals(0, mergedReadTask.start);
+        assertEquals(2048, mergedReadTask.end);
+    }
+
+    @Test
+    public void testMergeTask2() {
+        DefaultS3Operator.MergedReadTask mergedReadTask = new DefaultS3Operator.MergedReadTask(
+                new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0.5f);
+        boolean ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 2048, 4096, new CompletableFuture<>()));
+        assertTrue(ret);
+        assertEquals(0.25, mergedReadTask.dataSparsityRate, 0.01);
+        assertEquals(0, mergedReadTask.start);
+        assertEquals(4096, mergedReadTask.end);
+        ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 1024, 1536, new CompletableFuture<>()));
+        assertTrue(ret);
+        assertEquals(0.125, mergedReadTask.dataSparsityRate, 0.01);
+        assertEquals(0, mergedReadTask.start);
+        assertEquals(4096, mergedReadTask.end);
+    }
+
+    @Test
     void testMergeRead() throws ExecutionException, InterruptedException {
         operator = new DefaultS3Operator(s3, "test-bucket", true) {
             @Override
@@ -106,8 +140,9 @@ class DefaultS3OperatorTest {
 
         operator.tryMergeRead();
 
-        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(0L), eq(31461376L));
+        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(0L), eq(4096L));
         verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj1"), eq(1024L), eq(3072L));
+        verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(31457280L), eq(31461376L));
         verify(operator, timeout(1000L).times(1)).mergedRangeRead(eq("obj0"), eq(33554432L), eq(33554944L));
 
         ByteBuf buf = cf1.get();

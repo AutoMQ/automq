@@ -18,15 +18,11 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.TestUtils;
-import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.utils.Threads;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -120,37 +116,6 @@ public class BlockCacheTest {
         assertTrue(blockCache.checkRange(233, 20, 3));
         assertTrue(blockCache.checkRange(233, 26, 4));
         assertFalse(blockCache.checkRange(233, 20, 6));
-    }
-
-    @Test
-    @Timeout(5)
-    public void testBlockGet() throws InterruptedException {
-        BlockCache blockCache = createBlockCache();
-        BlockCache.GetCacheResult rst = blockCache.get(233L, 23L, 24L, BlockCache.BLOCK_SIZE * 2);
-        List<StreamRecordBatch> records = rst.getRecords();
-        assertEquals(1, records.size());
-        assertEquals(23L, records.get(0).getBaseOffset());
-
-        TimerUtil timerUtil = new TimerUtil();
-        Thread t1 = new Thread(() -> {
-            BlockCache.GetCacheResult rst2 = blockCache.get(233L, 24L, 25L, BlockCache.BLOCK_SIZE * 2, true);
-            List<StreamRecordBatch> records2 = rst2.getRecords();
-            assertEquals(1, records2.size());
-            assertEquals(24L, records2.get(0).getBaseOffset());
-            assertEquals(1000, timerUtil.elapsedAs(TimeUnit.MILLISECONDS), 50);
-        });
-        t1.start();
-
-        Thread t2 = new Thread(() -> {
-            Threads.sleep(1000);
-            blockCache.put(233L, List.of(
-                    newRecord(233L, 24L, 6, 5)
-            ));
-        });
-        t2.start();
-
-        t1.join();
-        t2.join();
     }
 
     @Test

@@ -18,6 +18,7 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.stats.BlockCacheMetricsStats;
 import com.automq.stream.utils.LogContext;
 import com.google.common.base.Objects;
 import org.apache.commons.lang3.tuple.Pair;
@@ -98,6 +99,7 @@ public class ReadAheadAgent {
             lock.lock();
             this.readAheadEndOffset = readAheadEndOffset;
             this.lastReadAheadSize = readAheadSize;
+            BlockCacheMetricsStats.getOrCreateReadAheadSizeHist().update(readAheadSize);
             if (logger.isDebugEnabled()) {
                 logger.debug("update read ahead offset {}, size: {}, lastReadOffset: {}", readAheadEndOffset, readAheadSize, lastReadOffset);
             }
@@ -193,7 +195,11 @@ public class ReadAheadAgent {
                     || startOffset >= readAheadEndOffset) {
                 return;
             }
-            logger.info("evict range [{}, {}], lastReadOffset: {}, readAheadOffset: {}", startOffset, endOffset, lastReadOffset, readAheadEndOffset);
+
+            if (logger.isDebugEnabled()) {
+                logger.debug("evict range [{}, {}], lastReadOffset: {}, readAheadOffset: {}", startOffset, endOffset, lastReadOffset, readAheadEndOffset);
+            }
+
             this.evictedOffsetRanges.add(Pair.of(startOffset, endOffset));
         } finally {
             lock.unlock();
