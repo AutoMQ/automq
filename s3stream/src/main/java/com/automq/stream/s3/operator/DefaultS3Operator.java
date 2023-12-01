@@ -27,6 +27,7 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.StringUtils;
@@ -81,6 +82,7 @@ import static com.automq.stream.utils.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
+    public final float maxMergeReadSparsityRate;
     private final String bucket;
     private final S3AsyncClient writeS3Client;
     private final S3AsyncClient readS3Client;
@@ -106,6 +108,7 @@ public class DefaultS3Operator implements S3Operator {
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey,
                              AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter, AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
+        this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, accessKey, secretKey);
@@ -116,7 +119,7 @@ public class DefaultS3Operator implements S3Operator {
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
         checkAvailable();
-        LOGGER.info("S3Operator init with endpoint={} region={} bucket={}", endpoint, region, bucket);
+        LOGGER.info("S3Operator init with endpoint={} region={} bucket={}, read data sparsity rate={}", endpoint, region, bucket, this.maxMergeReadSparsityRate);
     }
 
     public static Builder builder() {
@@ -130,6 +133,7 @@ public class DefaultS3Operator implements S3Operator {
 
     // used for test only.
     DefaultS3Operator(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
+        this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.bucket = bucket;
@@ -213,7 +217,7 @@ public class DefaultS3Operator implements S3Operator {
                     if (mergedReadTask == null) {
                         if (readPermit > 0) {
                             readPermit -= 1;
-                            mergedReadTask = new MergedReadTask(readTask);
+                            mergedReadTask = new MergedReadTask(readTask, maxMergeReadSparsityRate);
                             mergingReadTasks.put(readTask.path, mergedReadTask);
                             mergedReadTasks.add(mergedReadTask);
                             it.remove();
@@ -227,8 +231,15 @@ public class DefaultS3Operator implements S3Operator {
             }
         }
         mergedReadTasks.forEach(
-                mergedReadTask -> mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
-                        .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), LOGGER))
+                mergedReadTask -> {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("[S3BlockCache] merge read: {}, {}-{}, size: {}, sparsityRate: {}",
+                                mergedReadTask.path, mergedReadTask.start, mergedReadTask.end,
+                                mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
+                    }
+                    mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
+                            .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), LOGGER));
+                }
         );
     }
 
@@ -646,24 +657,65 @@ public class DefaultS3Operator implements S3Operator {
         final List<ReadTask> readTasks = new ArrayList<>();
         long start;
         long end;
+        long uniqueDataSize;
+        float dataSparsityRate = 0f;
+        float maxMergeReadSparsityRate;
 
-        MergedReadTask(ReadTask readTask) {
+        MergedReadTask(ReadTask readTask, float maxMergeReadSparsityRate) {
             this.path = readTask.path;
             this.start = readTask.start;
             this.end = readTask.end;
             this.readTasks.add(readTask);
+            this.uniqueDataSize = readTask.end - readTask.start;
+            this.maxMergeReadSparsityRate = maxMergeReadSparsityRate;
         }
 
         boolean tryMerge(ReadTask readTask) {
-            //TODO: add data sparse rate check, 50%?
-            if (!path.equals(readTask.path)) {
+            if (!path.equals(readTask.path) || dataSparsityRate > this.maxMergeReadSparsityRate) {
                 return false;
             }
+
             long newStart = Math.min(start, readTask.start);
             long newEnd = Math.max(end, readTask.end);
             boolean merge = newEnd - newStart <= MAX_MERGE_READ_SIZE;
             if (merge) {
-                readTasks.add(readTask);
+                // insert read task in order
+                int i = 0;
+                long overlap = 0L;
+                for (; i < readTasks.size(); i++) {
+                    ReadTask task = readTasks.get(i);
+                    if (task.start >= readTask.start) {
+                        readTasks.add(i, readTask);
+                        // calculate data overlap
+                        ReadTask prev = i > 0 ? readTasks.get(i - 1) : null;
+                        ReadTask next = readTasks.get(i + 1);
+
+                        if (prev != null && readTask.start < prev.end) {
+                            overlap += prev.end - readTask.start;
+                        }
+                        if (readTask.end > next.start) {
+                            overlap += readTask.end - next.start;
+                        }
+                        break;
+                    }
+                }
+                if (i == readTasks.size()) {
+                    readTasks.add(readTask);
+                    ReadTask prev = i >= 1 ? readTasks.get(i - 1) : null;
+                    if (prev != null && readTask.start < prev.end) {
+                        overlap += prev.end - readTask.start;
+                    }
+                }
+                long uniqueSize = readTask.end - readTask.start - overlap;
+                long tmpUniqueSize = uniqueDataSize + uniqueSize;
+                float tmpSparsityRate = 1 - (float) tmpUniqueSize / (newEnd - newStart);
+                if (tmpSparsityRate > maxMergeReadSparsityRate) {
+                    // remove read task
+                    readTasks.remove(i);
+                    return false;
+                }
+                uniqueDataSize = tmpUniqueSize;
+                dataSparsityRate = tmpSparsityRate;
                 start = newStart;
                 end = newEnd;
             }
@@ -682,18 +734,7 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    static class ReadTask {
-        final String path;
-        final long start;
-        final long end;
-        final CompletableFuture<ByteBuf> cf;
-
-        public ReadTask(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
-            this.path = path;
-            this.start = start;
-            this.end = end;
-            this.cf = cf;
-        }
+    record ReadTask(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
     }
 
     public static class Builder {

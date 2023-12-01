@@ -58,6 +58,7 @@ public interface Stream {
 
     /**
      * Fetch recordBatch list from stream. Note the startOffset may be in the middle in the first recordBatch.
+     * It is strongly recommended to handle the completion of the returned CompletableFuture in a separate thread.
      *
      * @param startOffset  start offset, if the startOffset in middle of a recordBatch, the recordBatch will be returned.
      * @param endOffset    exclusive end offset, if the endOffset in middle of a recordBatch, the recordBatch will be returned.
