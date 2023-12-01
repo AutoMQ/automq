@@ -341,7 +341,6 @@ public class S3Storage implements Storage {
         return cf;
     }
 
-
     private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
@@ -356,7 +355,7 @@ public class S3Storage implements Storage {
         if (!logCacheRecords.isEmpty()) {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApplyAsync(readDataBlock -> {
+        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
             List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
             int readIndex = -1;
