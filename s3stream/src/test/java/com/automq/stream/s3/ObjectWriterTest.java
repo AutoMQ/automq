@@ -73,14 +73,14 @@ public class ObjectWriterTest {
             StreamRecordBatch r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(10L, r.getBaseOffset());
-            assertEquals(5L, r.getRecordBatch().count());
-            assertEquals(r1.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(5L, r.getCount());
+            assertEquals(r1.getPayload(), r.getPayload());
             r.release();
             r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(15L, r.getBaseOffset());
-            assertEquals(10L, r.getRecordBatch().count());
-            assertEquals(r2.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(10L, r.getCount());
+            assertEquals(r2.getPayload(), r.getPayload());
             assertFalse(it.hasNext());
             r.release();
         }
@@ -90,8 +90,8 @@ public class ObjectWriterTest {
             StreamRecordBatch r = it.next();
             assertEquals(233L, r.getStreamId());
             assertEquals(25L, r.getBaseOffset());
-            assertEquals(5L, r.getRecordBatch().count());
-            assertEquals(r3.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(5L, r.getCount());
+            assertEquals(r3.getPayload(), r.getPayload());
             r.release();
         }
 
@@ -103,8 +103,8 @@ public class ObjectWriterTest {
             StreamRecordBatch r = it.next();
             assertEquals(234L, r.getStreamId());
             assertEquals(0L, r.getBaseOffset());
-            assertEquals(5L, r.getRecordBatch().count());
-            assertEquals(r4.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(5L, r.getCount());
+            assertEquals(r4.getPayload(), r.getPayload());
             assertFalse(it.hasNext());
             r.release();
         }
