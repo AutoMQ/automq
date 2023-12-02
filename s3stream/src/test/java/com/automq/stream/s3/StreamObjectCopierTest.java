@@ -75,13 +75,13 @@ public class StreamObjectCopierTest {
             StreamRecordBatch r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(10L, r.getBaseOffset());
-            assertEquals(5L, r.getRecordBatch().count());
-            assertEquals(r1.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(5L, r.getCount());
+            assertEquals(r1.getPayload(), r.getPayload());
             r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(15L, r.getBaseOffset());
-            assertEquals(10L, r.getRecordBatch().count());
-            assertEquals(r2.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(10L, r.getCount());
+            assertEquals(r2.getPayload(), r.getPayload());
             assertFalse(it.hasNext());
             r.release();
         }
@@ -91,13 +91,13 @@ public class StreamObjectCopierTest {
             StreamRecordBatch r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(25L, r.getBaseOffset());
-            assertEquals(8L, r.getRecordBatch().count());
-            assertEquals(r3.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(8L, r.getCount());
+            assertEquals(r3.getPayload(), r.getPayload());
             r = it.next();
             assertEquals(streamId, r.getStreamId());
             assertEquals(33L, r.getBaseOffset());
-            assertEquals(6L, r.getRecordBatch().count());
-            assertEquals(r4.getRecordBatch().rawPayload(), r.getRecordBatch().rawPayload());
+            assertEquals(6L, r.getCount());
+            assertEquals(r4.getPayload(), r.getPayload());
             assertFalse(it.hasNext());
             r.release();
         }

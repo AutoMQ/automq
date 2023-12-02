@@ -23,9 +23,14 @@ public class ReadOptions {
     public static final ReadOptions DEFAULT = new ReadOptions();
 
     private boolean fastRead;
+    private boolean pooledBuf;
 
     public boolean fastRead() {
         return fastRead;
+    }
+
+    public boolean pooledBuf() {
+        return pooledBuf;
     }
 
     public static Builder builder() {
@@ -40,6 +45,14 @@ public class ReadOptions {
          */
         public Builder fastRead(boolean fastRead) {
             options.fastRead = fastRead;
+            return this;
+        }
+
+        /**
+         * Use pooled buffer for reading. The caller is responsible for releasing the buffer.
+         */
+        public Builder pooledBuf(boolean pooledBuf) {
+            options.pooledBuf = pooledBuf;
             return this;
         }
 
