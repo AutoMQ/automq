@@ -20,12 +20,12 @@ package com.automq.stream.s3;
 import com.automq.stream.DefaultAppendResult;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
-import com.automq.stream.api.ReadOptions;
-import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
+import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
@@ -37,9 +37,14 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.Unpooled;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,8 +55,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
@@ -230,14 +233,14 @@ public class S3Stream implements Stream {
             return FutureUtil.failedFuture(new IllegalArgumentException(String.format("fetch startOffset %s is greater than endOffset %s", startOffset, endOffset)));
         }
         if (startOffset == endOffset) {
-            return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
+            return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT, false));
         }
         return storage.read(streamId, startOffset, endOffset, maxBytes, readOptions).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
             }
-            return new DefaultFetchResult(records, dataBlock.getCacheAccessType());
+            return new DefaultFetchResult(records, dataBlock.getCacheAccessType(), readOptions.pooledBuf());
         });
     }
 
@@ -356,13 +359,20 @@ public class S3Stream implements Stream {
     }
 
     static class DefaultFetchResult implements FetchResult {
+        private final List<StreamRecordBatch> pooledRecords;
         private final List<RecordBatchWithContext> records;
         private final CacheAccessType cacheAccessType;
+        private final boolean pooledBuf;
+        private volatile boolean freed = false;
 
-        public DefaultFetchResult(List<StreamRecordBatch> streamRecords, CacheAccessType cacheAccessType) {
-            this.records = streamRecords.stream().map(r -> new RecordBatchWithContextWrapper(r.getRecordBatch(), r.getBaseOffset())).collect(Collectors.toList());
+        public DefaultFetchResult(List<StreamRecordBatch> streamRecords, CacheAccessType cacheAccessType, boolean pooledBuf) {
+            this.pooledRecords = streamRecords;
+            this.pooledBuf = pooledBuf;
+            this.records = streamRecords.stream().map(r -> new RecordBatchWithContextWrapper(covert(r, pooledBuf), r.getBaseOffset())).collect(Collectors.toList());
             this.cacheAccessType = cacheAccessType;
-            streamRecords.forEach(StreamRecordBatch::release);
+            if (!pooledBuf) {
+                streamRecords.forEach(StreamRecordBatch::release);
+            }
         }
 
         @Override
@@ -375,6 +385,45 @@ public class S3Stream implements Stream {
             return cacheAccessType;
         }
 
+        @Override
+        public void free() {
+            if (!freed && pooledBuf) {
+                pooledRecords.forEach(StreamRecordBatch::release);
+            }
+            freed = true;
+        }
+
+        private static RecordBatch covert(StreamRecordBatch streamRecordBatch, boolean pooledBuf) {
+            ByteBuffer buf;
+            if (pooledBuf) {
+                buf = streamRecordBatch.getPayload().nioBuffer();
+            } else {
+                buf = ByteBuffer.allocate(streamRecordBatch.size());
+                streamRecordBatch.getPayload().duplicate().readBytes(buf);
+                buf.flip();
+            }
+            return new RecordBatch() {
+                @Override
+                public int count() {
+                    return streamRecordBatch.getCount();
+                }
+
+                @Override
+                public long baseTimestamp() {
+                    return streamRecordBatch.getEpoch();
+                }
+
+                @Override
+                public Map<String, String> properties() {
+                    return Collections.emptyMap();
+                }
+
+                @Override
+                public ByteBuffer rawPayload() {
+                    return buf;
+                }
+            };
+        }
     }
 
     static class Status {

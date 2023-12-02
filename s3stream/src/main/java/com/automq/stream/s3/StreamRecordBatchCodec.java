@@ -22,7 +22,6 @@ import io.netty.buffer.ByteBuf;
 
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
@@ -34,17 +33,16 @@ public class StreamRecordBatchCodec {
                 + 8 // baseOffset
                 + 4 // lastOffsetDelta
                 + 4 // payload length
-                + streamRecord.getRecordBatch().rawPayload().remaining(); // payload
+                + streamRecord.size(); // payload
 
         ByteBuf buf = DirectByteBufAlloc.byteBuffer(totalLength);
         buf.writeByte(MAGIC_V0);
         buf.writeLong(streamRecord.getStreamId());
         buf.writeLong(streamRecord.getEpoch());
         buf.writeLong(streamRecord.getBaseOffset());
-        buf.writeInt(streamRecord.getRecordBatch().count());
-        ByteBuffer payload = streamRecord.getRecordBatch().rawPayload().duplicate();
-        buf.writeInt(payload.remaining());
-        buf.writeBytes(payload);
+        buf.writeInt(streamRecord.getCount());
+        buf.writeInt(streamRecord.size());
+        buf.writeBytes(streamRecord.getPayload().duplicate());
         return buf;
     }
 

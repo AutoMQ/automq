@@ -17,13 +17,8 @@
 
 package com.automq.stream.s3.model;
 
-import com.automq.stream.api.RecordBatch;
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import io.netty.buffer.ByteBuf;
-
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.Map;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
     private final long streamId;
@@ -68,35 +63,12 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
         return baseOffset + count;
     }
 
-    public ByteBuf getPayload() {
-        return payload;
+    public int getCount() {
+        return count;
     }
 
-    public RecordBatch getRecordBatch() {
-        ByteBuffer buf = ByteBuffer.allocate(payload.readableBytes());
-        payload.duplicate().readBytes(buf);
-        buf.flip();
-        return new RecordBatch() {
-            @Override
-            public int count() {
-                return count;
-            }
-
-            @Override
-            public long baseTimestamp() {
-                return 0;
-            }
-
-            @Override
-            public Map<String, String> properties() {
-                return Collections.emptyMap();
-            }
-
-            @Override
-            public ByteBuffer rawPayload() {
-                return buf;
-            }
-        };
+    public ByteBuf getPayload() {
+        return payload;
     }
 
     public int size() {
