@@ -101,20 +101,20 @@ public class ElasticLogFileRecords {
 
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
         if (ReadHint.isReadAll()) {
-            return readAll0(startOffset, maxOffset, maxSize);
+            ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).pooledBuf(true).build();
+            return readAll0(startOffset, maxOffset, maxSize, readOptions);
         } else {
             return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
         }
     }
 
-    private CompletableFuture<Records> readAll0(long startOffset, long maxOffset, int maxSize) {
+    private CompletableFuture<Records> readAll0(long startOffset, long maxOffset, int maxSize, ReadOptions readOptions) {
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         if (nextFetchOffset >= endOffset) {
             return CompletableFuture.completedFuture(null);
         }
-        ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).build();
         return fetch0(nextFetchOffset, endOffset, maxSize, readOptions)
                 .thenApply(PooledMemoryRecords::of);
     }
@@ -463,7 +463,7 @@ public class ElasticLogFileRecords {
             }
             Records records = null;
             try {
-                records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize).get();
+                records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize, ReadOptions.DEFAULT).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }
