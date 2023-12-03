@@ -42,4 +42,6 @@ public interface Send {
      */
     long size();
 
+    default void release() {}
+
 }

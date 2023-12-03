@@ -1388,6 +1388,15 @@ class ReplicaManager(val config: KafkaConfig,
     // Note that the use of limitBytes and minOneMessage parameters have been changed here.
     val limitBytes = params.maxBytes
     val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)]
+
+    def release(): Unit = {
+      result.foreach { case (_, logReadResult) =>
+        if (logReadResult.info != null && logReadResult.info.records != null && logReadResult.info.records.isInstanceOf[PooledResource]) {
+          logReadResult.info.records.asInstanceOf[PooledResource].release()
+        }
+      }
+    }
+
     val minOneMessage = !params.hardMaxBytesLimit
 
     val remainingBytes = new AtomicInteger(limitBytes)
@@ -1413,6 +1422,7 @@ class ReplicaManager(val config: KafkaConfig,
       CompletableFuture.allOf(readCfArray.toArray: _*).get()
     }
     if (fastReadFastFail.get() != null) {
+      release()
       throw fastReadFastFail.get()
     }
 
@@ -1433,6 +1443,7 @@ class ReplicaManager(val config: KafkaConfig,
     }
     CompletableFuture.allOf(remainingCfArray.toArray: _*).get()
     if (fastReadFastFail.get() != null) {
+      release()
       throw fastReadFastFail.get()
     }
     result

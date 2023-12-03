@@ -1052,6 +1052,8 @@ private[kafka] class Processor(
       val send = new NetworkSend(connectionId, responseSend)
       selector.send(send)
       inflightResponses.put(send, response)
+    } else {
+      responseSend.release()
     }
   }
 
@@ -1144,6 +1146,7 @@ private[kafka] class Processor(
         if (response == null) {
           throw new IllegalStateException(s"Send for ${send.destinationId} completed, but not in `inflightResponses`")
         }
+        send.release()
         updateRequestMetrics(response)
 
         // Invoke send completion callback
@@ -1179,7 +1182,11 @@ private[kafka] class Processor(
         val remoteHost = ConnectionId.fromString(connectionId).getOrElse {
           throw new IllegalStateException(s"connectionId has unexpected format: $connectionId")
         }.remoteHost
-        inflightResponses.entrySet().removeIf(e => connectionId.equals(e.getValue.request.context.connectionId))
+        inflightResponses.entrySet().removeIf(e => {
+          val remove = connectionId.equals(e.getValue.request.context.connectionId)
+          e.getKey.release()
+          remove
+        })
         // the channel has been closed by the selector but the quotas still need to be updated
         connectionQuotas.dec(listenerName, InetAddress.getByName(remoteHost))
       } catch {
