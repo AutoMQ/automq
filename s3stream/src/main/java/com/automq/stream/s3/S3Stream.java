@@ -52,6 +52,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -359,6 +360,7 @@ public class S3Stream implements Stream {
     }
 
     static class DefaultFetchResult implements FetchResult {
+        private static final LongAdder INFLIGHT = new LongAdder();
         private final List<StreamRecordBatch> pooledRecords;
         private final List<RecordBatchWithContext> records;
         private final CacheAccessType cacheAccessType;
@@ -372,6 +374,8 @@ public class S3Stream implements Stream {
             this.cacheAccessType = cacheAccessType;
             if (!pooledBuf) {
                 streamRecords.forEach(StreamRecordBatch::release);
+            } else {
+                INFLIGHT.increment();
             }
         }
 
@@ -389,6 +393,7 @@ public class S3Stream implements Stream {
         public void free() {
             if (!freed && pooledBuf) {
                 pooledRecords.forEach(StreamRecordBatch::release);
+                INFLIGHT.decrement();
             }
             freed = true;
         }
