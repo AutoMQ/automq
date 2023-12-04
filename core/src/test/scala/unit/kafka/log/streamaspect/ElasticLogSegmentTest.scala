@@ -89,6 +89,7 @@ class ElasticLogSegmentTest {
         segments.clear()
         logDir = TestUtils.tempDir()
         Context.enableTestMode()
+        ElasticLogManager.enable(true)
         ElasticLogManager.init(kafkaConfig, "fake_cluster_id")
     }
 
