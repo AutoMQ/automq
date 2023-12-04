@@ -685,6 +685,7 @@ object ElasticLog extends Logging {
     val meta = new ElasticStreamSegmentMeta()
     meta.baseOffset(baseOffset)
     meta.streamSuffix(suffix)
+    meta.createTimestamp(time.milliseconds())
     val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time, logSegmentManager.logSegmentEventListener())
     var metaSaveCf: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
     if (suffix.equals("")) {

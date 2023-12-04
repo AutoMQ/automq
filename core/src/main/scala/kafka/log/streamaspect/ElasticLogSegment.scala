@@ -317,12 +317,13 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long = {
-    // Load the timestamp of the first message into memory
-    loadFirstBatchTimestamp()
-    rollingBasedTimestamp match {
-      case Some(t) if t >= 0 => messageTimestamp - t
-      case _ => now - created
+    val createTime = if (meta.createTimestamp() > 0) {
+      meta.createTimestamp()
+    } else {
+      created
     }
+    // To avoid reading log, we use the create time of the segment instead of the time of the first batch.
+    now - createTime
   }
 
   def getFirstBatchTimestamp(): Long = {
