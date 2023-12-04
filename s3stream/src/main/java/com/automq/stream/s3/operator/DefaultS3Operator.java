@@ -29,6 +29,7 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -265,8 +266,11 @@ public class DefaultS3Operator implements S3Operator {
                 .thenAccept(responsePublisher -> {
                     long size = end - start + 1;
                     S3ObjectMetricsStats.getOrCreates3ObjectDownloadSizeHist().update(size);
-                    ByteBuf buf = DirectByteBufAlloc.byteBuffer((int) size, "merge_read");
-                    responsePublisher.subscribe(buf::writeBytes).thenAccept(v -> {
+                    CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+                    responsePublisher.subscribe((bytes) -> {
+                        // the aws client will copy DefaultHttpContent to heap ByteBuffer
+                        buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                    }).thenAccept(v -> {
                         if (LOGGER.isDebugEnabled()) {
                             LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
                                     path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
