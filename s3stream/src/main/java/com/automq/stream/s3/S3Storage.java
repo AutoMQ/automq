@@ -36,6 +36,8 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,6 +109,9 @@ public class S3Storage implements Storage {
      * @see #handleAppendCallback
      */
     private final Lock[] streamCallbackLocks = IntStream.range(0, NUM_STREAM_CALLBACK_LOCKS).mapToObj(i -> new ReentrantLock()).toArray(Lock[]::new);
+
+    private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
+            ThreadUtils.createThreadFactory("storage-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
                      S3BlockCache blockCache, S3Operator s3Operator) {
@@ -355,6 +360,7 @@ public class S3Storage implements Storage {
         if (!logCacheRecords.isEmpty()) {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
+        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.error("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
             List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
@@ -376,6 +382,7 @@ public class S3Storage implements Storage {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
                         streamId, startOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
+                timeout.cancel();
             }
         });
     }
