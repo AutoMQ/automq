@@ -31,6 +31,8 @@ import com.automq.stream.utils.Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,6 +104,8 @@ public class DefaultS3Operator implements S3Operator {
             "s3-read-cb-executor", true, LOGGER);
     private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
             "s3-write-cb-executor", true, LOGGER);
+    private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
+            ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
         this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);
@@ -182,6 +186,8 @@ public class DefaultS3Operator implements S3Operator {
             rangeRead0(path, start, end, cf);
         }
 
+        Timeout timeout = timeoutDetect.newTimeout((t) -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 1, TimeUnit.MINUTES);
+        cf.whenComplete((rst, ex) -> timeout.cancel());
         return cf;
     }
 
