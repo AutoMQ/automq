@@ -23,7 +23,7 @@ import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.utils.ByteBufferInputStream;
+import com.automq.stream.utils.ByteBufInputStream;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -295,7 +295,7 @@ public class ObjectReader implements AutoCloseable {
             }
             // TODO: check flag, use uncompressed stream or compressed stream.
 //            DataInputStream in = new DataInputStream(ZstdFactory.wrapForInput(buf.nioBuffer(), (byte) 0, BufferSupplier.NO_CACHING));
-            DataInputStream in = new DataInputStream(new ByteBufferInputStream(buf.nioBuffer()));
+            DataInputStream in = new DataInputStream(new ByteBufInputStream(buf.duplicate()));
             return new CloseableIterator<>() {
                 @Override
                 public boolean hasNext() {
