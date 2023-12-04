@@ -136,7 +136,6 @@ public class StreamReader {
                         if (dataBlock.records().isEmpty()) {
                             return;
                         }
-
                         // retain records to be returned
                         dataBlock.records().forEach(StreamRecordBatch::retain);
                         recordsMap.put(dataBlockKey, dataBlock.records());
@@ -145,13 +144,18 @@ public class StreamReader {
                         dataBlock.records().forEach(StreamRecordBatch::retain);
                         blockCache.put(streamId, dataBlock.records());
                         dataBlock.release();
-
-                        // complete and remove inflight read ahead task
+                    }, backgroundExecutor).whenComplete((ret, ex) -> {
                         CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(taskKey);
                         if (inflightReadAheadTask != null) {
-                            inflightReadAheadTask.complete(null);
+                            if (ex != null) {
+                                LOGGER.error("[S3BlockCache] sync ra fail to read data block, stream={}, {}-{}, data block: {}",
+                                        streamId, startOffset, endOffset, streamDataBlock, ex);
+                                inflightReadAheadTask.completeExceptionally(ex);
+                            } else {
+                                inflightReadAheadTask.complete(null);
+                            }
                         }
-                    }, backgroundExecutor));
+                    }));
                     if (reserveResult.reserveSize() > 0) {
                         dataBlockReadAccumulator.readDataBlock(objectReader, streamDataBlock.dataBlockIndex());
                     }
@@ -233,7 +237,6 @@ public class StreamReader {
                     if (dataBlock.records().isEmpty()) {
                         return;
                     }
-
                     // retain records to be put into block cache
                     dataBlock.records().forEach(StreamRecordBatch::retain);
                     if (readIndex == 0) {
@@ -243,14 +246,20 @@ public class StreamReader {
                         blockCache.put(streamId, dataBlock.records());
                     }
                     dataBlock.release();
+                }, backgroundExecutor).whenComplete((ret, ex) -> {
                     inflightReadThrottle.release(uuid);
-
-                    // complete and remove inflight read ahead task
                     CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(taskKey);
                     if (inflightReadAheadTask != null) {
-                        inflightReadAheadTask.complete(null);
+                        if (ex != null) {
+                            LOGGER.error("[S3BlockCache] async ra fail to read data block, stream={}, {}-{}, data block: {}",
+                                    streamId, startOffset, endOffset, streamDataBlock, ex);
+                            inflightReadAheadTask.completeExceptionally(ex);
+                        } else {
+                            inflightReadAheadTask.complete(null);
+                        }
                     }
-                }, backgroundExecutor));
+
+                }));
 
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("[S3BlockCache] async ra acquire size: {}, uuid={}, stream={}, {}-{}, {}",

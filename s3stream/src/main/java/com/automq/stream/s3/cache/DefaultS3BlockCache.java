@@ -88,6 +88,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     if (ex != null) {
                         LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
                         readCf.completeExceptionally(ex);
+                        this.inflightReadThrottle.release(uuid);
                         return;
                     }
                     int totalReturnedSize = ret.getRecords().stream().mapToInt(StreamRecordBatch::size).sum();
