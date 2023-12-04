@@ -16,36 +16,37 @@
  */
 package com.automq.stream.utils;
 
+import io.netty.buffer.ByteBuf;
+
 import java.io.InputStream;
-import java.nio.ByteBuffer;
 
 /**
  * A byte buffer backed input inputStream
  */
-public final class ByteBufferInputStream extends InputStream {
-    private final ByteBuffer buffer;
+public final class ByteBufInputStream extends InputStream {
+    private final ByteBuf buffer;
 
-    public ByteBufferInputStream(ByteBuffer buffer) {
+    public ByteBufInputStream(ByteBuf buffer) {
         this.buffer = buffer;
     }
 
     public int read() {
-        if (!buffer.hasRemaining()) {
+        if (buffer.readableBytes() == 0) {
             return -1;
         }
-        return buffer.get() & 0xFF;
+        return buffer.readByte() & 0xFF;
     }
 
     public int read(byte[] bytes, int off, int len) {
         if (len == 0) {
             return 0;
         }
-        if (!buffer.hasRemaining()) {
+        if (buffer.readableBytes() == 0) {
             return -1;
         }
 
-        len = Math.min(len, buffer.remaining());
-        buffer.get(bytes, off, len);
+        len = Math.min(len, buffer.readableBytes());
+        buffer.readBytes(bytes, off, len);
         return len;
     }
 }
