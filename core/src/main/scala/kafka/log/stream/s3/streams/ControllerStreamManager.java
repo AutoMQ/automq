@@ -204,16 +204,16 @@ public class ControllerStreamManager implements StreamManager {
                             new StreamMetadata(streamId, epoch, resp.startOffset(), resp.nextOffset(), StreamState.OPENED));
                 case NODE_EPOCH_EXPIRED:
                 case NODE_EPOCH_NOT_EXIST:
-                    LOGGER.error("Node epoch expired or not exist: {}, code: {}", req, code);
+                    LOGGER.error("Node epoch expired or not exist, stream {}, epoch {}, code: {}", streamId, epoch, code);
                     throw code.exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
-                    LOGGER.error("Unexpected error while opening stream: {}, code: {}", req, code);
+                    LOGGER.error("Unexpected error while opening stream: {}, epoch {}, code: {}", streamId, epoch, code);
                     throw code.exception();
                 case STREAM_NOT_CLOSED:
                 default:
-                    LOGGER.error("Error while opening stream: {}, code: {}, retry later", req, code);
+                    LOGGER.error("Error while opening stream: {}, epoch {}, code: {}, retry later", streamId, epoch, code);
                     return ResponseHandleResult.withRetry();
             }
         });

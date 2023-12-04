@@ -64,6 +64,7 @@ class ElasticUnifiedLogTest {
         val props = TestUtils.createSimpleEsBrokerConfig()
         config = KafkaConfig.fromProps(props)
         Context.enableTestMode()
+        ElasticLogManager.enable(true)
         ElasticLogManager.init(config, clusterId)
     }
 
@@ -442,14 +443,9 @@ class ElasticUnifiedLogTest {
         log.appendAsLeader(createRecordsWithTimestamp, leaderEpoch = 0)
         assertEquals(5, log.numberOfSegments, "A new segment should have been rolled out")
 
-        // move the wall clock beyond log rolling time
-        mockTime.sleep(log.config.segmentMs + 1)
-        log.appendAsLeader(createRecordsWithTimestamp, leaderEpoch = 0)
-        assertEquals(5, log.numberOfSegments, "Log should not roll because the roll should depend on timestamp of the first message.")
-
         val recordWithExpiredTimestamp = TestUtils.singletonRecords(value = "test".getBytes, timestamp = mockTime.milliseconds)
         log.appendAsLeader(recordWithExpiredTimestamp, leaderEpoch = 0)
-        assertEquals(6, log.numberOfSegments, "Log should roll because the timestamp in the message should make the log segment expire.")
+        assertEquals(5, log.numberOfSegments, "Log should not roll since the log rolling is based on wall clock.")
 
         val numSegments = log.numberOfSegments
         mockTime.sleep(log.config.segmentMs + 1)
