@@ -168,7 +168,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     ADMIN_CLIENT_AS_BROKER_JAAS_CONF_PROPERTY = "java.security.auth.login.config=/mnt/security/admin_client_as_broker_jaas.conf"
     KRB5_CONF = "java.security.krb5.conf=/mnt/security/krb5.conf"
     SECURITY_PROTOCOLS = [SecurityConfig.PLAINTEXT, SecurityConfig.SSL, SecurityConfig.SASL_PLAINTEXT, SecurityConfig.SASL_SSL]
-    KAFKA_HEAP_OPTS = "-Xmx512m -Xms512m -XX:MaxDirectMemorySize=1024m"
+    KAFKA_HEAP_OPTS = "-Xmx512m -Xms512m"
 
     logs = {
         "kafka_server_start_stdout_stderr": {

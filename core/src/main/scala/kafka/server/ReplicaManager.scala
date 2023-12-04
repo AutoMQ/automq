@@ -485,9 +485,6 @@ class ReplicaManager(val config: KafkaConfig,
               maybeRemoveTopicMetrics(topicPartition.topic)
               // AutoMQ for Kafka inject start
               if (ElasticLogManager.enabled()) {
-                if (logManager.cleaner != null) {
-                  logManager.cleaner.abortCleaning(topicPartition)
-                }
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
