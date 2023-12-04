@@ -149,6 +149,8 @@ class BrokerServer(
 
   val brokerFeatures: BrokerFeatures = BrokerFeatures.createDefault()
 
+  var controllerNodeProvider: RaftControllerNodeProvider = _
+
   def kafkaYammerMetrics: KafkaYammerMetrics = KafkaYammerMetrics.INSTANCE
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -218,7 +220,7 @@ class BrokerServer(
       credentialProvider = new CredentialProvider(ScramMechanism.mechanismNames, tokenCache)
 
       val controllerNodes = RaftConfig.voterConnectionsToNodes(sharedServer.controllerQuorumVotersFuture.get()).asScala
-      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
+      controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
 
       clientToControllerChannelManager = BrokerToControllerChannelManager(
         controllerNodeProvider,
@@ -635,4 +637,15 @@ class BrokerServer(
 
   override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
 
+  def newBrokerToControllerChannelManager(channelName: String, retryTimeout: Int): BrokerToControllerChannelManager = {
+    BrokerToControllerChannelManager(
+      controllerNodeProvider,
+      time,
+      metrics,
+      config,
+      channelName,
+      threadNamePrefix,
+      retryTimeout
+    )
+  }
 }

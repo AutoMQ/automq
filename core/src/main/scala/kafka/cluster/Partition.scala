@@ -1094,7 +1094,7 @@ class Partition(val topicPartition: TopicPartition,
    * So we need to try complete the delayed requests(ack to produce), after confirm offset move forward.
    */
   private def handleLeaderConfirmOffsetMove(): Unit = {
-    leaderLogIfLocal match {
+    log match {
       case Some(leaderLog) =>
         val incrementLeaderStartNanos = System.nanoTime()
         if (maybeIncrementLeaderHW(leaderLog)) {

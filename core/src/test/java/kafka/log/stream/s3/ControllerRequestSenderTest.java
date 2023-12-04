@@ -57,6 +57,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -73,7 +75,7 @@ public class ControllerRequestSenderTest {
     public void setUp() {
         brokerServer = Mockito.mock(BrokerServer.class);
         channelManager = Mockito.mock(BrokerToControllerChannelManager.class);
-        Mockito.when(brokerServer.clientToControllerChannelManager()).thenReturn(channelManager);
+        Mockito.when(brokerServer.newBrokerToControllerChannelManager(anyString(), anyInt())).thenReturn(channelManager);
         KafkaConfig config = Mockito.mock(KafkaConfig.class);
         Mockito.when(config.brokerId()).thenReturn(1);
         Mockito.when(config.nodeEpoch()).thenReturn(1L);

@@ -57,6 +57,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     protected final AtomicInteger size;
+    // only used for recover
     protected final Iterable<RecordBatch> batches;
     private final ElasticStreamSlice streamSlice;
     // This is The base offset of the corresponding segment.
