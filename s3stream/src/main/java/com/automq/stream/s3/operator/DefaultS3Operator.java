@@ -187,8 +187,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         Timeout timeout = timeoutDetect.newTimeout((t) -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 1, TimeUnit.MINUTES);
-        cf.whenComplete((rst, ex) -> timeout.cancel());
-        return cf;
+        return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
 
     private void rangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
