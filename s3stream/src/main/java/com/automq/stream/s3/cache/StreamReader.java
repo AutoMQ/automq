@@ -159,6 +159,7 @@ public class StreamReader {
                 sortedDataBlockKeyList.add(dataBlockKey);
                 DataBlockReadAccumulator.ReserveResult reserveResult = reserveResults.get(i);
                 DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
+                int readIndex = i;
                 cfList.add(reserveResult.cf().thenApplyAsync(dataBlock -> {
                     if (dataBlock.records().isEmpty()) {
                         return new ArrayList<StreamRecordBatch>();
@@ -174,15 +175,14 @@ public class StreamReader {
 
                     return dataBlock.records();
                 }, backgroundExecutor).whenComplete((ret, ex) -> {
-                    CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(taskKey);
-                    if (inflightReadAheadTask != null) {
-                        if (ex != null) {
-                            LOGGER.error("[S3BlockCache] sync ra fail to read data block, stream={}, {}-{}, data block: {}",
-                                    streamId, startOffset, endOffset, streamDataBlock, ex);
-                            inflightReadAheadTask.completeExceptionally(ex);
-                        } else {
-                            inflightReadAheadTask.complete(null);
-                        }
+                    if (ex != null) {
+                        LOGGER.error("[S3BlockCache] sync ra fail to read data block, stream={}, {}-{}, data block: {}",
+                                streamId, startOffset, endOffset, streamDataBlock, ex);
+                    }
+                    completeInflightTask(taskKey, ex);
+                    if (readIndex == 0) {
+                        // in case of first data block and startOffset is not aligned with start of data block
+                        completeInflightTask(new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset), ex);
                     }
                 }));
                 if (reserveResult.reserveSize() > 0) {
@@ -296,18 +296,16 @@ public class StreamReader {
                 }
                 dataBlock.release();
             }, backgroundExecutor).whenComplete((ret, ex) -> {
-                inflightReadThrottle.release(uuid);
-                CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(taskKey);
-                if (inflightReadAheadTask != null) {
-                    if (ex != null) {
-                        LOGGER.error("[S3BlockCache] async ra fail to read data block, stream={}, {}-{}, data block: {}",
-                                streamId, startOffset, endOffset, streamDataBlock, ex);
-                        inflightReadAheadTask.completeExceptionally(ex);
-                    } else {
-                        inflightReadAheadTask.complete(null);
-                    }
+                if (ex != null) {
+                    LOGGER.error("[S3BlockCache] async ra fail to read data block, stream={}, {}-{}, data block: {}",
+                            streamId, startOffset, endOffset, streamDataBlock, ex);
                 }
-
+                inflightReadThrottle.release(uuid);
+                completeInflightTask(taskKey, ex);
+                if (readIndex == 0) {
+                    // in case of first data block and startOffset is not aligned with start of data block
+                    completeInflightTask(new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset), ex);
+                }
             }));
 
             if (LOGGER.isDebugEnabled()) {
@@ -391,6 +389,17 @@ public class StreamReader {
             context.objectIndex++;
             return getDataBlockIndices(streamId, endOffset, context);
         }, streamReaderExecutor);
+    }
+
+    private void completeInflightTask(DefaultS3BlockCache.ReadAheadTaskKey key, Throwable ex) {
+        CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(key);
+        if (inflightReadAheadTask != null) {
+            if (ex != null) {
+                inflightReadAheadTask.completeExceptionally(ex);
+            } else {
+                inflightReadAheadTask.complete(null);
+            }
+        }
     }
 
     private List<Pair<ObjectReader, StreamDataBlock>> collectStreamDataBlocksToRead(long streamId, ReadContext context) {

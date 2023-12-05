@@ -187,10 +187,23 @@ public class DataBlockReader {
 
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
         if (throttleBucket == null) {
-            return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2);
+            return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
+                // convert heap buffer to direct buffer
+                ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes());
+                directBuf.writeBytes(buf);
+                buf.release();
+                return directBuf;
+            });
         } else {
             return throttleBucket.asScheduler().consume(end - start + 1, bucketCallbackExecutor)
-                    .thenCompose(v -> s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2));
+                    .thenCompose(v ->
+                            s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
+                                // convert heap buffer to direct buffer
+                                ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes());
+                                directBuf.writeBytes(buf);
+                                buf.release();
+                                return directBuf;
+                            }));
         }
     }
 
