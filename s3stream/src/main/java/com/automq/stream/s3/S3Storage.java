@@ -360,7 +360,7 @@ public class S3Storage implements Storage {
         if (!logCacheRecords.isEmpty()) {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.error("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
+        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
             List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
@@ -378,11 +378,11 @@ public class S3Storage implements Storage {
             continuousCheck(rst);
             return new ReadDataBlock(rst, readDataBlock.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
+            timeout.cancel();
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
                         streamId, startOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
-                timeout.cancel();
             }
         });
     }
