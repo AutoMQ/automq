@@ -110,7 +110,7 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         and waiting for them to be cleaned up.
         """
         producer = VerifiableProducer(self.test_context, 1, self.kafka, self.topic,
-                                      throughput=-1, enable_idempotence=True,
+                                      throughput=100, enable_idempotence=True,
                                       create_time=1000)
         producer.start()
         wait_until(lambda: producer.num_acked > 0,
