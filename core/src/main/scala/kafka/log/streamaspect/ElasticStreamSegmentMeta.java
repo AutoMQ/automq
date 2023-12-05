@@ -84,12 +84,10 @@ public class ElasticStreamSegmentMeta {
         this.logSize = logSize;
     }
 
-    @SuppressWarnings("unused")
     public long createTimestamp() {
         return createTimestamp;
     }
 
-    @SuppressWarnings("unused")
     public void createTimestamp(long createTimestamp) {
         this.createTimestamp = createTimestamp;
     }

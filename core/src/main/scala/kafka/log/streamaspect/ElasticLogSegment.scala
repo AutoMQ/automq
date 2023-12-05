@@ -308,14 +308,6 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     _meta.txn(txnIndex.stream.sliceRange)
   }
 
-  protected def loadFirstBatchTimestamp(): Unit = {
-    if (rollingBasedTimestamp.isEmpty) {
-      val iter = _log.batches.iterator()
-      if (iter.hasNext)
-        rollingBasedTimestamp = Some(iter.next().maxTimestamp)
-    }
-  }
-
   def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long = {
     val createTime = if (meta.createTimestamp() > 0) {
       meta.createTimestamp()
@@ -327,10 +319,10 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   def getFirstBatchTimestamp(): Long = {
-    loadFirstBatchTimestamp()
-    rollingBasedTimestamp match {
-      case Some(t) if t >= 0 => t
-      case _ => Long.MaxValue
+    if (meta.createTimestamp() > 0) {
+      meta.createTimestamp()
+    } else {
+      created
     }
   }
 

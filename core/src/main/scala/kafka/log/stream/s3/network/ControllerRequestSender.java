@@ -56,9 +56,14 @@ public class ControllerRequestSender {
 
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
-        this.channelManager = brokerServer.clientToControllerChannelManager();
+        this.channelManager = brokerServer.newBrokerToControllerChannelManager("s3stream-to-controller", 60000);
+        this.channelManager.start();
         this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
         this.requestAccumulatorMap = new ConcurrentHashMap<>();
+    }
+
+    public void shutdown() {
+        this.channelManager.shutdown();
     }
 
     public void send(RequestTask task) {
