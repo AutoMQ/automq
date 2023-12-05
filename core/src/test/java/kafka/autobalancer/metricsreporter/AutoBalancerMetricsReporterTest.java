@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
@@ -54,6 +55,9 @@ import static kafka.autobalancer.metricsreporter.metric.RawMetricType.BROKER_CPU
 import static kafka.autobalancer.metricsreporter.metric.RawMetricType.PARTITION_SIZE;
 import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_IN;
 import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
@@ -135,4 +139,68 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         }
         Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
     }
+
+
+
+    @Test
+    public void testConfigureNwCapacity() throws NoSuchFieldException, IllegalAccessException {
+        // Create a spy object for AutoBalancerMetricsReporter
+        AutoBalancerMetricsReporter autoBalancerMetricsReporter = spy(new AutoBalancerMetricsReporter());
+
+        // When calling the autoBalancerMetricsReporter.createAutoBalancerMetricsProducer method, no action is taken
+        doNothing().when(autoBalancerMetricsReporter).createAutoBalancerMetricsProducer(mock(Properties.class));
+
+        // Using java reflection to obtain private fields
+        Field brokerNwInCapacity = AutoBalancerMetricsReporter.class.getDeclaredField("brokerNwInCapacity");
+        Field brokerNwOutCapacity = AutoBalancerMetricsReporter.class.getDeclaredField("brokerNwOutCapacity");
+        brokerNwInCapacity.setAccessible(true);
+        brokerNwOutCapacity.setAccessible(true);
+
+        // init default configs
+        Map<String, Object> initConfigs = Map.of(
+                "broker.id", "1",
+                "broker.rack", "rack-a"
+        );
+        Map<String, Object> configs = new HashMap<>(initConfigs);
+
+        //test1.the priority of AUTO_BALANCER_BROKER_NW_IN/OUT_CAPACITY is highest
+        configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY, 51200);
+        configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY, 51200);
+        configs.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 102400);
+
+        autoBalancerMetricsReporter.configure(configs);
+
+        Assertions.assertEquals(51200, brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + 51200 + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
+        Assertions.assertEquals(51200, brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + 51200 + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
+
+
+        //test2.the priority of S3NetworkBaselineBandwidthProp is second highest
+        configs = new HashMap<>(initConfigs);
+        configs.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 204800);
+
+        autoBalancerMetricsReporter.configure(configs);
+
+        Assertions.assertEquals(204800, brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + 204800 + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
+        Assertions.assertEquals(204800, brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + 204800 + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
+
+
+        //test3.default autobalancer config is last one
+        configs = new HashMap<>(initConfigs);
+        autoBalancerMetricsReporter.configure(configs);
+
+        Assertions.assertEquals(AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY,
+                brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY
+                        + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
+        Assertions.assertEquals(AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY,
+                brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
+                "Expected " + AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY
+                        + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
+
+    }
+
 }
