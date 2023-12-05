@@ -31,6 +31,8 @@ import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.utils.FutureUtil;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.slf4j.Logger;
@@ -83,6 +85,9 @@ public class AlwaysSuccessClient implements Client {
      * due to the delay in updating the committed offset.
      */
     private final boolean appendCallbackAsync;
+    private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
+            ThreadUtils.createThreadFactory("fetch-timeout-%d", true),
+            1, TimeUnit.SECONDS, 512);
 
     public AlwaysSuccessClient(Client client) {
         this(client, true);
@@ -291,8 +296,9 @@ public class AlwaysSuccessClient implements Client {
         @Override
         public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
+            Timeout timeout = fetchTimeout.newTimeout(t -> LOGGER.warn("fetch timeout, stream[{}] [{}, {})", streamId(), startOffset, endOffset), 1, TimeUnit.MINUTES);
             fetch0(startOffset, endOffset, maxBytesHint, readOptions, cf);
-            return cf;
+            return cf.whenComplete((rst, ex) -> timeout.cancel());
         }
 
         private void fetch0(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions, CompletableFuture<FetchResult> cf) {

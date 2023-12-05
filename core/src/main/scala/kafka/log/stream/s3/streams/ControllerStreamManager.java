@@ -194,6 +194,11 @@ public class ControllerStreamManager implements StreamManager {
                                 .setNodeId(nodeId)
                                 .setNodeEpoch(nodeEpoch)).addSubRequest(request);
             }
+
+            @Override
+            public String toString() {
+                return request.toString();
+            }
         };
         CompletableFuture<StreamMetadata> future = new CompletableFuture<>();
         RequestTask task = new RequestTask<OpenStreamResponse, StreamMetadata>(req, future, resp -> {
