@@ -69,7 +69,11 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   protected var bytesSinceLastIndexEntry = 0
 
-  @volatile protected var rollingBasedTimestamp: Option[Long] = None
+  @volatile protected var rollingBasedTimestamp: Option[Long] = if (_meta.firstBatchTimestamp() != 0) {
+    Some(_meta.firstBatchTimestamp())
+  } else {
+    None
+  }
 
   @volatile private var _maxTimestampAndOffsetSoFar: TimestampOffset = TimestampOffset.Unknown
 
@@ -94,8 +98,10 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   def append(largestOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
     if (records.sizeInBytes > 0) {
       val physicalPosition = _log.sizeInBytes()
-      if (physicalPosition == 0)
+      if (physicalPosition == 0) {
         rollingBasedTimestamp = Some(largestTimestamp)
+        _meta.firstBatchTimestamp(largestTimestamp)
+      }
       // append the messages
       val appendedBytes = _log.append(records, largestOffset + 1)
       trace(s"Appended $appendedBytes at end offset $largestOffset")
@@ -110,7 +116,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
       }
       bytesSinceLastIndexEntry += records.sizeInBytes
     }
-    meta.lastModifiedTimestamp(System.currentTimeMillis())
+    _meta.lastModifiedTimestamp(System.currentTimeMillis())
   }
 
   def asyncLogFlush(): CompletableFuture[Void] = {
@@ -308,21 +314,31 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     _meta.txn(txnIndex.stream.sliceRange)
   }
 
-  def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long = {
-    val createTime = if (meta.createTimestamp() > 0) {
-      meta.createTimestamp()
-    } else {
-      created
+  protected def loadFirstBatchTimestamp(): Unit = {
+    if (rollingBasedTimestamp.isEmpty) {
+      if (_log.sizeInBytes() > 0) {
+        val records = _log.read(baseOffset, baseOffset + 1, 1).get()
+        val iter = records.batches().iterator()
+        if (iter.hasNext)
+          rollingBasedTimestamp = Some(iter.next().maxTimestamp)
+      }
     }
-    // To avoid reading log, we use the create time of the segment instead of the time of the first batch.
-    now - createTime
+  }
+
+  def timeWaitedForRoll(now: Long, messageTimestamp: Long): Long = {
+    // Load the timestamp of the first message into memory
+    loadFirstBatchTimestamp()
+    rollingBasedTimestamp match {
+      case Some(t) if t >= 0 => messageTimestamp - t
+      case _ => now - created
+    }
   }
 
   def getFirstBatchTimestamp(): Long = {
-    if (meta.createTimestamp() > 0) {
-      meta.createTimestamp()
-    } else {
-      created
+    loadFirstBatchTimestamp()
+    rollingBasedTimestamp match {
+      case Some(t) if t >= 0 => t
+      case _ => Long.MaxValue
     }
   }
 
