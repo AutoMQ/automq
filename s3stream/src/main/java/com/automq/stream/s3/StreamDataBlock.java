@@ -22,6 +22,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);
@@ -35,6 +36,7 @@ public class StreamDataBlock {
 
     private final ObjectReader.DataBlockIndex dataBlockIndex;
     private final CompletableFuture<ByteBuf> dataCf = new CompletableFuture<>();
+    private final AtomicInteger refCount = new AtomicInteger(1);
 
     public StreamDataBlock(long streamId, long startOffset, long endOffset, long objectId, ObjectReader.DataBlockIndex dataBlockIndex) {
         this.streamId = streamId;
@@ -101,23 +103,28 @@ public class StreamDataBlock {
         return this.dataCf;
     }
 
-    public void free() {
-        this.dataCf.thenAccept(buf -> {
-            if (buf != null) {
-                buf.release();
-            }
-        });
+    public void releaseRef() {
+        refCount.decrementAndGet();
+    }
+
+    public void release() {
+        if (refCount.decrementAndGet() == 0) {
+            dataCf.thenAccept(buf -> {
+                if (buf != null) {
+                    buf.release();
+                }
+            });
+        }
     }
 
     @Override
     public String toString() {
         return "StreamDataBlock{" +
-                "streamId=" + streamId +
+                "objectId=" + objectId +
+                ", streamId=" + streamId +
                 ", startOffset=" + startOffset +
                 ", endOffset=" + endOffset +
-                ", objectId=" + objectId +
-                ", blockPosition=" + getBlockEndPosition() +
-                ", blockSize=" + getBlockSize() +
+                ", dataBlockIndex=" + dataBlockIndex +
                 '}';
     }
 

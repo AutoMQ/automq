@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.automq.stream.s3.operator.Writer.MIN_PART_SIZE;
+
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockWriter {
     private final int partSizeThreshold;
@@ -47,7 +49,7 @@ public class DataBlockWriter {
     public DataBlockWriter(long objectId, S3Operator s3Operator, int partSizeThreshold) {
         this.objectId = objectId;
         String objectKey = ObjectUtils.genKey(0, objectId);
-        this.partSizeThreshold = partSizeThreshold;
+        this.partSizeThreshold = Math.max(MIN_PART_SIZE, partSizeThreshold);
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
@@ -67,25 +69,6 @@ public class DataBlockWriter {
         }
     }
 
-    /**
-     * Copy write a list of adjacent data blocks from same object.
-     *
-     * @param dataBlock list of adjacent data blocks from same object
-     */
-    public void copyWrite(List<StreamDataBlock> dataBlock) {
-        if (dataBlock.isEmpty()) {
-            return;
-        }
-        StreamDataBlock first = dataBlock.get(0);
-        StreamDataBlock end = dataBlock.get(dataBlock.size() - 1);
-        // size of data block is always smaller than MAX_PART_SIZE, no need to split into multiple parts
-        String originObjectKey = ObjectUtils.genKey(0, first.getObjectId());
-        writer.copyWrite(originObjectKey,
-                first.getBlockStartPosition(), end.getBlockStartPosition() + end.getBlockSize());
-        completedBlocks.addAll(dataBlock);
-        nextDataBlockPosition += dataBlock.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
-    }
-
     public CompletableFuture<Void> forceUpload() {
         uploadWaitingList();
         writer.copyOnWrite();
@@ -93,35 +76,31 @@ public class DataBlockWriter {
     }
 
     private void uploadWaitingList() {
-        CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
-        for (StreamDataBlock block : waitingUploadBlocks) {
-            partBuf.addComponent(true, block.getDataCf().join());
-            completedBlocks.add(block);
-            nextDataBlockPosition += block.getBlockSize();
-        }
+        CompositeByteBuf buf = groupWaitingBlocks();
         List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
-        writer.write(partBuf).thenAccept(v -> {
+        writer.write(buf).thenAccept(v -> {
             for (StreamDataBlock block : blocks) {
-                waitingUploadBlockCfs.get(block).complete(null);
-                waitingUploadBlockCfs.remove(block);
+                waitingUploadBlockCfs.computeIfPresent(block, (k, cf) -> {
+                    cf.complete(null);
+                    return null;
+                });
             }
         });
         if (writer.hasBatchingPart()) {
             // prevent blocking on part that's waiting for batch when force upload waiting list
             for (StreamDataBlock block : blocks) {
-                waitingUploadBlockCfs.remove(block);
+                waitingUploadBlockCfs.computeIfPresent(block, (k, cf) -> {
+                    cf.complete(null);
+                    return null;
+                });
             }
         }
         waitingUploadBlocks.clear();
     }
 
     public CompletableFuture<Void> close() {
-        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
-        for (StreamDataBlock block : waitingUploadBlocks) {
-            buf.addComponent(true, block.getDataCf().join());
-            completedBlocks.add(block);
-            nextDataBlockPosition += block.getBlockSize();
-        }
+        CompositeByteBuf buf = groupWaitingBlocks();
+        List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
         waitingUploadBlocks.clear();
         indexBlock = new IndexBlock();
         buf.addComponent(true, indexBlock.buffer());
@@ -129,7 +108,30 @@ public class DataBlockWriter {
         buf.addComponent(true, footer.buffer());
         writer.write(buf.duplicate());
         size = indexBlock.position() + indexBlock.size() + footer.size();
-        return writer.close();
+        return writer.close().thenAccept(nil -> {
+            for (StreamDataBlock block : blocks) {
+                waitingUploadBlockCfs.computeIfPresent(block, (k, cf) -> {
+                    cf.complete(null);
+                    return null;
+                });
+            }
+        });
+    }
+
+    private CompositeByteBuf groupWaitingBlocks() {
+        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+        for (StreamDataBlock block : waitingUploadBlocks) {
+            buf.addComponent(true, block.getDataCf().join());
+            block.releaseRef();
+            completedBlocks.add(block);
+            nextDataBlockPosition += block.getBlockSize();
+        }
+        return buf;
+    }
+
+    public CompletableFuture<Void> release() {
+        // release buffer that is batching for upload
+        return writer.release();
     }
 
     public long objectId() {

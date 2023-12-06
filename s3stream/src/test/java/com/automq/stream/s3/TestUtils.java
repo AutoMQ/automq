@@ -18,6 +18,7 @@
 package com.automq.stream.s3;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 
 import java.util.Random;
@@ -32,6 +33,14 @@ public class TestUtils {
         // To give the ByteBuf a chance to assert in the unit tests, we just retain it here.
         // Since the retained ByteBuf is unpooled, it will be released by the GC.
         return Unpooled.wrappedBuffer(bytes).retain();
+    }
+
+    public static ByteBuf randomPooled(int size) {
+        byte[] bytes = new byte[size];
+        new Random().nextBytes(bytes);
+        ByteBuf buf = PooledByteBufAllocator.DEFAULT.heapBuffer(size);
+        buf.writeBytes(bytes);
+        return buf;
     }
 
     public static String tempFilePath() {

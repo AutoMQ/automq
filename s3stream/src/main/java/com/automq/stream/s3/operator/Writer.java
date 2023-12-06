@@ -75,4 +75,8 @@ public interface Writer {
      */
     CompletableFuture<Void> close();
 
+    /**
+     * Release all resources held by this writer.
+     */
+    CompletableFuture<Void> release();
 }
