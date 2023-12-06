@@ -46,7 +46,7 @@ public interface S3Operator {
     /**
      * Write data to object.
      *
-     * @param path object path.
+     * @param path object path. The path should not start with '/' since Aliyun OSS does not support it.
      * @param data data.
      * @param throttleStrategy throttle strategy.
      */

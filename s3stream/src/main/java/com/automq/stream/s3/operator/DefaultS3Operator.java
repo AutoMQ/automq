@@ -566,8 +566,8 @@ public class DefaultS3Operator implements S3Operator {
 
     private void checkAvailable() {
         byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-        String path = String.format("/check_available/%d", System.currentTimeMillis());
-        String multipartPath = String.format("/check_available_multipart/%d", System.currentTimeMillis());
+        String path = String.format("check_available/%d", System.currentTimeMillis());
+        String multipartPath = String.format("check_available_multipart/%d", System.currentTimeMillis());
         try {
             // Simple write/read/delete
             this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
