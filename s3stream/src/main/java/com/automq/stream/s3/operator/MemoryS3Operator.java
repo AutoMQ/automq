@@ -89,6 +89,11 @@ public class MemoryS3Operator implements S3Operator {
             public CompletableFuture<Void> close() {
                 return CompletableFuture.completedFuture(null);
             }
+
+            @Override
+            public CompletableFuture<Void> release() {
+                return CompletableFuture.completedFuture(null);
+            }
         };
     }
 

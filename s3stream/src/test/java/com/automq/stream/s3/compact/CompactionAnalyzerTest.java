@@ -61,7 +61,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testReadObjectIndices() {
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator, null);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
                 OBJECT_0, List.of(
                         new StreamDataBlock(STREAM_0, 0, 15, 0, OBJECT_0, -1, -1, 1),

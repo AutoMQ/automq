@@ -132,7 +132,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     // used for test only.
-    DefaultS3Operator(S3AsyncClient s3Client, String bucket) {
+    public DefaultS3Operator(S3AsyncClient s3Client, String bucket) {
         this(s3Client, bucket, false);
     }
 
@@ -588,7 +588,7 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    private static S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle, String accessKey, String secretKey) {
+    public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle, String accessKey, String secretKey) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));

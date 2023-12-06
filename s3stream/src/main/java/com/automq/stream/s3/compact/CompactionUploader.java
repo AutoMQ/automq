@@ -43,6 +43,7 @@ public class CompactionUploader {
     private final Config config;
     private CompletableFuture<Long> streamSetObjectIdCf = null;
     private DataBlockWriter streamSetObjectWriter = null;
+    private volatile boolean isAborted = false;
 
     public CompactionUploader(ObjectManager objectManager, S3Operator s3Operator, Config config) {
         this.objectManager = objectManager;
@@ -63,70 +64,59 @@ public class CompactionUploader {
         if (compactedObject.type() != CompactionType.COMPACT) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("wrong compacted object type, expected COMPACT"));
         }
-        if (prev == null) {
-            return CompletableFuture.allOf(compactedObject.streamDataBlocks()
-                            .stream()
-                            .map(StreamDataBlock::getDataCf)
-                            .toArray(CompletableFuture[]::new))
-                    .thenComposeAsync(v -> prepareObjectAndWrite(compactedObject), streamSetObjectUploadPool);
+        if (compactedObject.streamDataBlocks().isEmpty()) {
+            return CompletableFuture.completedFuture(null);
         }
-        return prev.thenComposeAsync(v ->
-                CompletableFuture.allOf(compactedObject.streamDataBlocks()
-                        .stream()
-                        .map(StreamDataBlock::getDataCf)
-                        .toArray(CompletableFuture[]::new))
-                .thenComposeAsync(vv -> prepareObjectAndWrite(compactedObject), streamSetObjectUploadPool));
+        if (prev == null) {
+            return prepareObjectAndWrite(compactedObject);
+        }
+        return prev.thenCompose(v -> prepareObjectAndWrite(compactedObject));
     }
 
     private CompletableFuture<Void> prepareObjectAndWrite(CompactedObject compactedObject) {
         if (streamSetObjectIdCf == null) {
             streamSetObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES));
         }
-        return streamSetObjectIdCf.thenAcceptAsync(objectId -> {
+        return streamSetObjectIdCf.thenComposeAsync(objectId -> {
             if (streamSetObjectWriter == null) {
                 streamSetObjectWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
             }
-            for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
-                streamSetObjectWriter.write(streamDataBlock);
-            }
-        }, streamObjectUploadPool).exceptionally(ex -> {
-            LOGGER.error("prepare and write stream set object failed", ex);
-            return null;
-        });
+            return CompactionUtils.chainWriteDataBlock(streamSetObjectWriter, compactedObject.streamDataBlocks(), streamSetObjectUploadPool);
+        }, streamSetObjectUploadPool);
     }
 
     public CompletableFuture<StreamObject> writeStreamObject(CompactedObject compactedObject) {
         if (compactedObject.type() != CompactionType.SPLIT) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("wrong compacted object type, expected SPLIT"));
         }
-        return CompletableFuture.allOf(compactedObject.streamDataBlocks()
-                        .stream()
-                        .map(StreamDataBlock::getDataCf)
-                        .toArray(CompletableFuture[]::new))
-                .thenComposeAsync(v -> objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
-                                .thenComposeAsync(objectId -> {
-                                    DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
-                                    for (StreamDataBlock streamDataBlock : compactedObject.streamDataBlocks()) {
-                                        dataBlockWriter.write(streamDataBlock);
-                                    }
-                                    long streamId = compactedObject.streamDataBlocks().get(0).getStreamId();
-                                    long startOffset = compactedObject.streamDataBlocks().get(0).getStartOffset();
-                                    long endOffset = compactedObject.streamDataBlocks().get(compactedObject.streamDataBlocks().size() - 1).getEndOffset();
-                                    StreamObject streamObject = new StreamObject();
-                                    streamObject.setObjectId(objectId);
-                                    streamObject.setStreamId(streamId);
-                                    streamObject.setStartOffset(startOffset);
-                                    streamObject.setEndOffset(endOffset);
-                                    return dataBlockWriter.close().thenApply(nil -> {
-                                        streamObject.setObjectSize(dataBlockWriter.size());
-                                        return streamObject;
-                                    });
-                                }, streamObjectUploadPool),
-                        streamObjectUploadPool)
-                .exceptionally(ex -> {
-                    LOGGER.error("stream object write failed", ex);
-                    return null;
-                });
+        if (compactedObject.streamDataBlocks().isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
+                .thenComposeAsync(objectId -> {
+                    if (isAborted) {
+                        // release data that has not been uploaded
+                        compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
+                    CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(dataBlockWriter, compactedObject.streamDataBlocks(), streamObjectUploadPool);
+                    return cf.thenCompose(nil -> dataBlockWriter.close()).thenApply(nil -> {
+                        StreamObject streamObject = new StreamObject();
+                        streamObject.setObjectId(objectId);
+                        streamObject.setStreamId(compactedObject.streamDataBlocks().get(0).getStreamId());
+                        streamObject.setStartOffset(compactedObject.streamDataBlocks().get(0).getStartOffset());
+                        streamObject.setEndOffset(compactedObject.streamDataBlocks().get(compactedObject.streamDataBlocks().size() - 1).getEndOffset());
+                        streamObject.setObjectSize(dataBlockWriter.size());
+                        return streamObject;
+                    }).whenComplete((ret, ex) -> {
+                        if (ex != null) {
+                            LOGGER.error("write to stream object {} failed", objectId, ex);
+                            dataBlockWriter.release();
+                            compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                        }
+                    });
+                }, streamObjectUploadPool);
     }
 
     public CompletableFuture<Void> forceUploadStreamSetObject() {
@@ -141,12 +131,24 @@ public class CompactionUploader {
             return 0L;
         }
         streamSetObjectWriter.close().join();
-        return streamSetObjectWriter.size();
+        long writeSize = streamSetObjectWriter.size();
+        reset();
+        return writeSize;
     }
 
-    public void reset() {
+    public CompletableFuture<Void> release() {
+        isAborted = true;
+        CompletableFuture<Void> cf = CompletableFuture.completedFuture(null);
+        if (streamSetObjectWriter != null) {
+            cf = streamSetObjectWriter.release();
+        }
+        return cf.thenAccept(nil -> reset());
+    }
+
+    private void reset() {
         streamSetObjectIdCf = null;
         streamSetObjectWriter = null;
+        isAborted = false;
     }
 
     public long getStreamSetObjectId() {
