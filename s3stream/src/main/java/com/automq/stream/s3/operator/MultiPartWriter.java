@@ -152,6 +152,16 @@ public class MultiPartWriter implements Writer {
         return closeCf;
     }
 
+    @Override
+    public CompletableFuture<Void> release() {
+        // wait for all ongoing uploading parts to finish and release pending part
+        return CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> {
+            if (objectPart != null) {
+                objectPart.release();
+            }
+        });
+    }
+
     private List<CompletedPart> genCompleteParts() {
         return this.parts.stream().map(cf -> {
             try {
@@ -223,6 +233,10 @@ public class MultiPartWriter implements Writer {
 
         public CompletableFuture<Void> getFuture() {
             return partCf.thenApply(nil -> null);
+        }
+
+        public void release() {
+            partBuf.release();
         }
     }
 

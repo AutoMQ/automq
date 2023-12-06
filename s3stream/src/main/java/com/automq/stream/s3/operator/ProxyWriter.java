@@ -97,6 +97,15 @@ class ProxyWriter implements Writer {
         }
     }
 
+    @Override
+    public CompletableFuture<Void> release() {
+        if (multiPartWriter != null) {
+            return multiPartWriter.release();
+        } else {
+            return objectWriter.release();
+        }
+    }
+
     private void newMultiPartWriter() {
         this.multiPartWriter = new MultiPartWriter(operator, path, minPartSize, throttleStrategy);
         if (objectWriter.data.readableBytes() > 0) {
@@ -145,6 +154,12 @@ class ProxyWriter implements Writer {
         public CompletableFuture<Void> close() {
             FutureUtil.propagate(operator.write(path, data, throttleStrategy), cf);
             return cf;
+        }
+
+        @Override
+        public CompletableFuture<Void> release() {
+            data.release();
+            return CompletableFuture.completedFuture(null);
         }
 
         public boolean isFull() {

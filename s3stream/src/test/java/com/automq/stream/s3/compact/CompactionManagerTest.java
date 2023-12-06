@@ -18,7 +18,9 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
@@ -29,6 +31,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.operator.DefaultS3Operator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +39,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -46,10 +52,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 @Timeout(60)
@@ -110,6 +122,20 @@ public class CompactionManagerTest extends CompactionTestBase {
         Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
         Assertions.assertEquals(2, request.getStreamObjects().size());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(2)), request));
+    }
+
+    @Test
+    public void testForceSplitWithException() {
+        S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
+        doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+        Map<Long, List<StreamDataBlock>> streamDataBlockMap = getStreamDataBlockMap();
+        S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, 0, S3ObjectType.STREAM_SET);
+        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
+        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata.key()), anyLong(), anyLong(), any());
+
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        Assertions.assertThrowsExactly(CompletionException.class, () -> compactionManager.groupAndSplitStreamDataBlocks(objectMetadata, streamDataBlockMap.get(OBJECT_0)));
     }
 
     @Test
@@ -220,15 +246,99 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     public void testCompactNoneExistObjects() {
-        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
-        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
-        Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, s3ObjectMetadata, s3Operator);
+        when(config.streamSetObjectCompactionStreamSplitSize()).thenReturn(100L);
+        when(config.streamSetObjectCompactionCacheSize()).thenReturn(9999L);
+        Map<Long, List<StreamDataBlock>> streamDataBlockMap = getStreamDataBlockMap();
+        S3ObjectMetadata objectMetadata0 = new S3ObjectMetadata(OBJECT_0, 0, S3ObjectType.STREAM_SET);
+        S3ObjectMetadata objectMetadata1 = new S3ObjectMetadata(OBJECT_1, 0, S3ObjectType.STREAM_SET);
+        S3ObjectMetadata objectMetadata2 = new S3ObjectMetadata(OBJECT_2, 0, S3ObjectType.STREAM_SET);
+        List<S3ObjectMetadata> s3ObjectMetadata = List.of(objectMetadata0, objectMetadata1, objectMetadata2);
+        this.compactionAnalyzer = new CompactionAnalyzer(config.streamSetObjectCompactionCacheSize(), config.streamSetObjectCompactionStreamSplitSize(),
+                config.maxStreamNumPerStreamSetObject(), config.maxStreamObjectNumPerCommit());
         List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMap, new HashSet<>());
-        s3Operator.delete(s3ObjectMetadata.get(0).key()).join();
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
-        Assertions.assertThrowsExactly(IllegalArgumentException.class,
+
+        S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
+        doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(eq(objectMetadata0.key()), anyLong(), anyLong(), any());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(80))).when(s3Operator).rangeRead(eq(objectMetadata1.key()), anyLong(), anyLong(), any());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata2.key()), anyLong(), anyLong(), any());
+
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        Assertions.assertThrowsExactly(CompletionException.class,
                 () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
+        for (CompactionPlan plan : compactionPlans) {
+            plan.streamDataBlocksMap().forEach((streamId, blocks) -> blocks.forEach(block -> {
+                if (block.getObjectId() != OBJECT_2) {
+                    block.getDataCf().thenAccept(data -> {
+                        Assertions.assertEquals(0, data.refCnt());
+                    }).join();
+                }
+            }));
+        }
+    }
+
+    @Test
+    public void testCompactNoneExistObjects2() {
+        when(config.streamSetObjectCompactionStreamSplitSize()).thenReturn(100L);
+        when(config.streamSetObjectCompactionCacheSize()).thenReturn(9999L);
+        Map<Long, List<StreamDataBlock>> streamDataBlockMap = getStreamDataBlockMap();
+        S3ObjectMetadata objectMetadata0 = new S3ObjectMetadata(OBJECT_0, 0, S3ObjectType.STREAM_SET);
+        S3ObjectMetadata objectMetadata1 = new S3ObjectMetadata(OBJECT_1, 0, S3ObjectType.STREAM_SET);
+        S3ObjectMetadata objectMetadata2 = new S3ObjectMetadata(OBJECT_2, 0, S3ObjectType.STREAM_SET);
+        List<S3ObjectMetadata> s3ObjectMetadata = List.of(objectMetadata0, objectMetadata1, objectMetadata2);
+        this.compactionAnalyzer = new CompactionAnalyzer(config.streamSetObjectCompactionCacheSize(), config.streamSetObjectCompactionStreamSplitSize(),
+                config.maxStreamNumPerStreamSetObject(), config.maxStreamObjectNumPerCommit());
+        List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMap, new HashSet<>());
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+
+        S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
+        doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+
+        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(eq(objectMetadata0.key()), anyLong(), anyLong(), any());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata1.key()), anyLong(), anyLong(), any());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(50))).when(s3Operator).rangeRead(eq(objectMetadata2.key()), anyLong(), anyLong(), any());
+
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        Assertions.assertThrowsExactly(CompletionException.class,
+                () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
+        for (CompactionPlan plan : compactionPlans) {
+            plan.streamDataBlocksMap().forEach((streamId, blocks) -> blocks.forEach(block -> {
+                if (block.getObjectId() != OBJECT_1) {
+                    block.getDataCf().thenAccept(data -> {
+                        Assertions.assertEquals(0, data.refCnt());
+                    }).join();
+                }
+            }));
+        }
+    }
+
+    private static Map<Long, List<StreamDataBlock>> getStreamDataBlockMap() {
+        StreamDataBlock block1 = new StreamDataBlock(STREAM_0, 0, 15, OBJECT_0, new ObjectReader.DataBlockIndex(0, 0, 15, 15));
+        StreamDataBlock block2 = new StreamDataBlock(STREAM_1, 0, 20, OBJECT_0, new ObjectReader.DataBlockIndex(1, 15, 50, 20));
+
+        StreamDataBlock block3 = new StreamDataBlock(STREAM_0, 15, 27, OBJECT_1, new ObjectReader.DataBlockIndex(0, 0, 20, 12));
+        StreamDataBlock block4 = new StreamDataBlock(STREAM_1, 20, 45, OBJECT_1, new ObjectReader.DataBlockIndex(1, 20, 60, 25));
+
+        StreamDataBlock block5 = new StreamDataBlock(STREAM_0, 27, 40, OBJECT_2, new ObjectReader.DataBlockIndex(0, 0, 20, 20));
+        StreamDataBlock block6 = new StreamDataBlock(STREAM_3, 0, 30, OBJECT_2, new ObjectReader.DataBlockIndex(1, 20, 30, 30));
+        return Map.of(
+                OBJECT_0, List.of(
+                        block1,
+                        block2
+                ),
+                OBJECT_1, List.of(
+                        block3,
+                        block4
+                ),
+                OBJECT_2, List.of(
+                        block5,
+                        block6
+                )
+        );
     }
 
     @Test

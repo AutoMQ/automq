@@ -20,10 +20,12 @@ package com.automq.stream.s3.compact;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
+import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import org.slf4j.Logger;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 public class CompactionUtils {
@@ -60,7 +63,15 @@ public class CompactionUtils {
     }
 
     public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
-                                                                          List<S3ObjectMetadata> objectMetadataList, S3Operator s3Operator) {
+                                                                          List<S3ObjectMetadata> objectMetadataList,
+                                                                          S3Operator s3Operator) {
+        return blockWaitObjectIndices(streamMetadataList, objectMetadataList, s3Operator, null);
+    }
+
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
+                                                                          List<S3ObjectMetadata> objectMetadataList,
+                                                                          S3Operator s3Operator,
+                                                                          Logger logger) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
                 .collect(Collectors.toMap(StreamMetadata::getStreamId, s -> s));
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
@@ -89,7 +100,9 @@ public class CompactionUtils {
                         return new AbstractMap.SimpleEntry<>(f.getKey(), validStreamDataBlocks);
                     } catch (Exception ex) {
                         // continue compaction without invalid object
-                        // TODO: log warn
+                        if (logger != null) {
+                            logger.warn("failed to get data block index for object {}", f.getKey(), ex);
+                        }
                         return null;
                     }
                 })
@@ -97,6 +110,9 @@ public class CompactionUtils {
                 .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
     }
 
+    /**
+     * Group stream data blocks by stream id and offset.
+     */
     public static List<List<StreamDataBlock>> groupStreamDataBlocks(List<StreamDataBlock> streamDataBlocks) {
         List<List<StreamDataBlock>> groupedStreamDataBlocks = new ArrayList<>();
         List<StreamDataBlock> currGroup = new ArrayList<>();
@@ -128,5 +144,17 @@ public class CompactionUtils {
             totalCompactedObjects += objectStatsMap.get(objectId);
         }
         return totalCompactedObjects;
+    }
+
+    public static CompletableFuture<Void> chainWriteDataBlock(DataBlockWriter dataBlockWriter, List<StreamDataBlock> streamDataBlocks, ExecutorService executorService) {
+        CompletableFuture<Void> cf = null;
+        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
+            if (cf == null) {
+                cf = streamDataBlock.getDataCf().thenAcceptAsync(data -> dataBlockWriter.write(streamDataBlock), executorService);
+            } else {
+                cf = cf.thenCompose(nil -> streamDataBlock.getDataCf().thenAcceptAsync(data -> dataBlockWriter.write(streamDataBlock), executorService));
+            }
+        }
+        return cf;
     }
 }
