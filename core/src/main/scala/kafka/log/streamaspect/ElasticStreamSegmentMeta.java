@@ -54,6 +54,9 @@ public class ElasticStreamSegmentMeta {
     @JsonProperty("txs")
     private SliceRange txn = new SliceRange();
 
+    @JsonProperty("fbt")
+    private long firstBatchTimestamp;
+
     @JsonProperty("tle")
     private TimestampOffsetData timeIndexLastEntry = new TimestampOffsetData();
 
@@ -124,6 +127,14 @@ public class ElasticStreamSegmentMeta {
         this.txn = txn;
     }
 
+    public long firstBatchTimestamp() {
+        return firstBatchTimestamp;
+    }
+
+    public void firstBatchTimestamp(long firstBatchTimestamp) {
+        this.firstBatchTimestamp = firstBatchTimestamp;
+    }
+
     public TimestampOffsetData timeIndexLastEntry() {
         return timeIndexLastEntry;
     }
@@ -147,6 +158,7 @@ public class ElasticStreamSegmentMeta {
                 ", log=" + log +
                 ", time=" + time +
                 ", txn=" + txn +
+                ", firstBatchTimestamp=" + firstBatchTimestamp +
                 ", timeIndexLastEntry=" + timeIndexLastEntry +
                 '}';
     }
