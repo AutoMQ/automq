@@ -50,6 +50,10 @@ public class Threads {
         });
     }
 
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(String name, boolean daemon, Logger logger) {
+        return newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory(name, true), logger, false);
+    }
+
     public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
         return newSingleThreadScheduledExecutor(threadFactory, logger, false);
     }

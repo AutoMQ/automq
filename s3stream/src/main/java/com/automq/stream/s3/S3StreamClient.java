@@ -182,7 +182,7 @@ public class S3StreamClient implements StreamClient {
                 break;
             }
         }
-        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
     }
 
     private static class CompactionTasksSummary {
