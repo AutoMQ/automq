@@ -112,6 +112,7 @@ public class S3Storage implements Storage {
 
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
             ThreadUtils.createThreadFactory("storage-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+    private volatile double maxDataWriteRate = 0.0;
 
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
                      S3BlockCache blockCache, S3Operator s3Operator) {
@@ -165,7 +166,8 @@ public class S3Storage implements Storage {
 
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            DeltaWALUploadTask task = DeltaWALUploadTask.of(config, cacheBlock.records(), objectManager, s3Operator, uploadWALExecutor);
+            DeltaWALUploadTask task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(cacheBlock.records())
+                    .objectManager(objectManager).s3Operator(s3Operator).executor(uploadWALExecutor).build();
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
@@ -495,8 +497,22 @@ public class S3Storage implements Storage {
         return cf;
     }
 
+
     private void uploadDeltaWAL0(DeltaWALUploadTaskContext context) {
-        context.task = DeltaWALUploadTask.of(config, context.cache.records(), context.objectManager, s3Operator, uploadWALExecutor);
+        // calculate upload rate
+        long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
+        double rate;
+        if (elapsed <= 100L) {
+            rate = Long.MAX_VALUE;
+        } else {
+            rate = context.cache.size() * 1000.0 / Math.min(5000L, elapsed);
+            if (rate > maxDataWriteRate) {
+                maxDataWriteRate = rate;
+            }
+            rate = maxDataWriteRate;
+        }
+        context.task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(context.cache.records())
+                .objectManager(objectManager).s3Operator(s3Operator).executor(uploadWALExecutor).rate(rate).build();
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {

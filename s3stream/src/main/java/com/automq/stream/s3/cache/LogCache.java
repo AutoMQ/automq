@@ -286,6 +286,7 @@ public class LogCache {
         private final long blockId;
         private final long maxSize;
         private final int maxStreamCount;
+        private final long createdTimestamp = System.currentTimeMillis();
         final Map<Long, StreamCache> map = new ConcurrentHashMap<>();
         private final AtomicLong size = new AtomicLong();
         private long confirmOffset;
@@ -356,6 +357,10 @@ public class LogCache {
         public void free() {
             map.forEach((streamId, records) -> records.free());
             map.clear();
+        }
+
+        public long createdTimestamp() {
+            return createdTimestamp;
         }
     }
 

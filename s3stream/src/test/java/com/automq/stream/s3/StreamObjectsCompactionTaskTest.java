@@ -194,7 +194,7 @@ class StreamObjectsCompactionTaskTest {
                     .objectBlockSize(16 * 1024 * 1024)
                     .objectPartSize(16 * 1024 * 1024)
                     .streamSplitSize(recordsSize - 1);
-            DeltaWALUploadTask deltaWALUploadTask = new DeltaWALUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool(), false);
+            DeltaWALUploadTask deltaWALUploadTask = new DeltaWALUploadTask(config, map, objectManager, s3Operator, ForkJoinPool.commonPool(), false, Integer.MAX_VALUE);
 
             deltaWALUploadTask.prepare().get();
             deltaWALUploadTask.upload().get();
