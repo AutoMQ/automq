@@ -1930,7 +1930,7 @@ public final class QuorumController implements Controller {
             s3Operator = new MemoryS3Operator();
         } else {
             S3StreamMetricsRegistry.setMetricsGroup(new KafkaS3StreamMetricsGroup());
-            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), false,
+            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
                     streamConfig.accessKey(), streamConfig.secretKey());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
