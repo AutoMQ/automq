@@ -687,6 +687,7 @@ object KafkaConfig {
   // AutoMQ for Kafka inject start
   val S3EndpointProp = "s3.endpoint"
   val S3RegionProp = "s3.region"
+  val S3PathStyleProp = "s3.path.style"
   val S3BucketProp = "s3.bucket"
   val S3WALPathProp = "s3.wal.path"
   val S3WALCapacityProp = "s3.wal.capacity"
@@ -723,6 +724,7 @@ object KafkaConfig {
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
+  val S3PathStyleDoc = "The S3 path style, ex. <code>true</code>."
   val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
   val S3WALPathDoc = "The S3 WAL path. It could be a block device like /dev/xxx or file path in file system"
   val S3WALCapacityDoc = "The S3 WAL capacity. The value should be larger than s3.wal.cache.size cause of log storage format may not compact."
@@ -1558,6 +1560,7 @@ object KafkaConfig {
       // AutoMQ for Kafka inject start
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
+      .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, 209715200L, MEDIUM, S3WALCacheSizeDoc)
@@ -2127,6 +2130,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   /** ********* Kafka on S3 Configuration *********/
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
+  val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
   val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
