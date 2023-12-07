@@ -20,6 +20,8 @@ package com.automq.stream.s3.wal.util;
 import com.automq.stream.s3.wal.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.WALNotInitializedException;
 import io.netty.buffer.ByteBuf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
@@ -100,6 +102,7 @@ public interface WALChannel {
     }
 
     class WALChannelBuilder {
+        private static final Logger LOGGER = LoggerFactory.getLogger(WALChannelBuilder.class);
         private final String path;
         private Boolean direct;
         private long capacity;
@@ -137,7 +140,7 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
-            String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable();
+            String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
             boolean useDirect = false;
             if (direct != null) {
                 // Set by user.
@@ -157,6 +160,7 @@ public interface WALChannel {
             if (useDirect) {
                 return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
             } else {
+                LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}", path);
                 return new WALFileChannel(path, capacity, recoveryMode);
             }
         }
