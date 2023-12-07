@@ -49,6 +49,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -166,7 +167,10 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     }
 
     @Override
-    public void configure(Map<String, ?> configs) {
+    public void configure(Map<String, ?> rawConfigs) {
+
+        Map<String, Object> configs = new HashMap<>(rawConfigs);
+
         Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
 
         //Add BootstrapServers if not set
@@ -183,6 +187,17 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             producerProps.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
             LOGGER.info("Using default value of {} for {}", securityProtocol,
                     AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        }
+
+        //Add AUTO_BALANCER_BROKER_NW_IN/OUT_CAPACITY by S3NetworkBaselineBandwidthProp config value if not set
+        if (configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()) != null) {
+            if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY))
+                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY,
+                        configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()));
+
+            if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY))
+                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY,
+                        configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()));
         }
 
         AutoBalancerMetricsReporterConfig reporterConfig = new AutoBalancerMetricsReporterConfig(configs, false);
