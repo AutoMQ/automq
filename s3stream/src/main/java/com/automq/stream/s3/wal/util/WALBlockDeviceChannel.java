@@ -35,6 +35,7 @@ import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
 public class WALBlockDeviceChannel implements WALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
+    private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -91,11 +92,11 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     /**
-     * Check whether the {@link WALBlockDeviceChannel} is available.
+     * Check whether the {@link WALBlockDeviceChannel} is available for the given path.
      *
      * @return null if available, otherwise the reason why it's not available
      */
-    public static String checkAvailable() {
+    public static String checkAvailable(String path) {
         if (!DirectIOLib.binit) {
             return "O_DIRECT not supported";
         }
@@ -103,7 +104,29 @@ public class WALBlockDeviceChannel implements WALChannel {
             return "java.nio.DirectByteBuffer.<init>(long, int) not available." +
                     " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
         }
+        if (!path.startsWith(DEVICE_PREFIX) && !tryOpenFileWithDirectIO(String.format(CHECK_DIRECT_IO_AVAILABLE_FORMAT, path))) {
+            return "O_DIRECT not supported by the file system, path: " + path;
+        }
         return null;
+    }
+
+    /**
+     * Try to create a file with O_DIRECT flag to check whether the file system supports O_DIRECT.
+     * The file will be deleted after created.
+     *
+     * @return true if the file is created successfully, otherwise false
+     */
+    private static boolean tryOpenFileWithDirectIO(String path) {
+        File file = new File(path);
+        try {
+            DirectRandomAccessFile randomAccessFile = new DirectRandomAccessFile(file, "rw");
+            randomAccessFile.close();
+            return true;
+        } catch (IOException e) {
+            return false;
+        } finally {
+            file.delete();
+        }
     }
 
     @Override
