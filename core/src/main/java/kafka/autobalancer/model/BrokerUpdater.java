@@ -34,6 +34,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class BrokerUpdater {
     private static final Logger LOGGER = LoggerFactory.getLogger(BrokerUpdater.class);
+    private static final Double IGNORED_CAPACITY_VALUE = -1.0;
     private final Lock lock = new ReentrantLock();
     private final Broker broker;
 
@@ -51,6 +52,7 @@ public class BrokerUpdater {
 
         public Broker(int brokerId) {
             this.brokerId = brokerId;
+            Arrays.fill(this.brokerCapacity, IGNORED_CAPACITY_VALUE);
         }
 
         public Broker(Broker other) {
@@ -101,7 +103,10 @@ public class BrokerUpdater {
 
         public double utilizationFor(Resource resource) {
             double capacity = capacity(resource);
-            if (capacity == 0) {
+            if (capacity == IGNORED_CAPACITY_VALUE) {
+                return 0.0;
+            }
+            if (capacity == 0.0) {
                 return Double.MAX_VALUE;
             }
             return load(resource) / capacity(resource);
