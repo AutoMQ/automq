@@ -336,7 +336,7 @@ public class StreamReader {
         });
     }
 
-    private CompletableFuture<Void> getDataBlockIndices(long streamId, long endOffset, ReadContext context) {
+    CompletableFuture<Void> getDataBlockIndices(long streamId, long endOffset, ReadContext context) {
         CompletableFuture<Boolean /* empty objects */> getObjectsCf = CompletableFuture.completedFuture(false);
         if (context.objectIndex >= context.objects.size()) {
             getObjectsCf = objectManager
@@ -381,12 +381,12 @@ public class StreamReader {
             context.lastOffset = Math.max(lastOffset, context.lastOffset);
             context.streamDataBlocksPair.add(new ImmutablePair<>(objectMetadata.objectId(), streamDataBlocks));
             context.totalReadSize += streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum();
+            context.nextMaxBytes = findIndexResult.nextMaxBytes();
+            context.nextStartOffset = findIndexResult.nextStartOffset();
+            context.objectIndex++;
             if (findIndexResult.isFulfilled()) {
                 return CompletableFuture.completedFuture(null);
             }
-            context.nextStartOffset = findIndexResult.nextStartOffset();
-            context.nextMaxBytes = findIndexResult.nextMaxBytes();
-            context.objectIndex++;
             return getDataBlockIndices(streamId, endOffset, context);
         }, streamReaderExecutor);
     }

@@ -208,6 +208,7 @@ public class ObjectReader implements AutoCloseable {
                     if (rangeEndOffset <= nextStartOffset) {
                         continue;
                     }
+                    matched = nextStartOffset == rangeStartOffset;
                     nextStartOffset = rangeEndOffset;
                     long blockPosition = blocks.getLong(rangeBlockId * 16);
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
@@ -220,7 +221,6 @@ public class ObjectReader implements AutoCloseable {
                     if (matched) {
                         nextMaxBytes -= Math.min(nextMaxBytes, blockSize);
                     }
-                    matched = true;
                     if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
                         isFulfilled = true;
                         break;

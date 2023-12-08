@@ -18,12 +18,16 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadTaskKey;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Threads;
@@ -40,7 +44,47 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+
 public class StreamReaderTest {
+
+    @Test
+    public void testGetDataBlockIndices() {
+        S3Operator s3Operator = new MemoryS3Operator();
+        ObjectManager objectManager = Mockito.mock(ObjectManager.class);
+        ObjectWriter objectWriter = ObjectWriter.writer(0, s3Operator, 1024, 1024);
+        objectWriter.write(233, List.of(
+                newRecord(233, 10, 5, 512),
+                newRecord(233, 15, 10, 512)
+        ));
+        objectWriter.close();
+        ObjectWriter objectWriter2 = ObjectWriter.writer(1, s3Operator, 1024, 1024);
+        objectWriter2.write(233, List.of(
+                newRecord(233, 25, 5, 512),
+                newRecord(233, 30, 10, 512)
+        ));
+        objectWriter2.close();
+
+        S3ObjectMetadata metadata1 = new S3ObjectMetadata(0, objectWriter.size(), S3ObjectType.STREAM);
+        S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter2.size(), S3ObjectType.STREAM);
+
+        doAnswer(invocation -> CompletableFuture.completedFuture(List.of(metadata1, metadata2)))
+                .when(objectManager).getObjects(eq(233L), eq(15L), eq(1024L), eq(2));
+
+        StreamReader streamReader = new StreamReader(s3Operator, objectManager, Mockito.mock(BlockCache.class), new HashMap<>(), new InflightReadThrottle());
+        StreamReader.ReadContext context = new StreamReader.ReadContext(15L, 1024);
+        streamReader.getDataBlockIndices(233L, 1024L, context).thenAccept(v -> {
+            Assertions.assertEquals(40L, context.nextStartOffset);
+            Assertions.assertEquals(0, context.nextMaxBytes);
+            Assertions.assertEquals(2, context.streamDataBlocksPair.size());
+        }).join();
+
+    }
+
+    private StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(payloadSize));
+    }
 
     @Test
     public void testSyncReadAheadInflight() {
