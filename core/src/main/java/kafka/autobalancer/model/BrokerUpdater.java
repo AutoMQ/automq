@@ -102,7 +102,7 @@ public class BrokerUpdater {
         public double utilizationFor(Resource resource) {
             double capacity = capacity(resource);
             if (capacity == 0) {
-                return 0;
+                return Double.MAX_VALUE;
             }
             return load(resource) / capacity(resource);
         }
