@@ -2763,6 +2763,11 @@ class ReplicaManager(val config: KafkaConfig,
       info("still has opening partition, retry check later")
       Thread.sleep(1000)
     }
+    partitionOpExecutor.shutdown()
+    if (!partitionOpExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+      warn("partitionOpExecutor await 10s termination timeout")
+    }
+
     if (allPartitions.nonEmpty) {
       val partitionsToClose = mutable.Map[TopicPartition, Boolean]()
       allPartitions.foreachEntry((topicPartition, _) => {
