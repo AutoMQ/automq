@@ -282,7 +282,7 @@ public class ElasticLogFileRecords {
 
         private PooledMemoryRecords(List<FetchResult> fetchResults) {
             this.fetchResults = fetchResults;
-            CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer();
+            CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
             long lastOffset = 0;
             for (FetchResult fetchResult : fetchResults) {
                 for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
@@ -469,7 +469,7 @@ public class ElasticLogFileRecords {
                 throw new IOException(FutureUtil.cause(t));
             }
             sizeInBytes = 0;
-            CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer();
+            CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
             RecordBatch lastBatch = null;
             for (RecordBatch batch : records.batches()) {
                 sizeInBytes += batch.sizeInBytes();
