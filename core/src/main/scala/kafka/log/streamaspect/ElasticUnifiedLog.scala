@@ -128,8 +128,10 @@ class ElasticUnifiedLog(_logStartOffset: Long,
       elasticLog.close()
     }
     elasticLog.segments.clear()
-    elasticLog.deleteEmptyDir()
-    closeFuture
+    closeFuture.whenComplete((_, _) => {
+      elasticLog.isMemoryMappedBufferClosed = true
+      elasticLog.deleteEmptyDir()
+    })
   }
 
   /**
