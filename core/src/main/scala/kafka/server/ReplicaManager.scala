@@ -66,6 +66,7 @@ import java.util.Optional
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import java.util.concurrent.locks.Lock
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, TimeUnit}
+import java.util.function.Consumer
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
@@ -2459,7 +2460,8 @@ class ReplicaManager(val config: KafkaConfig,
 
   private[kafka] def getOrCreatePartition(tp: TopicPartition,
                                           delta: TopicsDelta,
-                                          topicId: Uuid): Option[(Partition, Boolean)] = {
+                                          topicId: Uuid,
+                                          createHook: Consumer[Partition] = t => {}): Option[(Partition, Boolean)] = {
     getPartition(tp) match {
       case HostedPartition.Offline =>
         stateChangeLogger.warn(s"Unable to bring up new local leader $tp " +
@@ -2490,6 +2492,7 @@ class ReplicaManager(val config: KafkaConfig,
         // AutoMQ for Kafka inject end
         // it's a partition that we don't know about yet, so create it and mark it online
         val partition = Partition(tp, time, this)
+        createHook.accept(partition)
         allPartitions.put(tp, HostedPartition.Online(partition))
         Some(partition, true)
     }
@@ -2625,10 +2628,11 @@ class ReplicaManager(val config: KafkaConfig,
       "local leaders.")
     replicaFetcherManager.removeFetcherForPartitions(localLeaders.keySet)
     localLeaders.forKeyValue { (tp, info) =>
-      getOrCreatePartition(tp, delta, info.topicId).foreach { case (partition, isNew) =>
+      getOrCreatePartition(tp, delta, info.topicId, p => {
+        val state = info.partition.toLeaderAndIsrPartitionState(tp, true)
+        p.makeLeader(state, offsetCheckpoints, Some(info.topicId))
+      }).foreach { case (partition, isNew) =>
         try {
-          val state = info.partition.toLeaderAndIsrPartitionState(tp, isNew)
-          partition.makeLeader(state, offsetCheckpoints, Some(info.topicId))
           changedPartitions.add(partition)
         } catch {
           case e: KafkaStorageException =>
