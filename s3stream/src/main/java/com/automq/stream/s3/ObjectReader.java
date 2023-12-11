@@ -79,7 +79,8 @@ public class ObjectReader implements AutoCloseable {
     }
 
     void asyncGetBasicObjectInfo() {
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - 1024 * 1024), true);
+        int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true);
     }
 
     private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt) {
@@ -140,12 +141,19 @@ public class ObjectReader implements AutoCloseable {
                 throw new IndexBlockParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (s3ObjectMetadata.objectSize() - indexBlockPosition);
+
+                // trim the ByteBuf to avoid extra memory occupy.
                 ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
+                ByteBuf copy = DirectByteBufAlloc.byteBuffer(indexBlockBuf.readableBytes());
+                indexBlockBuf.readBytes(copy, indexBlockBuf.readableBytes());
+                objectTailBuf.release();
+                indexBlockBuf = copy;
+
                 int blockCount = indexBlockBuf.readInt();
                 ByteBuf blocks = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), blockCount * 16);
                 indexBlockBuf.skipBytes(blockCount * 16);
                 ByteBuf streamRanges = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
-                objectTailBuf.release();
+                indexBlockBuf.release();
                 return new BasicObjectInfo(indexBlockPosition, new IndexBlock(s3ObjectMetadata, blocks, streamRanges), blockCount, indexBlockSize);
             }
         }
