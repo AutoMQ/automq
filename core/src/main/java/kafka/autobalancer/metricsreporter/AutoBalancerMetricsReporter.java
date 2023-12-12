@@ -329,7 +329,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     }
 
     private void reportMetrics(long now) throws Exception {
-        LOGGER.info("Reporting metrics.");
+        LOGGER.debug("Reporting metrics.");
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
         processYammerMetrics(context);
@@ -338,7 +338,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             sendAutoBalancerMetric(entry.getValue());
         }
 
-        LOGGER.info("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
+        LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
     }
 
     private void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {

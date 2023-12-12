@@ -36,9 +36,8 @@ public class AutoBalancerConfig extends AbstractConfig {
     /* Default values */
     public static final String DEFAULT_AUTO_BALANCER_TOPIC = "__auto_balancer_metrics";
     public static final Integer DEFAULT_AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS = -1;
-    public static final long DEFAULT_AUTO_BALANCER_METRICS_TOPIC_RETENTION_MS = TimeUnit.HOURS.toMillis(5);
-    public static final String DEFAULT_AUTO_BALANCER_METRICS_TOPIC_CLEANUP_POLICY = String.join(",",
-            TopicConfig.CLEANUP_POLICY_COMPACT, TopicConfig.CLEANUP_POLICY_DELETE);
+    public static final long DEFAULT_AUTO_BALANCER_METRICS_TOPIC_RETENTION_MS = TimeUnit.MINUTES.toMillis(30);
+    public static final String DEFAULT_AUTO_BALANCER_METRICS_TOPIC_CLEANUP_POLICY = String.join(",", TopicConfig.CLEANUP_POLICY_DELETE);
     /* Documents */
     private static final String AUTO_BALANCER_TOPIC_DOC = "The topic to which Auto Balancer metrics reporter "
             + "should send messages";
