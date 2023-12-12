@@ -17,21 +17,16 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.utils.CloseableIterator;
-import com.automq.stream.api.exceptions.ErrorCode;
-import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.utils.ByteBufInputStream;
+import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -250,7 +245,8 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
-    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes, List<StreamDataBlock> streamDataBlocks) {
+    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes,
+                                  List<StreamDataBlock> streamDataBlocks) {
 
     }
 
@@ -302,8 +298,6 @@ public class ObjectReader implements AutoCloseable {
                 throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted");
             }
             // TODO: check flag, use uncompressed stream or compressed stream.
-//            DataInputStream in = new DataInputStream(ZstdFactory.wrapForInput(buf.nioBuffer(), (byte) 0, BufferSupplier.NO_CACHING));
-            DataInputStream in = new DataInputStream(new ByteBufInputStream(buf.duplicate()));
             return new CloseableIterator<>() {
                 @Override
                 public boolean hasNext() {
@@ -316,16 +310,11 @@ public class ObjectReader implements AutoCloseable {
                     if (remainingRecordCount.decrementAndGet() < 0) {
                         throw new NoSuchElementException();
                     }
-                    return StreamRecordBatchCodec.decode(in);
+                    return StreamRecordBatchCodec.duplicateDecode(buf);
                 }
 
                 @Override
                 public void close() {
-                    try {
-                        in.close();
-                    } catch (IOException e) {
-                        throw new StreamClientException(ErrorCode.UNEXPECTED, "Failed to close object block stream ", e);
-                    }
                 }
             };
         }
