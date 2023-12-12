@@ -553,6 +553,15 @@ class BrokerServer(
       if (controlPlaneRequestProcessor != null)
         CoreUtils.swallow(controlPlaneRequestProcessor.close(), this)
       CoreUtils.swallow(authorizer.foreach(_.close()), this)
+
+      // AutoMQ for Kafka inject start
+      // https://github.com/AutoMQ/automq-for-kafka/issues/540
+      // await partition shutdown before metadataListener.close()
+      if (replicaManager != null) {
+        CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
+      }
+      // AutoMQ for Kafka inject end
+
       if (metadataListener != null) {
         CoreUtils.swallow(metadataListener.close(), this)
       }
