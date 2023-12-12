@@ -2336,9 +2336,6 @@ class ReplicaManager(val config: KafkaConfig,
     removeAllTopicMetrics()
 
     slowFetchExecutors.shutdown()
-
-    awaitAllPartitionShutdown()
-
     info("Shut down completely")
   }
 
@@ -2792,7 +2789,7 @@ class ReplicaManager(val config: KafkaConfig,
   def checkAllPartitionClosed(): Boolean = {
     val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty
     if (!allClosed) {
-      info(s"online partition ${allPartitions.keys}, closing partition ${closingPartitions.keys}")
+      info(s"online partition ${allPartitions.keys}, closing partition ${closingPartitions.keySet()}")
     }
     allClosed
   }
