@@ -321,6 +321,7 @@ object Defaults {
   val S3ObjectRetentionMinutes: Long = 10 // 10min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
   val S3RefillPeriodMs: Int = 1000 // 1s
+  val S3MetricsExporterReportIntervalMs = 60000 // 1min
 }
 
 object KafkaConfig {
@@ -721,6 +722,11 @@ object KafkaConfig {
   val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
   val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
   val S3FailoverEnableProp = "s3.failover.enable"
+  val S3MetricsExporterTypeProp = "s3.metrics.exporter.type"
+  val S3MetricsExporterOTLPEndpointProp = "s3.metrics.exporter.otlp.endpoint"
+  val S3MetricsExporterPromHostProp = "s3.metrics.exporter.prom.host"
+  val S3MetricsExporterPromPortProp = "s3.metrics.exporter.prom.port"
+  val S3MetricsExporterReportIntervalMsProp = "s3.metrics.exporter.report.interval.ms"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -759,6 +765,11 @@ object KafkaConfig {
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
   val S3FailoverEnableDoc = "Failover mode: if enable, the controller will scan failed node and failover the failed node"
+  val S3MetricsExporterTypeDoc = "The enabled S3 metrics exporters type, seperated by comma. Supported type: otlp, prometheus, log"
+  val S3MetricsExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
+  val S3MetricsExporterPromHostDoc = "The host address of Prometheus http server to expose the metrics"
+  val S3MetricsExporterPromPortDoc = "The port of Prometheus http server to expose the metrics"
+  val S3MetricsExporterReportIntervalMsDoc = "The interval in milliseconds to report metrics"
 
   // AutoMQ for Kafka inject end
 
@@ -1594,6 +1605,11 @@ object KafkaConfig {
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
       .define(S3FailoverEnableProp, BOOLEAN, false, MEDIUM, S3FailoverEnableDoc)
+      .define(S3MetricsExporterTypeProp, STRING, null, MEDIUM, S3MetricsExporterTypeDoc)
+      .define(S3MetricsExporterOTLPEndpointProp, STRING, null, MEDIUM, S3MetricsExporterOTLPEndpointDoc)
+      .define(S3MetricsExporterPromHostProp, STRING, null, MEDIUM, S3MetricsExporterPromHostDoc)
+      .define(S3MetricsExporterPromPortProp, INT, 0, MEDIUM, S3MetricsExporterPromPortDoc)
+      .define(S3MetricsExporterReportIntervalMsProp, INT, Defaults.S3MetricsExporterReportIntervalMs, MEDIUM, S3MetricsExporterReportIntervalMsDoc)
     // AutoMQ for Kafka inject end
   }
 
@@ -2166,6 +2182,11 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
   val s3FailoverEnable = getBoolean(KafkaConfig.S3FailoverEnableProp)
+  val s3MetricsExporterType = getString(KafkaConfig.S3MetricsExporterTypeProp)
+  val s3MetricsExporterOTLPEndpoint = getString(KafkaConfig.S3MetricsExporterOTLPEndpointProp)
+  val s3MetricsExporterPromHost = getString(KafkaConfig.S3MetricsExporterPromHostProp)
+  val s3MetricsExporterPromPort = getInt(KafkaConfig.S3MetricsExporterPromPortProp)
+  val s3MetricsExporterReportIntervalMs = getInt(KafkaConfig.S3MetricsExporterReportIntervalMsProp)
   // AutoMQ for Kafka inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

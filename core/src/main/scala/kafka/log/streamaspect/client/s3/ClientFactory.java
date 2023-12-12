@@ -17,8 +17,6 @@
 
 package kafka.log.streamaspect.client.s3;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
-import org.apache.kafka.server.metrics.s3stream.KafkaS3StreamMetricsGroup;
 import com.automq.stream.api.Client;
 import kafka.log.stream.s3.DefaultS3Client;
 import kafka.log.streamaspect.AlwaysSuccessClient;
@@ -26,7 +24,6 @@ import kafka.log.streamaspect.client.Context;
 
 public class ClientFactory {
     public static Client get(Context context) {
-        S3StreamMetricsRegistry.setMetricsGroup(new KafkaS3StreamMetricsGroup());
         DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config);
         return new AlwaysSuccessClient(client);
     }
