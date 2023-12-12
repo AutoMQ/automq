@@ -558,7 +558,7 @@ class BrokerServer(
       // https://github.com/AutoMQ/automq-for-kafka/issues/540
       // await partition shutdown before metadataListener.close()
       if (replicaManager != null) {
-        replicaManager.awaitAllPartitionShutdown()
+        CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
       }
       // AutoMQ for Kafka inject end
 

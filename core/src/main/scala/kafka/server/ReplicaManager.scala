@@ -232,6 +232,7 @@ class ReplicaManager(val config: KafkaConfig,
   protected val allPartitions = new Pool[TopicPartition, HostedPartition](
     valueFactory = Some(tp => HostedPartition.Online(Partition(tp, time, this)))
   )
+  protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
 
   protected val replicaStateChangeLock = new Object
@@ -489,18 +490,9 @@ class ReplicaManager(val config: KafkaConfig,
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
-                val closingFuture = hostedPartition.partition.close()
-                closingPartitions.putIfAbsent(topicPartition, closingFuture)
-                closingFuture.thenRun(() => {
-                  // trigger leader election for this partition
-                  info(s"partition $topicPartition is closed, trigger leader election")
-                  alterPartitionManager.tryElectLeader(topicPartition)
-                }).whenComplete((_, ex) => {
-                  if (ex != null) {
-                    error(s"partition $topicPartition close fail", ex)
-                  }
-                  closingPartitions.remove(topicPartition)
-                });
+                hostedPartition.partition.close().get()
+                info(s"partition $topicPartition is closed, trigger leader election")
+                alterPartitionManager.tryElectLeader(topicPartition)
               } else {
                 hostedPartition.partition.delete()
               }
@@ -2527,6 +2519,7 @@ class ReplicaManager(val config: KafkaConfig,
             val opCf = new CompletableFuture[Void]()
             opCfList.add(opCf)
             partitionOpMap.put(tp, opCf)
+            closingPartitions.put(tp, opCf)
             prevOp.whenComplete((_, _) => {
               partitionOpExecutor.execute(() => {
                 try {
@@ -2544,6 +2537,7 @@ class ReplicaManager(val config: KafkaConfig,
                 } finally {
                   opCf.complete(null)
                   partitionOpMap.remove(tp, opCf)
+                  closingPartitions.remove(tp, opCf)
                 }
               })
             })
@@ -2567,6 +2561,7 @@ class ReplicaManager(val config: KafkaConfig,
               val opCf = new CompletableFuture[Void]()
               opCfList.add(opCf)
               partitionOpMap.put(tp, opCf)
+              openingPartitions.putIfAbsent(tp, opCf)
               prevOp.whenComplete((_, _) => {
                 partitionOpExecutor.execute(() => {
                   try {
@@ -2578,6 +2573,7 @@ class ReplicaManager(val config: KafkaConfig,
                   } finally {
                     opCf.complete(null)
                     partitionOpMap.remove(tp, opCf)
+                    openingPartitions.remove(tp, opCf)
                   }
                 })
               })
@@ -2757,18 +2753,14 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   def awaitAllPartitionShutdown(): Unit = {
-    var start = System.currentTimeMillis()
+    val start = System.currentTimeMillis()
     // await 5s partitions transfer to other alive brokers.
     // when there are no alive brokers, it will still await 5s.
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 5000) {
+    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 15000) {
       info("still has opening partition, retry check later")
       Thread.sleep(1000)
     }
     partitionOpExecutor.shutdown()
-    if (!partitionOpExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-      warn("partitionOpExecutor await 10s termination timeout")
-    }
-
     if (allPartitions.nonEmpty) {
       val partitionsToClose = mutable.Map[TopicPartition, Boolean]()
       allPartitions.foreachEntry((topicPartition, _) => {
@@ -2777,19 +2769,14 @@ class ReplicaManager(val config: KafkaConfig,
       info(s"try force stop partitions ${partitionsToClose.keys}")
       stopPartitions(partitionsToClose)
     }
-    start = System.currentTimeMillis()
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
-      Thread.sleep(5000)
-    }
-    if (!closingPartitions.isEmpty) {
-      warn(s"await partition close timeout, still has partitions ${closingPartitions.keys}")
-    }
+    checkAllPartitionClosed()
+    info("await all partitions closed")
   }
 
   def checkAllPartitionClosed(): Boolean = {
-    val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty
+    val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty && openingPartitions.isEmpty
     if (!allClosed) {
-      info(s"online partition ${allPartitions.keys}, closing partition ${closingPartitions.keySet()}")
+      info(s"online partition ${allPartitions.keys}, opening partition ${closingPartitions}, closing partition ${closingPartitions.keySet()}")
     }
     allClosed
   }
