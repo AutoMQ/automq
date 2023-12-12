@@ -119,7 +119,7 @@ public class ElasticLogFileRecords {
             return CompletableFuture.completedFuture(null);
         }
         return fetch0(nextFetchOffset, endOffset, maxSize, readOptions)
-                .thenApply(PooledMemoryRecords::of);
+                .thenApply(rst -> PooledMemoryRecords.of(rst, readOptions.pooledBuf()));
     }
 
     private CompletableFuture<LinkedList<FetchResult>> fetch0(long startOffset, long endOffset, int maxSize, ReadOptions readOptions) {
@@ -281,8 +281,11 @@ public class ElasticLogFileRecords {
         private final ByteBuf pack;
         private final MemoryRecords memoryRecords;
         private final long lastOffset;
+        private final boolean pooled;
+        private boolean freed;
 
-        private PooledMemoryRecords(List<FetchResult> fetchResults) {
+        private PooledMemoryRecords(List<FetchResult> fetchResults, boolean pooled) {
+            this.pooled = pooled;
             long lastOffset = 0;
             int size = 0;
             for (FetchResult fetchResult : fetchResults) {
@@ -292,7 +295,11 @@ public class ElasticLogFileRecords {
                 }
             }
             // TODO: create a new ByteBufMemoryRecords data struct to avoid copy
-            this.pack = DirectByteBufAlloc.byteBuffer(size);
+            if (pooled) {
+                this.pack = DirectByteBufAlloc.byteBuffer(size);
+            } else {
+                this.pack = Unpooled.buffer(size);
+            }
             for (FetchResult fetchResult : fetchResults) {
                 for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
                     pack.writeBytes(recordBatchWithContext.rawPayload());
@@ -304,8 +311,8 @@ public class ElasticLogFileRecords {
             this.lastOffset = lastOffset;
         }
 
-        public static PooledMemoryRecords of(List<FetchResult> fetchResults) {
-            return new PooledMemoryRecords(fetchResults);
+        public static PooledMemoryRecords of(List<FetchResult> fetchResults, boolean pooled) {
+            return new PooledMemoryRecords(fetchResults, pooled);
         }
 
         @Override
@@ -335,7 +342,10 @@ public class ElasticLogFileRecords {
 
         @Override
         public void release() {
-            pack.release();
+            if (!freed) {
+                pack.release();
+                freed = true;
+            }
         }
 
         public long lastOffset() {
