@@ -18,7 +18,9 @@
 package kafka.log.streamaspect;
 
 import com.automq.stream.api.ReadOptions;
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.utils.FutureUtil;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import com.automq.stream.api.FetchResult;
@@ -276,21 +278,29 @@ public class ElasticLogFileRecords {
     }
 
     public static class PooledMemoryRecords extends AbstractRecords implements PooledResource {
-        private final List<FetchResult> fetchResults;
+        private final ByteBuf pack;
         private final MemoryRecords memoryRecords;
         private final long lastOffset;
 
         private PooledMemoryRecords(List<FetchResult> fetchResults) {
-            this.fetchResults = fetchResults;
-            CompositeByteBuf compositeByteBuf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
             long lastOffset = 0;
+            int size = 0;
             for (FetchResult fetchResult : fetchResults) {
                 for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
-                    compositeByteBuf.addComponent(true, Unpooled.wrappedBuffer(recordBatchWithContext.rawPayload()));
+                    size += recordBatchWithContext.rawPayload().remaining();
                     lastOffset = recordBatchWithContext.lastOffset();
                 }
             }
-            this.memoryRecords = MemoryRecords.readableRecords(compositeByteBuf.nioBuffer());
+            // TODO: create a new ByteBufMemoryRecords data struct to avoid copy
+            this.pack = DirectByteBufAlloc.byteBuffer(size);
+            for (FetchResult fetchResult : fetchResults) {
+                for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
+                    pack.writeBytes(recordBatchWithContext.rawPayload());
+                }
+            }
+            fetchResults.forEach(FetchResult::free);
+            fetchResults.clear();
+            this.memoryRecords = MemoryRecords.readableRecords(pack.nioBuffer());
             this.lastOffset = lastOffset;
         }
 
@@ -325,8 +335,7 @@ public class ElasticLogFileRecords {
 
         @Override
         public void release() {
-            fetchResults.forEach(FetchResult::free);
-            fetchResults.clear();
+            pack.release();
         }
 
         public long lastOffset() {
