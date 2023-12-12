@@ -33,10 +33,12 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -111,9 +113,15 @@ public class StreamReader {
         DefaultS3BlockCache.ReadAheadTaskKey readAheadTaskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
         // put a placeholder task at start offset to prevent next cache miss request spawn duplicated read ahead task
         inflightReadAheadTaskMap.putIfAbsent(readAheadTaskKey, new CompletableFuture<>());
-        return getDataBlockIndices(streamId, endOffset, context).thenComposeAsync(v ->
-                        handleSyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, uuid, timer, context),
-                streamReaderExecutor);
+        context.taskKeySet.add(readAheadTaskKey);
+        return getDataBlockIndices(streamId, endOffset, context)
+                .thenComposeAsync(v ->
+                        handleSyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, uuid, timer, context), streamReaderExecutor)
+                .whenComplete((nil, ex) -> {
+                    for (DefaultS3BlockCache.ReadAheadTaskKey key : context.taskKeySet) {
+                        completeInflightTask(key, ex);
+                    }
+                });
     }
 
     CompletableFuture<List<StreamRecordBatch>> handleSyncReadAhead(long streamId, long startOffset, long endOffset,
@@ -132,7 +140,7 @@ public class StreamReader {
         List<String> sortedDataBlockKeyList = new ArrayList<>();
 
         // collect all data blocks to read from S3
-        List<Pair<ObjectReader, StreamDataBlock>> streamDataBlocksToRead = collectStreamDataBlocksToRead(streamId, context);
+        List<Pair<ObjectReader, StreamDataBlock>> streamDataBlocksToRead = collectStreamDataBlocksToRead(context);
 
         // reserve all data blocks to read
         List<DataBlockReadAccumulator.ReserveResult> reserveResults = dataBlockReadAccumulator.reserveDataBlock(streamDataBlocksToRead);
@@ -180,9 +188,12 @@ public class StreamReader {
                                 streamId, startOffset, endOffset, streamDataBlock, ex);
                     }
                     completeInflightTask(taskKey, ex);
+                    context.taskKeySet.remove(taskKey);
                     if (readIndex == 0) {
                         // in case of first data block and startOffset is not aligned with start of data block
-                        completeInflightTask(new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset), ex);
+                        DefaultS3BlockCache.ReadAheadTaskKey key = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
+                        completeInflightTask(key, ex);
+                        context.taskKeySet.remove(key);
                     }
                 }));
                 if (reserveResult.reserveSize() > 0) {
@@ -249,9 +260,14 @@ public class StreamReader {
         DefaultS3BlockCache.ReadAheadTaskKey readAheadTaskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
         // put a placeholder task at start offset to prevent next cache miss request spawn duplicated read ahead task
         inflightReadAheadTaskMap.putIfAbsent(readAheadTaskKey, new CompletableFuture<>());
-        getDataBlockIndices(streamId, endOffset, context).thenAcceptAsync(v ->
-                        handleAsyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, timer, context),
-                streamReaderExecutor);
+        getDataBlockIndices(streamId, endOffset, context)
+                .thenAcceptAsync(v ->
+                                handleAsyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, timer, context), streamReaderExecutor)
+                .whenComplete((nil, ex) -> {
+                    for (DefaultS3BlockCache.ReadAheadTaskKey key : context.taskKeySet) {
+                        completeInflightTask(key, ex);
+                    }
+                });
     }
 
     CompletableFuture<Void> handleAsyncReadAhead(long streamId, long startOffset, long endOffset, int maxBytes, ReadAheadAgent agent,
@@ -266,7 +282,7 @@ public class StreamReader {
 
         List<CompletableFuture<Void>> cfList = new ArrayList<>();
         // collect all data blocks to read from S3
-        List<Pair<ObjectReader, StreamDataBlock>> streamDataBlocksToRead = collectStreamDataBlocksToRead(streamId, context);
+        List<Pair<ObjectReader, StreamDataBlock>> streamDataBlocksToRead = collectStreamDataBlocksToRead(context);
 
         // concurrently read all data blocks
         for (int i = 0; i < streamDataBlocksToRead.size(); i++) {
@@ -282,7 +298,7 @@ public class StreamReader {
             DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
             DataBlockReadAccumulator.ReserveResult reserveResult = dataBlockReadAccumulator.reserveDataBlock(List.of(pair)).get(0);
             int readIndex = i;
-            cfList.add(reserveResult.cf().thenAcceptAsync(dataBlock -> {
+            CompletableFuture<Void> cf = reserveResult.cf().thenAcceptAsync(dataBlock -> {
                 if (dataBlock.records().isEmpty()) {
                     return;
                 }
@@ -302,11 +318,15 @@ public class StreamReader {
                 }
                 inflightReadThrottle.release(uuid);
                 completeInflightTask(taskKey, ex);
+                context.taskKeySet.remove(taskKey);
                 if (readIndex == 0) {
                     // in case of first data block and startOffset is not aligned with start of data block
-                    completeInflightTask(new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset), ex);
+                    DefaultS3BlockCache.ReadAheadTaskKey key = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
+                    completeInflightTask(key, ex);
+                    context.taskKeySet.remove(key);
                 }
-            }));
+            });
+            cfList.add(cf);
 
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[S3BlockCache] async ra acquire size: {}, uuid={}, stream={}, {}-{}, {}",
@@ -316,7 +336,10 @@ public class StreamReader {
                 inflightReadThrottle.acquire(uuid, reserveResult.reserveSize()).thenAcceptAsync(nil -> {
                     // read data block
                     dataBlockReadAccumulator.readDataBlock(objectReader, streamDataBlock.dataBlockIndex());
-                }, streamReaderExecutor);
+                }, streamReaderExecutor).exceptionally(ex -> {
+                    cf.completeExceptionally(ex);
+                    return null;
+                });
             }
         }
         return CompletableFuture.allOf(cfList.toArray(CompletableFuture[]::new)).whenComplete((ret, ex) -> {
@@ -376,6 +399,12 @@ public class StreamReader {
                 return CompletableFuture.completedFuture(null);
             }
 
+            for (StreamDataBlock streamDataBlock : streamDataBlocks) {
+                DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
+                inflightReadAheadTaskMap.putIfAbsent(taskKey, new CompletableFuture<>());
+                context.taskKeySet.add(taskKey);
+            }
+
             S3ObjectMetadata objectMetadata = context.objects.get(context.objectIndex);
             long lastOffset = streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset();
             context.lastOffset = Math.max(lastOffset, context.lastOffset);
@@ -392,25 +421,23 @@ public class StreamReader {
     }
 
     private void completeInflightTask(DefaultS3BlockCache.ReadAheadTaskKey key, Throwable ex) {
-        CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTaskMap.remove(key);
-        if (inflightReadAheadTask != null) {
+        inflightReadAheadTaskMap.computeIfPresent(key, (k, v) -> {
             if (ex != null) {
-                inflightReadAheadTask.completeExceptionally(ex);
+                v.completeExceptionally(ex);
             } else {
-                inflightReadAheadTask.complete(null);
+                v.complete(null);
             }
-        }
+            return null;
+        });
     }
 
-    private List<Pair<ObjectReader, StreamDataBlock>> collectStreamDataBlocksToRead(long streamId, ReadContext context) {
+    private List<Pair<ObjectReader, StreamDataBlock>> collectStreamDataBlocksToRead(ReadContext context) {
         List<Pair<ObjectReader, StreamDataBlock>> result = new ArrayList<>();
         for (Pair<Long, List<StreamDataBlock>> entry : context.streamDataBlocksPair) {
             long objectId = entry.getKey();
             ObjectReader objectReader = context.objectReaderMap.get(objectId);
             for (StreamDataBlock streamDataBlock : entry.getValue()) {
                 result.add(Pair.of(objectReader, streamDataBlock));
-                DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
-                inflightReadAheadTaskMap.putIfAbsent(taskKey, new CompletableFuture<>());
             }
         }
         return result;
@@ -431,6 +458,7 @@ public class StreamReader {
         List<S3ObjectMetadata> objects;
         List<Pair<Long, List<StreamDataBlock>>> streamDataBlocksPair;
         Map<Long, ObjectReader> objectReaderMap;
+        Set<DefaultS3BlockCache.ReadAheadTaskKey> taskKeySet;
         int objectIndex;
         long nextStartOffset;
         int nextMaxBytes;
@@ -442,6 +470,7 @@ public class StreamReader {
             this.objectIndex = 0;
             this.streamDataBlocksPair = new LinkedList<>();
             this.objectReaderMap = new HashMap<>();
+            this.taskKeySet = new HashSet<>();
             this.nextStartOffset = startOffset;
             this.nextMaxBytes = maxBytes;
         }
