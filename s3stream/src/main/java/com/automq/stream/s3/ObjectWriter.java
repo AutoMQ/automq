@@ -38,7 +38,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface ObjectWriter {
 
-    byte DATA_BLOCK_MAGIC = 0x01;
+    byte DATA_BLOCK_MAGIC = 0x5A;
     // TODO: first n bit is the compressed flag
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
