@@ -2754,8 +2754,8 @@ class ReplicaManager(val config: KafkaConfig,
 
   def awaitAllPartitionShutdown(): Unit = {
     val start = System.currentTimeMillis()
-    // await 5s partitions transfer to other alive brokers.
-    // when there are no alive brokers, it will still await 5s.
+    // await 15s partitions transfer to other alive brokers.
+    // when there are no alive brokers, it will still await 15s.
     while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 15000) {
       info("still has opening partition, retry check later")
       Thread.sleep(1000)
