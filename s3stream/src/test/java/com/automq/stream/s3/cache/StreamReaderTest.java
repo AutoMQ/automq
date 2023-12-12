@@ -44,8 +44,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 
 public class StreamReaderTest {
 
@@ -94,21 +97,25 @@ public class StreamReaderTest {
         ObjectManager objectManager = Mockito.mock(ObjectManager.class);
         BlockCache blockCache = Mockito.mock(BlockCache.class);
         Map<ReadAheadTaskKey, CompletableFuture<Void>> inflightReadAheadTasks = new HashMap<>();
-        StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, inflightReadAheadTasks, new InflightReadThrottle());
+        StreamReader streamReader = Mockito.spy(new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, inflightReadAheadTasks, new InflightReadThrottle()));
 
+        long streamId = 233L;
         long startOffset = 70;
-        StreamReader.ReadContext context = new StreamReader.ReadContext(startOffset, 256);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
-        context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 64, 128, 1, index1))));
+        long endOffset = 1024;
+        int maxBytes = 64;
+        long objectId = 1;
+        S3ObjectMetadata metadata = new S3ObjectMetadata(objectId, -1, S3ObjectType.STREAM);
+        doAnswer(invocation -> CompletableFuture.completedFuture(List.of(metadata)))
+                        .when(objectManager).getObjects(eq(streamId), eq(startOffset), anyLong(), anyInt());
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        Mockito.when(reader.read(index1)).thenReturn(new CompletableFuture<>());
-        context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
-        inflightReadAheadTasks.put(new ReadAheadTaskKey(233L, startOffset), new CompletableFuture<>());
-        streamReader.handleSyncReadAhead(233L, startOffset,
-                999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
+        doReturn(reader).when(streamReader).getObjectReader(metadata);
+        doAnswer(invocation -> CompletableFuture.completedFuture(new ObjectReader.FindIndexResult(true, -1, -1,
+                List.of(new StreamDataBlock(streamId, 64, 128, objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
+        doReturn(new CompletableFuture<>()).when(reader).read(index1);
+
+        streamReader.syncReadAhead(streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
         Threads.sleep(1000);
         Assertions.assertEquals(2, inflightReadAheadTasks.size());
         Assertions.assertTrue(inflightReadAheadTasks.containsKey(new ReadAheadTaskKey(233L, startOffset)));

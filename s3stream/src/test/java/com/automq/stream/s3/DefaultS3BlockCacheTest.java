@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -26,6 +27,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.utils.Threads;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -128,8 +130,12 @@ public class DefaultS3BlockCacheTest {
         verify(s3Operator, timeout(1000).times(2)).rangeRead(eq(ObjectUtils.genKey(0, 1)), ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong(), ArgumentMatchers.any());
         verify(objectManager, timeout(1000).times(1)).getObjects(eq(233L), eq(30L), eq(-1L), eq(2));
 
+        Threads.sleep(1000);
+
         // expect read ahead already cached the records
-        List<StreamRecordBatch> records = s3BlockCache.read(233L, 20L, 30L, 10000).get().getRecords();
+        ReadDataBlock ret = s3BlockCache.read(233L, 20L, 30L, 10000).get();
+        assertEquals(CacheAccessType.BLOCK_CACHE_HIT, ret.getCacheAccessType());
+        List<StreamRecordBatch> records = ret.getRecords();
         assertEquals(1, records.size());
         assertEquals(20L, records.get(0).getBaseOffset());
     }
