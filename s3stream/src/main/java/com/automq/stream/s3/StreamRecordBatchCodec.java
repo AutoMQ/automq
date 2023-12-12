@@ -20,9 +20,6 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import io.netty.buffer.ByteBuf;
 
-import java.io.DataInputStream;
-import java.io.IOException;
-
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
 
@@ -48,28 +45,27 @@ public class StreamRecordBatchCodec {
 
     /**
      * Decode a stream record batch from a byte buffer and move the reader index.
+     * The returned stream record batch does NOT share the payload buffer with the input buffer.
      */
-    public static StreamRecordBatch decode(DataInputStream in) {
-        try {
-            byte magic = in.readByte(); // magic
-            if (magic != MAGIC_V0) {
-                throw new RuntimeException("Invalid magic byte " + magic);
-            }
-            long streamId = in.readLong();
-            long epoch = in.readLong();
-            long baseOffset = in.readLong();
-            int lastOffsetDelta = in.readInt();
-            int payloadLength = in.readInt();
-            byte[] payloadBytes = new byte[payloadLength];
-            in.readFully(payloadBytes);
-            ByteBuf payload = DirectByteBufAlloc.byteBuffer(payloadLength);
-            payload.writeBytes(payloadBytes);
-            return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+    public static StreamRecordBatch duplicateDecode(ByteBuf buf) {
+        byte magic = buf.readByte(); // magic
+        if (magic != MAGIC_V0) {
+            throw new RuntimeException("Invalid magic byte " + magic);
         }
+        long streamId = buf.readLong();
+        long epoch = buf.readLong();
+        long baseOffset = buf.readLong();
+        int lastOffsetDelta = buf.readInt();
+        int payloadLength = buf.readInt();
+        ByteBuf payload = DirectByteBufAlloc.byteBuffer(payloadLength);
+        buf.readBytes(payload);
+        return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
     }
 
+    /**
+     * Decode a stream record batch from a byte buffer and move the reader index.
+     * The returned stream record batch shares the payload buffer with the input buffer.
+     */
     public static StreamRecordBatch decode(ByteBuf buf) {
         buf.readByte(); // magic
         long streamId = buf.readLong();
