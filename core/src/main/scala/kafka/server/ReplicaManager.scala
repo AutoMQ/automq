@@ -2776,7 +2776,7 @@ class ReplicaManager(val config: KafkaConfig,
   def checkAllPartitionClosed(): Boolean = {
     val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty && openingPartitions.isEmpty
     if (!allClosed) {
-      info(s"online partition ${allPartitions.keys}, opening partition ${closingPartitions}, closing partition ${closingPartitions.keySet()}")
+      info(s"online partition ${allPartitions.keys}, opening partition ${openingPartitions.keySet()}, closing partition ${closingPartitions.keySet()}")
     }
     allClosed
   }
