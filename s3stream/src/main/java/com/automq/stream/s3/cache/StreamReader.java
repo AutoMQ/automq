@@ -422,14 +422,14 @@ public class StreamReader {
     }
 
     private void completeInflightTask(DefaultS3BlockCache.ReadAheadTaskKey key, Throwable ex) {
-        inflightReadAheadTaskMap.computeIfPresent(key, (k, v) -> {
+        CompletableFuture<Void> cf = inflightReadAheadTaskMap.remove(key);
+        if (cf != null) {
             if (ex != null) {
-                v.completeExceptionally(ex);
+                cf.completeExceptionally(ex);
             } else {
-                v.complete(null);
+                cf.complete(null);
             }
-            return null;
-        });
+        }
     }
 
     private List<Pair<ObjectReader, StreamDataBlock>> collectStreamDataBlocksToRead(ReadContext context) {
