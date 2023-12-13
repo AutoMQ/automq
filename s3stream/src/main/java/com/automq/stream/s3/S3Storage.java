@@ -24,9 +24,9 @@ import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -259,7 +259,7 @@ public class S3Storage implements Storage {
         append0(writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE);
         });
         return cf;
     }
@@ -279,7 +279,7 @@ public class S3Storage implements Storage {
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
-            OperationMetricsStats.getCounter(S3Operation.APPEND_STORAGE_LOG_CACHE_FULL).inc();
+            S3StreamMetricsManager.recordOperationNum(1, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), maxDeltaWALCacheSize);
                 lastLogTimestamp = System.currentTimeMillis();
@@ -344,7 +344,7 @@ public class S3Storage implements Storage {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, readOptions), cf);
-        cf.whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.READ_STORAGE));
         return cf;
     }
 
@@ -363,6 +363,7 @@ public class S3Storage implements Storage {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
+        long finalEndOffset = endOffset;
         return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
             List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
@@ -383,7 +384,7 @@ public class S3Storage implements Storage {
             timeout.cancel();
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
-                        streamId, startOffset, maxBytes, ex);
+                        streamId, startOffset, finalEndOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
             }
         });
@@ -396,7 +397,7 @@ public class S3Storage implements Storage {
                 expectStartOffset = record.getLastOffset();
             } else {
                 throw new IllegalArgumentException(String.format("Continuous check failed, expect offset: %d," +
-                        " actual: %d, records: %s", expectStartOffset, record.getBaseOffset() ,records));
+                        " actual: %d, records: %s", expectStartOffset, record.getBaseOffset(), records));
             }
         }
     }
@@ -444,7 +445,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
-        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_APPEND_CALLBACK).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
+        S3StreamMetricsManager.recordOperationLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_APPEND_CALLBACK);
     }
 
     private Lock getStreamCallbackLock(long streamId) {
@@ -488,7 +489,7 @@ public class S3Storage implements Storage {
         inflightWALUploadTasks.add(cf);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
-            OperationMetricsStats.getHistogram(S3Operation.UPLOAD_STORAGE_WAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_STORAGE_WAL);
             inflightWALUploadTasks.remove(cf);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);

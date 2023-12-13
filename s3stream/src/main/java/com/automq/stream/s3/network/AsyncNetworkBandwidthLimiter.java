@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3.network;
 
-import com.automq.stream.s3.metrics.stats.NetworkMetricsStats;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.util.Objects;
@@ -78,22 +78,7 @@ public class AsyncNetworkBandwidthLimiter {
                 lock.unlock();
             }
         }, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
-        NetworkMetricsStats.registerNetworkInboundAvailableBandwidth(type, () -> {
-            lock.lock();
-            try {
-                return availableTokens;
-            } finally {
-                lock.unlock();
-            }
-        });
-        NetworkMetricsStats.registerNetworkLimiterQueueSize(type, () -> {
-            lock.lock();
-            try {
-                return queuedCallbacks.size();
-            } finally {
-                lock.unlock();
-            }
-        });
+        S3StreamMetricsManager.registerNetworkLimiterGauge(type, this::getAvailableTokens, this::getQueueSize);
     }
 
     public void shutdown() {
@@ -109,6 +94,15 @@ public class AsyncNetworkBandwidthLimiter {
         lock.lock();
         try {
             return availableTokens;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int getQueueSize() {
+        lock.lock();
+        try {
+            return queuedCallbacks.size();
         } finally {
             lock.unlock();
         }
@@ -155,9 +149,9 @@ public class AsyncNetworkBandwidthLimiter {
 
     private void logMetrics(long size) {
         if (type == Type.INBOUND) {
-            NetworkMetricsStats.getOrCreateNetworkInboundUsageCounter().inc(size);
+            S3StreamMetricsManager.recordNetworkInboundUsage(size);
         } else {
-            NetworkMetricsStats.getOrCreateNetworkOutboundUsageCounter().inc(size);
+            S3StreamMetricsManager.recordNetworkOutboundUsage(size);
         }
     }
 

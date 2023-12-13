@@ -18,10 +18,8 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.ByteBufMetricsStats;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -113,10 +111,10 @@ public class BlockImpl implements Block {
         data = DirectByteBufAlloc.compositeByteBuffer();
         for (Supplier<ByteBuf> supplier : records) {
             ByteBuf record = supplier.get();
-            ByteBufMetricsStats.getHistogram("wal_record").update(record.readableBytes());
+            S3StreamMetricsManager.recordAllocateByteBufSize(record.readableBytes(), "wal_record");
             data.addComponent(true, record);
         }
-        ByteBufMetricsStats.getHistogram("wal_block").update(data.readableBytes());
+        S3StreamMetricsManager.recordAllocateByteBufSize(data.readableBytes(), "wal_block");
         return data;
     }
 
@@ -127,6 +125,6 @@ public class BlockImpl implements Block {
 
     @Override
     public void polled() {
-        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_BLOCK_POLLED).update(timer.elapsedAs(TimeUnit.NANOSECONDS));
+        S3StreamMetricsManager.recordAppendWALLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), "block_polled");
     }
 }

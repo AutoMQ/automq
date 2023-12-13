@@ -17,7 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.metrics.stats.BlockCacheMetricsStats;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
@@ -56,7 +56,7 @@ public class InflightReadThrottle implements Runnable {
         this.maxInflightReadBytes = maxInflightReadBytes;
         this.remainingInflightReadBytes = maxInflightReadBytes;
         executorService.execute(this);
-        BlockCacheMetricsStats.registerAvailableInflightReadSize(this::getRemainingInflightReadBytes);
+        S3StreamMetricsManager.registerInflightReadSizeLimiterGauge(this::getRemainingInflightReadBytes);
     }
 
     public void shutdown() {

@@ -22,7 +22,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.automq.elasticstream</groupId>
     <artifactId>s3stream</artifactId>
-    <version>0.6.9-SNAPSHOT</version>
+    <version>0.6.10-SNAPSHOT</version>
     <properties>
         <mockito-core.version>5.5.0</mockito-core.version>
         <junit-jupiter.version>5.10.0</junit-jupiter.version>
@@ -34,6 +34,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <alapha.opentelemetry.version>1.32.0-alpha</alapha.opentelemetry.version>
     </properties>
     <dependencies>
         <dependency>
@@ -111,6 +112,11 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-runtime-telemetry-java17</artifactId>
+            <version>${alapha.opentelemetry.version}</version>
         </dependency>
     </dependencies>
 
