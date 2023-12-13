@@ -260,6 +260,7 @@ public class StreamReader {
         DefaultS3BlockCache.ReadAheadTaskKey readAheadTaskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
         // put a placeholder task at start offset to prevent next cache miss request spawn duplicated read ahead task
         inflightReadAheadTaskMap.putIfAbsent(readAheadTaskKey, new CompletableFuture<>());
+        context.taskKeySet.add(readAheadTaskKey);
         getDataBlockIndices(streamId, endOffset, context)
                 .thenAcceptAsync(v ->
                                 handleAsyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, timer, context), streamReaderExecutor)

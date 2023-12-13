@@ -114,6 +114,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
     }
 
     public CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, ReadAheadAgent agent, UUID uuid) {
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("[S3BlockCache] read0, stream={}, {}-{}, total bytes: {}, uuid: {} ", streamId, startOffset, endOffset, maxBytes, uuid);
+        }
+
         if (startOffset >= endOffset || maxBytes <= 0) {
             return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList(), CacheAccessType.BLOCK_CACHE_MISS));
         }
@@ -124,7 +128,8 @@ public class DefaultS3BlockCache implements S3BlockCache {
         CompletableFuture<Void> inflightReadAheadTask = inflightReadAheadTasks.get(new ReadAheadTaskKey(streamId, nextStartOffset));
         if (inflightReadAheadTask != null) {
             CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
-            inflightReadAheadTask.whenComplete((nil, ex) -> FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, agent, uuid), readCf));
+            inflightReadAheadTask.whenComplete((nil, ex) -> FutureUtil.exec(() -> FutureUtil.propagate(
+                    read0(streamId, startOffset, endOffset, maxBytes, agent, uuid), readCf), readCf, LOGGER, "read0"));
             return readCf;
         }
 
