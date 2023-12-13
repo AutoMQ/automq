@@ -602,8 +602,6 @@ class BrokerServer(
       if (logManager != null)
         CoreUtils.swallow(logManager.shutdown(), this)
 
-      CoreUtils.swallow(ElasticLogManager.shutdownNow(), this)
-
       // log manager need clientToControllerChannelManager to send request to controller.
       if (clientToControllerChannelManager != null)
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
