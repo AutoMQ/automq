@@ -17,14 +17,13 @@
 
 package org.apache.kafka.image;
 
-import java.util.Collections;
-import java.util.Map;
-import java.util.Objects;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import java.util.Objects;
 
 /**
  * Represents the S3 objects in the metadata image.
@@ -34,13 +33,13 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 public final class S3ObjectsImage {
 
     public static final S3ObjectsImage EMPTY =
-        new S3ObjectsImage(-1, Collections.emptyMap());
+        new S3ObjectsImage(-1, new DeltaMap<>(new int[] {1000, 10000}));
 
     private long nextAssignedObjectId;
 
-    private final Map<Long/*objectId*/, S3Object> objectsMetadata;
+    private final DeltaMap<Long/*objectId*/, S3Object> objectsMetadata;
 
-    public S3ObjectsImage(long assignedObjectId, final Map<Long, S3Object> objectsMetadata) {
+    public S3ObjectsImage(long assignedObjectId, final DeltaMap<Long, S3Object> objectsMetadata) {
         this.nextAssignedObjectId = assignedObjectId + 1;
         this.objectsMetadata = objectsMetadata;
     }
@@ -49,7 +48,7 @@ public final class S3ObjectsImage {
         return this.objectsMetadata.get(objectId);
     }
 
-    public Map<Long, S3Object> objectsMetadata() {
+    public DeltaMap<Long, S3Object> objectsMetadata() {
         return objectsMetadata;
     }
 
@@ -61,7 +60,7 @@ public final class S3ObjectsImage {
         writer.write(
             new ApiMessageAndVersion(
                 new AssignedS3ObjectIdRecord().setAssignedS3ObjectId(nextAssignedObjectId - 1), (short) 0));
-        objectsMetadata.values().stream().map(S3Object::toRecord).forEach(writer::write);
+        objectsMetadata.forEach((k, v) -> writer.write(v.toRecord()));
     }
 
     @Override

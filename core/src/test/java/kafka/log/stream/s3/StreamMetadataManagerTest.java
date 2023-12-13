@@ -23,6 +23,7 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.metadata.BrokerMetadataListener;
 import kafka.server.metadata.KRaftMetadataCache;
+import org.apache.kafka.image.DeltaMap;
 import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
@@ -93,11 +94,13 @@ public class StreamMetadataManagerTest {
     private static MetadataImage image2;
 
     static {
-        S3ObjectsImage objectsImage = new S3ObjectsImage(2L, Map.of(
+        DeltaMap<Long, S3Object> map = new DeltaMap<>(new int[] {});
+        map.putAll(Map.of(
                 0L, new S3Object(0L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
                 1L, new S3Object(1L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
                 2L, new S3Object(2L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED)
         ));
+        S3ObjectsImage objectsImage = new S3ObjectsImage(2L, map);
 
         Map<Integer, RangeMetadata> ranges = Map.of(
                 0, new RangeMetadata(STREAM0, 0L, 0, 10L, 100L, BROKER0)
