@@ -2769,8 +2769,12 @@ class ReplicaManager(val config: KafkaConfig,
       info(s"try force stop partitions ${partitionsToClose.keys}")
       stopPartitions(partitionsToClose)
     }
-    checkAllPartitionClosed()
+    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
+      info("still has opening partition, retry check later")
+      Thread.sleep(1000)
+    }
     info("await all partitions closed")
+    CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
   def checkAllPartitionClosed(): Boolean = {
