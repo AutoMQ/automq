@@ -17,8 +17,23 @@
 
 package com.automq.stream.s3.metrics;
 
-public interface Histogram {
-    void update(long value);
-    long count();
-    double mean();
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.context.Context;
+
+public class NoopLongCounter implements LongCounter {
+    @Override
+    public void add(long l) {
+
+    }
+
+    @Override
+    public void add(long l, Attributes attributes) {
+
+    }
+
+    @Override
+    public void add(long l, Attributes attributes, Context context) {
+
+    }
 }

@@ -19,12 +19,13 @@ package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -186,6 +187,11 @@ public class DataBlockReader {
     }
 
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
+        return rangeRead0(start, end).whenComplete((ret, ex) ->
+                S3StreamMetricsManager.recordCompactionReadSizeIn(ret.readableBytes()));
+    }
+
+    private CompletableFuture<ByteBuf> rangeRead0(long start, long end) {
         if (throttleBucket == null) {
             return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
                 // convert heap buffer to direct buffer

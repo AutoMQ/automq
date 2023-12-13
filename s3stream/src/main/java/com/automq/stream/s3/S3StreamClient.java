@@ -21,9 +21,9 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -84,7 +84,7 @@ public class S3StreamClient implements StreamClient {
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
         TimerUtil timerUtil = new TimerUtil();
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            OperationMetricsStats.getHistogram(S3Operation.CREATE_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_STREAM);
             return openStream0(streamId, options.epoch());
         }), LOGGER, "createAndOpenStream");
     }
@@ -139,7 +139,7 @@ public class S3StreamClient implements StreamClient {
         TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
                 thenApply(metadata -> {
-                    OperationMetricsStats.getHistogram(S3Operation.OPEN_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.OPEN_STREAM);
                     StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(objectManager, s3Operator)
                             .compactedStreamObjectMaxSizeInBytes(config.streamObjectCompactionMaxSizeBytes())
                             .eligibleStreamObjectLivingTimeInMs(config.streamObjectCompactionLivingTimeMinutes() * 60L * 1000)

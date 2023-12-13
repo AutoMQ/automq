@@ -19,9 +19,9 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.ThreadUtils;
@@ -367,11 +367,12 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(ByteBuf buf, int crc) throws OverCapacityException {
+        TimerUtil timerUtil = new TimerUtil();
         try {
             return append0(buf, crc);
         } catch (OverCapacityException ex) {
             buf.release();
-            OperationMetricsStats.getCounter(S3Operation.APPEND_STORAGE_WAL_FULL).inc();
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_WAL_FULL);
             throw ex;
         }
     }
@@ -402,8 +403,9 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
-        OperationMetricsStats.getHistogram(S3Operation.APPEND_STORAGE_WAL_BEFORE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        appendResult.future().whenComplete((nil, ex) -> S3StreamMetricsManager.recordOperationLatency(
+                timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_WAL));
+        S3StreamMetricsManager.recordAppendWALLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), "before");
         return appendResult;
     }
 

@@ -19,12 +19,13 @@ package com.automq.stream.s3.compact.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import com.automq.stream.s3.metadata.ObjectUtils;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -61,7 +62,9 @@ public class DataBlockWriter {
     }
 
     public void write(StreamDataBlock dataBlock) {
-        waitingUploadBlockCfs.put(dataBlock, new CompletableFuture<>());
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordCompactionWriteSize(dataBlock.getBlockSize()));
+        waitingUploadBlockCfs.put(dataBlock, cf);
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
         if (waitingUploadSize >= partSizeThreshold) {
