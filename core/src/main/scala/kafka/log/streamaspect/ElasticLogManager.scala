@@ -191,7 +191,7 @@ object ElasticLogManager {
     INSTANCE.get.newSegment(topicPartition, baseOffset, time, fileSuffix)
   }
 
-  def shutdownNow(): Unit = {
+  def shutdown(): Unit = {
     INSTANCE.foreach(_.shutdownNow())
   }
 }
