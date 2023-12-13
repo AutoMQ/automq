@@ -52,6 +52,7 @@ import java.util.logging.Level;
 
 public class MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(MetricsExporter.class);
+    private static final String KAFKA_METRICS_PREFIX = "kafka_stream_";
     private static String clusterId = "default";
     private final KafkaConfig kafkaConfig;
     private final Map<AttributeKey<String>, String> labelMap;
@@ -110,7 +111,7 @@ public class MetricsExporter {
                         W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
                 .buildAndRegisterGlobal();
         Meter meter = openTelemetrySdk.getMeter("automq-for-kafka");
-        S3StreamMetricsManager.initMetrics(meter);
+        S3StreamMetricsManager.initMetrics(meter, KAFKA_METRICS_PREFIX);
         S3StreamMetricsManager.initAttributesBuilder(() -> {
             AttributesBuilder builder = attributesBuilderSupplier.get();
             labelMap.forEach(builder::put);
