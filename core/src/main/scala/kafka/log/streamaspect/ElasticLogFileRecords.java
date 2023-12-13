@@ -345,6 +345,8 @@ public class ElasticLogFileRecords {
             if (!freed) {
                 pack.release();
                 freed = true;
+            } else {
+                LOGGER.warn("PooledMemoryRecords[{}] has been freed", this, new RuntimeException());
             }
         }
 

@@ -1146,7 +1146,6 @@ private[kafka] class Processor(
         if (response == null) {
           throw new IllegalStateException(s"Send for ${send.destinationId} completed, but not in `inflightResponses`")
         }
-        send.release()
         updateRequestMetrics(response)
 
         // Invoke send completion callback
@@ -1184,7 +1183,6 @@ private[kafka] class Processor(
         }.remoteHost
         inflightResponses.entrySet().removeIf(e => {
           val remove = connectionId.equals(e.getValue.request.context.connectionId)
-          e.getKey.release()
           remove
         })
         // the channel has been closed by the selector but the quotas still need to be updated

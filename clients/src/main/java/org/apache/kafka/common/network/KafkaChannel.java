@@ -380,6 +380,7 @@ public class KafkaChannel implements AutoCloseable {
 
     public NetworkSend maybeCompleteSend() {
         if (send != null && send.completed()) {
+            send.release();
             midWrite = false;
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
             NetworkSend result = send;
@@ -432,7 +433,12 @@ public class KafkaChannel implements AutoCloseable {
             return 0;
 
         midWrite = true;
-        return send.writeTo(transportLayer);
+        try {
+            return send.writeTo(transportLayer);
+        } catch (IOException e) {
+            send.release();
+            throw e;
+        }
     }
 
     /**
