@@ -17,13 +17,13 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import com.automq.stream.s3.metadata.ObjectUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;

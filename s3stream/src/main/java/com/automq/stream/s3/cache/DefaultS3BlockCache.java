@@ -18,9 +18,9 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -86,7 +86,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
             FutureUtil.exec(() -> {
                 read0(streamId, startOffset, endOffset, maxBytes, agent, uuid).whenComplete((ret, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("read {} [{}, {}) from block cache fail", streamId, startOffset, endOffset, ex);
+                        LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
                         readCf.completeExceptionally(ex);
                         this.inflightReadThrottle.release(uuid);
                         return;
@@ -95,16 +95,13 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     this.readAheadManager.updateReadResult(streamId, startOffset,
                             ret.getRecords().get(ret.getRecords().size() - 1).getLastOffset(), totalReturnedSize);
 
-                    if (ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT) {
-                        OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_BLOCK_CACHE).inc();
-                    } else {
-                        OperationMetricsStats.getCounter(S3Operation.READ_STORAGE_BLOCK_CACHE_MISS).inc();
-                    }
+                    long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
+                    boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
+                    S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_BLOCK_CACHE_HIT, isCacheHit);
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {} ",
                                 ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT, streamId, startOffset, endOffset, totalReturnedSize);
                     }
-                    OperationMetricsStats.getHistogram(S3Operation.READ_STORAGE_BLOCK_CACHE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     readCf.complete(ret);
                     this.inflightReadThrottle.release(uuid);
                 });

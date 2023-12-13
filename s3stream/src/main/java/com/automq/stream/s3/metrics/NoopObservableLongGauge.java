@@ -15,23 +15,9 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.metrics.stats;
+package com.automq.stream.s3.metrics;
 
-import com.automq.stream.s3.metrics.Histogram;
-import com.automq.stream.s3.metrics.NoopHistogram;
-import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
+import io.opentelemetry.api.metrics.ObservableLongGauge;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-public class ByteBufMetricsStats {
-    private static final Map<String, Histogram> SOURCE_TO_HISTOGRAM = new ConcurrentHashMap<>();
-
-    public static Histogram getHistogram(String source) {
-        Histogram hist = SOURCE_TO_HISTOGRAM.computeIfAbsent(source, k -> {
-            Map<String, String> tags = Map.of("source", k);
-            return S3StreamMetricsRegistry.getMetricsGroup().newHistogram("s3_stream_byte_buf_size", tags);
-        });
-        return hist == null ? new NoopHistogram() : hist;
-    }
+public class NoopObservableLongGauge implements ObservableLongGauge {
 }

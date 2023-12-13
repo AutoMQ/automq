@@ -17,23 +17,23 @@
 
 package com.automq.stream.s3.metrics;
 
-import java.util.Map;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongHistogram;
+import io.opentelemetry.context.Context;
 
-public class NoopS3StreamMetricsGroup implements S3StreamMetricsGroup {
+public class NoopLongHistogram implements LongHistogram {
     @Override
-    public Counter newCounter(String name, Map<String, String> tags) {
-        return null;
+    public void record(long l) {
+
     }
 
     @Override
-    public Histogram newHistogram(String name, Map<String, String> tags) {
-        return null;
+    public void record(long l, Attributes attributes) {
+
     }
 
     @Override
-    public void newGauge(String name, Map<String, String> tags, Gauge gauge) {
+    public void record(long l, Attributes attributes, Context context) {
 
     }
-
-
 }

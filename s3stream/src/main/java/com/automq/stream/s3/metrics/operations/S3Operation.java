@@ -32,21 +32,14 @@ public enum S3Operation {
     /* S3 storage operations start */
     APPEND_STORAGE(S3MetricsType.S3Storage, "append"),
     APPEND_STORAGE_WAL(S3MetricsType.S3Storage, "append_wal"),
-    APPEND_STORAGE_WAL_BEFORE(S3MetricsType.S3Storage, "append_wal_before"),
-    APPEND_STORAGE_WAL_AWAIT(S3MetricsType.S3Storage, "append_wal_await"),
-    APPEND_STORAGE_WAL_WRITE(S3MetricsType.S3Storage, "append_wal_write"),
-    APPEND_STORAGE_WAL_AFTER(S3MetricsType.S3Storage, "append_wal_after"),
-    APPEND_STORAGE_WAL_BLOCK_POLLED(S3MetricsType.S3Storage, "append_wal_block_polled"),
     APPEND_STORAGE_APPEND_CALLBACK(S3MetricsType.S3Storage, "append_callback"),
     APPEND_STORAGE_WAL_FULL(S3MetricsType.S3Storage, "append_wal_full"),
     APPEND_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "append_log_cache"),
     APPEND_STORAGE_LOG_CACHE_FULL(S3MetricsType.S3Storage, "append_log_cache_full"),
     UPLOAD_STORAGE_WAL(S3MetricsType.S3Storage, "upload_wal"),
     READ_STORAGE(S3MetricsType.S3Storage, "read"),
-    READ_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "read_log_cache"),
-    READ_STORAGE_LOG_CACHE_MISS(S3MetricsType.S3Storage, "read_log_cache_miss"),
-    READ_STORAGE_BLOCK_CACHE(S3MetricsType.S3Storage, "read_block_cache"),
-    READ_STORAGE_BLOCK_CACHE_MISS(S3MetricsType.S3Storage, "read_block_cache_miss"),
+    READ_STORAGE_LOG_CACHE_HIT(S3MetricsType.S3Storage, "read_log_cache"),
+    READ_STORAGE_BLOCK_CACHE_HIT(S3MetricsType.S3Storage, "read_block_cache"),
     /* S3 storage operations end */
 
     /* S3 request operations start */

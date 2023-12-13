@@ -29,9 +29,9 @@ import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.stats.OperationMetricsStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
@@ -141,7 +141,7 @@ public class S3Stream implements Stream {
     public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
         TimerUtil timerUtil = new TimerUtil();
         writeLock.lock();
-        OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM_WRITE_LOCK).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM_WRITE_LOCK);
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
@@ -151,7 +151,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.APPEND_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM);
                 pendingAppends.remove(cf);
             });
             return cf;
@@ -188,12 +188,12 @@ public class S3Stream implements Stream {
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
-        OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM_READ_LOCK).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM_READ_LOCK);
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes, readOptions), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
-                OperationMetricsStats.getHistogram(S3Operation.FETCH_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM);
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
                     if (!(cause instanceof FastReadFailFastException)) {
@@ -255,7 +255,7 @@ public class S3Stream implements Stream {
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
                 cf.whenComplete((nil, ex) -> {
-                    OperationMetricsStats.getHistogram(S3Operation.TRIM_STREAM).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.TRIM_STREAM);
                 });
                 return cf;
             }, LOGGER, "trim");

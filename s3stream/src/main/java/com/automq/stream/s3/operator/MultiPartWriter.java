@@ -18,9 +18,9 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
-import com.automq.stream.s3.metrics.stats.S3ObjectMetricsStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
@@ -140,14 +140,14 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3ObjectMetricsStats.getHistogram(S3ObjectStage.READY_CLOSE).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.READY_CLOSE);
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3ObjectMetricsStats.getHistogram(S3ObjectStage.TOTAL).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            S3ObjectMetricsStats.getOrCreateS3ObjectCounter().inc();
-            S3ObjectMetricsStats.getOrCreates3ObjectUploadSizeHist().update(totalWriteSize.get());
+            S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.TOTAL);
+            S3StreamMetricsManager.recordObjectNum(1);
+            S3StreamMetricsManager.recordObjectUploadSize(totalWriteSize.get());
         });
         return closeCf;
     }
@@ -224,7 +224,7 @@ public class MultiPartWriter implements Writer {
         private void upload0() {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
-            partCf.whenComplete((nil, ex) -> S3ObjectMetricsStats.getHistogram(S3ObjectStage.UPLOAD_PART).update(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+            S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
         }
 
         public long size() {
