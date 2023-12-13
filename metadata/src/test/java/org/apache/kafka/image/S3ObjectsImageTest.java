@@ -57,7 +57,9 @@ public class S3ObjectsImageTest {
                 S3ObjectState.PREPARED);
             map.put(object.getObjectId(), object);
         }
-        IMAGE1 = new S3ObjectsImage(3, map);
+        DeltaMap<Long, S3Object> deltaMap = new DeltaMap<>(new int[] {});
+        deltaMap.putAll(map);
+        IMAGE1 = new S3ObjectsImage(3, deltaMap);
         DELTA1_RECORDS = new ArrayList<>();
         // try to update object0 and object1 to committed
         // try to make object2 expired and mark it to be destroyed
@@ -100,7 +102,9 @@ public class S3ObjectsImageTest {
             -1, -1, -1, -1,
             S3ObjectState.PREPARED));
 
-        IMAGE2 = new S3ObjectsImage(4L, map2);
+        deltaMap = new DeltaMap<>(new int[] {});
+        deltaMap.putAll(map2);
+        IMAGE2 = new S3ObjectsImage(4L, deltaMap);
     }
 
     @Test

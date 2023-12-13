@@ -74,11 +74,11 @@ public final class S3ObjectsDelta {
 
     public S3ObjectsImage apply() {
         // get original objects first
-        Map<Long, S3Object> newObjectsMetadata = new HashMap<>(image.objectsMetadata());
+        DeltaMap<Long, S3Object> newObjectsMetadata = image.objectsMetadata().copy();
         // put all new changed objects
         newObjectsMetadata.putAll(changedObjects);
         // remove all removed objects
-        removedObjectIds.forEach(newObjectsMetadata::remove);
+        newObjectsMetadata.deleteAll(removedObjectIds);
         return new S3ObjectsImage(currentAssignedObjectId, newObjectsMetadata);
     }
 
