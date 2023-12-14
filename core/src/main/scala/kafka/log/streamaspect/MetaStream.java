@@ -76,11 +76,17 @@ public class MetaStream implements Stream {
      */
     private volatile boolean fenced;
 
+    /**
+     * replayDone is used to record if the meta stream has been fully replayed.
+     */
+    private volatile boolean replayDone;
+
     public MetaStream(Stream innerStream, ScheduledExecutorService trimScheduler, String logIdent) {
         this.innerStream = innerStream;
         this.trimScheduler = trimScheduler;
         this.metaCache = new ConcurrentHashMap<>();
         this.logIdent = logIdent;
+        this.replayDone = false;
     }
 
     @Override
@@ -156,11 +162,6 @@ public class MetaStream implements Stream {
             trimFuture.cancel(true);
         }
         return doCompaction()
-                .thenAccept(sb -> {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug(sb.toString());
-                    }
-                })
                 .thenRun(innerStream::close)
                 .thenRun(() -> fenced = true);
     }
@@ -183,6 +184,7 @@ public class MetaStream implements Stream {
      * @return meta keyValues map
      */
     public Map<String, Object> replay() throws IOException {
+        replayDone = false;
         metaCache.clear();
         StringBuilder sb = new StringBuilder(logIdent)
                 .append("metaStream replay summary:")
@@ -211,6 +213,7 @@ public class MetaStream implements Stream {
                 }
                 fetchRst.free();
             }
+            replayDone = true;
         } catch (ExecutionException e) {
             if (e.getCause() instanceof IOException) {
                 fenced = true;
@@ -279,8 +282,8 @@ public class MetaStream implements Stream {
         trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
     }
 
-    private CompletableFuture<StringBuilder> doCompaction() {
-        if (metaCache.size() <= 1) {
+    private CompletableFuture<Void> doCompaction() {
+        if (!replayDone || metaCache.size() <= 1) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -319,7 +322,12 @@ public class MetaStream implements Stream {
         sb.append("compact before: ").append(finalLastOffset + 1).append(", total value size: ").append(totalValueSize);
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .thenCompose(result -> trim(finalLastOffset + 1))
-                .thenApply(result -> sb);
+                .thenRun(() -> {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug(sb.toString());
+                    }
+                }
+                );
     }
 
     private long parseProducerSnapshotOffset(String key) {
