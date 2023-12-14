@@ -325,7 +325,9 @@ public class MetaStream implements Stream {
                 .thenRun(() -> {
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug(sb.toString());
-                    }});
+                    }
+                }
+                );
     }
 
     private long parseProducerSnapshotOffset(String key) {
