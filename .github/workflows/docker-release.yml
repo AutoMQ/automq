@@ -28,7 +28,7 @@ jobs:
 
       - name: Build TarGz
         run: |
-          ./gradlew --build-cache releaseTarGz
+          ./gradlew --build-cache --refresh-dependencies clean releaseTarGz
 
       # docker image release
       - name: Cp TarGz to Docker Path

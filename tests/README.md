@@ -92,6 +92,11 @@ ESK_TEST_YML="tests/esk_test_suite.yml" bash tests/docker/run_tests.sh
 ```
 All included or excluded E2E tests can be found in `tests/esk_test_suite.yml` file.
 
+* Force update dependencies and run AutoMQ for Apache Kafka E2E tests:
+```
+ESK_TEST_YML="tests/esk_test_suite.yml" DUCKER_TEST_OPTIONS="-f" bash tests/docker/run_tests.sh
+```
+
 * Notes
   - The scripts to run tests creates and destroys docker network named *knw*.
    This network can't be used for any other purpose.

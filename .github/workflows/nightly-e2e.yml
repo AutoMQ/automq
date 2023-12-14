@@ -11,6 +11,7 @@ jobs:
     env:
       TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
       ESK_TEST_YML: "tests/kos_test_suite.yml"
+      DUCKER_TEST_OPTIONS: "-f"
       # fail fast
       # _DUCKTAPE_OPTIONS: "--exit-first"
     steps:
