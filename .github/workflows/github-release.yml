@@ -28,7 +28,7 @@ jobs:
 
       - name: Build TarGz
         run: |
-          ./gradlew --build-cache releaseTarGz
+          ./gradlew --build-cache --refresh-dependencies clean releaseTarGz
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v1

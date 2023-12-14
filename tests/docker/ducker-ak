@@ -485,9 +485,11 @@ ducker_test() {
         die "ducker_test: the ducker01 instance appears to be down. Did you run 'ducker up'?"
     declare -a test_name_args=()
     local debug=0
+    local force_update_snapshot=0
     while [[ $# -ge 1 ]]; do
         case "${1}" in
             -d|--debug) debug=1; shift;;
+            -f|--force-update-snapshot) force_update_snapshot=1; shift;;
             --) shift; break;;
             *) test_name_args+=("${1}"); shift;;
         esac
@@ -509,7 +511,11 @@ ducker_test() {
     done
     
     must_pushd "${kafka_dir}"
-    (test -f ./gradlew || gradle) && ./gradlew systemTestLibs
+    if [[ "${force_update_snapshot}" -eq 1 ]]; then
+        (test -f ./gradlew || gradle) && ./gradlew --refresh-dependencies clean systemTestLibs
+    else
+        (test -f ./gradlew || gradle) && ./gradlew systemTestLibs
+    fi
     must_popd
     if [[ "${debug}" -eq 1 ]]; then
         local ducktape_cmd="python3 -m debugpy --listen 0.0.0.0:${debugpy_port} --wait-for-client /usr/local/bin/ducktape"
