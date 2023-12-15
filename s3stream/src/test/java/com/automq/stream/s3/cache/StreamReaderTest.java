@@ -96,7 +96,7 @@ public class StreamReaderTest {
         S3Operator s3Operator = Mockito.mock(S3Operator.class);
         ObjectManager objectManager = Mockito.mock(ObjectManager.class);
         BlockCache blockCache = Mockito.mock(BlockCache.class);
-        Map<ReadAheadTaskKey, CompletableFuture<Void>> inflightReadAheadTasks = new HashMap<>();
+        Map<DefaultS3BlockCache.ReadAheadTaskKey, DefaultS3BlockCache.ReadAheadTaskContext> inflightReadAheadTasks = new HashMap<>();
         StreamReader streamReader = Mockito.spy(new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, inflightReadAheadTasks, new InflightReadThrottle()));
 
         long streamId = 233L;
@@ -118,8 +118,12 @@ public class StreamReaderTest {
         streamReader.syncReadAhead(streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
         Threads.sleep(1000);
         Assertions.assertEquals(2, inflightReadAheadTasks.size());
-        Assertions.assertTrue(inflightReadAheadTasks.containsKey(new ReadAheadTaskKey(233L, startOffset)));
-        Assertions.assertTrue(inflightReadAheadTasks.containsKey(new ReadAheadTaskKey(233L, 64)));
+        ReadAheadTaskKey key1 = new ReadAheadTaskKey(233L, startOffset);
+        ReadAheadTaskKey key2 = new ReadAheadTaskKey(233L, 64);
+        Assertions.assertTrue(inflightReadAheadTasks.containsKey(key1));
+        Assertions.assertTrue(inflightReadAheadTasks.containsKey(key2));
+        Assertions.assertEquals(DefaultS3BlockCache.ReadBlockCacheStatus.WAIT_FETCH_DATA, inflightReadAheadTasks.get(key1).status);
+        Assertions.assertEquals(DefaultS3BlockCache.ReadBlockCacheStatus.WAIT_FETCH_DATA, inflightReadAheadTasks.get(key2).status);
     }
 
     @Test
@@ -173,7 +177,7 @@ public class StreamReaderTest {
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
             Assertions.assertEquals(1, rst.size());
-            Assertions.assertTrue(record1.equals(rst.get(0)));
+            Assertions.assertEquals(record1, rst.get(0));
             Assertions.assertEquals(2, record1.getPayload().refCnt());
             Assertions.assertEquals(1, record2.getPayload().refCnt());
         }).join();
@@ -186,7 +190,7 @@ public class StreamReaderTest {
         S3Operator s3Operator = Mockito.mock(S3Operator.class);
         ObjectManager objectManager = Mockito.mock(ObjectManager.class);
         BlockCache blockCache = Mockito.mock(BlockCache.class);
-        Map<ReadAheadTaskKey, CompletableFuture<Void>> inflightReadAheadTasks = new HashMap<>();
+        Map<DefaultS3BlockCache.ReadAheadTaskKey, DefaultS3BlockCache.ReadAheadTaskContext> inflightReadAheadTasks = new HashMap<>();
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, inflightReadAheadTasks, new InflightReadThrottle());
 
         long startOffset = 32;
@@ -226,7 +230,9 @@ public class StreamReaderTest {
         });
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
-        inflightReadAheadTasks.put(new ReadAheadTaskKey(233L, startOffset), new CompletableFuture<>());
+        ReadAheadTaskKey key = new ReadAheadTaskKey(233L, startOffset);
+        context.taskKeySet.add(key);
+        inflightReadAheadTasks.put(key, new DefaultS3BlockCache.ReadAheadTaskContext(new CompletableFuture<>(), DefaultS3BlockCache.ReadBlockCacheStatus.INIT));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(233L, startOffset,
                 999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
@@ -234,7 +240,7 @@ public class StreamReaderTest {
             Assertions.assertNull(ex);
             Assertions.assertTrue(inflightReadAheadTasks.isEmpty());
             Assertions.assertEquals(1, rst.size());
-            Assertions.assertTrue(record1.equals(rst.get(0)));
+            Assertions.assertEquals(record1, rst.get(0));
             Assertions.assertEquals(2, record1.getPayload().refCnt());
             Assertions.assertEquals(1, record2.getPayload().refCnt());
         }).join();
