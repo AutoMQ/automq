@@ -54,6 +54,7 @@ public class MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(MetricsExporter.class);
     private static final String KAFKA_METRICS_PREFIX = "kafka_stream_";
     private static String clusterId = "default";
+    private static java.util.logging.Logger metricsLogger;
     private final KafkaConfig kafkaConfig;
     private final Map<AttributeKey<String>, String> labelMap;
     private final Supplier<AttributesBuilder> attributesBuilderSupplier;
@@ -143,7 +144,8 @@ public class MetricsExporter {
         MetricReader periodicReader = PeriodicMetricReader.builder(LoggingMetricExporter.create(AggregationTemporality.DELTA))
                 .setInterval(Duration.ofMillis(kafkaConfig.s3MetricsExporterReportIntervalMs()))
                 .build();
-        java.util.logging.Logger.getLogger(LoggingMetricExporter.class.getName()).setLevel(Level.FINEST);
+        metricsLogger = java.util.logging.Logger.getLogger(LoggingMetricExporter.class.getName());
+        metricsLogger.setLevel(Level.FINEST);
         sdkMeterProvider.registerMetricReader(periodicReader);
     }
 
