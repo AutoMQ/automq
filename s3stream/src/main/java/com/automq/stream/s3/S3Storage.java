@@ -69,6 +69,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.automq.stream.utils.FutureUtil.suppress;
+
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
@@ -426,6 +428,10 @@ public class S3Storage implements Storage {
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
+        suppress(() -> handleAppendCallback0(request), LOGGER);
+    }
+
+    private void handleAppendCallback0(WalWriteRequest request) {
         TimerUtil timer = new TimerUtil();
         List<WalWriteRequest> waitingAckRequests;
         Lock lock = getStreamCallbackLock(request.record.getStreamId());
