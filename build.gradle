@@ -951,12 +951,21 @@ project(':core') {
     implementation libs.commonLang
     compileOnly libs.log4j
     implementation libs.slf4jlog4j
+    implementation libs.slf4jBridge
     implementation libs.nettyHttp2
     implementation(libs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
+    implementation libs.opentelemetryApi
+    implementation libs.opentelemetrySdk
+    implementation libs.opentelemetrySdkMetrics
+    implementation libs.opentelemetryExporterLogging
+    implementation libs.opentelemetrySemconv
+    implementation libs.opentelemetryExporterProm
+    implementation libs.opentelemetryExporterOTLP
+
     // https://github.com/netty/netty-tcnative/issues/716
     // After 2.0.48, gradle project need explicitly declare the tcnative dependencies with classifiers
     implementation 'io.netty:netty-tcnative-boringssl-static:2.0.48.Final'

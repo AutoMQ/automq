@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.log.stream.s3.metrics.MetricsExporter
 import kafka.raft.KafkaRaftManager
 import kafka.server.KafkaRaftServer.{BrokerRole, ControllerRole}
 import kafka.server.Server.MetricsPrefix
@@ -100,6 +101,7 @@ class SharedServer(
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
+  MetricsExporter.setClusterId(metaProps.clusterId)
   // AutoMQ for Kafka injection end
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _

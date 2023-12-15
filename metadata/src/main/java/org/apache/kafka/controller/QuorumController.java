@@ -18,7 +18,6 @@
 package org.apache.kafka.controller;
 
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.metrics.S3StreamMetricsRegistry;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
@@ -156,7 +155,6 @@ import org.apache.kafka.server.authorizer.AclDeleteResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.fault.FaultHandler;
-import org.apache.kafka.server.metrics.s3stream.KafkaS3StreamMetricsGroup;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.CreateTopicPolicy;
 import org.apache.kafka.snapshot.SnapshotReader;
@@ -1929,8 +1927,7 @@ public final class QuorumController implements Controller {
             // only use for test
             s3Operator = new MemoryS3Operator();
         } else {
-            S3StreamMetricsRegistry.setMetricsGroup(new KafkaS3StreamMetricsGroup());
-            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
+            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), false,
                     streamConfig.accessKey(), streamConfig.secretKey());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
