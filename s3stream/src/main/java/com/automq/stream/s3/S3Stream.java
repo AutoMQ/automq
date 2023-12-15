@@ -36,6 +36,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.GlobalSwitch;
 import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -292,7 +293,9 @@ public class S3Stream implements Stream {
 
             // await all pending append/fetch/trim request
             List<CompletableFuture<?>> pendingRequests = new ArrayList<>(pendingAppends);
-            pendingRequests.addAll(pendingFetches);
+            if (GlobalSwitch.STRICT) {
+                pendingRequests.addAll(pendingFetches);
+            }
             pendingRequests.add(lastPendingTrim);
             CompletableFuture<Void> awaitPendingRequestsCf = CompletableFuture.allOf(pendingRequests.toArray(new CompletableFuture[0]));
             CompletableFuture<Void> closeCf = new CompletableFuture<>();
