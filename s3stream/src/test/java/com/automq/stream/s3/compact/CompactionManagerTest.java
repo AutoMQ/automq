@@ -19,11 +19,13 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -53,9 +55,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -217,6 +221,76 @@ public class CompactionManagerTest extends CompactionTestBase {
         assertTrue(request.getObjectId() > OBJECT_2);
         request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_2));
         assertEquals(3, request.getStreamObjects().size());
+        assertEquals(2, request.getStreamRanges().size());
+
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));
+    }
+
+    @Test
+    public void testCompactionWithDataTrimmed3() {
+        objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
+            assertEquals(OBJECT_3, objectId);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, s3Operator, 1024, 1024);
+            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
+            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
+            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
+            objectWriter.write(STREAM_1, List.of(r1));
+            objectWriter.write(STREAM_3, List.of(r2, r3));
+            objectWriter.close().join();
+            List<StreamOffsetRange> streamsIndices = List.of(
+                    new StreamOffsetRange(STREAM_1, 500, 520),
+                    new StreamOffsetRange(STREAM_3, 0, 20)
+            );
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_3, S3ObjectType.STREAM_SET, streamsIndices, System.currentTimeMillis(),
+                    System.currentTimeMillis(), objectWriter.size(), OBJECT_3);
+            S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
+            List.of(r1, r2, r3).forEach(StreamRecordBatch::release);
+        }).join();
+        when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
+                List.of(new StreamMetadata(STREAM_0, 0, 0, 20, StreamState.OPENED),
+                        new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
+                        new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED),
+                        new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
+        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
+        assertNull(request);
+    }
+
+    @Test
+    public void testCompactionWithDataTrimmed4() {
+        objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
+            assertEquals(OBJECT_3, objectId);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, s3Operator, 200, 1024);
+            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
+            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(200));
+            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(200));
+            objectWriter.write(STREAM_1, List.of(r1));
+            objectWriter.write(STREAM_3, List.of(r2, r3));
+            objectWriter.close().join();
+            List<StreamOffsetRange> streamsIndices = List.of(
+                    new StreamOffsetRange(STREAM_1, 500, 520),
+                    new StreamOffsetRange(STREAM_3, 0, 20)
+            );
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_3, S3ObjectType.STREAM_SET, streamsIndices, System.currentTimeMillis(),
+                    System.currentTimeMillis(), objectWriter.size(), OBJECT_3);
+            S3_WAL_OBJECT_METADATA_LIST.add(objectMetadata);
+            List.of(r1, r2, r3).forEach(StreamRecordBatch::release);
+        }).join();
+        when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
+                List.of(new StreamMetadata(STREAM_0, 0, 0, 20, StreamState.OPENED),
+                        new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
+                        new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED),
+                        new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
+        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
+
+        assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2, OBJECT_3), request.getCompactedObjectIds());
+        assertEquals(OBJECT_0, request.getOrderId());
+        assertTrue(request.getObjectId() > OBJECT_3);
+        request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_3));
+        assertEquals(4, request.getStreamObjects().size());
         assertEquals(2, request.getStreamRanges().size());
 
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));
