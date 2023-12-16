@@ -428,7 +428,7 @@ public class CompactionManager {
         }).filter(Objects::nonNull).forEach(request::addStreamObject);
 
         request.setCompactedObjectIds(Collections.singletonList(objectToSplit.objectId()));
-        if (!sanityCheckCompactionResult(streamMetadataList, Collections.singletonList(objectToSplit), request)) {
+        if (isSanityCheckFailed(streamMetadataList, Collections.singletonList(objectToSplit), request)) {
             logger.error("Sanity check failed, force split result is illegal");
             return null;
         }
@@ -445,6 +445,14 @@ public class CompactionManager {
                 objectsToCompact.size(), objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum());
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
                 objectsToCompact, s3Operator, logger);
+        for (List<StreamDataBlock> blocks : streamDataBlockMap.values()) {
+            for (StreamDataBlock block : blocks) {
+                if (block.getBlockSize() > compactionCacheSize) {
+                    logger.error("Block {} size exceeds compaction cache size {}, skip compaction", block, compactionCacheSize);
+                    return null;
+                }
+            }
+        }
         long now = System.currentTimeMillis();
         Set<Long> excludedObjectIds = new HashSet<>();
         List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMap, excludedObjectIds);
@@ -457,7 +465,7 @@ public class CompactionManager {
         request.setCompactedObjectIds(new ArrayList<>(compactedObjectIds));
         List<S3ObjectMetadata> compactedObjectMetadata = objectsToCompact.stream()
                 .filter(e -> compactedObjectIds.contains(e.objectId())).toList();
-        if (!sanityCheckCompactionResult(streamMetadataList, compactedObjectMetadata, request)) {
+        if (isSanityCheckFailed(streamMetadataList, compactedObjectMetadata, request)) {
             logger.error("Sanity check failed, compaction result is illegal");
             return null;
         }
@@ -465,8 +473,8 @@ public class CompactionManager {
         return request;
     }
 
-    boolean sanityCheckCompactionResult(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> compactedObjects,
-                                        CommitStreamSetObjectRequest request) {
+    boolean isSanityCheckFailed(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> compactedObjects,
+                                CommitStreamSetObjectRequest request) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
                 .collect(Collectors.toMap(StreamMetadata::getStreamId, e -> e));
         Map<Long, S3ObjectMetadata> objectMetadataMap = compactedObjects.stream()
@@ -481,14 +489,22 @@ public class CompactionManager {
         for (long objectId : request.getCompactedObjectIds()) {
             S3ObjectMetadata metadata = objectMetadataMap.get(objectId);
             for (StreamOffsetRange streamOffsetRange : metadata.getOffsetRanges()) {
-                if (!streamMetadataMap.containsKey(streamOffsetRange.getStreamId()) ||
-                        streamOffsetRange.getEndOffset() <= streamMetadataMap.get(streamOffsetRange.getStreamId()).getStartOffset()) {
+                if (!streamMetadataMap.containsKey(streamOffsetRange.getStreamId())) {
+                    // skip non-exist stream
+                    continue;
+                }
+                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.getStreamId()).getStartOffset();
+                if (streamOffsetRange.getEndOffset() <= streamStartOffset) {
                     // skip stream offset range that has been trimmed
                     continue;
                 }
+                if (streamOffsetRange.getStartOffset() < streamStartOffset) {
+                    // trim stream offset range
+                    streamOffsetRange = new StreamOffsetRange(streamOffsetRange.getStreamId(), streamStartOffset, streamOffsetRange.getEndOffset());
+                }
                 if (!sortedStreamOffsetRanges.containsKey(streamOffsetRange.getStreamId())) {
                     logger.error("Sanity check failed, stream {} is missing after compact", streamOffsetRange.getStreamId());
-                    return false;
+                    return true;
                 }
                 boolean contained = false;
                 for (StreamOffsetRange compactedStreamOffsetRange : sortedStreamOffsetRanges.get(streamOffsetRange.getStreamId())) {
@@ -500,12 +516,12 @@ public class CompactionManager {
                 }
                 if (!contained) {
                     logger.error("Sanity check failed, object {} offset range {} is missing after compact", objectId, streamOffsetRange);
-                    return false;
+                    return true;
                 }
             }
         }
 
-        return true;
+        return false;
     }
 
     private List<StreamOffsetRange> sortAndMerge(List<StreamOffsetRange> streamOffsetRangeList) {
