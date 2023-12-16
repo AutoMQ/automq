@@ -27,6 +27,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
+import com.automq.stream.utils.S3Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -121,8 +122,16 @@ public class DefaultS3Operator implements S3Operator {
         this.bucket = bucket;
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
+        S3Utils.S3Context s3Context = S3Utils.S3Context.builder()
+                .setEndpoint(endpoint)
+                .setRegion(region)
+                .setBucketName(bucket)
+                .setForcePathStyle(forcePathStyle)
+                .setAccessKey(accessKey)
+                .setSecretKey(secretKey)
+                .build();
+        LOGGER.info("You are using s3Context: {}", s3Context);
         checkAvailable();
-        LOGGER.info("S3Operator init with endpoint={} region={} bucket={}, read data sparsity rate={}", endpoint, region, bucket, this.maxMergeReadSparsityRate);
     }
 
     public static Builder builder() {
@@ -585,8 +594,8 @@ public class DefaultS3Operator implements S3Operator {
             read.release();
             this.delete(multipartPath).get(30, TimeUnit.SECONDS);
         } catch (Throwable e) {
-            LOGGER.error("Try connect s3 fail, please re-check the server configs", e);
-            throw new IllegalArgumentException("Try connect s3 fail, please re-check the server configs", e);
+            LOGGER.error("Try to write/read/delete object to S3 fail ", e);
+            throw new RuntimeException("Try connect s3 fail, please re-check the server configs", e);
         }
     }
 
