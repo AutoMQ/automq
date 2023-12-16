@@ -366,8 +366,8 @@ public class S3Storage implements Storage {
         }
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
         long finalEndOffset = endOffset;
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(readDataBlock -> {
-            List<StreamRecordBatch> rst = new ArrayList<>(readDataBlock.getRecords());
+        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
+            List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
             int readIndex = -1;
             for (int i = 0; i < logCacheRecords.size() && remainingBytesSize > 0; i++) {
@@ -376,12 +376,17 @@ public class S3Storage implements Storage {
                 rst.add(record);
                 remainingBytesSize -= record.size();
             }
+            try {
+                continuousCheck(rst);
+            } catch (IllegalArgumentException e) {
+                blockCacheRst.getRecords().forEach(StreamRecordBatch::release);
+                throw e;
+            }
             if (readIndex < logCacheRecords.size()) {
                 // release unnecessary record
                 logCacheRecords.subList(readIndex + 1, logCacheRecords.size()).forEach(StreamRecordBatch::release);
             }
-            continuousCheck(rst);
-            return new ReadDataBlock(rst, readDataBlock.getCacheAccessType());
+            return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
             timeout.cancel();
             if (ex != null) {
