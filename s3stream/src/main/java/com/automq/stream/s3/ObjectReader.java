@@ -222,7 +222,10 @@ public class ObjectReader implements AutoCloseable {
                     // we consider first block as not matched because we do not know exactly how many bytes are within
                     // the range in first block, as a result we may read one more block than expected.
                     if (matched) {
-                        nextMaxBytes -= Math.min(nextMaxBytes, blockSize);
+                        int recordPayloadSize = blockSize
+                                - recordCount * StreamRecordBatchCodec.HEADER_SIZE // sum of encoded record header size
+                                - ObjectWriter.DataBlock.BLOCK_HEADER_SIZE; // block header size
+                        nextMaxBytes -= Math.min(nextMaxBytes, recordPayloadSize);
                     }
                     if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
                         isFulfilled = true;

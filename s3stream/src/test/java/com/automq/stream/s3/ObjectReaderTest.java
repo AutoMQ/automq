@@ -38,71 +38,88 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class ObjectReaderTest {
 
+    private int recordCntToBlockSize(int recordCnt, int bodySize) {
+        return (bodySize + StreamRecordBatchCodec.HEADER_SIZE) * recordCnt + ObjectWriter.DataBlock.BLOCK_HEADER_SIZE;
+    }
+
     @Test
     public void testIndexBlock() {
         // block0: s1 [0, 100)
-        // block1: s1 [100, 300)
-        // block2: s1 [300, 400)
+        // block1: s1 [100, 150)
+        // block2: s1 [150, 200)
         // block3: s2 [110, 200)
+        int bodySize = 10;
+        int recordCnt1 = 100;
+        int blockSize1 = recordCntToBlockSize(recordCnt1, bodySize);
+        int recordCnt2 = 50;
+        int blockSize2 = recordCntToBlockSize(recordCnt2, bodySize);
+        int recordCnt3 = 90;
+        int blockSize3 = recordCntToBlockSize(recordCnt3, bodySize);
+        long streamId1 = 1;
+        long streamId2 = 2;
         ByteBuf blocks = Unpooled.buffer(3 * ObjectReader.DataBlockIndex.BLOCK_INDEX_SIZE);
         blocks.writeLong(0);
-        blocks.writeInt(1024);
-        blocks.writeInt(100);
+        blocks.writeInt(blockSize1);
+        blocks.writeInt(recordCnt1);
 
-        blocks.writeLong(1024);
-        blocks.writeInt(512);
-        blocks.writeInt(100);
+        blocks.writeLong(blockSize1);
+        blocks.writeInt(blockSize2);
+        blocks.writeInt(recordCnt2);
 
-        blocks.writeLong(1536);
-        blocks.writeInt(512);
-        blocks.writeInt(100);
+        blocks.writeLong((long) blockSize1 + blockSize2);
+        blocks.writeInt(blockSize2);
+        blocks.writeInt(recordCnt2);
 
-        blocks.writeLong(2048);
-        blocks.writeInt(512);
-        blocks.writeInt(90);
+        blocks.writeLong((long) blockSize1 + blockSize2 + blockSize2);
+        blocks.writeInt(blockSize3);
+        blocks.writeInt(recordCnt3);
 
 
         ByteBuf streamRanges = Unpooled.buffer(3 * (8 + 8 + 4 + 4));
-        streamRanges.writeLong(1);
+        streamRanges.writeLong(streamId1);
         streamRanges.writeLong(0);
-        streamRanges.writeInt(100);
+        streamRanges.writeInt(recordCnt1);
         streamRanges.writeInt(0);
 
-        streamRanges.writeLong(1);
-        streamRanges.writeLong(100);
-        streamRanges.writeInt(200);
+        streamRanges.writeLong(streamId1);
+        streamRanges.writeLong(recordCnt1);
+        streamRanges.writeInt(recordCnt2);
         streamRanges.writeInt(1);
 
-        streamRanges.writeLong(1);
-        streamRanges.writeLong(300);
-        streamRanges.writeInt(400);
+        streamRanges.writeLong(streamId1);
+        streamRanges.writeLong(recordCnt1 + recordCnt2);
+        streamRanges.writeInt(recordCnt2);
         streamRanges.writeInt(2);
 
-        streamRanges.writeLong(2);
+        streamRanges.writeLong(streamId2);
         streamRanges.writeLong(110);
-        streamRanges.writeInt(90);
-        streamRanges.writeInt(2);
+        streamRanges.writeInt(recordCnt3);
+        streamRanges.writeInt(3);
 
         ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(Mockito.mock(S3ObjectMetadata.class), blocks, streamRanges);
 
-        ObjectReader.FindIndexResult rst = indexBlock.find(1, 10, 300, 100000);
+        ObjectReader.FindIndexResult rst = indexBlock.find(1, 10, 150, 100000);
         assertTrue(rst.isFulfilled());
         List<StreamDataBlock> streamDataBlocks = rst.streamDataBlocks();
         assertEquals(2, streamDataBlocks.size());
         assertEquals(0, streamDataBlocks.get(0).getBlockId());
         assertEquals(0, streamDataBlocks.get(0).getBlockStartPosition());
-        assertEquals(1024, streamDataBlocks.get(0).getBlockEndPosition());
+        assertEquals(blockSize1, streamDataBlocks.get(0).getBlockEndPosition());
         assertEquals(1, streamDataBlocks.get(1).getBlockId());
-        assertEquals(1024, streamDataBlocks.get(1).getBlockStartPosition());
-        assertEquals(1536, streamDataBlocks.get(1).getBlockEndPosition());
+        assertEquals(blockSize1, streamDataBlocks.get(1).getBlockStartPosition());
+        assertEquals((long) blockSize1 + blockSize2, streamDataBlocks.get(1).getBlockEndPosition());
 
-        rst = indexBlock.find(1, 10, 400);
+        rst = indexBlock.find(1, 10, 200);
         assertTrue(rst.isFulfilled());
         assertEquals(3, rst.streamDataBlocks().size());
 
-        rst = indexBlock.find(1, 10, 400, 10);
+        rst = indexBlock.find(1L, 10, 10000, 80 * bodySize);
         assertTrue(rst.isFulfilled());
-        assertEquals(2, rst.streamDataBlocks().size());
+        assertEquals(3, rst.streamDataBlocks().size());
+
+        rst = indexBlock.find(1L, 10, 10000, 160 * bodySize);
+        assertFalse(rst.isFulfilled());
+        assertEquals(3, rst.streamDataBlocks().size());
 
         rst = indexBlock.find(1, 10, 800);
         assertFalse(rst.isFulfilled());

@@ -250,6 +250,7 @@ public interface ObjectWriter {
     }
 
     class DataBlock {
+        public static final int BLOCK_HEADER_SIZE = 2;
         private final CompositeByteBuf encodedBuf;
         private final ObjectStreamRange streamRange;
         private final int recordCount;
@@ -258,7 +259,7 @@ public interface ObjectWriter {
         public DataBlock(long streamId, List<StreamRecordBatch> records) {
             this.recordCount = records.size();
             this.encodedBuf = DirectByteBufAlloc.compositeByteBuffer();
-            ByteBuf header = DirectByteBufAlloc.byteBuffer(2);
+            ByteBuf header = DirectByteBufAlloc.byteBuffer(BLOCK_HEADER_SIZE);
             header.writeByte(DATA_BLOCK_MAGIC);
             header.writeByte(DATA_BLOCK_DEFAULT_FLAG);
             encodedBuf.addComponent(true, header);
