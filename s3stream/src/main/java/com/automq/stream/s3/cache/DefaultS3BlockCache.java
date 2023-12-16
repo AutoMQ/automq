@@ -175,7 +175,21 @@ public class DefaultS3BlockCache implements S3BlockCache {
             LOGGER.debug("[S3BlockCache] read data cache miss, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, maxBytes);
         }
         return streamReader.syncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, uuid)
-                .thenApply(rst -> new ReadDataBlock(rst, CacheAccessType.BLOCK_CACHE_MISS));
+                .thenCompose(rst -> {
+                    if (!rst.isEmpty()) {
+                        int remainBytes = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
+                        long lastOffset = rst.get(rst.size() - 1).getLastOffset();
+                        if (remainBytes > 0 && lastOffset < endOffset) {
+                            // retry read
+                            return read0(streamId, lastOffset, endOffset, remainBytes, uuid, context).thenApply(rst2 -> {
+                                List<StreamRecordBatch> records = new ArrayList<>(rst);
+                                records.addAll(rst2.getRecords());
+                                return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);
+                            });
+                        }
+                    }
+                    return CompletableFuture.completedFuture(new ReadDataBlock(rst, CacheAccessType.BLOCK_CACHE_MISS));
+                });
     }
 
     private void asyncReadAhead(long streamId, ReadAheadAgent agent, List<ReadAheadRecord> readAheadRecords) {

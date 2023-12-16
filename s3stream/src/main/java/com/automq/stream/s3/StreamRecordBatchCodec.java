@@ -22,15 +22,16 @@ import io.netty.buffer.ByteBuf;
 
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
+    public static final int HEADER_SIZE =
+            1 // magic
+            + 8 // streamId
+            + 8 // epoch
+            + 8 // baseOffset
+            + 4 // lastOffsetDelta
+            + 4; // payload length
 
     public static ByteBuf encode(StreamRecordBatch streamRecord) {
-        int totalLength = 1 // magic
-                + 8 // streamId
-                + 8 // epoch
-                + 8 // baseOffset
-                + 4 // lastOffsetDelta
-                + 4 // payload length
-                + streamRecord.size(); // payload
+        int totalLength = HEADER_SIZE + streamRecord.size(); // payload
 
         ByteBuf buf = DirectByteBufAlloc.byteBuffer(totalLength);
         buf.writeByte(MAGIC_V0);
