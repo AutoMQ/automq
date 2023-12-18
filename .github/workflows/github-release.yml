@@ -19,7 +19,6 @@ jobs:
       - name: Get real Kafka version
         id: get_real_version
         run: |
-          echo "version is $(echo ${{ github.ref_name }} | cut -d'-' -f1)"
           echo "KAFKA_VERSION=$(echo ${{ github.ref_name }} | cut -d'-' -f1)" >> $GITHUB_OUTPUT
       - name: Checkout Code
         uses: actions/checkout@v4
