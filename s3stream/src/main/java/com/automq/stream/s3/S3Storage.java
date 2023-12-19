@@ -296,8 +296,11 @@ public class S3Storage implements Storage {
                 StreamRecordBatch streamRecord = request.record;
                 streamRecord.retain();
                 appendResult = deltaWAL.append(streamRecord.encoded());
+                lock.unlock();
             } catch (WriteAheadLog.OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
+                // the read lock must release before write lock https://github.com/AutoMQ/automq-for-kafka/issues/581
+                lock.unlock();
                 confirmOffsetCalculator.update();
                 forceUpload(LogCache.MATCH_ALL_STREAMS);
                 if (!fromBackoff) {
@@ -311,8 +314,11 @@ public class S3Storage implements Storage {
             }
             request.offset = appendResult.recordOffset();
             confirmOffsetCalculator.add(request);
-        } finally {
+        } catch (Throwable e) {
             lock.unlock();
+            LOGGER.error("[UNEXPECTED] append WAL fail", e);
+            request.cf.completeExceptionally(e);
+            return false;
         }
         appendResult.future().thenAccept(nil -> handleAppendCallback(request));
         return false;

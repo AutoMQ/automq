@@ -28,6 +28,7 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
+import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
@@ -55,13 +56,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 @Tag("S3Unit")
 public class S3StorageTest {
     StreamManager streamManager;
     ObjectManager objectManager;
+    WriteAheadLog wal;
+    S3Operator s3Operator;
     S3Storage storage;
     Config config;
 
@@ -71,8 +77,9 @@ public class S3StorageTest {
         config.blockCacheSize(0);
         objectManager = mock(ObjectManager.class);
         streamManager = mock(StreamManager.class);
-        S3Operator s3Operator = new MemoryS3Operator();
-        storage = new S3Storage(config, new MemoryWriteAheadLog(),
+        wal = spy(new MemoryWriteAheadLog());
+        s3Operator = new MemoryS3Operator();
+        storage = new S3Storage(config, wal,
                 streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, s3Operator), s3Operator);
     }
 
@@ -239,6 +246,29 @@ public class S3StorageTest {
             exception = true;
         }
         Assertions.assertTrue(exception);
+    }
+
+    @Test
+    public void testWALOverCapacity() throws WriteAheadLog.OverCapacityException {
+        storage.append(newRecord(233L, 10L));
+        storage.append(newRecord(233L, 11L));
+        doThrow(new WriteAheadLog.OverCapacityException("test")).when(wal).append(any());
+
+        Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
+        CommitStreamSetObjectResponse resp = new CommitStreamSetObjectResponse();
+        Mockito.when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
+
+        storage.append(newRecord(233L, 12L));
+
+        ArgumentCaptor<CommitStreamSetObjectRequest> commitArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, timeout(1000L).times(1)).commitStreamSetObject(commitArg.capture());
+        CommitStreamSetObjectRequest commitRequest = commitArg.getValue();
+        assertEquals(1, commitRequest.getStreamObjects().size());
+        assertEquals(0, commitRequest.getStreamRanges().size());
+        StreamObject range = commitRequest.getStreamObjects().get(0);
+        assertEquals(233L, range.getStreamId());
+        assertEquals(10L, range.getStartOffset());
+        assertEquals(12L, range.getEndOffset());
     }
 
     private static StreamRecordBatch newRecord(long streamId, long offset) {
