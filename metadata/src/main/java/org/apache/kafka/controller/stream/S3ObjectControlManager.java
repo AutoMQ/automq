@@ -29,6 +29,7 @@ import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
@@ -112,7 +113,8 @@ public class S3ObjectControlManager {
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
         this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
-        this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor();
+        this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("s3-object-lifecycle-check-timer", true));
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
             DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         this.objectCleaner = new ObjectCleaner();
