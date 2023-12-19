@@ -131,7 +131,7 @@ public class DefaultS3Operator implements S3Operator {
                 .setSecretKey(secretKey)
                 .build();
         LOGGER.info("You are using s3Context: {}", s3Context);
-        checkAvailable();
+        checkAvailable(s3Context);
     }
 
     public static Builder builder() {
@@ -575,7 +575,7 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    private void checkAvailable() {
+    private void checkAvailable(S3Utils.S3Context s3Context) {
         byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
         String path = String.format("check_available/%d", System.nanoTime());
         String multipartPath = String.format("check_available_multipart/%d", System.nanoTime());
@@ -594,8 +594,13 @@ public class DefaultS3Operator implements S3Operator {
             read.release();
             this.delete(multipartPath).get(30, TimeUnit.SECONDS);
         } catch (Throwable e) {
-            LOGGER.error("Try to write/read/delete object to S3 fail ", e);
-            throw new RuntimeException("Try connect s3 fail, please re-check the server configs", e);
+            LOGGER.error("Failed to write/read/delete object on S3 ", e);
+            String exceptionMsg = String.format("Failed to write/read/delete object on S3. You are using s3Context: %s.", s3Context);
+            List<String> advices = s3Context.advices();
+            if (!advices.isEmpty()) {
+                exceptionMsg += "\nHere are some advices: \n" + String.join("\n", advices);
+            }
+            throw new RuntimeException(exceptionMsg, e);
         }
     }
 
