@@ -49,6 +49,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -410,6 +411,44 @@ public class S3Utils {
             this.bucketName = bucketName;
             this.region = region;
             this.forcePathStyle = forcePathStyle;
+        }
+
+        public List<String> advices() {
+            List<String> advises = new ArrayList<>();
+            if (StringUtils.isBlank(bucketName)) {
+                advises.add("bucketName is blank. Please supply a valid bucketName.");
+            }
+            if (StringUtils.isBlank(endpoint)) {
+                advises.add("endpoint is blank. Please supply a valid endpoint.");
+            } else {
+                if (endpoint.startsWith("https")) {
+                    advises.add("You are using https endpoint. Please make sure your object storage service supports https.");
+                }
+                String[] splits = endpoint.split("//");
+                if (splits.length < 2) {
+                    advises.add("endpoint is invalid. Please supply a valid endpoint.");
+                } else {
+                    String[] dotSplits = splits[1].split("\\.");
+                    if (dotSplits.length == 0 || StringUtils.isBlank(dotSplits[0])) {
+                        advises.add("endpoint is invalid. Please supply a valid endpoint.");
+                    } else if (!StringUtils.isBlank(bucketName) && Objects.equals(bucketName.toLowerCase(), dotSplits[0].toLowerCase())) {
+                        advises.add("bucket name should not be included in endpoint.");
+                    }
+                }
+            }
+            if (StringUtils.isBlank(accessKey)) {
+                advises.add("accessKey is blank. Please supply a valid accessKey.");
+            }
+            if (StringUtils.isBlank(secretKey)) {
+                advises.add("secretKey is blank. Please supply a valid secretKey.");
+            }
+            if (StringUtils.isBlank(region)) {
+                advises.add("region is blank. Please supply a valid region.");
+            }
+            if (!forcePathStyle) {
+                advises.add("forcePathStyle is set as false. Please set it as true if you are using minio.");
+            }
+            return advises;
         }
 
         @Override
