@@ -194,7 +194,7 @@ public class SlidingWindowService {
 
         // Not enough space for this block
         if (startOffset + minSize - trimOffset > recordSectionCapacity) {
-            LOGGER.error("failed to allocate write offset as the ring buffer is full: startOffset: {}, minSize: {}, trimOffset: {}, recordSectionCapacity: {}",
+            LOGGER.warn("failed to allocate write offset as the ring buffer is full: startOffset: {}, minSize: {}, trimOffset: {}, recordSectionCapacity: {}",
                     startOffset, minSize, trimOffset, recordSectionCapacity);
             throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: startOffset: %d, minSize: %d, trimOffset: %d, recordSectionCapacity: %d",
                     startOffset, minSize, trimOffset, recordSectionCapacity));
