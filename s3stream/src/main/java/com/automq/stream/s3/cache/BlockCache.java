@@ -19,6 +19,7 @@ package com.automq.stream.s3.cache;
 
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
@@ -54,6 +55,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
         DirectByteBufAlloc.registerOOMHandlers(this);
+        S3StreamMetricsManager.registerBlockCacheSizeSupplier(size::get);
     }
 
     public void registerListener(CacheEvictListener listener) {

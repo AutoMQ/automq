@@ -70,6 +70,7 @@ public class LogCache {
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
+        S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(size::get);
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize) {
@@ -136,7 +137,7 @@ public class LogCache {
 
         long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
-        S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_LOG_CACHE_HIT, isCacheHit);
+        S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_LOG_CACHE, isCacheHit);
         return records;
     }
 

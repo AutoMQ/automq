@@ -132,6 +132,8 @@ public class DefaultS3Operator implements S3Operator {
                 .build();
         LOGGER.info("You are using s3Context: {}", s3Context);
         checkAvailable(s3Context);
+        S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits);
+        S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits);
     }
 
     public static Builder builder() {
@@ -273,10 +275,10 @@ public class DefaultS3Operator implements S3Operator {
 
     void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
+        long size = end - start + 1;
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
-                    long size = end - start + 1;
                     S3StreamMetricsManager.recordObjectDownloadSize(size);
                     CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
                     responsePublisher.subscribe((bytes) -> {
@@ -288,12 +290,12 @@ public class DefaultS3Operator implements S3Operator {
                                     path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                         }
                         S3StreamMetricsManager.recordS3DownloadSize(size);
-                        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT);
+                        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size);
                         cf.complete(buf);
                     });
                 })
                 .exceptionally(ex -> {
-                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT_FAIL);
+                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT_FAIL, size);
                     if (isUnrecoverable(ex)) {
                         LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                         cf.completeExceptionally(ex);
@@ -333,12 +335,12 @@ public class DefaultS3Operator implements S3Operator {
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
             S3StreamMetricsManager.recordS3UploadSize(objectSize);
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT, objectSize);
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(null);
             data.release();
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT_FAIL, objectSize);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -455,11 +457,11 @@ public class DefaultS3Operator implements S3Operator {
         CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
         uploadPartCf.thenAccept(uploadPartResponse -> {
             S3StreamMetricsManager.recordS3UploadSize(size);
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART, size);
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_FAIL, size);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
                 cf.completeExceptionally(ex);

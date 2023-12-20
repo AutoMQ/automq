@@ -281,7 +281,7 @@ public class S3Storage implements Storage {
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
-            S3StreamMetricsManager.recordOperationNum(1, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
+            S3StreamMetricsManager.recordOperationLatency(0L, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), maxDeltaWALCacheSize);
                 lastLogTimestamp = System.currentTimeMillis();
@@ -529,8 +529,14 @@ public class S3Storage implements Storage {
             }
             rate = maxDataWriteRate;
         }
-        context.task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(context.cache.records())
-                .objectManager(objectManager).s3Operator(s3Operator).executor(uploadWALExecutor).rate(rate).build();
+        context.task = DeltaWALUploadTask.builder()
+                .config(config)
+                .streamRecordsMap(context.cache.records())
+                .objectManager(objectManager)
+                .s3Operator(s3Operator)
+                .executor(uploadWALExecutor)
+                .rate(rate)
+                .build();
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {
