@@ -54,7 +54,7 @@ AutoMQ is a cloud-native,serverless Kafka distribution that makes Kafka easily s
 - **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
 - **Cost effective**: Use object storage as the main storage,take billing items into consideration when design system,fully utilize the cloud service, all of them contribute to AutoMQ and make it 10x cheaper than Apache Kafka. Refer [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High performance**: 
-  - Low latency: Use cloud storage as the buffer layer to write and tail read in milliseconds.
+  - Low latency: Use cloud block storage like AWS EBS as the buffer layer to accelerate write.
   - High throughput: Use pre-fetching , batch processing and parallel to achieve high throughput.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
 
@@ -67,7 +67,7 @@ AutoMQ is a cloud-native,serverless Kafka distribution that makes Kafka easily s
 AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our features. The architecture including the following main components:
 - **S3Stream**: A streaming library based on object storage offered by AutoMQ. It is the core component of AutoMQ and is responsible for reading and writing data to object storage. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d).
 - **Stream**: Stream is a abstraction to mapping the logSegment of Apache Kafka. LogSegment's data ,index and other meta will mapping to different type of stream. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
-- **Cloud Storage Data Buffer**: AutoMQ use a small size cloud storage like AWS EBS as a buffer to offer low latency read and write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the data buffer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
+- **EBS Write Data Buffer**: AutoMQ use a small size cloud block storage like AWS EBS as a write buffer to offer low latency write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the data buffer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
 - **Stream Object**: AutoMQ's data is organized by stream object. Data is read by stream object id through index. One stream have one stream object. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
 - **Stream set object**: Stream set object is a collection of small stream object that aimed to decrease API invoke times and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
 
@@ -79,8 +79,6 @@ The easiest way to run AutoMQ. You can experience the feature like fast partitio
 
 > Attention: Local mode mock object storage locally and is not a production ready deployment. It is only for demo and test purpose.
 
-### Run AutoMQ on cloud by AutoMQ Cloud
-AutoMQ Cloud is the fully-managed service of AutoMQ, currently available on AWS. AutoMQ Cloud will install AutoMQ into your own cloud VPC and offer fully-managed AutoMQ service.
 
 ### Run AutoMQ on cloud manually
 Deploy AutoMQ manually with released tgz files on cloud, currently compatible with AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more](https://www.automq.com)
