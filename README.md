@@ -1,84 +1,106 @@
 <h1 align="center">
-AutoMQ for Kafka
+AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 </h1>
 <h3 align="center">
-    The truly serverless Kafka solution that maximizes the benefits of cloud
+    
 </h3>
 
-[![Docs](https://img.shields.io/badge/Docs-blue)](https://docs.automq.com/zh/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
+![GitHub License](https://img.shields.io/github/license/AutoMQ/automq-for-kafka)
+![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq-for-kafka)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/AutoMQ/automq-for-kafka)
+![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/AutoMQ/automq-for-kafka)
+![GitHub all releases](https://img.shields.io/github/downloads/AutoMQ/automq-for-kafka/total)
+
+---
+[![](https://img.shields.io/badge/official%20document-20B2AA?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
+&nbsp;
+[![](https://img.shields.io/badge/playground-blue?style=for-the-badge)](https://www.automq.com/home.html)
+&nbsp;
+<a href="https://twitter.com/AutoMQ_Lab"><img src="https://img.shields.io/badge/- @AutoMQ_Lab -424549?style=social&logo=twitter" height=25></a>
+&nbsp;
+<a href="https://www.automq.com/img/----------------------------1.png"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=25></a>
+&nbsp;
+
+---
+
+![](https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws)
+![](https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud)
+![](https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure)
+![](https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud)
+![](https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei)
+![](https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu)
+![](https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq)
+
+
+
+![image](./docs/images/banner-readme.jpeg)
+
+
 
 [//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
 
-## What is AutoMQ for Kafka
-AutoMQ for Apache Kafka is redesigned based on cloud infrastructure, and users 
-benefit from 
-**elastic computing resources** and nearly **unlimited cheap storage** in 
-the cloud.
+## 🍵What is AutoMQ
 
-It is developed based on Apache Kafka and replace Kafka's local storage with S3 Stream. This design allows Kafka Brokers:
-- Become stateless and could scale up/down in seconds. 
-- By making targeted modifications at the LogSegment level and extensively reusing upper-level code, it guarantees **100% functional compatibility**.
-
-Compared to Apache Kafka, AutoMQ for Apache Kafka offers the following advantages:
-
-1. Enhanced Scalability: It leverages cloud-native infrastructure and stateless Kafka Brokers, enabling seamless scaling to meet varying workloads. This elasticity allows for efficient resource allocation and ensures optimal performance even during peak periods.
-
-2. 10x Cheaper: By utilizing object storage, it could save storage cost up to 90%; By leveraging serverless architecture and spot instance, it can achieve significant cost savings of up to 90% in compute expenses.
-
-3. Simplified Management: No need to manage disks; It automatically performs second-level partition load balancing across Brokers.
-
-## S3Stream
-AutoMQ for Kafka is built on S3Stream directly, a streaming library based on object storage. Please refer to [S3Stream](https://docs.automq.com/zh/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d) for more architecture details.
-
-AutomMQ for Kafka and AutoMQ for RocketMQ share the same codebase of S3Stream, so please refer to [AutoMQ RocketMQ](https://github.com/AutoMQ/automq-for-rocketmq/tree/main/s3stream) for the source code.
-
-## Quick Start
-
-### Local Run
-#### Launch cluster
-Launch an AutoMQ for Kafka cluster locally using Docker Compose.
-
-This cluster comprises 1 Controller node, 2 Broker nodes, and an additional LocalStack container to simulate S3 services locally.
-``` bash
-# launch AutoMQ for Kafka cluster
-docker compose -f docker/docker-compose.yaml up -d
-```
-#### Run a console producer and consumer
-1. Create a topic to store your events:
-``` bash
-# create quickstart-events topic
-bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9094
-```
-
-2. Run the console producer client to write a few events into your topic. By default, each line you enter will result in a separate event being written to the topic.
-``` bash
-bin/kafka-console-producer.sh --topic quickstart-events --bootstrap-server localhost:9094
-```
-You may input some messages like:
-``` text
-This is my first event
-This is my second event
-```
-
-3. Run the console consumer client to read the events you just created:
-``` bash
-# CRTL-C to exit the consumer
-# run console consumer
-bin/kafka-console-consumer.sh --topic quickstart-events --from-beginning --bootstrap-server localhost:9094
-```
-
-4. Clean up the cluster
-``` bash
-docker compose -f docker/docker-compose.yaml down -v
-```
-
-[Explore more](https://docs.automq.com/zh/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde): Second-level partition migration and automatic traffic rebalancing.
+AutoMQ is a cloud-native,serverless Kafka distribution that makes Kafka easily scalable ,manage-less and cost-effective.
 
 
-### AutoMQ Cloud
-Sign up for a [free trial](https://docs.automq.com/zh/docs/automq-s3kafka/EKcdwqXFWixsm0kH5zVcqYzhnle) of AutoMQ Cloud and experience auto scaling with AutoMQ for Kafka.
+## 🔶Why AutoMQ
 
-## License
-[Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0.html)
+- **Cloud Native**: Built on cloud service. Every system design decision take cloud service's feature and billing items into consideration to offer best low-latency,scalable,reliable and cost-effective Kafka service on cloud.
+- **Serverless**:
+  - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match you workload and achieve pay-as-you-go.
+  - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless.[Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
+  - Infinite scalable: Use cloud's object storage as the main storage, never worry about storage capacity.
+- **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
+- **Cost effective**: Use object storage as the main storage,take billing items into consideration when design system,fully utilize the cloud service, all of them contribute to AutoMQ and make it 10x cheaper than Apache Kafka. Refer ![this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
+- **High performance**: 
+  - Low latency: Use cloud storage as the buffer layer to write and tail read in milliseconds.
+  - High throughput: Use pre-fetching , batch processing and parallel to achieve high throughput.
+- **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
+
+
+
+## ✨Architecture
+
+![image](./docs/images/automq-architecture.png)
+
+AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our features. The architecture including the following main components:
+- S3Stream: A streaming library based on object storage offered by AutoMQ. It is the core component of AutoMQ and is responsible for reading and writing data to object storage. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d).
+- Stream: Stream is a abstraction to mapping the logSegment of Apache Kafka. LogSegment's data ,index and other meta will mapping to different type of stream. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
+- Cloud Storage Data Buffer: AutoMQ use a small size cloud storage like AWS EBS as a buffer to offer low latency read and write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the data buffer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
+- Stream Object: AutoMQ's data is organized by stream object. Data is read by stream object id through index. One stream have one stream object. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
+- Stream set object: Stream set object is a collection of small stream object that aimed to decrease API invoke times and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
+
+
+## ⛄Get started with AutoMQ
+
+### Run AutoMQ local without cloud
+The easiest way to run AutoMQ. We can experience the feature like fast partition move and network traffic auto-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde)
+
+> Attention: Local mode mock object storage locally and is not a production ready deployment. It is only for demo and test purpose.
+
+### Run AutoMQ on cloud by AutoMQ Cloud
+AutoMQ Cloud is the fully-managed service of AutoMQ, currently available on AWS. AutoMQ Cloud will install AutoMQ into your own cloud VPC and offer fully-managed AutoMQ service.
+
+### Run AutoMQ on cloud manually
+Deploy AutoMQ manually with released tgz files on cloud, currently available on AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more](https://www.automq.com)
+
+## 💬Community
+You can join the following groups or channels to discuss or ask questions about AutoMQ:
+- Ask questions or report bug by [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka)
+- Discuss about AutoMQ or Kafka by [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) or [Wechat Group](https://www.automq.com/img/----------------------------1.png)
+
+
+## 👥How to contribute
+If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka). 
+We have a list of [good first issues]() that help you to get started, gain experience, and get familiar with our contribution process.
+
+## 🌈Roadmap
+
+
+## ⭐License
+AutoMQ is released under [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0.html). When contributing to AutoMQ, you can find the relevant license header in each file.
+
+
+
 
