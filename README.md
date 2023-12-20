@@ -93,6 +93,7 @@ You can join the following groups or channels to discuss or ask questions about 
 
 ## 👥How to contribute
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka). 
+To contribute to AutoMQ please see [Code of Conduct] and [contributing guide].
 We have a list of [good first issues]() that help you to get started, gain experience, and get familiar with our contribution process.
 
 ## 🌈Roadmap
