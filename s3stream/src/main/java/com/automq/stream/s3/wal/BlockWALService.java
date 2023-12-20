@@ -287,8 +287,21 @@ public class BlockWALService implements WriteAheadLog {
 
         started.set(true);
 
+        S3StreamMetricsManager.registerDeltaWalOffsetSupplier(this::getCurrentStartOffset, () -> walHeader.getFlushedTrimOffset());
+
         LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
         return this;
+    }
+
+    private long getCurrentStartOffset() {
+        Lock lock = slidingWindowService.getBlockLock();
+        lock.lock();
+        try {
+            Block block = slidingWindowService.getCurrentBlockLocked();
+            return block.startOffset() + block.size();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -403,8 +416,7 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> S3StreamMetricsManager.recordOperationLatency(
-                timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_WAL));
+        appendResult.future().whenComplete((nil, ex) -> S3StreamMetricsManager.recordAppendWALLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), "complete"));
         S3StreamMetricsManager.recordAppendWALLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), "before");
         return appendResult;
     }

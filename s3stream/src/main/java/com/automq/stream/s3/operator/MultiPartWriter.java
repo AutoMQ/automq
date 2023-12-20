@@ -224,7 +224,9 @@ public class MultiPartWriter implements Writer {
         private void upload0() {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
-            S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
+            partCf.whenComplete((nil, ex) -> {
+                S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
+            });
         }
 
         public long size() {

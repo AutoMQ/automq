@@ -56,7 +56,7 @@ public class InflightReadThrottle implements Runnable {
         this.maxInflightReadBytes = maxInflightReadBytes;
         this.remainingInflightReadBytes = maxInflightReadBytes;
         executorService.execute(this);
-        S3StreamMetricsManager.registerInflightReadSizeLimiterGauge(this::getRemainingInflightReadBytes);
+        S3StreamMetricsManager.registerInflightReadSizeLimiterSupplier(this::getRemainingInflightReadBytes);
     }
 
     public void shutdown() {
