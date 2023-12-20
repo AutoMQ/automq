@@ -78,7 +78,7 @@ public class AsyncNetworkBandwidthLimiter {
                 lock.unlock();
             }
         }, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
-        S3StreamMetricsManager.registerNetworkLimiterGauge(type, this::getAvailableTokens, this::getQueueSize);
+        S3StreamMetricsManager.registerNetworkLimiterSupplier(type, this::getAvailableTokens, this::getQueueSize);
     }
 
     public void shutdown() {
