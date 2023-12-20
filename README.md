@@ -75,7 +75,7 @@ AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our feature
 ## ⛄Get started with AutoMQ
 
 ### Run AutoMQ local without cloud
-The easiest way to run AutoMQ. We can experience the feature like fast partition move and network traffic auto-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde)
+The easiest way to run AutoMQ. You can experience the feature like fast partition move and network traffic auto-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde)
 
 > Attention: Local mode mock object storage locally and is not a production ready deployment. It is only for demo and test purpose.
 
@@ -83,7 +83,7 @@ The easiest way to run AutoMQ. We can experience the feature like fast partition
 AutoMQ Cloud is the fully-managed service of AutoMQ, currently available on AWS. AutoMQ Cloud will install AutoMQ into your own cloud VPC and offer fully-managed AutoMQ service.
 
 ### Run AutoMQ on cloud manually
-Deploy AutoMQ manually with released tgz files on cloud, currently available on AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more](https://www.automq.com)
+Deploy AutoMQ manually with released tgz files on cloud, currently compatible with AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more](https://www.automq.com)
 
 ## 💬Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
