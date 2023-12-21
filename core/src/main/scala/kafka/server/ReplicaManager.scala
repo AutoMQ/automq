@@ -2773,26 +2773,22 @@ class ReplicaManager(val config: KafkaConfig,
 
   def awaitAllPartitionShutdown(): Unit = {
     val start = System.currentTimeMillis()
-    // await 15s partitions transfer to other alive brokers.
-    // when there are no alive brokers, it will still await 15s.
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 15000) {
-      info("still has opening partition, retry check later")
-      Thread.sleep(1000)
-    }
-    partitionOpExecutor.shutdown()
-    if (allPartitions.nonEmpty) {
-      val partitionsToClose = mutable.Map[TopicPartition, Boolean]()
-      allPartitions.foreachEntry((topicPartition, _) => {
-        partitionsToClose.put(topicPartition, true)
-      })
-      info(s"try force stop partitions ${partitionsToClose.keys}")
-      stopPartitions(partitionsToClose)
+    replicaStateChangeLock.synchronized {
+      // When there are any other alive brokers, partitions will be transferred to them and deleted in the method [[asyncApplyDelta]].
+      // However when there are no other alive brokers, we need to delete partitions by ourselves here.
+      // In summary, a partition may be deleted twice during shutdown. But it is safe as the method [[stopPartitions]]
+      // called in [[doPartitionDeletionAsyncLocked]] is idempotent.
+      val partitionsToClose = allPartitions.keys
+      info(s"stop partitions $partitionsToClose")
+      partitionsToClose.foreach(p => doPartitionDeletionAsyncLocked(p))
     }
     while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
+      // TODO: check any progress here, if so, we can wait longer
       info("still has opening partition, retry check later")
       Thread.sleep(1000)
     }
     info("await all partitions closed")
+    partitionOpExecutor.shutdown()
     CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
