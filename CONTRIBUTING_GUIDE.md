@@ -4,7 +4,7 @@ Thank you for your interest in contributing! We love community contributions.
 Read on to learn how to contribute to AutoMQ.
 We appreciate first time contributors and we are happy to assist you in getting started. In case of questions, just
 reach out to us via [Wechat Group](https://www.automq.com/img/----------------------------1.png)
-or [Slack](https://slack.airbyte.io)!
+or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)!
 
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or Wechat
 follow [Code of Conduct](../community/code-of-conduct.md).
