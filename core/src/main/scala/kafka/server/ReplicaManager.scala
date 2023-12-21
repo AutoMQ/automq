@@ -297,7 +297,14 @@ class ReplicaManager(val config: KafkaConfig,
   val failedIsrUpdatesRate: Meter = newMeter("FailedIsrUpdatesPerSec", "failedUpdates", TimeUnit.SECONDS)
 
   // AutoMQ for Kafka inject start
+  /**
+   * Partition operation executor, used to execute partition operations in parallel.
+   */
   private val partitionOpExecutor = ThreadUtils.newCachedThread(256, "partition_op_%d", true)
+  /**
+   * Partition operation map, used to make sure that only one operation is executed for a partition at the same time.
+   * It should be modified with [[replicaStateChangeLock]] held.
+   */
   private val partitionOpMap = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   // AutoMQ for Kafka inject end
 
@@ -2515,32 +2522,8 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.forKeyValue((tp, _) => {
-            val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
-            val opCf = new CompletableFuture[Void]()
+            val opCf = doPartitionDeletionAsyncLocked(tp)
             opCfList.add(opCf)
-            partitionOpMap.put(tp, opCf)
-            closingPartitions.put(tp, opCf)
-            prevOp.whenComplete((_, _) => {
-              partitionOpExecutor.execute(() => {
-                try {
-                  val delete = mutable.Map[TopicPartition, Boolean]()
-                  delete += (tp -> true)
-                  stopPartitions(delete).forKeyValue { (topicPartition, e) =>
-                    if (e.isInstanceOf[KafkaStorageException]) {
-                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                        "the local replica for the partition is in an offline log directory")
-                    } else {
-                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                        s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
-                    }
-                  }
-                } finally {
-                  opCf.complete(null)
-                  partitionOpMap.remove(tp, opCf)
-                  closingPartitions.remove(tp, opCf)
-                }
-              })
-            })
           })
         }
 
@@ -2608,6 +2591,42 @@ class ReplicaManager(val config: KafkaConfig,
         info(s"open ${localChanges.leaders.size()} / close ${localChanges.deletes.size()} partitions cost ${elapsedMs}ms")
       }
     })
+  }
+
+  /**
+   * Delete the given partition from the replica manager, if it exists.
+   * Note: this method should be called with [[replicaStateChangeLock]] held.
+   *
+   * @param tp The partition to delete.
+   * @return A future which completes when the partition has been deleted.
+   */
+  private def doPartitionDeletionAsyncLocked(tp: TopicPartition): CompletableFuture[Void] = {
+    val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
+    val opCf = new CompletableFuture[Void]()
+    partitionOpMap.put(tp, opCf)
+    closingPartitions.put(tp, opCf)
+    prevOp.whenComplete((_, _) => {
+      partitionOpExecutor.execute(() => {
+        try {
+          val delete = mutable.Map[TopicPartition, Boolean]()
+          delete += (tp -> true)
+          stopPartitions(delete).forKeyValue { (topicPartition, e) =>
+            if (e.isInstanceOf[KafkaStorageException]) {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                "the local replica for the partition is in an offline log directory")
+            } else {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
+            }
+          }
+        } finally {
+          opCf.complete(null)
+          partitionOpMap.remove(tp, opCf)
+          closingPartitions.remove(tp, opCf)
+        }
+      })
+    })
+    opCf
   }
   // AutoMQ for Kafka inject end
 
