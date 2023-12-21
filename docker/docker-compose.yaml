@@ -52,7 +52,7 @@ services:
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
-    image: automqinc/kafka:1.0.0-rc1
+    image: automqinc/kafka:1.0.0-rc2
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
@@ -67,7 +67,7 @@ services:
   broker1:
     container_name: "${BROKER1_DOCKER_NAME-broker1}"
     hostname: "${BROKER1_DOCKER_NAME-broker1}"
-    image: automqinc/kafka:1.0.0-rc1
+    image: automqinc/kafka:1.0.0-rc2
     ports:
       - "9094:9094"
     environment:
@@ -92,7 +92,7 @@ services:
   broker2:
     container_name: "${BROKER2_DOCKER_NAME-broker2}"
     hostname: "${BROKER2_DOCKER_NAME-broker2}"
-    image: automqinc/kafka:1.0.0-rc1
+    image: automqinc/kafka:1.0.0-rc2
     ports:
       - "9095:9095"
     environment:

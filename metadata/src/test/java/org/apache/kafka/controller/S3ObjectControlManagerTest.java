@@ -126,7 +126,7 @@ public class S3ObjectControlManagerTest {
         assertEquals(8, manager.nextAssignedObjectId());
     }
 
-    private void replay(S3ObjectControlManager manager, List<ApiMessageAndVersion> records) {
+    private synchronized void replay(S3ObjectControlManager manager, List<ApiMessageAndVersion> records) {
         List<ApiMessage> messages = records.stream().map(x -> x.message())
             .collect(Collectors.toList());
         for (ApiMessage message : messages) {
@@ -252,16 +252,16 @@ public class S3ObjectControlManagerTest {
         replay(manager, result0.records());
 
         assertEquals(1700, manager.objectsMetadata().size());
-        // 2. 5s later, it should be marked as destroyed
-        Thread.sleep(5 * 1000);
+        // 2. 6s(3s * 2) later, they should be marked as destroyed
+        Thread.sleep(6 * 1000);
         assertEquals(1700, manager.objectsMetadata().size());
         for (int i = 0; i < 1700; i++) {
             S3Object object = manager.objectsMetadata().get((long) i);
             assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
         }
-        // 3. 5s later, it should be removed
-        Thread.sleep(5 * 1000);
-        assertEquals(0, manager.objectsMetadata().size());
+        // 3. 6s(3s * 2) later, they should be removed
+        Thread.sleep(6 * 1000);
+        assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
         Mockito.verify(operator, Mockito.times(3)).delete(anyList());
     }
 

@@ -17,9 +17,11 @@
 
 package kafka.log.streamaspect;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import kafka.log.TimestampOffset;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticStreamSegmentMeta {
     /**
      * base offset of the segment.
