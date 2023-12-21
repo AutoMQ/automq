@@ -83,6 +83,8 @@ public class S3StreamMetricsConstant {
     public static final String NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME = "network_outbound_available_bandwidth";
     public static final String NETWORK_INBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME = "network_inbound_limiter_queue_size";
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME = "network_outbound_limiter_queue_size";
+    public static final String NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_inbound_limiter_queue_time";
+    public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_outbound_limiter_queue_time";
     public static final String ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME = "allocate_byte_buf_size";
     public static final String READ_AHEAD_SIZE_METRIC_NAME = "read_ahead_size";
     public static final String WAL_START_OFFSET = "wal_start_offset";
@@ -96,9 +98,9 @@ public class S3StreamMetricsConstant {
     public static final String COMPACTION_WRITE_SIZE_METRIC_NAME = "compaction_write_size_total";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
-    public static final AttributeKey<String> LABEL_OBJECT_SIZE_NAME = AttributeKey.stringKey("size");
+    public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
     public static final AttributeKey<String> LABEL_APPEND_WAL_STAGE = AttributeKey.stringKey("stage");
-    public static final AttributeKey<String> LABEL_CACHE_STATUS = AttributeKey.stringKey("status");
+    public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
     public static final AttributeKey<String> LABEL_OBJECT_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_ALLOCATE_BYTE_BUF_SOURCE = AttributeKey.stringKey("source");
 }

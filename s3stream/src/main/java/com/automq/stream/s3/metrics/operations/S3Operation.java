@@ -40,6 +40,7 @@ public enum S3Operation {
     READ_STORAGE(S3MetricsType.S3Storage, "read"),
     READ_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "read_log_cache"),
     READ_STORAGE_BLOCK_CACHE(S3MetricsType.S3Storage, "read_block_cache"),
+    BLOCK_CACHE_READ_AHEAD(S3MetricsType.S3Storage, "read_ahead"),
     /* S3 storage operations end */
 
     /* S3 request operations start */
