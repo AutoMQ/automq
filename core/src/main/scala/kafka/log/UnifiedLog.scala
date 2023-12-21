@@ -1059,7 +1059,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     updatedLogStartOffset
   }
 
-  private def analyzeAndValidateProducerState(appendOffsetMetadata: LogOffsetMetadata,
+  protected def analyzeAndValidateProducerState(appendOffsetMetadata: LogOffsetMetadata,
                                               records: MemoryRecords,
                                               origin: AppendOrigin):
   (mutable.Map[Long, ProducerAppendInfo], List[CompletedTxn], Option[BatchMetadata]) = {

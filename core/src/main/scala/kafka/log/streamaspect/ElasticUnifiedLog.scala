@@ -18,11 +18,12 @@
 package kafka.log.streamaspect
 
 import kafka.log._
+import kafka.log.streamaspect.ElasticUnifiedLog.updateProducers
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata}
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
+import org.apache.kafka.common.record.{MemoryRecords, RecordBatch, RecordVersion, Records}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 
@@ -41,6 +42,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     _leaderEpochCache, producerStateManager, __topicId, false) {
 
   var confirmOffsetChangeListener: Option[() => Unit] = None
+
+  /**
+   * The time stamp when the log is opened. It is used to handle the case that the first batch comes with partition not
+   * opened yet. See https://github.com/AutoMQ/automq-for-kafka/issues/584.
+   */
+  val openedTimeStamp = System.currentTimeMillis()
 
   elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
 
@@ -67,6 +74,42 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
   override def initializeTopicId(): Unit = {
     // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
+  }
+
+  override protected def analyzeAndValidateProducerState(appendOffsetMetadata: LogOffsetMetadata,
+                                                         records: MemoryRecords,
+                                                         origin: AppendOrigin):
+  (mutable.Map[Long, ProducerAppendInfo], List[CompletedTxn], Option[BatchMetadata]) = {
+    val updatedProducers = mutable.Map.empty[Long, ProducerAppendInfo]
+    val completedTxns = ListBuffer.empty[CompletedTxn]
+    var relativePositionInSegment = appendOffsetMetadata.relativePositionInSegment
+
+    records.batches.forEach { batch =>
+      if (batch.hasProducerId) {
+        // if this is a client produce request, there will be up to 5 batches which could have been duplicated.
+        // If we find a duplicate, we return the metadata of the appended batch to the client.
+        if (origin == AppendOrigin.Client) {
+          val maybeLastEntry = producerStateManager.lastEntry(batch.producerId)
+
+          maybeLastEntry.flatMap(_.findDuplicateBatch(batch)).foreach { duplicate =>
+            return (updatedProducers, completedTxns.toList, Some(duplicate))
+          }
+        }
+
+        // We cache offset metadata for the start of each transaction. This allows us to
+        // compute the last stable offset without relying on additional index lookups.
+        val firstOffsetMetadata = if (batch.isTransactional)
+          Some(LogOffsetMetadata(batch.baseOffset, appendOffsetMetadata.segmentBaseOffset, relativePositionInSegment))
+        else
+          None
+
+        val maybeCompletedTxn = updateProducers(producerStateManager, batch, updatedProducers, firstOffsetMetadata, origin, Some(openedTimeStamp))
+        maybeCompletedTxn.foreach(completedTxns += _)
+      }
+
+      relativePositionInSegment += batch.sizeInBytes
+    }
+    (updatedProducers, completedTxns.toList, None)
   }
 
   // only for testing
@@ -237,9 +280,10 @@ object ElasticUnifiedLog extends Logging {
                               batch: RecordBatch,
                               producers: mutable.Map[Long, ProducerAppendInfo],
                               firstOffsetMetadata: Option[LogOffsetMetadata],
-                              origin: AppendOrigin): Option[CompletedTxn] = {
+                              origin: AppendOrigin,
+                              logOpenedTimestamp: Option[Long] = None): Option[CompletedTxn] = {
     val producerId = batch.producerId
     val appendInfo = producers.getOrElseUpdate(producerId, producerStateManager.prepareUpdate(producerId, origin))
-    appendInfo.append(batch, firstOffsetMetadata)
+    appendInfo.append(batch, firstOffsetMetadata, logOpenedTimestamp)
   }
 }

@@ -207,12 +207,14 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
   updatedEntry.lastTimestamp = currentEntry.lastTimestamp
   updatedEntry.currentTxnFirstOffset = currentEntry.currentTxnFirstOffset
 
-  private def maybeValidateDataBatch(producerEpoch: Short, firstSeq: Int, offset: Long): Unit = {
+  // AutoMQ for Kafka inject start
+  private def maybeValidateDataBatch(producerEpoch: Short, firstSeq: Int, offset: Long, logOpenedTimestamp: Option[Long] = None): Unit = {
     checkProducerEpoch(producerEpoch, offset)
     if (origin == AppendOrigin.Client) {
-      checkSequence(producerEpoch, firstSeq, offset)
+      checkSequence(producerEpoch, firstSeq, offset, logOpenedTimestamp)
     }
   }
+  // AutoMQ for Kafka inject end
 
   private def checkProducerEpoch(producerEpoch: Short, offset: Long): Unit = {
     if (producerEpoch < updatedEntry.producerEpoch) {
@@ -230,7 +232,15 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     }
   }
 
-  private def checkSequence(producerEpoch: Short, appendFirstSeq: Int, offset: Long): Unit = {
+  // AutoMQ for Kafka inject start
+  private def checkSequence(producerEpoch: Short, appendFirstSeq: Int, offset: Long, logOpenedTimestampOpt: Option[Long]): Unit = {
+    // The partition is newly created while the seq is not 0.
+    if (appendFirstSeq != 0 && updatedEntry.isEmpty && logOpenedTimestampOpt.isDefined && System.currentTimeMillis() - logOpenedTimestampOpt.get < 10000) {
+      throw new OutOfOrderSequenceException(s"Invalid sequence number for new created log, producer $producerId " +
+        s"at offset $offset in partition $topicPartition: $producerEpoch (request epoch), $appendFirstSeq (seq. number), " +
+        s"${updatedEntry.producerEpoch} (current producer epoch)")
+    }
+    // AutoMQ for Kafka inject end
     if (producerEpoch != updatedEntry.producerEpoch) {
       if (appendFirstSeq != 0) {
         if (updatedEntry.producerEpoch != RecordBatch.NO_PRODUCER_EPOCH) {
@@ -261,7 +271,8 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Int.MaxValue)
   }
 
-  def append(batch: RecordBatch, firstOffsetMetadataOpt: Option[LogOffsetMetadata]): Option[CompletedTxn] = {
+  // AutoMQ for Kafka inject start
+  def append(batch: RecordBatch, firstOffsetMetadataOpt: Option[LogOffsetMetadata], logOpenedTimestamp: Option[Long] = None): Option[CompletedTxn] = {
     if (batch.isControlBatch) {
       val recordIterator = batch.iterator
       if (recordIterator.hasNext) {
@@ -275,7 +286,7 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     } else {
       val firstOffsetMetadata = firstOffsetMetadataOpt.getOrElse(LogOffsetMetadata(batch.baseOffset))
       appendDataBatch(batch.producerEpoch, batch.baseSequence, batch.lastSequence, batch.maxTimestamp,
-        firstOffsetMetadata, batch.lastOffset, batch.isTransactional)
+        firstOffsetMetadata, batch.lastOffset, batch.isTransactional, logOpenedTimestamp)
       None
     }
   }
@@ -286,9 +297,11 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
                       lastTimestamp: Long,
                       firstOffsetMetadata: LogOffsetMetadata,
                       lastOffset: Long,
-                      isTransactional: Boolean): Unit = {
+                      isTransactional: Boolean,
+                      logOpenedTimestamp: Option[Long] = None): Unit = {
     val firstOffset = firstOffsetMetadata.messageOffset
-    maybeValidateDataBatch(epoch, firstSeq, firstOffset)
+    maybeValidateDataBatch(epoch, firstSeq, firstOffset, logOpenedTimestamp)
+    // AutoMQ for Kafka inject end
     updatedEntry.addBatch(epoch, lastSeq, lastOffset, (lastOffset - firstOffset).toInt, lastTimestamp)
 
     updatedEntry.currentTxnFirstOffset match {
