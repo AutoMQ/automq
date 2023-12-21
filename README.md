@@ -10,6 +10,7 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/AutoMQ/automq-for-kafka)
 ![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/AutoMQ/automq-for-kafka)
 ![GitHub all releases](https://img.shields.io/github/downloads/AutoMQ/automq-for-kafka/total)
+![](https://img.shields.io/badge/Java%20-%20JDK17-green)
 
 ---
 [![](https://img.shields.io/badge/official%20document-20B2AA?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
@@ -41,7 +42,7 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 
 ## 🍵What is AutoMQ
 
-AutoMQ is a cloud-native,serverless Kafka distribution that makes Kafka easily scalable ,manage-less and cost-effective.
+AutoMQ is a cloud-native,serverless reinvented Kafka that is easily scalable ,manage-less and cost-effective.
 
 
 ## 🔶Why AutoMQ
@@ -81,7 +82,7 @@ The easiest way to run AutoMQ. You can experience the feature like fast partitio
 
 
 ### Run AutoMQ on cloud manually
-Deploy AutoMQ manually with released tgz files on cloud, currently compatible with AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more](https://www.automq.com)
+Deploy AutoMQ manually with released tgz files on cloud, currently compatible with AWS,Aliyun Cloud,Tencent Cloud,Huawei Cloud and Baidu Cloud. [Learn more]( https://docs.automq.com/docs/automq-s3kafka/NBo6wwth3iWUIkkNAbYcPg0mnae)
 
 ## 💬Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
@@ -91,11 +92,12 @@ You can join the following groups or channels to discuss or ask questions about 
 
 ## 👥How to contribute
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka). 
-To contribute to AutoMQ please see [Code of Conduct] and [contributing guide].
-We have a list of [good first issues]() that help you to get started, gain experience, and get familiar with our contribution process.
+To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [contributing guide](CONTRIBUTING_GUIDE.md).
+We have a list of [good first issues](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process.
 
 ## 🌈Roadmap
 
+Coming soon...
 
 ## ⭐License
 AutoMQ is released under [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0.html). When contributing to AutoMQ, you can find the relevant license header in each file.
