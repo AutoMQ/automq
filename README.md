@@ -55,7 +55,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 - **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
 - **Cost effective**: Use object storage as the main storage, take billing items into consideration when design system, fully utilize the cloud service, all of them contribute to AutoMQ and make it 10x cheaper than Apache Kafka. Refer [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High performance**: 
-  - Low latency: Use cloud block storage like AWS EBS as the [durable cache layer]() to accelerate write.
+  - Low latency: Use cloud block storage like AWS EBS as the durable cache layer to accelerate write.
   - High throughput: Use pre-fetching, batch processing and parallel to achieve high throughput.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
 
