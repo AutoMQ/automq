@@ -2782,21 +2782,48 @@ class ReplicaManager(val config: KafkaConfig,
       info(s"stop partitions $partitionsToClose")
       partitionsToClose.foreach(p => doPartitionDeletionAsyncLocked(p))
     }
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
-      // TODO: check any progress here, if so, we can wait longer
-      info("still has opening partition, retry check later")
-      Thread.sleep(1000)
+    val closed = checkAllPartitionClosedLoop(30000, 1000)
+    if (!closed) {
+      warn(s"some partitions are not closed after ${System.currentTimeMillis() - start} ms, they will be force closed")
+    } else {
+      info(s"all partitions are closed after ${System.currentTimeMillis() - start} ms")
     }
-    info("await all partitions closed")
     partitionOpExecutor.shutdown()
     CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
-  def checkAllPartitionClosed(): Boolean = {
-    val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty && openingPartitions.isEmpty
-    if (!allClosed) {
-      info(s"online partition ${allPartitions.keys}, opening partition ${openingPartitions.keySet()}, closing partition ${closingPartitions.keySet()}")
+  /**
+   * Check whether all partitions are closed, if not, retry until timeout.
+   * If any partition's state changed, the timeout will be reset.
+   *
+   * @param timeout timeout in milliseconds
+   * @param retryInterval retry interval in milliseconds
+   * @return true if all partition closed, false otherwise
+   */
+  private def checkAllPartitionClosedLoop(timeout: Long, retryInterval: Long): Boolean = {
+    var start = System.currentTimeMillis()
+    var preAllPartitionCnt = allPartitions.size
+    var preClosingPartitionCnt = closingPartitions.size
+    var preOpeningPartitionCnt = openingPartitions.size
+    while (System.currentTimeMillis() - start < timeout) {
+      val curAllPartitionCnt = allPartitions.size
+      val curClosingPartitionCnt = closingPartitions.size
+      val curOpeningPartitionCnt = openingPartitions.size
+      if (curAllPartitionCnt == 0 && curClosingPartitionCnt == 0 && curOpeningPartitionCnt == 0) {
+        // all partitions are closed
+        return true
+      }
+      if (curAllPartitionCnt != preAllPartitionCnt || curClosingPartitionCnt != preClosingPartitionCnt || curOpeningPartitionCnt != preOpeningPartitionCnt) {
+        // if any partition's state changed, reset the start time
+        start = System.currentTimeMillis()
+        preAllPartitionCnt = curAllPartitionCnt
+        preClosingPartitionCnt = curClosingPartitionCnt
+        preOpeningPartitionCnt = curOpeningPartitionCnt
+      }
+      info(s"still has opening partition, retry check later. online partition: $curAllPartitionCnt, closing partition: $curClosingPartitionCnt, opening partition: $curOpeningPartitionCnt")
+      Thread.sleep(retryInterval)
     }
-    allClosed
+    warn(s"not all partitions are closed. online partition: ${allPartitions.keys}, closing partition: ${closingPartitions.keySet()}, opening partition: ${openingPartitions.keySet()}")
+    false
   }
 }
