@@ -50,7 +50,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 - **Cloud Native**: Built on cloud service. Every system design decision take cloud service's feature and billing items into consideration to offer best low-latency, scalable, reliable and cost-effective Kafka service on cloud.
 - **Serverless**:
   - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match you workload and achieve pay-as-you-go.
-  - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless.[Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
+  - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
   - Infinite scalable: Use cloud's object storage as the main storage, never worry about storage capacity.
 - **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
 - **Cost effective**: Use object storage as the main storage, take billing items into consideration when design system, fully utilize the cloud service, all of them contribute to AutoMQ and make it 10x cheaper than Apache Kafka. Refer [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
@@ -68,7 +68,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our features. The architecture including the following main components:
 - **S3Stream**: A streaming library based on object storage offered by AutoMQ. It is the core component of AutoMQ and is responsible for reading and writing data to object storage. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d).
 - **Stream**: Stream is an abstraction to mapping the logSegment of Apache Kafka. LogSegment's data, index and other meta will mapping to different type of stream. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
-- **EBS Durable Cache Layer**: AutoMQ use a small size cloud block storage like AWS EBS as the durable cache layer to accelerate write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the durable cache layer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
+- **Durable Cache Layer**: AutoMQ use a small size cloud block storage like AWS EBS as the durable cache layer to accelerate write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the durable cache layer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
 - **Stream Object**: AutoMQ's data is organized by stream object. Data is read by stream object id through index. One stream have one stream object. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
 - **Stream set object**: Stream set object is a collection of small stream object that aimed to decrease API invoke times and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
 
