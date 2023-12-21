@@ -17,6 +17,7 @@
 
 package kafka.log.streamaspect;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Partition dimension metadata, record the recover checkpoint, clean offset...
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticPartitionMeta {
     /**
      * The start offset of this topicPartition.
