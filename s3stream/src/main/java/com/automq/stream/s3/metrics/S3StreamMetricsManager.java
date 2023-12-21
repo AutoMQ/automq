@@ -45,6 +45,8 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge networkOutboundAvailableBandwidth = new NoopObservableLongGauge();
     private static ObservableLongGauge networkInboundLimiterQueueSize = new NoopObservableLongGauge();
     private static ObservableLongGauge networkOutboundLimiterQueueSize = new NoopObservableLongGauge();
+    private static LongHistogram networkInboundLimiterQueueTime = new NoopLongHistogram();
+    private static LongHistogram networkOutboundLimiterQueueTime = new NoopLongHistogram();
     private static LongHistogram allocateByteBufSize = new NoopLongHistogram();
     private static LongHistogram readAheadSize = new NoopLongHistogram();
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
@@ -140,6 +142,16 @@ public class S3StreamMetricsManager {
                 .setDescription("Network outbound limiter queue size")
                 .ofLongs()
                 .buildWithCallback(result -> result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), newAttributesBuilder().build()));
+        networkInboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
+                .setDescription("Network inbound limiter queue time")
+                .setUnit("nanoseconds")
+                .ofLongs()
+                .build();
+        networkOutboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
+                .setDescription("Network outbound limiter queue time")
+                .setUnit("nanoseconds")
+                .ofLongs()
+                .build();
         allocateByteBufSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME)
                 .setDescription("Allocate byte buf size")
                 .setUnit("bytes")
@@ -213,6 +225,7 @@ public class S3StreamMetricsManager {
         }
     }
 
+    //TODO: 各broker当前stream数量、各stream流量？、各broker的s3 object number, size
     public static void registerDeltaWalOffsetSupplier(Supplier<Long> deltaWalStartOffsetSupplier,
                                                       Supplier<Long> deltaWalTrimmedOffsetSupplier) {
         S3StreamMetricsManager.deltaWalStartOffsetSupplier = deltaWalStartOffsetSupplier;
@@ -264,7 +277,7 @@ public class S3StreamMetricsManager {
                 .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
                 .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName());
         if (operation == S3Operation.GET_OBJECT || operation == S3Operation.PUT_OBJECT || operation == S3Operation.UPLOAD_PART) {
-            attributesBuilder.put(S3StreamMetricsConstant.LABEL_OBJECT_SIZE_NAME, getObjectBucketLabel(size));
+            attributesBuilder.put(S3StreamMetricsConstant.LABEL_SIZE_NAME, getObjectBucketLabel(size));
         }
         operationLatency.record(value, attributesBuilder.build());
     }
@@ -282,7 +295,16 @@ public class S3StreamMetricsManager {
         Attributes attributes = newAttributesBuilder()
                 .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
                 .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_CACHE_STATUS, isCacheHit ? "hit" : "miss")
+                .put(S3StreamMetricsConstant.LABEL_STATUS, isCacheHit ? "hit" : "miss")
+                .build();
+        operationLatency.record(value, attributes);
+    }
+
+    public static void recordReadAheadLatency(long value, S3Operation operation, boolean isSync) {
+        Attributes attributes = newAttributesBuilder()
+                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
+                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
+                .put(S3StreamMetricsConstant.LABEL_STATUS, isSync ? "sync" : "async")
                 .build();
         operationLatency.record(value, attributes);
     }
@@ -318,6 +340,13 @@ public class S3StreamMetricsManager {
 
     public static void recordNetworkOutboundUsage(long value) {
         networkOutboundUsageInTotal.add(value, newAttributesBuilder().build());
+    }
+
+    public static void recordNetworkLimiterQueueTime(long value, AsyncNetworkBandwidthLimiter.Type type) {
+        switch (type) {
+            case INBOUND -> networkInboundLimiterQueueTime.record(value, newAttributesBuilder().build());
+            case OUTBOUND -> networkOutboundLimiterQueueTime.record(value, newAttributesBuilder().build());
+        }
     }
 
     public static void recordAllocateByteBufSize(long value, String source) {

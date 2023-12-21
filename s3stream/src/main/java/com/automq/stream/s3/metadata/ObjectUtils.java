@@ -26,6 +26,10 @@ public class ObjectUtils {
         ObjectUtils.namespace = namespace;
     }
 
+    public static void main(String[] args) {
+        System.out.printf("%s%n", genKey(0, 11154));
+    }
+
     public static String genKey(int version, long objectId) {
         if (namespace.isEmpty()) {
             throw new IllegalStateException("NAMESPACE is not set");
