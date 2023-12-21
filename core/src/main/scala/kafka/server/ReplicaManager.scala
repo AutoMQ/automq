@@ -497,8 +497,9 @@ class ReplicaManager(val config: KafkaConfig,
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
+                val start = System.currentTimeMillis()
                 hostedPartition.partition.close().get()
-                info(s"partition $topicPartition is closed, trigger leader election")
+                info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms, trigger leader election")
                 alterPartitionManager.tryElectLeader(topicPartition)
               } else {
                 hostedPartition.partition.delete()
