@@ -57,7 +57,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 - **High performance**: 
   - Low latency: Use cloud block storage like AWS EBS as the durable cache layer to accelerate write.
   - High throughput: Use pre-fetching, batch processing and parallel to achieve high throughput.
-  > Refer [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc) to see how we achieve this
+  > Refer [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc) to see how we achieve this.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
 
 
