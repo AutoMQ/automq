@@ -184,7 +184,9 @@ public class DefaultS3Operator implements S3Operator {
             return cf;
         }
         if (networkInboundBandwidthLimiter != null) {
+            TimerUtil timerUtil = new TimerUtil();
             networkInboundBandwidthLimiter.consume(throttleStrategy, end - start).whenCompleteAsync((v, ex) -> {
+                S3StreamMetricsManager.recordNetworkLimiterQueueTime(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), AsyncNetworkBandwidthLimiter.Type.INBOUND);
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
@@ -315,7 +317,9 @@ public class DefaultS3Operator implements S3Operator {
             return retCf;
         }
         if (networkOutboundBandwidthLimiter != null) {
+            TimerUtil timerUtil = new TimerUtil();
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
+                S3StreamMetricsManager.recordNetworkLimiterQueueTime(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
