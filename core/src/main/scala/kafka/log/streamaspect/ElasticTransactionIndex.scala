@@ -34,6 +34,20 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
   @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
   private var closed = false
 
+  /**
+   * In the case of unclean shutdown, the last entry needs to be recovered from the txn index.
+   */
+  def loadLastOffset(): Option[Long] = {
+    if (stream.nextOffset() == 0) {
+      None
+    } else {
+      val record = stream.fetch(stream.nextOffset() - 1, 1, Int.MaxValue).get().recordBatchList().get(0)
+      val readBuf = record.rawPayload()
+      val abortedTxn = new AbortedTxn(readBuf)
+      Some(abortedTxn.lastOffset)
+    }
+  }
+
   override def append(abortedTxn: AbortedTxn): Unit = {
     if (closed)
       throw new IOException(s"Attempt to append to closed transaction index $file")

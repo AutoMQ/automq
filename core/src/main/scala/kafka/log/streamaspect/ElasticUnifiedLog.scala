@@ -18,15 +18,19 @@
 package kafka.log.streamaspect
 
 import kafka.log._
+import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
 import kafka.server.epoch.LeaderEpochFileCache
-import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata}
+import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata, RequestLocal}
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.record.{RecordBatch, RecordVersion, Records}
-import org.apache.kafka.common.utils.{Time, Utils}
+import org.apache.kafka.common.record.{MemoryRecords, RecordBatch, RecordVersion, Records}
+import org.apache.kafka.common.utils.{ThreadUtils, Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
+import org.apache.kafka.server.common.MetadataVersion
 
-import java.util.concurrent.CompletableFuture
+import java.nio.ByteBuffer
+import java.util
+import java.util.concurrent.{CompletableFuture, Executors}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
@@ -44,8 +48,29 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
   elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
 
+  var checkpointIntervalBytes = 0
+  var lastCheckpointTimestamp = time.milliseconds()
+
   def confirmOffset(): LogOffsetMetadata = {
     elasticLog.confirmOffset
+  }
+
+
+  override def appendAsLeader(records: MemoryRecords, leaderEpoch: Int, origin: AppendOrigin, interBrokerProtocolVersion: MetadataVersion, requestLocal: RequestLocal): LogAppendInfo = {
+    checkpointIntervalBytes += records.sizeInBytes()
+    val rst = super.appendAsLeader(records, leaderEpoch, origin, interBrokerProtocolVersion, requestLocal)
+    if (checkpointIntervalBytes > MaxCheckpointIntervalBytes && time.milliseconds() - lastCheckpointTimestamp > MinCheckpointIntervalMs) {
+      checkpointIntervalBytes = 0
+      lastCheckpointTimestamp = time.milliseconds()
+      CheckpointExecutor.execute(() => checkpoint())
+    }
+    rst
+  }
+
+  private def checkpoint(): Unit = {
+    producerStateManager.asInstanceOf[ElasticProducerStateManager].takeSnapshotAndRemoveExpired(elasticLog.recoveryPoint)
+    flush(true)
+    elasticLog.persistRecoverOffsetCheckpoint()
   }
 
   override private[log] def replaceSegments(newSegments: collection.Seq[LogSegment], oldSegments: collection.Seq[LogSegment]): Unit = {
@@ -67,15 +92,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
   override def initializeTopicId(): Unit = {
     // topic id is passed by constructor arguments every time, there is no need load from partition meta file.
-  }
-
-  // only for testing
-  private[log] def listProducerSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
-    val producerSnapshots: mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = mutable.Map()
-    elasticLog.metaStream.getAllProducerSnapshots.forEach((offset, snapshot) => {
-      producerSnapshots.put(offset.longValue(), snapshot)
-    })
-    producerSnapshots
   }
 
   // only for testing
@@ -144,9 +160,18 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   override private[log] def delete(): Unit = {
     throw new UnsupportedOperationException("delete() is not supported for ElasticUnifiedLog")
   }
+
+  // only used for test
+  def listProducerSnapshots(): util.NavigableMap[java.lang.Long, ByteBuffer] = {
+    producerStateManager.asInstanceOf[ElasticProducerStateManager].snapshotsMap
+  }
 }
 
 object ElasticUnifiedLog extends Logging {
+  private val CheckpointExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
+  private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
+  private val MinCheckpointIntervalMs = 10 * 1000
+
   def rebuildProducerState(producerStateManager: ProducerStateManager,
                            segments: LogSegments,
                            logStartOffset: Long,

@@ -17,56 +17,68 @@
 
 package kafka.log.streamaspect;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+
 import java.nio.ByteBuffer;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * refers to all valid snapshot files
  */
 public class ElasticPartitionProducerSnapshotsMeta {
-    private final Set<Long> snapshots;
+    public static final byte MAGIC_CODE = 0x18;
+    private final Map<Long, ByteBuffer> snapshots;
 
     public ElasticPartitionProducerSnapshotsMeta() {
-        this.snapshots = new HashSet<>();
+        this(new HashMap<>());
     }
 
-    public ElasticPartitionProducerSnapshotsMeta(Set<Long> snapshots) {
+    public ElasticPartitionProducerSnapshotsMeta(Map<Long, ByteBuffer> snapshots) {
         this.snapshots = snapshots;
     }
 
-    public Set<Long> getSnapshots() {
+    public Map<Long, ByteBuffer> getSnapshots() {
         return snapshots;
-    }
-
-    public void remove(Long offset) {
-        snapshots.remove(offset);
-    }
-
-    public void add(Long offset) {
-        snapshots.add(offset);
-    }
-
-    public ByteBuffer encode() {
-        ByteBuffer buffer = ByteBuffer.allocate(snapshots.size() * 8);
-        snapshots.forEach(item -> {
-            if (item != null) {
-                buffer.putLong(item);
-            }
-        });
-        buffer.flip();
-        return buffer;
-    }
-
-    public static ElasticPartitionProducerSnapshotsMeta decode(ByteBuffer buffer) {
-        Set<Long> snapshots = new HashSet<>();
-        while (buffer.hasRemaining()) {
-            snapshots.add(buffer.getLong());
-        }
-        return new ElasticPartitionProducerSnapshotsMeta(snapshots);
     }
 
     public boolean isEmpty() {
         return snapshots.isEmpty();
+    }
+
+    public ByteBuffer encode() {
+        int size = 1 /* magic code */ + snapshots.size() * (8 /* offset */ + 4 /* length */);
+        for (ByteBuffer snapshot : snapshots.values()) {
+            if (snapshot != null) {
+                size += snapshot.remaining();
+            }
+        }
+        ByteBuf buf = Unpooled.buffer(size);
+        buf.writeByte(MAGIC_CODE);
+        snapshots.forEach((offset, snapshot) -> {
+            buf.writeLong(offset);
+            buf.writeInt(snapshot.remaining());
+            buf.writeBytes(snapshot.duplicate());
+        });
+        return buf.nioBuffer();
+    }
+
+    public static ElasticPartitionProducerSnapshotsMeta decode(ByteBuffer buffer) {
+        ByteBuf buf = Unpooled.wrappedBuffer(buffer);
+        byte magicCode = buf.readByte();
+        if (magicCode != MAGIC_CODE) {
+            throw new IllegalArgumentException("invalid magic code " + magicCode);
+        }
+        Map<Long, ByteBuffer> snapshots = new HashMap<>();
+        while (buf.readableBytes() != 0) {
+            long offset = buf.readLong();
+            int length = buf.readInt();
+            byte[] snapshot = new byte[length];
+            buf.readBytes(snapshot);
+            ByteBuffer snapshotBuf = ByteBuffer.wrap(snapshot);
+            snapshots.put(offset, snapshotBuf);
+        }
+        return new ElasticPartitionProducerSnapshotsMeta(snapshots);
     }
 }
