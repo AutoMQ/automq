@@ -197,7 +197,8 @@ private[log] class ProducerStateEntry(val producerId: Long,
 private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
                                       val producerId: Long,
                                       val currentEntry: ProducerStateEntry,
-                                      val origin: AppendOrigin) extends Logging {
+                                      val origin: AppendOrigin,
+                                      val logOpenedTime: Option[Long] = None) extends Logging {
 
   private val transactions = ListBuffer.empty[TxnMetadata]
   private val updatedEntry = ProducerStateEntry.empty(producerId)
@@ -208,10 +209,10 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
   updatedEntry.currentTxnFirstOffset = currentEntry.currentTxnFirstOffset
 
   // AutoMQ for Kafka inject start
-  private def maybeValidateDataBatch(producerEpoch: Short, firstSeq: Int, offset: Long, logOpenedTimestamp: Option[Long] = None): Unit = {
+  private def maybeValidateDataBatch(producerEpoch: Short, firstSeq: Int, offset: Long): Unit = {
     checkProducerEpoch(producerEpoch, offset)
     if (origin == AppendOrigin.Client) {
-      checkSequence(producerEpoch, firstSeq, offset, logOpenedTimestamp)
+      checkSequence(producerEpoch, firstSeq, offset, logOpenedTime)
     }
   }
   // AutoMQ for Kafka inject end
@@ -271,8 +272,7 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     nextSeq == lastSeq + 1L || (nextSeq == 0 && lastSeq == Int.MaxValue)
   }
 
-  // AutoMQ for Kafka inject start
-  def append(batch: RecordBatch, firstOffsetMetadataOpt: Option[LogOffsetMetadata], logOpenedTimestamp: Option[Long] = None): Option[CompletedTxn] = {
+  def append(batch: RecordBatch, firstOffsetMetadataOpt: Option[LogOffsetMetadata]): Option[CompletedTxn] = {
     if (batch.isControlBatch) {
       val recordIterator = batch.iterator
       if (recordIterator.hasNext) {
@@ -286,7 +286,7 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     } else {
       val firstOffsetMetadata = firstOffsetMetadataOpt.getOrElse(LogOffsetMetadata(batch.baseOffset))
       appendDataBatch(batch.producerEpoch, batch.baseSequence, batch.lastSequence, batch.maxTimestamp,
-        firstOffsetMetadata, batch.lastOffset, batch.isTransactional, logOpenedTimestamp)
+        firstOffsetMetadata, batch.lastOffset, batch.isTransactional)
       None
     }
   }
@@ -297,11 +297,9 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
                       lastTimestamp: Long,
                       firstOffsetMetadata: LogOffsetMetadata,
                       lastOffset: Long,
-                      isTransactional: Boolean,
-                      logOpenedTimestamp: Option[Long] = None): Unit = {
+                      isTransactional: Boolean): Unit = {
     val firstOffset = firstOffsetMetadata.messageOffset
-    maybeValidateDataBatch(epoch, firstSeq, firstOffset, logOpenedTimestamp)
-    // AutoMQ for Kafka inject end
+    maybeValidateDataBatch(epoch, firstSeq, firstOffset)
     updatedEntry.addBatch(epoch, lastSeq, lastOffset, (lastOffset - firstOffset).toInt, lastTimestamp)
 
     updatedEntry.currentTxnFirstOffset match {
@@ -555,6 +553,13 @@ class ProducerStateManager(
   protected var lastMapOffset = 0L
   protected var lastSnapOffset = 0L
 
+  /**
+   * The time stamp when the manager is opened, which is approximately the time when the log is opened.
+   * It is used to handle the case that the first batch comes with partition not
+   * opened yet. See https://github.com/AutoMQ/automq-for-kafka/issues/584.
+   */
+  val createdTimeStamp = System.currentTimeMillis()
+
   // Keep track of the last timestamp from the oldest transaction. This is used
   // to detect (approximately) when a transaction has been left hanging on a partition.
   // We make the field volatile so that it can be safely accessed without a lock.
@@ -746,7 +751,7 @@ class ProducerStateManager(
 
   def prepareUpdate(producerId: Long, origin: AppendOrigin): ProducerAppendInfo = {
     val currentEntry = lastEntry(producerId).getOrElse(ProducerStateEntry.empty(producerId))
-    new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin)
+    new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin, Some(createdTimeStamp))
   }
 
   /**
