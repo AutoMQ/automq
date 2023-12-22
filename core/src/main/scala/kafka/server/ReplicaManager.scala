@@ -297,7 +297,14 @@ class ReplicaManager(val config: KafkaConfig,
   val failedIsrUpdatesRate: Meter = newMeter("FailedIsrUpdatesPerSec", "failedUpdates", TimeUnit.SECONDS)
 
   // AutoMQ for Kafka inject start
+  /**
+   * Partition operation executor, used to execute partition operations in parallel.
+   */
   private val partitionOpExecutor = ThreadUtils.newCachedThread(256, "partition_op_%d", true)
+  /**
+   * Partition operation map, used to make sure that only one operation is executed for a partition at the same time.
+   * It should be modified with [[replicaStateChangeLock]] held.
+   */
   private val partitionOpMap = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   // AutoMQ for Kafka inject end
 
@@ -490,8 +497,9 @@ class ReplicaManager(val config: KafkaConfig,
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
+                val start = System.currentTimeMillis()
                 hostedPartition.partition.close().get()
-                info(s"partition $topicPartition is closed, trigger leader election")
+                info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms, trigger leader election")
                 alterPartitionManager.tryElectLeader(topicPartition)
               } else {
                 hostedPartition.partition.delete()
@@ -2515,32 +2523,8 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.forKeyValue((tp, _) => {
-            val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
-            val opCf = new CompletableFuture[Void]()
+            val opCf = doPartitionDeletionAsyncLocked(tp)
             opCfList.add(opCf)
-            partitionOpMap.put(tp, opCf)
-            closingPartitions.put(tp, opCf)
-            prevOp.whenComplete((_, _) => {
-              partitionOpExecutor.execute(() => {
-                try {
-                  val delete = mutable.Map[TopicPartition, Boolean]()
-                  delete += (tp -> true)
-                  stopPartitions(delete).forKeyValue { (topicPartition, e) =>
-                    if (e.isInstanceOf[KafkaStorageException]) {
-                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                        "the local replica for the partition is in an offline log directory")
-                    } else {
-                      stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
-                        s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
-                    }
-                  }
-                } finally {
-                  opCf.complete(null)
-                  partitionOpMap.remove(tp, opCf)
-                  closingPartitions.remove(tp, opCf)
-                }
-              })
-            })
           })
         }
 
@@ -2608,6 +2592,42 @@ class ReplicaManager(val config: KafkaConfig,
         info(s"open ${localChanges.leaders.size()} / close ${localChanges.deletes.size()} partitions cost ${elapsedMs}ms")
       }
     })
+  }
+
+  /**
+   * Delete the given partition from the replica manager, if it exists.
+   * Note: this method should be called with [[replicaStateChangeLock]] held.
+   *
+   * @param tp The partition to delete.
+   * @return A future which completes when the partition has been deleted.
+   */
+  private def doPartitionDeletionAsyncLocked(tp: TopicPartition): CompletableFuture[Void] = {
+    val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
+    val opCf = new CompletableFuture[Void]()
+    partitionOpMap.put(tp, opCf)
+    closingPartitions.put(tp, opCf)
+    prevOp.whenComplete((_, _) => {
+      partitionOpExecutor.execute(() => {
+        try {
+          val delete = mutable.Map[TopicPartition, Boolean]()
+          delete += (tp -> true)
+          stopPartitions(delete).forKeyValue { (topicPartition, e) =>
+            if (e.isInstanceOf[KafkaStorageException]) {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                "the local replica for the partition is in an offline log directory")
+            } else {
+              stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
+                s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
+            }
+          }
+        } finally {
+          opCf.complete(null)
+          partitionOpMap.remove(tp, opCf)
+          closingPartitions.remove(tp, opCf)
+        }
+      })
+    })
+    opCf
   }
   // AutoMQ for Kafka inject end
 
@@ -2754,34 +2774,57 @@ class ReplicaManager(val config: KafkaConfig,
 
   def awaitAllPartitionShutdown(): Unit = {
     val start = System.currentTimeMillis()
-    // await 15s partitions transfer to other alive brokers.
-    // when there are no alive brokers, it will still await 15s.
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 15000) {
-      info("still has opening partition, retry check later")
-      Thread.sleep(1000)
+    replicaStateChangeLock.synchronized {
+      // When there are any other alive brokers, partitions will be transferred to them and deleted in the method [[asyncApplyDelta]].
+      // However when there are no other alive brokers, we need to delete partitions by ourselves here.
+      // In summary, a partition may be deleted twice during shutdown. But it is safe as the method [[stopPartitions]]
+      // called in [[doPartitionDeletionAsyncLocked]] is idempotent.
+      val partitionsToClose = allPartitions.keys
+      info(s"stop partitions $partitionsToClose")
+      partitionsToClose.foreach(p => doPartitionDeletionAsyncLocked(p))
+    }
+    val closed = checkAllPartitionClosedLoop(30000, 1000)
+    if (!closed) {
+      warn(s"some partitions are not closed after ${System.currentTimeMillis() - start} ms, they will be force closed")
+    } else {
+      info(s"all partitions are closed after ${System.currentTimeMillis() - start} ms")
     }
     partitionOpExecutor.shutdown()
-    if (allPartitions.nonEmpty) {
-      val partitionsToClose = mutable.Map[TopicPartition, Boolean]()
-      allPartitions.foreachEntry((topicPartition, _) => {
-        partitionsToClose.put(topicPartition, true)
-      })
-      info(s"try force stop partitions ${partitionsToClose.keys}")
-      stopPartitions(partitionsToClose)
-    }
-    while (!checkAllPartitionClosed() && (System.currentTimeMillis() - start) < 30000) {
-      info("still has opening partition, retry check later")
-      Thread.sleep(1000)
-    }
-    info("await all partitions closed")
     CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
-  def checkAllPartitionClosed(): Boolean = {
-    val allClosed = allPartitions.isEmpty && closingPartitions.isEmpty && openingPartitions.isEmpty
-    if (!allClosed) {
-      info(s"online partition ${allPartitions.keys}, opening partition ${openingPartitions.keySet()}, closing partition ${closingPartitions.keySet()}")
+  /**
+   * Check whether all partitions are closed, if not, retry until timeout.
+   * If any partition's state changed, the timeout will be reset.
+   *
+   * @param timeout timeout in milliseconds
+   * @param retryInterval retry interval in milliseconds
+   * @return true if all partition closed, false otherwise
+   */
+  private def checkAllPartitionClosedLoop(timeout: Long, retryInterval: Long): Boolean = {
+    var start = System.currentTimeMillis()
+    var preAllPartitionCnt = allPartitions.size
+    var preClosingPartitionCnt = closingPartitions.size
+    var preOpeningPartitionCnt = openingPartitions.size
+    while (System.currentTimeMillis() - start < timeout) {
+      val curAllPartitionCnt = allPartitions.size
+      val curClosingPartitionCnt = closingPartitions.size
+      val curOpeningPartitionCnt = openingPartitions.size
+      if (curAllPartitionCnt == 0 && curClosingPartitionCnt == 0 && curOpeningPartitionCnt == 0) {
+        // all partitions are closed
+        return true
+      }
+      if (curAllPartitionCnt != preAllPartitionCnt || curClosingPartitionCnt != preClosingPartitionCnt || curOpeningPartitionCnt != preOpeningPartitionCnt) {
+        // if any partition's state changed, reset the start time
+        start = System.currentTimeMillis()
+        preAllPartitionCnt = curAllPartitionCnt
+        preClosingPartitionCnt = curClosingPartitionCnt
+        preOpeningPartitionCnt = curOpeningPartitionCnt
+      }
+      info(s"still has opening partition, retry check later. online partition: $curAllPartitionCnt, closing partition: $curClosingPartitionCnt, opening partition: $curOpeningPartitionCnt")
+      Thread.sleep(retryInterval)
     }
-    allClosed
+    warn(s"not all partitions are closed. online partition: ${allPartitions.keys}, closing partition: ${closingPartitions.keySet()}, opening partition: ${openingPartitions.keySet()}")
+    false
   }
 }
