@@ -236,7 +236,7 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
   // AutoMQ for Kafka inject start
   private def checkSequence(producerEpoch: Short, appendFirstSeq: Int, offset: Long, logOpenedTimestampOpt: Option[Long]): Unit = {
     // The partition is newly created while the seq is not 0.
-    if (currentEntry.isEmpty && appendFirstSeq != 0 && logOpenedTimestampOpt.isDefined && System.currentTimeMillis() - logOpenedTimestampOpt.get < 10000) {
+    if (currentEntry.isEmpty && updatedEntry.isEmpty && appendFirstSeq != 0 && logOpenedTimestampOpt.isDefined && System.currentTimeMillis() - logOpenedTimestampOpt.get < 10000) {
       throw new OutOfOrderSequenceException(s"Invalid sequence number for new created log, producer $producerId " +
         s"at offset $offset in partition $topicPartition: $producerEpoch (request epoch), $appendFirstSeq (seq. number), " +
         s"${updatedEntry.producerEpoch} (current producer epoch)")
