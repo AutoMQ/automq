@@ -197,7 +197,8 @@ private[log] class ProducerStateEntry(val producerId: Long,
 private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
                                       val producerId: Long,
                                       val currentEntry: ProducerStateEntry,
-                                      val origin: AppendOrigin) extends Logging {
+                                      val origin: AppendOrigin,
+                                      val logOpenedTime: Option[Long] = None) extends Logging {
 
   private val transactions = ListBuffer.empty[TxnMetadata]
   private val updatedEntry = ProducerStateEntry.empty(producerId)
@@ -207,12 +208,14 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
   updatedEntry.lastTimestamp = currentEntry.lastTimestamp
   updatedEntry.currentTxnFirstOffset = currentEntry.currentTxnFirstOffset
 
+  // AutoMQ for Kafka inject start
   private def maybeValidateDataBatch(producerEpoch: Short, firstSeq: Int, offset: Long): Unit = {
     checkProducerEpoch(producerEpoch, offset)
     if (origin == AppendOrigin.Client) {
-      checkSequence(producerEpoch, firstSeq, offset)
+      checkSequence(producerEpoch, firstSeq, offset, logOpenedTime)
     }
   }
+  // AutoMQ for Kafka inject end
 
   private def checkProducerEpoch(producerEpoch: Short, offset: Long): Unit = {
     if (producerEpoch < updatedEntry.producerEpoch) {
@@ -230,7 +233,15 @@ private[log] class ProducerAppendInfo(val topicPartition: TopicPartition,
     }
   }
 
-  private def checkSequence(producerEpoch: Short, appendFirstSeq: Int, offset: Long): Unit = {
+  // AutoMQ for Kafka inject start
+  private def checkSequence(producerEpoch: Short, appendFirstSeq: Int, offset: Long, logOpenedTimestampOpt: Option[Long]): Unit = {
+    // The partition is newly created while the seq is not 0.
+    if (currentEntry.isEmpty && updatedEntry.isEmpty && appendFirstSeq != 0 && logOpenedTimestampOpt.isDefined && System.currentTimeMillis() - logOpenedTimestampOpt.get < 10000) {
+      throw new OutOfOrderSequenceException(s"Invalid sequence number for new created log, producer $producerId " +
+        s"at offset $offset in partition $topicPartition: $producerEpoch (request epoch), $appendFirstSeq (seq. number), " +
+        s"${updatedEntry.producerEpoch} (current producer epoch)")
+    }
+    // AutoMQ for Kafka inject end
     if (producerEpoch != updatedEntry.producerEpoch) {
       if (appendFirstSeq != 0) {
         if (updatedEntry.producerEpoch != RecordBatch.NO_PRODUCER_EPOCH) {
@@ -542,6 +553,13 @@ class ProducerStateManager(
   protected var lastMapOffset = 0L
   protected var lastSnapOffset = 0L
 
+  /**
+   * The time stamp when the manager is opened, which is approximately the time when the log is opened.
+   * It is used to handle the case that the first batch comes with partition not
+   * opened yet. See https://github.com/AutoMQ/automq-for-kafka/issues/584.
+   */
+  val createdTimeStamp = System.currentTimeMillis()
+
   // Keep track of the last timestamp from the oldest transaction. This is used
   // to detect (approximately) when a transaction has been left hanging on a partition.
   // We make the field volatile so that it can be safely accessed without a lock.
@@ -733,7 +751,7 @@ class ProducerStateManager(
 
   def prepareUpdate(producerId: Long, origin: AppendOrigin): ProducerAppendInfo = {
     val currentEntry = lastEntry(producerId).getOrElse(ProducerStateEntry.empty(producerId))
-    new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin)
+    new ProducerAppendInfo(topicPartition, producerId, currentEntry, origin, Some(createdTimeStamp))
   }
 
   /**
