@@ -37,6 +37,8 @@ public enum S3Operation {
     APPEND_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "append_log_cache"),
     APPEND_STORAGE_LOG_CACHE_FULL(S3MetricsType.S3Storage, "append_log_cache_full"),
     UPLOAD_STORAGE_WAL(S3MetricsType.S3Storage, "upload_wal"),
+    FORCE_UPLOAD_STORAGE_WAL_AWAIT(S3MetricsType.S3Storage, "force_upload_wal_await"),
+    FORCE_UPLOAD_STORAGE_WAL(S3MetricsType.S3Storage, "force_upload_wal"),
     READ_STORAGE(S3MetricsType.S3Storage, "read"),
     READ_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "read_log_cache"),
     READ_STORAGE_BLOCK_CACHE(S3MetricsType.S3Storage, "read_block_cache"),
