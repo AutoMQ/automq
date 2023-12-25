@@ -77,7 +77,7 @@ AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our feature
 ## ⛄Get started with AutoMQ
 
 ### Run AutoMQ local without cloud
-The easiest way to run AutoMQ. You can experience the feature like fast partition move and network traffic auto-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/VKpxwOPvciZmjGkHk5hcTz43nde)
+The easiest way to run AutoMQ. You can experience the feature like fast partition move and network traffic auto-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/SMKbwchB3i0Y0ykFm75c0ftAnCc)
 
 > Attention: Local mode mock object storage locally and is not a production ready deployment. It is only for demo and test purpose.
 
