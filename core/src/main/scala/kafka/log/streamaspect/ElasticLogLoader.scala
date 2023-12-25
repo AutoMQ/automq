@@ -68,14 +68,14 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
     // load all segments
     loadSegments()
 
+    // make sure the producer state manager endOffset is less than or equal to the recoveryPointCheckpoint
+    producerStateManager.truncateAndReload(logStartOffsetCheckpoint, recoveryPointCheckpoint, time.milliseconds())
     val (newRecoveryPoint: Long, nextOffset: Long) = {
       recoverLog()
     }
 
     val newLogStartOffset = math.max(logStartOffsetCheckpoint, segments.firstSegment.get.baseOffset)
 
-    // TODO: 梳理这块的逻辑，为什么要判空，为什么要重新 build
-    producerStateManager.removeStraySnapshots(segments.baseOffsets.toSeq)
     val activeSegment = segments.lastSegment.get
     LoadedLogOffsets(
       newLogStartOffset,
@@ -146,8 +146,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
       var numFlushed = 0
       val threadName = Thread.currentThread().getName
       numRemainingSegments.put(threadName, numUnflushed)
-      // make sure the producer state manager endOffset is less than or equal to the recoveryPointCheckpoint
-      producerStateManager.truncateAndReload(logStartOffsetCheckpoint, recoveryPointCheckpoint, time.milliseconds())
       while (unflushedIter.hasNext && !truncated) {
         val segment = unflushedIter.next()
         info(s"Recovering unflushed segment ${segment.baseOffset}. $numFlushed/$numUnflushed recovered for $topicPartition.")

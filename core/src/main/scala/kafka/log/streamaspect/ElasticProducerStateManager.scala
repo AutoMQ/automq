@@ -27,6 +27,7 @@ import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.{CompletableFuture, ConcurrentSkipListMap}
 import scala.collection.mutable
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 /**
  * ElasticProducerStateManager. Temporarily, we only persist the last snapshot.
@@ -76,6 +77,27 @@ class ElasticProducerStateManager(
           return
       }
     }
+  }
+
+
+  override def truncateAndReload(logStartOffset: Long, logEndOffset: Long, currentTimeMs: Long): Unit = {
+    // remove all out of range snapshots
+    snapshots.values().asScala.foreach { snapshot =>
+      if (snapshot.offset > logEndOffset || snapshot.offset <= logStartOffset) {
+        removeAndDeleteSnapshot(snapshot.offset)
+      }
+    }
+
+    if (logEndOffset != mapEndOffset) {
+      producers.clear()
+      ongoingTxns.clear()
+      updateOldestTxnTimestamp()
+
+      // since we assume that the offset is less than or equal to the high watermark, it is
+      // safe to clear the unreplicated transactions
+      unreplicatedTxns.clear()
+    }
+    loadFromSnapshot(logStartOffset, currentTimeMs)
   }
 
   override def takeSnapshot(): Unit = {

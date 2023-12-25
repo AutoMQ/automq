@@ -246,7 +246,6 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // won't have record corrupted cause truncate
     // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
     timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
-    timeIndex.trimToValidSize()
     0
   }
 

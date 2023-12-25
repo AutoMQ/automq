@@ -566,10 +566,10 @@ class ProducerStateManager(
   @volatile private var oldestTxnLastTimestamp: Long = -1L
 
   // ongoing transactions sorted by the first offset of the transaction
-  private val ongoingTxns = new util.TreeMap[Long, TxnMetadata]
+  protected val ongoingTxns = new util.TreeMap[Long, TxnMetadata]
 
   // completed transactions whose markers are at offsets above the high watermark
-  private val unreplicatedTxns = new util.TreeMap[Long, TxnMetadata]
+  protected val unreplicatedTxns = new util.TreeMap[Long, TxnMetadata]
 
   @threadsafe
   def hasLateTransaction(currentTimeMs: Long): Boolean = {
