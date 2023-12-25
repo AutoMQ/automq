@@ -271,13 +271,22 @@ public class S3StreamMetricsManager {
     }
 
     public static void recordOperationLatency(long value, S3Operation operation) {
-        recordOperationLatency(value, operation, 0);
+        recordOperationLatency(value, operation, 0, true);
+    }
+
+    public static void recordOperationLatency(long value, S3Operation operation, boolean isSuccess) {
+        recordOperationLatency(value, operation, 0, isSuccess);
     }
 
     public static void recordOperationLatency(long value, S3Operation operation, long size) {
+        recordOperationLatency(value, operation, size, true);
+    }
+
+    public static void recordOperationLatency(long value, S3Operation operation, long size, boolean isSuccess) {
         AttributesBuilder attributesBuilder = newAttributesBuilder()
                 .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName());
+                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
+                .put(S3StreamMetricsConstant.LABEL_STATUS, isSuccess ? "success" : "failed");
         if (operation == S3Operation.GET_OBJECT || operation == S3Operation.PUT_OBJECT || operation == S3Operation.UPLOAD_PART) {
             attributesBuilder.put(S3StreamMetricsConstant.LABEL_SIZE_NAME, getObjectBucketLabel(size));
         }
