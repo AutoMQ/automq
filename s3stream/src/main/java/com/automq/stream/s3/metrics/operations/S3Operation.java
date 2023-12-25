@@ -47,21 +47,13 @@ public enum S3Operation {
 
     /* S3 request operations start */
     GET_OBJECT(S3MetricsType.S3Request, "get_object"),
-    GET_OBJECT_FAIL(S3MetricsType.S3Request, "get_object_fail"),
     PUT_OBJECT(S3MetricsType.S3Request, "put_object"),
-    PUT_OBJECT_FAIL(S3MetricsType.S3Request, "put_object_fail"),
     DELETE_OBJECT(S3MetricsType.S3Request, "delete_object"),
-    DELETE_OBJECT_FAIL(S3MetricsType.S3Request, "delete_object_fail"),
     DELETE_OBJECTS(S3MetricsType.S3Request, "delete_objects"),
-    DELETE_OBJECTS_FAIL(S3MetricsType.S3Request, "delete_objects_fail"),
     CREATE_MULTI_PART_UPLOAD(S3MetricsType.S3Request, "create_multi_part_upload"),
-    CREATE_MULTI_PART_UPLOAD_FAIL(S3MetricsType.S3Request, "create_multi_part_upload_fail"),
     UPLOAD_PART(S3MetricsType.S3Request, "upload_part"),
-    UPLOAD_PART_FAIL(S3MetricsType.S3Request, "upload_part_fail"),
     UPLOAD_PART_COPY(S3MetricsType.S3Request, "upload_part_copy"),
-    UPLOAD_PART_COPY_FAIL(S3MetricsType.S3Request, "upload_part_copy_fail"),
     COMPLETE_MULTI_PART_UPLOAD(S3MetricsType.S3Request, "complete_multi_part_upload"),
-    COMPLETE_MULTI_PART_UPLOAD_FAIL(S3MetricsType.S3Request, "complete_multi_part_upload_fail"),
     /* S3 request operations end */
 
     /* S3 object operations start */
