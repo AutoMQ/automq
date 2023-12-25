@@ -855,7 +855,7 @@ class ElasticUnifiedLogTest {
         log.appendAsLeader(TestUtils.records(List(new SimpleRecord("a".getBytes, "c".getBytes())), producerId = pid1,
             producerEpoch = epoch, sequence = 2), leaderEpoch = 0)
         log.updateHighWatermark(log.logEndOffset)
-        assertEquals(log.logSegments.map(_.baseOffset).toSeq.sorted.drop(1), log.listProducerSnapshots().keys.toSeq.sorted,
+        assertEquals(log.logSegments.map(_.baseOffset).toSeq.sorted.drop(1), log.listProducerSnapshots().keySet().asScala.toSeq.sorted,
             "expected a snapshot file per segment base offset, except the first segment")
         assertEquals(2, log.listProducerSnapshots().size)
 
@@ -865,7 +865,7 @@ class ElasticUnifiedLogTest {
         log.deleteOldSegments()
         // Sleep to breach the file delete delay and run scheduled file deletion tasks
         mockTime.sleep(1)
-        assertEquals(log.logSegments.map(_.baseOffset).toSeq.sorted.drop(1), log.listProducerSnapshots().keys.toSeq.sorted,
+        assertEquals(log.logSegments.map(_.baseOffset).toSeq.sorted.drop(1), log.listProducerSnapshots().keySet().asScala.toSeq.sorted,
             "expected a snapshot file per segment base offset, excluding the first")
     }
 

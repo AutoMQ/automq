@@ -2196,7 +2196,7 @@ object UnifiedLog extends Logging {
         handlingDir,
         s"Error while deleting producer state snapshots for $topicPartition in dir $handlingDir") {
         snapshotsToDelete.foreach { snapshot =>
-          snapshot.deleteIfExists()
+          producerStateManager.deleteSnapshotFile(snapshot)
         }
       }
       // AutoMQ for Kafka inject end

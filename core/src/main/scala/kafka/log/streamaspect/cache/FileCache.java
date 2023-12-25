@@ -116,6 +116,9 @@ public class FileCache {
                 return Optional.empty();
             }
             Map.Entry<Long, Value> entry = cache.floorEntry(position);
+            if (entry == null) {
+                return Optional.empty();
+            }
             long filePosition = entry.getKey();
             Value value = entry.getValue();
             if (entry.getKey() + entry.getValue().dataLength < position + length) {

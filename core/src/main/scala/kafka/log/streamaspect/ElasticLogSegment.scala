@@ -41,7 +41,10 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                         val indexIntervalBytes: Int,
                         val rollJitterMs: Long,
                         val time: Time,
-                        val logListener: ElasticLogSegmentEventListener) extends LogSegment with Comparable[ElasticLogSegment]{
+                        val logListener: ElasticLogSegmentEventListener,
+                        _logIdent: String = "") extends LogSegment with Comparable[ElasticLogSegment]{
+
+  logIdent = _logIdent
 
   def log: FileRecords = throw new UnsupportedOperationException()
 
@@ -135,7 +138,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     }
   }
 
-  protected def updateProducerState(producerStateManager: ProducerStateManager, batch: RecordBatch): Unit = {
+  protected def updateProducerState(producerStateManager: ProducerStateManager, batch: RecordBatch, txnIndexCheckpoint: Option[Long]): Unit = {
     if (batch.hasProducerId) {
       val producerId = batch.producerId
       val appendInfo = producerStateManager.prepareUpdate(producerId, origin = AppendOrigin.Replication)
@@ -143,7 +146,9 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
       producerStateManager.update(appendInfo)
       maybeCompletedTxn.foreach { completedTxn =>
         val lastStableOffset = producerStateManager.lastStableOffset(completedTxn)
-        updateTxnIndex(completedTxn, lastStableOffset)
+        if (txnIndexCheckpoint.isEmpty || txnIndexCheckpoint.get < completedTxn.lastOffset) {
+          updateTxnIndex(completedTxn, lastStableOffset)
+        }
         producerStateManager.completeTxn(completedTxn)
       }
     }
@@ -195,10 +200,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
   @nonthreadsafe
   override def recover(producerStateManager: ProducerStateManager, leaderEpochCache: Option[LeaderEpochFileCache] = None): Int = {
-    timeIndex.reset()
-    txnIndex.reset()
     logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_UPDATE)
-
     recover0(producerStateManager, leaderEpochCache)
   }
 
@@ -207,8 +209,14 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     var validBytes = 0
     var lastIndexEntry = 0
     maxTimestampAndOffsetSoFar = TimestampOffset.Unknown
+    // exclusive recover from the checkpoint cause the offset the offset of record in batch
+    val timeIndexCheckpoint = timeIndex.asInstanceOf[ElasticTimeIndex].loadLastEntry().offset
+    // exclusive recover from the checkpoint
+    val txnIndexCheckpoint = txnIndex.loadLastOffset()
     try {
-      for (batch <- _log.batches.asScala) {
+      val recoverPoint = math.max(producerStateManager.mapEndOffset, baseOffset)
+      info(s"[UNCLEAN_SHUTDOWN] recover range [$recoverPoint, ${_log.nextOffset()})")
+      for (batch <- _log.batchesFrom(recoverPoint).asScala) {
         batch.ensureValid()
         // The max timestamp is exposed at the batch level, so no need to iterate the records
         if (batch.maxTimestamp > maxTimestampSoFar) {
@@ -216,7 +224,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
         }
 
         // Build offset index
-        if (validBytes - lastIndexEntry > indexIntervalBytes) {
+        if (validBytes - lastIndexEntry > indexIntervalBytes && batch.baseOffset() > timeIndexCheckpoint) {
           timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar)
           lastIndexEntry = validBytes
         }
@@ -227,7 +235,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
             if (batch.partitionLeaderEpoch >= 0 && cache.latestEpoch.forall(batch.partitionLeaderEpoch > _))
               cache.assign(batch.partitionLeaderEpoch, batch.baseOffset)
           }
-          updateProducerState(producerStateManager, batch)
+          updateProducerState(producerStateManager, batch, txnIndexCheckpoint)
         }
       }
     } catch {
@@ -238,7 +246,6 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // won't have record corrupted cause truncate
     // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
     timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestampSoFar, skipFullCheck = true)
-    timeIndex.trimToValidSize()
     0
   }
 
@@ -413,7 +420,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
 object ElasticLogSegment {
   def apply(dir: File, meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
-            time: Time, segmentEventListener: ElasticLogSegmentEventListener): ElasticLogSegment = {
+            time: Time, segmentEventListener: ElasticLogSegmentEventListener, logIdent: String = ""): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset, meta.logSize())
@@ -421,6 +428,6 @@ object ElasticLogSegment {
     val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
 
-    new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener)
+    new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener, logIdent)
   }
 }

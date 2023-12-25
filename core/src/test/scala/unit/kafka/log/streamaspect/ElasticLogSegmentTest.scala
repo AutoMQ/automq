@@ -280,6 +280,9 @@ class ElasticLogSegmentTest {
         assertEquals(100L, abortedTxn.lastStableOffset)
 
         // recover again, but this time assuming the transaction from pid2 began on a previous segment
+        // the elastic log segment instance cannot be repeated recover, so we need to reset the index to support it.
+        segment.timeIndex.reset()
+        segment.txnIndex.reset()
         stateManager = newProducerStateManager()
         stateManager.loadProducerEntry(new ProducerStateEntry(pid2,
             mutable.Queue[BatchMetadata](BatchMetadata(10, 10L, 5, RecordBatch.NO_TIMESTAMP)), producerEpoch,

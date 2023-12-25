@@ -50,6 +50,18 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
 
   override def lastEntry: TimestampOffset = _lastEntry
 
+  /**
+   * In the case of unclean shutdown, the last entry needs to be recovered from the time index.
+   */
+  def loadLastEntry(): TimestampOffset = {
+    if (entries == 0) {
+      TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset)
+    } else {
+      _lastEntry = entry(entries - 1)
+      _lastEntry
+    }
+  }
+
   private def lastEntryFromIndexFile: TimestampOffset = {
     inLock(lock) {
       _entries match {

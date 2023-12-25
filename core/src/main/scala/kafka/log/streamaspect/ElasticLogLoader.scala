@@ -47,7 +47,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
                        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
                        createAndSaveSegmentFunc: (Long, File, LogConfig, ElasticStreamSliceManager, Time) => (ElasticLogSegment, CompletableFuture[Void]))
   extends Logging {
-  logIdent = s"[ElasticLogLoader partition=$topicPartition, dir=${dir.getParent}] "
+  logIdent = s"[ElasticLogLoader partition=$topicPartition] "
 
   /**
    * Load the log segments from the log files on disk, and returns the components of the loaded log.
@@ -68,20 +68,14 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
     // load all segments
     loadSegments()
 
+    // make sure the producer state manager endOffset is less than or equal to the recoveryPointCheckpoint
+    producerStateManager.truncateAndReload(logStartOffsetCheckpoint, recoveryPointCheckpoint, time.milliseconds())
     val (newRecoveryPoint: Long, nextOffset: Long) = {
       recoverLog()
     }
 
     val newLogStartOffset = math.max(logStartOffsetCheckpoint, segments.firstSegment.get.baseOffset)
 
-    // Any segment loading or recovery code must not use producerStateManager, so that we can build the full state here
-    // from scratch.
-    if (!producerStateManager.isEmpty) {
-      throw new IllegalStateException("Producer state must be empty during log initialization")
-    }
-
-    producerStateManager.removeStraySnapshots(segments.baseOffsets.toSeq)
-    ElasticUnifiedLog.rebuildProducerState(producerStateManager, segments, newLogStartOffset, nextOffset, time, reloadFromCleanShutdown = false, logIdent)
     val activeSegment = segments.lastSegment.get
     LoadedLogOffsets(
       newLogStartOffset,
@@ -96,7 +90,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
   private def loadSegments(): Unit = {
     logMeta.getSegmentMetas.forEach(segmentMeta => {
-      val segment = ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, logSegmentsManager.logSegmentEventListener())
+      val segment = ElasticLogSegment(dir, segmentMeta, streamSliceManager, config, time, logSegmentsManager.logSegmentEventListener(), logIdent = logIdent)
       segments.add(segment)
       logSegmentsManager.put(segment.baseOffset, segment)
     })
@@ -110,22 +104,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
    * @throws LogSegmentOffsetOverflowException if the segment contains messages that cause index offset overflow
    */
   private def recoverSegment(segment: LogSegment): Int = {
-    val producerStateManager = ElasticProducerStateManager(
-      topicPartition,
-      dir,
-      this.producerStateManager.maxTransactionTimeoutMs,
-      this.producerStateManager.producerStateManagerConfig,
-      time,
-      this.producerStateManager.snapshotsMap,
-      this.producerStateManager.persistFun)
-    ElasticUnifiedLog.rebuildProducerState(
-      producerStateManager,
-      segments,
-      logStartOffsetCheckpoint,
-      segment.baseOffset,
-      time,
-      reloadFromCleanShutdown = false,
-      logIdent)
     val bytesTruncated = segment.recover(producerStateManager, leaderEpochCache)
     // once we have recovered the segment's data, take a snapshot to ensure that we won't
     // need to reload the same segment again while recovering another segment.
@@ -168,7 +146,6 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
       var numFlushed = 0
       val threadName = Thread.currentThread().getName
       numRemainingSegments.put(threadName, numUnflushed)
-
       while (unflushedIter.hasNext && !truncated) {
         val segment = unflushedIter.next()
         info(s"Recovering unflushed segment ${segment.baseOffset}. $numFlushed/$numUnflushed recovered for $topicPartition.")

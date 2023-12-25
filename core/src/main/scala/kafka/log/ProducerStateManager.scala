@@ -566,10 +566,10 @@ class ProducerStateManager(
   @volatile private var oldestTxnLastTimestamp: Long = -1L
 
   // ongoing transactions sorted by the first offset of the transaction
-  private val ongoingTxns = new util.TreeMap[Long, TxnMetadata]
+  protected val ongoingTxns = new util.TreeMap[Long, TxnMetadata]
 
   // completed transactions whose markers are at offsets above the high watermark
-  private val unreplicatedTxns = new util.TreeMap[Long, TxnMetadata]
+  protected val unreplicatedTxns = new util.TreeMap[Long, TxnMetadata]
 
   @threadsafe
   def hasLateTransaction(currentTimeMs: Long): Boolean = {
@@ -608,7 +608,7 @@ class ProducerStateManager(
         case Some(prev) =>
           if (!baseOffsets.contains(key)) {
             // this snapshot is now the largest stray snapshot.
-            prev.deleteIfExists()
+            deleteSnapshotFile(prev)
             ss.remove(prev.offset)
             latestStraySnapshot = Some(snapshot)
           }
@@ -623,7 +623,7 @@ class ProducerStateManager(
     // delete the largestStraySnapshot.
     for (strayOffset <- latestStraySnapshot.map(_.offset); maxOffset <- maxSegmentBaseOffset) {
       if (strayOffset < maxOffset) {
-        Option(ss.remove(strayOffset)).foreach(_.deleteIfExists())
+        Option(ss.remove(strayOffset)).foreach(s => deleteSnapshotFile(s))
       }
     }
 
@@ -662,6 +662,10 @@ class ProducerStateManager(
    * whether a completed transaction marker is beyond the high watermark).
    */
   private[log] def firstUndecidedOffset: Option[Long] = Option(ongoingTxns.firstEntry).map(_.getValue.firstOffset.messageOffset)
+
+  def deleteSnapshotFile(snapshotFile: SnapshotFile): Unit = {
+    snapshotFile.deleteIfExists()
+  }
 
   /**
    * Returns the last offset of this map
@@ -809,7 +813,9 @@ class ProducerStateManager(
       val snapshotFile = SnapshotFile(UnifiedLog.producerSnapshotFile(_logDir, lastMapOffset))
       val start = time.hiResClockMs()
       writeSnapshot(snapshotFile.file, producers)
-      info(s"Wrote producer snapshot at offset $lastMapOffset with ${producers.size} producer ids in ${time.hiResClockMs() - start} ms.")
+      if (isDebugEnabled) {
+        debug(s"Wrote producer snapshot at offset $lastMapOffset with ${producers.size} producer ids in ${time.hiResClockMs() - start} ms.")
+      }
 
       snapshots.put(snapshotFile.offset, snapshotFile)
 
@@ -926,7 +932,7 @@ class ProducerStateManager(
    * ProducerStateManager, and deletes the backing snapshot file.
    */
   protected def removeAndDeleteSnapshot(snapshotOffset: Long): Unit = {
-    Option(snapshots.remove(snapshotOffset)).foreach(_.deleteIfExists())
+    Option(snapshots.remove(snapshotOffset)).foreach(s => deleteSnapshotFile(s))
   }
 
   /**
