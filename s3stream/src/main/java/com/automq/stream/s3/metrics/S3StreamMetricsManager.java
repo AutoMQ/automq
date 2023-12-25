@@ -95,7 +95,7 @@ public class S3StreamMetricsManager {
                 .setDescription("Operations latency")
                 .setUnit("nanoseconds")
                 .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.OPERATION_LATENCY_BOUNDARIES)
+                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
                 .build();
         objectNumInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.OBJECT_COUNT_METRIC_NAME)
                 .setDescription("Objects count")
@@ -104,7 +104,7 @@ public class S3StreamMetricsManager {
                 .setDescription("Objects stage cost")
                 .setUnit("nanoseconds")
                 .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.OPERATION_LATENCY_BOUNDARIES)
+                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
                 .build();
         objectUploadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_UPLOAD_SIZE_METRIC_NAME)
                 .setDescription("Objects upload size")
@@ -146,11 +146,13 @@ public class S3StreamMetricsManager {
                 .setDescription("Network inbound limiter queue time")
                 .setUnit("nanoseconds")
                 .ofLongs()
+                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
                 .build();
         networkOutboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
                 .setDescription("Network outbound limiter queue time")
                 .setUnit("nanoseconds")
                 .ofLongs()
+                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
                 .build();
         allocateByteBufSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME)
                 .setDescription("Allocate byte buf size")

@@ -39,7 +39,7 @@ public class S3StreamMetricsConstant {
                                                              "64MB",
                                                              "128MB",
                                                              "inf"};
-    public static final List<Long> OPERATION_LATENCY_BOUNDARIES = List.of(
+    public static final List<Long> LATENCY_BOUNDARIES = List.of(
             TimeUnit.MICROSECONDS.toNanos(1),
             TimeUnit.MICROSECONDS.toNanos(10),
             TimeUnit.MICROSECONDS.toNanos(100),
