@@ -17,26 +17,25 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.ReadOptions;
-import io.netty.buffer.Unpooled;
+import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
-import org.apache.commons.lang3.tuple.Pair;
+import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -51,25 +50,27 @@ import java.util.concurrent.TimeUnit;
 public class MetaStream implements Stream {
     public static final String LOG_META_KEY = "LOG";
     public static final String PRODUCER_SNAPSHOTS_META_KEY = "PRODUCER_SNAPSHOTS";
-    public static final String PRODUCER_SNAPSHOT_KEY_PREFIX = "PRODUCER_SNAPSHOT_";
     public static final String PARTITION_META_KEY = "PARTITION";
     public static final String LEADER_EPOCH_CHECKPOINT_KEY = "LEADER_EPOCH_CHECKPOINT";
     public static final Logger LOGGER = LoggerFactory.getLogger(MetaStream.class);
 
+    private static final double COMPACTION_HOLLOW_RATE = 0.95;
+    private static final long COMPACTION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(1);
+
     private final Stream innerStream;
-    private final ScheduledExecutorService trimScheduler;
+    private final ScheduledExecutorService scheduler;
     private final String logIdent;
     /**
      * metaCache is used to cache meta key values.
      * key: meta key
      * value: pair of base offset and meta value
      */
-    private final Map<String, Pair<Long, ByteBuffer>> metaCache;
+    private final Map<String, MetadataValue> metaCache;
 
     /**
      * trimFuture is used to record a trim task. It may be cancelled and rescheduled.
      */
-    private ScheduledFuture<?> trimFuture;
+    private ScheduledFuture<?> compactionFuture;
 
     /**
      * closed is used to record if the stream is fenced.
@@ -81,9 +82,9 @@ public class MetaStream implements Stream {
      */
     private volatile boolean replayDone;
 
-    public MetaStream(Stream innerStream, ScheduledExecutorService trimScheduler, String logIdent) {
+    public MetaStream(Stream innerStream, ScheduledExecutorService scheduler, String logIdent) {
         this.innerStream = innerStream;
-        this.trimScheduler = trimScheduler;
+        this.scheduler = scheduler;
         this.metaCache = new ConcurrentHashMap<>();
         this.logIdent = logIdent;
         this.replayDone = false;
@@ -114,10 +115,10 @@ public class MetaStream implements Stream {
         throw new UnsupportedOperationException("append record batch is not supported in meta stream");
     }
 
-    public CompletableFuture<AppendResult> append(MetaKeyValue kv) {
+    public synchronized CompletableFuture<AppendResult> append(MetaKeyValue kv) {
+        metaCache.put(kv.getKey(), new MetadataValue(nextOffset(), kv.getValue()));
         return append0(kv).thenApply(result -> {
-            metaCache.put(kv.getKey(), Pair.of(result.baseOffset(), kv.getValue()));
-            trimAsync();
+            tryCompaction();
             return result;
         });
     }
@@ -142,8 +143,8 @@ public class MetaStream implements Stream {
      *
      * @return a future of append result
      */
-    private CompletableFuture<AppendResult> append0(MetaKeyValue kv) {
-        return innerStream.append(RawPayloadRecordBatch.of(MetaKeyValue.encode(kv)));
+    private synchronized CompletableFuture<AppendResult> append0(MetaKeyValue kv) {
+        return innerStream.append(new DefaultRecordBatch(1, System.currentTimeMillis(), Collections.emptyMap(), MetaKeyValue.encode(kv)));
     }
 
     @Override
@@ -158,8 +159,8 @@ public class MetaStream implements Stream {
 
     @Override
     public CompletableFuture<Void> close() {
-        if (trimFuture != null) {
-            trimFuture.cancel(true);
+        if (compactionFuture != null) {
+            compactionFuture.cancel(true);
         }
         return doCompaction()
                 .thenRun(innerStream::close)
@@ -172,8 +173,8 @@ public class MetaStream implements Stream {
 
     @Override
     public CompletableFuture<Void> destroy() {
-        if (trimFuture != null) {
-            trimFuture.cancel(true);
+        if (compactionFuture != null) {
+            compactionFuture.cancel(true);
         }
         return innerStream.destroy();
     }
@@ -186,11 +187,15 @@ public class MetaStream implements Stream {
     public Map<String, Object> replay() throws IOException {
         replayDone = false;
         metaCache.clear();
-        StringBuilder sb = new StringBuilder(logIdent)
-                .append("metaStream replay summary:")
-                .append(" id: ")
-                .append(streamId())
-                .append(", ");
+        boolean summaryEnabled = LOGGER.isDebugEnabled();
+        StringBuilder sb = new StringBuilder();
+        if (summaryEnabled) {
+            sb.append(logIdent)
+                    .append("metaStream replay summary:")
+                    .append(" id: ")
+                    .append(streamId())
+                    .append(", ");
+        }
         long totalValueSize = 0L;
 
         long startOffset = startOffset();
@@ -203,9 +208,11 @@ public class MetaStream implements Stream {
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());
-                        metaCache.put(kv.getKey(), Pair.of(context.baseOffset(), kv.getValue()));
+                        metaCache.put(kv.getKey(), new MetadataValue(context.baseOffset(), kv.getValue()));
                         totalValueSize += kv.getValue().remaining();
-                        sb.append("(key: ").append(kv.getKey()).append(", offset: ").append(context.baseOffset()).append(", value size: ").append(kv.getValue().remaining()).append("); ");
+                        if (summaryEnabled) {
+                            sb.append("(key: ").append(kv.getKey()).append(", offset: ").append(context.baseOffset()).append(", value size: ").append(kv.getValue().remaining()).append("); ");
+                        }
                     } catch (Exception e) {
                         LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
                     }
@@ -225,116 +232,94 @@ public class MetaStream implements Stream {
             throw new RuntimeException(e);
         }
 
-        if (totalValueSize > 0 && LOGGER.isDebugEnabled()) {
+        if (totalValueSize > 0 && summaryEnabled) {
             LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
         }
         return getValidMetaMap();
     }
 
-    public Map<Long, ElasticPartitionProducerSnapshotMeta> getAllProducerSnapshots() {
-        if (!metaCache.containsKey(PRODUCER_SNAPSHOTS_META_KEY)) {
-            return Collections.emptyMap();
-        }
-        Map<Long, ElasticPartitionProducerSnapshotMeta> snapshots = new HashMap<>();
-        ElasticPartitionProducerSnapshotsMeta snapshotsMeta = ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate());
-        snapshotsMeta.getSnapshots().forEach(offset -> {
-            String key = PRODUCER_SNAPSHOT_KEY_PREFIX + offset;
-            if (!metaCache.containsKey(key)) {
-                throw new RuntimeException("Missing producer snapshot meta for offset " + offset);
-            }
-            snapshots.put(offset, ElasticPartitionProducerSnapshotMeta.decode(metaCache.get(key).getRight().duplicate()));
-        });
-        return snapshots;
-    }
-
     private Map<String, Object> getValidMetaMap() {
         Map<String, Object> metaMap = new HashMap<>();
-        metaCache.forEach((key, pair) -> {
+        metaCache.forEach((key, value) -> {
             switch (key) {
                 case LOG_META_KEY:
-                    metaMap.put(key, ElasticLogMeta.decode(pair.getRight().duplicate()));
+                    metaMap.put(key, ElasticLogMeta.decode(value.value()));
                     break;
                 case PARTITION_META_KEY:
-                    metaMap.put(key, ElasticPartitionMeta.decode(pair.getRight().duplicate()));
+                    metaMap.put(key, ElasticPartitionMeta.decode(value.value()));
                     break;
                 case PRODUCER_SNAPSHOTS_META_KEY:
-                    metaMap.put(key, ElasticPartitionProducerSnapshotsMeta.decode(pair.getRight().duplicate()));
+                    metaMap.put(key, ElasticPartitionProducerSnapshotsMeta.decode(value.value()));
                     break;
                 case LEADER_EPOCH_CHECKPOINT_KEY:
-                    metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(pair.getRight().duplicate()));
+                    metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(value.value()));
                     break;
                 default:
-                    if (key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
-                        metaMap.put(key, ElasticPartitionProducerSnapshotMeta.decode(pair.getRight().duplicate()));
-                    } else {
-                        LOGGER.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
-                    }
+                    LOGGER.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
             }
         });
         return metaMap;
     }
 
-    private void trimAsync() {
-        if (trimFuture != null) {
-            trimFuture.cancel(true);
+    private void tryCompaction() {
+        if (compactionFuture != null) {
+            compactionFuture.cancel(true);
         }
-        // trigger after 10 SECONDS to avoid successive trims
-        trimFuture = trimScheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
+        // trigger after 10s to avoid compacting too quick
+        compactionFuture = scheduler.schedule(this::doCompaction, 10, TimeUnit.SECONDS);
     }
 
-    private CompletableFuture<Void> doCompaction() {
-        if (!replayDone || metaCache.size() <= 1) {
+    private synchronized CompletableFuture<Void> doCompaction() {
+        if (!replayDone) {
             return CompletableFuture.completedFuture(null);
         }
-
-        List<CompletableFuture<AppendResult>> futures = new ArrayList<>();
-        Set<Long> validSnapshots = metaCache.get(PRODUCER_SNAPSHOTS_META_KEY) == null ? Collections.emptySet() :
-                ElasticPartitionProducerSnapshotsMeta.decode(metaCache.get(PRODUCER_SNAPSHOTS_META_KEY).getRight().duplicate()).getSnapshots();
-
-        long lastOffset = 0L;
-        StringBuilder sb = new StringBuilder(logIdent)
-                .append("metaStream compaction summary:")
-                .append(" id: ")
-                .append(streamId())
-                .append(", ");
-        long totalValueSize = 0L;
-
-        Iterator<Map.Entry<String, Pair<Long, ByteBuffer>>> iterator = metaCache.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, Pair<Long, ByteBuffer>> entry = iterator.next();
-            // remove invalid producer snapshots
-            if (entry.getKey().startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
-                long offset = parseProducerSnapshotOffset(entry.getKey());
-                if (!validSnapshots.contains(offset)) {
-                    iterator.remove();
-                    continue;
-                }
-            }
-            if (lastOffset < entry.getValue().getLeft()) {
-                lastOffset = entry.getValue().getLeft();
-            }
-            totalValueSize += entry.getValue().getRight().remaining();
-            sb.append("(key: ").append(entry.getKey()).append(", offset: ").append(entry.getValue().getLeft()).append(", value size: ").append(entry.getValue().getRight().remaining()).append("); ");
-            futures.add(append0(MetaKeyValue.of(entry.getKey(), entry.getValue().getRight().duplicate())));
+        long startOffset = startOffset();
+        long endOffset = nextOffset();
+        int size = (int) (endOffset - startOffset);
+        if (size == 0) {
+            return CompletableFuture.completedFuture(null);
         }
-
-        final long finalLastOffset = lastOffset;
-        sb.append("compact before: ").append(finalLastOffset + 1).append(", total value size: ").append(totalValueSize);
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenCompose(result -> trim(finalLastOffset + 1))
-                .thenRun(() -> {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug(sb.toString());
-                    }
-                }
-                );
+        double hollowRate = (double) metaCache.size() / size;
+        if (hollowRate < COMPACTION_HOLLOW_RATE) {
+            return CompletableFuture.completedFuture(null);
+        }
+        MetadataValue last = null;
+        for (MetadataValue value : metaCache.values()) {
+            if (last == null || value.offset > last.offset) {
+                last = value;
+            }
+        }
+        List<MetaKeyValue> overwrite = new LinkedList<>();
+        for (Map.Entry<String, MetadataValue> entry : metaCache.entrySet()) {
+            String key = entry.getKey();
+            MetadataValue value = entry.getValue();
+            if (value == last || last.timestamp - value.timestamp < COMPACTION_THRESHOLD_MS) {
+                continue;
+            }
+            overwrite.add(MetaKeyValue.of(key, value.value()));
+        }
+        CompletableFuture<Void> overwriteCf = CompletableFuture.allOf(overwrite.stream().map(this::append).toArray(CompletableFuture[]::new));
+        return overwriteCf.thenAccept(nil -> {
+            OptionalLong minOffset = metaCache.values().stream().mapToLong(v -> v.offset).min();
+            minOffset.ifPresent(offset -> {
+                trim(offset);
+                LOGGER.info("compact streamId={} done, compact from [{}, {}) to [{}, {})", streamId(), startOffset, endOffset, offset, nextOffset());
+            });
+        });
     }
 
-    private long parseProducerSnapshotOffset(String key) {
-        if (!key.startsWith(PRODUCER_SNAPSHOT_KEY_PREFIX)) {
-            throw new IllegalArgumentException("Invalid producer snapshot key: " + key);
+    static class MetadataValue {
+        private final ByteBuffer value;
+        final long offset;
+        final long timestamp = System.currentTimeMillis();
+
+        public MetadataValue(long offset, ByteBuffer value) {
+            this.offset = offset;
+            this.value = value;
         }
-        String[] split = key.split("_");
-        return Long.parseLong(split[split.length - 1]);
+
+        public ByteBuffer value() {
+            return value.duplicate();
+        }
     }
 }

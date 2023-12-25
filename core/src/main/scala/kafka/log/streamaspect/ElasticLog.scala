@@ -36,7 +36,6 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.util.control.Breaks.{break, breakable}
 
@@ -140,7 +139,9 @@ class ElasticLog(val metaStream: MetaStream,
     }
     partitionMeta.setCleanerOffset(offsetCheckpoint)
     persistPartitionMeta()
-    info(s"saved cleanerOffsetCheckpoint: $offsetCheckpoint")
+    if (isDebugEnabled) {
+      debug(s"saved cleanerOffsetCheckpoint: $offsetCheckpoint")
+    }
   }
 
   def persistRecoverOffsetCheckpoint(): Unit = {
@@ -149,7 +150,9 @@ class ElasticLog(val metaStream: MetaStream,
     }
     partitionMeta.setRecoverOffset(recoveryPoint)
     persistPartitionMeta()
-    info(s"saved recoverOffsetCheckpoint: $recoveryPoint")
+    if (isDebugEnabled) {
+      debug(s"saved recoverOffsetCheckpoint: $recoveryPoint")
+    }
   }
 
   def saveLeaderEpochCheckpoint(meta: ElasticLeaderEpochCheckpointMeta): Unit = {
@@ -170,7 +173,9 @@ class ElasticLog(val metaStream: MetaStream,
 
   private def persistPartitionMeta(): Unit = {
     persistMeta(metaStream, MetaKeyValue.of(MetaStream.PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
-    info(s"${logIdent}save partition meta $partitionMeta")
+    if (isDebugEnabled) {
+      debug(s"${logIdent}save partition meta $partitionMeta")
+    }
   }
 
   override private[log] def append(lastOffset: Long, largestTimestamp: Long, shallowOffsetOfMaxTimestamp: Long, records: MemoryRecords): Unit = {
@@ -187,6 +192,7 @@ class ElasticLog(val metaStream: MetaStream,
 
     activeSegment.append(largestOffset = lastOffset, largestTimestamp = largestTimestamp,
       shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp, records = records)
+
     APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
     val endOffset = lastOffset + 1
     updateLogEndOffset(endOffset)
@@ -490,39 +496,17 @@ object ElasticLog extends Logging {
       }
       info(s"${logIdent}loaded partition meta: $partitionMeta")
 
-      def loadAllValidSnapshots(): mutable.Map[Long, ElasticPartitionProducerSnapshotMeta] = {
-        metaMap.filter(kv => kv._1.startsWith(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX))
-          .map(kv => (kv._1.stripPrefix(MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX).toLong, kv._2.asInstanceOf[ElasticPartitionProducerSnapshotMeta]))
-      }
-
       //load producer snapshots for this partition
-      val producerSnapshotsMetaOpt = metaMap.get(MetaStream.PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta])
-      val (producerSnapshotsMeta, snapshotsMap) = if (producerSnapshotsMetaOpt.isEmpty) {
-        // No need to persist if not exists
-        (new ElasticPartitionProducerSnapshotsMeta(), new mutable.HashMap[Long, ElasticPartitionProducerSnapshotMeta]())
-      } else {
-        (producerSnapshotsMetaOpt.get, loadAllValidSnapshots())
-      }
-      if (snapshotsMap.nonEmpty) {
-        info(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keys} ")
+      val producerSnapshotsMeta = metaMap.get(MetaStream.PRODUCER_SNAPSHOTS_META_KEY).map(m => m.asInstanceOf[ElasticPartitionProducerSnapshotsMeta]).getOrElse(new ElasticPartitionProducerSnapshotsMeta())
+      val snapshotsMap = producerSnapshotsMeta.getSnapshots
+      if (!snapshotsMap.isEmpty) {
+        info(s"${logIdent}loaded ${snapshotsMap.size} producer snapshots, offsets(filenames) are ${snapshotsMap.keySet()} ")
       } else {
         info(s"${logIdent}loaded no producer snapshots")
       }
 
-      def persistProducerSnapshotMeta(meta: ElasticPartitionProducerSnapshotMeta): Unit = {
-        val key = MetaStream.PRODUCER_SNAPSHOT_KEY_PREFIX + meta.getOffset
-        if (meta.isEmpty) {
-          // The real deletion of this snapshot is done in metaStream's compaction.
-          producerSnapshotsMeta.remove(meta.getOffset)
-        } else {
-          producerSnapshotsMeta.add(meta.getOffset)
-          persistMeta(metaStream, MetaKeyValue.of(key, meta.encode()))
-        }
-        persistMeta(metaStream, MetaKeyValue.of(MetaStream.PRODUCER_SNAPSHOTS_META_KEY, producerSnapshotsMeta.encode()))
-      }
-
       val producerStateManager = ElasticProducerStateManager(topicPartition, dir,
-        maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, persistProducerSnapshotMeta)
+        maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, kv => metaStream.append(kv).thenApply(_ => null))
 
       val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
       logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
@@ -686,7 +670,7 @@ object ElasticLog extends Logging {
     meta.baseOffset(baseOffset)
     meta.streamSuffix(suffix)
     meta.createTimestamp(time.milliseconds())
-    val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time, logSegmentManager.logSegmentEventListener())
+    val segment: ElasticLogSegment = ElasticLogSegment(dir, meta, streamSliceManager, config, time, logSegmentManager.logSegmentEventListener(), logIdent = logIdent)
     var metaSaveCf: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
     if (suffix.equals("")) {
       metaSaveCf = logSegmentManager.create(baseOffset, segment)
