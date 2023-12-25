@@ -225,7 +225,9 @@ if (file('.git').exists()) {
         'licenses/*',
         '**/generated/**',
         'clients/src/test/resources/serializedData/*',
-        '.github/**'
+        '.github/**',
+        'CODE_OF_CONDUCT.md',
+        'CONTRIBUTING_GUIDE.md',
     ])
   }
 } else {
