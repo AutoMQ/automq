@@ -297,7 +297,7 @@ public class DefaultS3Operator implements S3Operator {
                     });
                 })
                 .exceptionally(ex -> {
-                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT_FAIL, size);
+                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size, false);
                     if (isUnrecoverable(ex)) {
                         LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                         cf.completeExceptionally(ex);
@@ -344,7 +344,7 @@ public class DefaultS3Operator implements S3Operator {
             cf.complete(null);
             data.release();
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT_FAIL, objectSize);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT, objectSize, false);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -370,7 +370,7 @@ public class DefaultS3Operator implements S3Operator {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECT);
             LOGGER.info("[ControllerS3Operator]: Delete object finished, path: {}, cost: {}", path, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECT_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECT, false);
             LOGGER.info("[ControllerS3Operator]: Delete object failed, path: {}, cost: {}, ex: {}", path, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             return null;
         });
@@ -394,7 +394,7 @@ public class DefaultS3Operator implements S3Operator {
             LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECTS_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECTS, false);
             LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             return Collections.emptyList();
         });
@@ -418,7 +418,7 @@ public class DefaultS3Operator implements S3Operator {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_MULTI_PART_UPLOAD);
             cf.complete(createMultipartUploadResponse.uploadId());
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_MULTI_PART_UPLOAD_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_MULTI_PART_UPLOAD, false);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -465,7 +465,7 @@ public class DefaultS3Operator implements S3Operator {
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_FAIL, size);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART, size, false);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
                 cf.completeExceptionally(ex);
@@ -499,7 +499,7 @@ public class DefaultS3Operator implements S3Operator {
                     .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY, false);
             if (isUnrecoverable(ex)) {
                 LOGGER.warn("UploadPartCopy for object {}-{} fail", path, partNumber, ex);
                 cf.completeExceptionally(ex);
@@ -531,7 +531,7 @@ public class DefaultS3Operator implements S3Operator {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.COMPLETE_MULTI_PART_UPLOAD);
             cf.complete(null);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.COMPLETE_MULTI_PART_UPLOAD_FAIL);
+            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.COMPLETE_MULTI_PART_UPLOAD, false);
             if (isUnrecoverable(ex)) {
                 LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
