@@ -17,9 +17,9 @@
 
 package com.automq.stream.s3.metrics;
 
-import com.automq.stream.s3.metrics.operations.S3MetricsType;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -56,6 +56,7 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge availableInflightReadAheadSize = new NoopObservableLongGauge();
     private static ObservableLongGauge availableInflightS3ReadQuota = new NoopObservableLongGauge();
     private static ObservableLongGauge availableInflightS3WriteQuota = new NoopObservableLongGauge();
+    private static ObservableLongGauge inflightWALUploadTasksCount = new NoopObservableLongGauge();
     private static LongCounter compactionReadSizeInTotal = new NoopLongCounter();
     private static LongCounter compactionWriteSizeInTotal = new NoopLongCounter();
     private static Supplier<Long> networkInboundAvailableBandwidthSupplier = () -> 0L;
@@ -69,6 +70,7 @@ public class S3StreamMetricsManager {
     private static Supplier<Long> blockCacheSizeSupplier = () -> 0L;
     private static Supplier<Integer> availableInflightS3ReadQuotaSupplier = () -> 0;
     private static Supplier<Integer> availableInflightS3WriteQuotaSupplier = () -> 0;
+    private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
     private static Supplier<AttributesBuilder> attributesBuilderSupplier = null;
 
     public static void initAttributesBuilder(Supplier<AttributesBuilder> attributesBuilderSupplier) {
@@ -195,6 +197,10 @@ public class S3StreamMetricsManager {
                 .setDescription("Available inflight S3 write quota")
                 .ofLongs()
                 .buildWithCallback(result -> result.record((long) availableInflightS3WriteQuotaSupplier.get(), newAttributesBuilder().build()));
+        inflightWALUploadTasksCount = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME)
+                .setDescription("Inflight upload WAL tasks count")
+                .ofLongs()
+                .buildWithCallback(result -> result.record((long) inflightWALUploadTasksCountSupplier.get(), newAttributesBuilder().build()));
         compactionReadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.COMPACTION_READ_SIZE_METRIC_NAME)
                 .setDescription("Compaction read size")
                 .setUnit("bytes")
@@ -254,6 +260,10 @@ public class S3StreamMetricsManager {
         S3StreamMetricsManager.availableInflightReadAheadSizeSupplier = availableInflightReadAheadSizeSupplier;
     }
 
+    public static void registerInflightWALUploadTasksCountSupplier(Supplier<Integer> inflightWALUploadTasksCountSupplier) {
+        S3StreamMetricsManager.inflightWALUploadTasksCountSupplier = inflightWALUploadTasksCountSupplier;
+    }
+
     public static void recordS3UploadSize(long value) {
         s3UploadSizeInTotal.add(value, newAttributesBuilder().build());
     }
@@ -293,11 +303,11 @@ public class S3StreamMetricsManager {
         operationLatency.record(value, attributesBuilder.build());
     }
 
-    public static void recordAppendWALLatency(long value, String stage) {
+    public static void recordStageLatency(long value, S3Stage stage) {
         Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, S3MetricsType.S3Storage.getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, S3Operation.APPEND_STORAGE_WAL.getName())
-                .put(S3StreamMetricsConstant.LABEL_APPEND_WAL_STAGE, stage)
+                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, stage.getOperation().getType().getName())
+                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, stage.getOperation().getName())
+                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
                 .build();
         operationLatency.record(value, attributes);
     }
@@ -332,7 +342,7 @@ public class S3StreamMetricsManager {
 
     public static void recordObjectStageCost(long value, S3ObjectStage stage) {
         Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OBJECT_STAGE, stage.getName())
+                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
                 .build();
         objectStageCost.record(value, attributes);
     }

@@ -27,6 +27,7 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -127,8 +128,8 @@ public class S3Storage implements Storage {
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
-
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
+        S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
     }
 
     @Override
@@ -426,14 +427,14 @@ public class S3Storage implements Storage {
         List<CompletableFuture<Void>> inflightWALUploadTasks = new ArrayList<>(this.inflightWALUploadTasks);
         // await inflight stream set object upload tasks to group force upload tasks.
         CompletableFuture.allOf(inflightWALUploadTasks.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> {
-            S3StreamMetricsManager.recordOperationLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FORCE_UPLOAD_STORAGE_WAL_AWAIT);
+            S3StreamMetricsManager.recordStageLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.FORCE_UPLOAD_WAL_AWAIT_INFLIGHT);
             uploadDeltaWAL(streamId);
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.toArray(new CompletableFuture[0])), cf);
             if (LogCache.MATCH_ALL_STREAMS != streamId) {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordOperationLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FORCE_UPLOAD_STORAGE_WAL));
+        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordStageLatency(timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.FORCE_UPLOAD_WAL_COMPLETE));
         return cf;
     }
 
@@ -503,13 +504,13 @@ public class S3Storage implements Storage {
      * Upload cache block to S3. The earlier cache block will have smaller objectId and commit first.
      */
     CompletableFuture<Void> uploadDeltaWAL(DeltaWALUploadTaskContext context) {
-        TimerUtil timerUtil = new TimerUtil();
+        context.timer = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         context.cf = cf;
         inflightWALUploadTasks.add(cf);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
-            S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_STORAGE_WAL);
+            S3StreamMetricsManager.recordStageLatency(context.timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.UPLOAD_WAL_COMPLETE);
             inflightWALUploadTasks.remove(cf);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);
@@ -551,9 +552,10 @@ public class S3Storage implements Storage {
 
     private void prepareDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.prepare().thenAcceptAsync(nil -> {
+            S3StreamMetricsManager.recordStageLatency(context.timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.UPLOAD_WAL_PREPARE);
             // 1. poll out current task and trigger upload.
             DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
-            Objects.requireNonNull(peek).task.upload();
+            Objects.requireNonNull(peek).task.upload().thenAcceptAsync(nil2 -> S3StreamMetricsManager.recordStageLatency(context.timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.UPLOAD_WAL_UPLOAD));
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();
             walCommitQueue.add(peek);
@@ -570,6 +572,7 @@ public class S3Storage implements Storage {
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.commit().thenAcceptAsync(nil -> {
+            S3StreamMetricsManager.recordStageLatency(context.timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.UPLOAD_WAL_COMMIT);
             // 1. poll out current task
             walCommitQueue.poll();
             if (context.cache.confirmOffset() != 0) {
@@ -796,6 +799,7 @@ public class S3Storage implements Storage {
     }
 
     public static class DeltaWALUploadTaskContext {
+        TimerUtil timer;
         LogCache.LogCacheBlock cache;
         DeltaWALUploadTask task;
         CompletableFuture<Void> cf;
