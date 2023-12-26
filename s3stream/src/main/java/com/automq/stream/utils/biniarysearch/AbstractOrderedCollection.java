@@ -27,7 +27,7 @@ public abstract class AbstractOrderedCollection<T> {
         int low = 0;
         int high = size() - 1;
         while (low <= high) {
-            int mid = (low + high) >>> 1;
+            int mid = low + ((high - low) >>> 1);
             ComparableItem<T> midVal = get(mid);
             if (midVal.isLessThan(target)) {
                 low = mid + 1;
