@@ -46,7 +46,7 @@ import java.util.function.Function;
 
 public class ControllerRequestSender {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
-    private static final long MAX_RETRY_DELAY_MS = 60 * 1000; // 1min
+    private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
     private final RetryPolicyContext retryPolicyContext;
     private final BrokerToControllerChannelManager channelManager;
 
