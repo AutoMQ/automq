@@ -94,13 +94,13 @@ public class S3StreamMetricsConstant {
     public static final String AVAILABLE_INFLIGHT_READ_AHEAD_SIZE_METRIC_NAME = "available_inflight_read_ahead_size";
     public static final String AVAILABLE_S3_INFLIGHT_READ_QUOTA_METRIC_NAME = "available_s3_inflight_read_quota";
     public static final String AVAILABLE_S3_INFLIGHT_WRITE_QUOTA_METRIC_NAME = "available_s3_inflight_write_quota";
+    public static final String INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME = "inflight_wal_upload_tasks_count";
     public static final String COMPACTION_READ_SIZE_METRIC_NAME = "compaction_read_size_total";
     public static final String COMPACTION_WRITE_SIZE_METRIC_NAME = "compaction_write_size_total";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
-    public static final AttributeKey<String> LABEL_APPEND_WAL_STAGE = AttributeKey.stringKey("stage");
+    public static final AttributeKey<String> LABEL_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
-    public static final AttributeKey<String> LABEL_OBJECT_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_ALLOCATE_BYTE_BUF_SOURCE = AttributeKey.stringKey("source");
 }

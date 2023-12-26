@@ -17,6 +17,9 @@
 
 package com.automq.stream.s3.metrics.operations;
 
+/**
+ * TODO: Maybe merge into {@link S3Stage}
+ */
 public enum S3ObjectStage {
     UPLOAD_PART("upload_part"),
     READY_CLOSE("ready_close"),
