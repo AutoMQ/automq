@@ -24,10 +24,10 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.S3Utils;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
-import com.automq.stream.utils.S3Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -50,6 +50,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -60,6 +61,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -73,6 +75,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -94,24 +97,27 @@ public class DefaultS3Operator implements S3Operator {
     private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3operator", true), LOGGER);
+        ThreadUtils.createThreadFactory("s3operator", true), LOGGER);
     private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-read-limiter-cb-executor", true, LOGGER);
+        "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-write-limiter-cb-executor", true, LOGGER);
+        "s3-write-limiter-cb-executor", true, LOGGER);
     private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-read-cb-executor", true, LOGGER);
+        "s3-read-cb-executor", true, LOGGER);
     private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-            "s3-write-cb-executor", true, LOGGER);
+        "s3-write-cb-executor", true, LOGGER);
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
-            ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+        ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey) {
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey,
+        String secretKey) {
         this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);
     }
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey, String secretKey,
-                             AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter, AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey,
+        String secretKey,
+        AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
+        AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
@@ -123,13 +129,13 @@ public class DefaultS3Operator implements S3Operator {
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
         S3Utils.S3Context s3Context = S3Utils.S3Context.builder()
-                .setEndpoint(endpoint)
-                .setRegion(region)
-                .setBucketName(bucket)
-                .setForcePathStyle(forcePathStyle)
-                .setAccessKey(accessKey)
-                .setSecretKey(secretKey)
-                .build();
+            .setEndpoint(endpoint)
+            .setRegion(region)
+            .setBucketName(bucket)
+            .setForcePathStyle(forcePathStyle)
+            .setAccessKey(accessKey)
+            .setSecretKey(secretKey)
+            .build();
         LOGGER.info("You are using s3Context: {}", s3Context);
         checkAvailable(s3Context);
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits);
@@ -248,15 +254,15 @@ public class DefaultS3Operator implements S3Operator {
             }
         }
         mergedReadTasks.forEach(
-                mergedReadTask -> {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("[S3BlockCache] merge read: {}, {}-{}, size: {}, sparsityRate: {}",
-                                mergedReadTask.path, mergedReadTask.start, mergedReadTask.end,
-                                mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
-                    }
-                    mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
-                            .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), LOGGER));
+            mergedReadTask -> {
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("[S3BlockCache] merge read: {}, {}-{}, size: {}, sparsityRate: {}",
+                        mergedReadTask.path, mergedReadTask.start, mergedReadTask.end,
+                        mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
+                mergedRangeRead(mergedReadTask.path, mergedReadTask.start, mergedReadTask.end)
+                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), LOGGER));
+            }
         );
     }
 
@@ -280,33 +286,33 @@ public class DefaultS3Operator implements S3Operator {
         long size = end - start + 1;
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
-                .thenAccept(responsePublisher -> {
-                    S3StreamMetricsManager.recordObjectDownloadSize(size);
-                    CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
-                    responsePublisher.subscribe((bytes) -> {
-                        // the aws client will copy DefaultHttpContent to heap ByteBuffer
-                        buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
-                    }).thenAccept(v -> {
-                        if (LOGGER.isDebugEnabled()) {
-                            LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
-                                    path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                        }
-                        S3StreamMetricsManager.recordS3DownloadSize(size);
-                        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size);
-                        cf.complete(buf);
-                    });
-                })
-                .exceptionally(ex -> {
-                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size, false);
-                    if (isUnrecoverable(ex)) {
-                        LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
-                        cf.completeExceptionally(ex);
-                    } else {
-                        LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
-                        scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
+            .thenAccept(responsePublisher -> {
+                S3StreamMetricsManager.recordObjectDownloadSize(size);
+                CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+                responsePublisher.subscribe((bytes) -> {
+                    // the aws client will copy DefaultHttpContent to heap ByteBuffer
+                    buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                }).thenAccept(v -> {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
+                            path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                     }
-                    return null;
+                    S3StreamMetricsManager.recordS3DownloadSize(size);
+                    S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size);
+                    cf.complete(buf);
                 });
+            })
+            .exceptionally(ex -> {
+                S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size, false);
+                if (isUnrecoverable(ex)) {
+                    LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
+                    cf.completeExceptionally(ex);
+                } else {
+                    LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
+                    scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
+                }
+                return null;
+            });
     }
 
     @Override
@@ -380,14 +386,14 @@ public class DefaultS3Operator implements S3Operator {
     public CompletableFuture<List<String>> delete(List<String> objectKeys) {
         TimerUtil timerUtil = new TimerUtil();
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-                ObjectIdentifier.builder()
-                        .key(key)
-                        .build()
+            ObjectIdentifier.builder()
+                .key(key)
+                .build()
         ).toArray(ObjectIdentifier[]::new);
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-                .bucket(bucket)
-                .delete(Delete.builder().objects(toDeleteKeys).build())
-                .build();
+            .bucket(bucket)
+            .delete(Delete.builder().objects(toDeleteKeys).build())
+            .build();
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
         return this.writeS3Client.deleteObjects(request).thenApply(resp -> {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECTS);
@@ -431,7 +437,8 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
+    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data,
+        ThrottleStrategy throttleStrategy) {
         CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
         CompletableFuture<CompletedPart> refCf = acquireWritePermit(cf);
         if (refCf.isDone()) {
@@ -452,12 +459,13 @@ public class DefaultS3Operator implements S3Operator {
         return refCf;
     }
 
-    private void uploadPart0(String path, String uploadId, int partNumber, ByteBuf part, CompletableFuture<CompletedPart> cf) {
+    private void uploadPart0(String path, String uploadId, int partNumber, ByteBuf part,
+        CompletableFuture<CompletedPart> cf) {
         TimerUtil timerUtil = new TimerUtil();
         int size = part.readableBytes();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
-                .partNumber(partNumber).build();
+            .partNumber(partNumber).build();
         CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
         uploadPartCf.thenAccept(uploadPartResponse -> {
             S3StreamMetricsManager.recordS3UploadSize(size);
@@ -478,7 +486,8 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber) {
+    public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end,
+        String uploadId, int partNumber) {
         CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
         CompletableFuture<CompletedPart> retCf = acquireWritePermit(cf);
         if (retCf.isDone()) {
@@ -488,15 +497,16 @@ public class DefaultS3Operator implements S3Operator {
         return retCf;
     }
 
-    private void uploadPartCopy0(String sourcePath, String path, long start, long end, String uploadId, int partNumber, CompletableFuture<CompletedPart> cf) {
+    private void uploadPartCopy0(String sourcePath, String path, long start, long end, String uploadId, int partNumber,
+        CompletableFuture<CompletedPart> cf) {
         TimerUtil timerUtil = new TimerUtil();
         long inclusiveEnd = end - 1;
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-                .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
         writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY);
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber)
-                    .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
+                .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY, false);
@@ -522,7 +532,8 @@ public class DefaultS3Operator implements S3Operator {
         return retCf;
     }
 
-    public void completeMultipartUpload0(String path, String uploadId, List<CompletedPart> parts, CompletableFuture<Void> cf) {
+    public void completeMultipartUpload0(String path, String uploadId, List<CompletedPart> parts,
+        CompletableFuture<Void> cf) {
         TimerUtil timerUtil = new TimerUtil();
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(parts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
@@ -570,13 +581,13 @@ public class DefaultS3Operator implements S3Operator {
         if (this.networkInboundBandwidthLimiter != null) {
             if (this.networkInboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
                 throw new IllegalArgumentException(String.format("Network inbound burst bandwidth limit %d must be no less than min part size %d",
-                        this.networkInboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
+                    this.networkInboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
             }
         }
         if (this.networkOutboundBandwidthLimiter != null) {
             if (this.networkOutboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
                 throw new IllegalArgumentException(String.format("Network outbound burst bandwidth limit %d must be no less than min part size %d",
-                        this.networkOutboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
+                    this.networkOutboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
             }
         }
     }
@@ -586,6 +597,9 @@ public class DefaultS3Operator implements S3Operator {
         String path = String.format("check_available/%d", System.nanoTime());
         String multipartPath = String.format("check_available_multipart/%d", System.nanoTime());
         try {
+            // Check network and bucket
+            readS3Client.headBucket(b -> b.bucket(bucket)).get(3, TimeUnit.SECONDS);
+
             // Simple write/read/delete
             this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
             ByteBuf read = this.rangeRead(path, 0, content.length).get(30, TimeUnit.SECONDS);
@@ -602,6 +616,20 @@ public class DefaultS3Operator implements S3Operator {
         } catch (Throwable e) {
             LOGGER.error("Failed to write/read/delete object on S3 ", e);
             String exceptionMsg = String.format("Failed to write/read/delete object on S3. You are using s3Context: %s.", s3Context);
+
+            Throwable cause = e.getCause();
+            if (cause instanceof SdkClientException && cause.getMessage().startsWith("Unable to execute HTTP request")) {
+                exceptionMsg += "\nUnable to execute HTTP request. Please check your network connection and make sure you can access S3.";
+            }
+
+            if (e instanceof TimeoutException || cause instanceof TimeoutException) {
+                exceptionMsg += "\nConnection timeout. Please check your network connection and make sure you can access S3.";
+            }
+
+            if (cause instanceof NoSuchBucketException) {
+                exceptionMsg += "\nBucket " + bucket +  " not found. Please check your bucket name.";
+            }
+
             List<String> advices = s3Context.advices();
             if (!advices.isEmpty()) {
                 exceptionMsg += "\nHere are some advices: \n" + String.join("\n", advices);
@@ -610,22 +638,23 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle, String accessKey, String secretKey) {
+    public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle, String accessKey,
+        String secretKey) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         builder.credentialsProvider(AwsCredentialsProviderChain.builder()
-                .reuseLastProviderEnabled(true)
-                .credentialsProviders(
-                        () -> AwsBasicCredentials.create(accessKey, secretKey),
-                        InstanceProfileCredentialsProvider.create(),
-                        AnonymousCredentialsProvider.create()
-                ).build()
+            .reuseLastProviderEnabled(true)
+            .credentialsProviders(
+                () -> AwsBasicCredentials.create(accessKey, secretKey),
+                InstanceProfileCredentialsProvider.create(),
+                AnonymousCredentialsProvider.create()
+            ).build()
         );
         builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
-                .apiCallAttemptTimeout(Duration.ofSeconds(30)));
+            .apiCallAttemptTimeout(Duration.ofSeconds(30)));
         return builder.build();
     }
 
@@ -826,7 +855,7 @@ public class DefaultS3Operator implements S3Operator {
 
         public DefaultS3Operator build() {
             return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, accessKey, secretKey,
-                    inboundLimiter, outboundLimiter, readWriteIsolate);
+                inboundLimiter, outboundLimiter, readWriteIsolate);
         }
     }
 }
