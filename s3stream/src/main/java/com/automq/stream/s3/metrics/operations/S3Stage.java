@@ -29,7 +29,7 @@ public enum S3Stage {
     /* Append WAL stages end */
 
     /* Force upload WAL start */
-    FORCE_UPLOAD_WAL_AWAIT_INFLIGHT(S3Operation.FORCE_UPLOAD_STORAGE_WAL, "await_inflight"),
+    FORCE_UPLOAD_WAL_AWAIT(S3Operation.FORCE_UPLOAD_STORAGE_WAL, "await"),
     FORCE_UPLOAD_WAL_COMPLETE(S3Operation.FORCE_UPLOAD_STORAGE_WAL, "complete"),
     /* Force upload WAL end */
 
