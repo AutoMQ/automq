@@ -37,7 +37,7 @@ public class ObjectStorageLogExporter implements LogExporter {
             .credentialsProvider(credentialsProvider)
             .endpointOverride(URI.create(endPoint))
             .build();
-        currentByteBuffer = ByteBuffer.allocate(BUFFER_SIZE);
+        currentByteBuffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
     }
 
     @Override
