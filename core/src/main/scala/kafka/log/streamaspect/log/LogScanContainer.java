@@ -29,8 +29,8 @@ public class LogScanContainer {
             logDir = "/opt/automq/logs";
         }
         //TODO 配置工作目录，专属bucket, 获取clusterId
-        LogExporter exporter = new ObjectStorageLogExporter("/tmp/logscan", kafkaConfig.s3Endpoint(),
-            kafkaConfig.s3Bucket(), accessKey, secretKey, "defaultCluster-" + kafkaConfig.brokerId());
+        LogExporter exporter = new ObjectStorageLogExporter(kafkaConfig.s3Endpoint(), kafkaConfig.s3Bucket(),
+            accessKey, secretKey, "defaultCluster-" + kafkaConfig.brokerId());
         logScanner = new LogScanner(exporter, new FileScanOffsetHolder("/tmp/logscan"));
         //TODO 目录监听配置
         logScanner.addWatch(new File(logDir + "/server.log"));

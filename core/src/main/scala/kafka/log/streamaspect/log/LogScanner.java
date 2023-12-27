@@ -2,14 +2,16 @@ package kafka.log.streamaspect.log;
 
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class LogScanner {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogScanner.class);
-    private static final int DEFAULT_MAX_SCAN_SIZE = 16 * 1024 * 1024;
+    private static final int DEFAULT_MAX_SCAN_SIZE = 64 * 1024;
     private final List<LogWatchStatus> watchStatuses = new CopyOnWriteArrayList<>();
     private long maxScanSize = DEFAULT_MAX_SCAN_SIZE;
     private final LogExporter logExporter;
@@ -25,19 +27,35 @@ public class LogScanner {
     }
 
     public void scan() {
-        for (LogWatchStatus logWatchStatus : watchStatuses) {
-            doScan(logWatchStatus);
+        Map<String, Long> result = new HashMap<>();
+        boolean remaining;
+        do {
+            remaining = false;
+            for (LogWatchStatus logWatchStatus : watchStatuses) {
+                long offset = doScan(logWatchStatus);
+                result.put(logWatchStatus.getFile().getName(), offset);
+                if (logWatchStatus.getFile().length() > offset){
+                    remaining = true;
+                }
+            }
         }
-        logExporter.flush();
+        while (remaining);
+        try {
+            logExporter.flush();
+            for (LogWatchStatus logWatchStatus : watchStatuses) {
+                Long offset = result.get(logWatchStatus.getFile().getName());
+                if (offset != null) {
+                    logWatchStatus.saveOffset(offset);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error(e.getMessage(), e);
+        }
     }
 
-    private void doScan(LogWatchStatus logWatchStatus) {
-        File file = logWatchStatus.getFile();
-        if (!file.exists()) {
-            logWatchStatus.close();
-            return;
-        }
+    private long doScan(LogWatchStatus logWatchStatus) {
         long offset = logWatchStatus.getOffset();
+        File file = logWatchStatus.getFile();
         if (file.length() > offset) {
             RandomAccessFile randomAccessFile = logWatchStatus.getRandomAccessFile();
             if (randomAccessFile == null) {
@@ -45,27 +63,29 @@ public class LogScanner {
             }
             if (randomAccessFile == null) {
                 LOGGER.warn("file open failed: {}", file.getAbsolutePath());
-                return;
+                return offset;
             }
             int writed = 0;
             try {
                 randomAccessFile.seek(offset);
                 String line;
-                while ((line = randomAccessFile.readLine()) != null && writed < maxScanSize) {
-                    writed += line.length() + 1;
-                    logExporter.export(file.getName(), line);
+                while ((line = randomAccessFile.readLine()) != null) {
+                    if (writed < maxScanSize) {
+                        logExporter.export(file.getName(), line);
+                        writed += line.length() + 1;
+                    }
                 }
                 offset += writed;
-                logWatchStatus.saveOffset(offset);
                 LOGGER.debug("Export {} bytes to exporter, current offset: {}", writed, offset);
             } catch (Exception e) {
-                LOGGER.error(String.format("read file error: %s", file.getAbsolutePath()), e);
+                LOGGER.error(String.format("export file error: %s", file.getAbsolutePath()), e);
                 logWatchStatus.reopen();
             }
         } else {
             //TODO 找到更好的办法判断文件被重命名
             logWatchStatus.reopen();
         }
+        return offset;
     }
 
     public void setMaxScanSize(long maxScanSize) {
