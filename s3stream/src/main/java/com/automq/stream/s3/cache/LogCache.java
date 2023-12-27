@@ -372,6 +372,13 @@ public class LogCache {
         public long createdTimestamp() {
             return createdTimestamp;
         }
+
+        public boolean containsStream(long streamId) {
+            if (MATCH_ALL_STREAMS == streamId) {
+                return true;
+            }
+            return map.containsKey(streamId);
+        }
     }
 
     static class StreamRange {
