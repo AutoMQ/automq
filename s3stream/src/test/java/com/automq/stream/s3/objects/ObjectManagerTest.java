@@ -74,6 +74,14 @@ class ObjectManagerTest {
         streamObject.setStartOffset(0);
         streamObject.setEndOffset(10);
         streamObjectList.add(streamObject);
+
+        streamObject = new StreamObject();
+        streamObject.setObjectId(4);
+        streamObject.setStreamId(2);
+        streamObject.setStartOffset(10);
+        streamObject.setEndOffset(20);
+        streamObjectList.add(streamObject);
+
         request.setStreamObjects(streamObjectList);
         objectManager.commitStreamSetObject(request).join();
 
@@ -81,7 +89,7 @@ class ObjectManagerTest {
         assertEquals(3, streamMetadataList.size());
         assertEquals(3, streamMetadataList.get(0).getEndOffset());
         assertEquals(5, streamMetadataList.get(1).getEndOffset());
-        assertEquals(10, streamMetadataList.get(2).getEndOffset());
+        assertEquals(20, streamMetadataList.get(2).getEndOffset());
 
         List<S3ObjectMetadata> streamSetObjectMetadataList = objectManager.getServerObjects().join();
         assertEquals(1, streamSetObjectMetadataList.size());
@@ -105,6 +113,9 @@ class ObjectManagerTest {
         assertEquals(0, ranges.get(0).getStartOffset());
         assertEquals(10, ranges.get(0).getEndOffset());
 
+        streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 20, 100).join();
+        assertEquals(2, streamObjectMetadataList.size());
+
         // Compact stream set object and commit stream object.
         request = new CommitStreamSetObjectRequest();
         request.setObjectId(ObjectUtils.NOOP_OBJECT_ID);
@@ -125,13 +136,6 @@ class ObjectManagerTest {
         streamObject.setEndOffset(5);
         streamObjectList.add(streamObject);
 
-        streamObject = new StreamObject();
-        streamObject.setObjectId(4);
-        streamObject.setStreamId(2);
-        streamObject.setStartOffset(10);
-        streamObject.setEndOffset(20);
-        streamObjectList.add(streamObject);
-
         request.setStreamObjects(streamObjectList);
         objectManager.commitStreamSetObject(request).join();
 
@@ -142,8 +146,6 @@ class ObjectManagerTest {
         assertEquals(1, streamObjectMetadataList.size());
         streamObjectMetadataList = objectManager.getStreamObjects(1, 0, 10, 100).join();
         assertEquals(1, streamObjectMetadataList.size());
-        streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 10, 100).join();
-        assertEquals(2, streamObjectMetadataList.size());
 
         // Compact stream object.
         objectManager.compactStreamObject(new CompactStreamObjectRequest(5, 2000, 2, 0, 20, List.of(1L, 4L))).join();
