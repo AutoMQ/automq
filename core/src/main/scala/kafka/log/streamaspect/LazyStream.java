@@ -21,10 +21,11 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.utils.FutureUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,7 +107,7 @@ public class LazyStream implements Stream {
 
 
     @Override
-    public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+    public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
             try {
                 this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
@@ -117,7 +118,7 @@ public class LazyStream implements Stream {
                 return FutureUtil.failedFuture(new IOException(e));
             }
         }
-        return inner.append(recordBatch);
+        return inner.append(context, recordBatch);
     }
 
     @Override
@@ -126,8 +127,8 @@ public class LazyStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
-        return inner.fetch(startOffset, endOffset, maxBytesHint, readOptions);
+    public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
+        return inner.fetch(context, startOffset, endOffset, maxBytesHint);
     }
 
     @Override
@@ -179,7 +180,7 @@ public class LazyStream implements Stream {
         }
 
         @Override
-        public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
             return FutureUtil.failedFuture(new UnsupportedOperationException("noop stream"));
         }
 
@@ -189,7 +190,7 @@ public class LazyStream implements Stream {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
+        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
             return CompletableFuture.completedFuture(Collections::emptyList);
         }
 

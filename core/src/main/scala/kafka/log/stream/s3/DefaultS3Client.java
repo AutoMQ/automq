@@ -38,7 +38,6 @@ import kafka.log.stream.s3.failover.FailoverListener;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import com.automq.stream.utils.LogContext;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
-import kafka.log.stream.s3.metrics.MetricsExporter;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
@@ -75,7 +74,6 @@ public class DefaultS3Client implements Client {
 
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
-    private final MetricsExporter metricsExporter;
 
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
         this.config = ConfigUtils.to(kafkaConfig);
@@ -112,7 +110,6 @@ public class DefaultS3Client implements Client {
         }
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();
-        this.metricsExporter = new MetricsExporter(kafkaConfig);
     }
 
     @Override
@@ -130,7 +127,6 @@ public class DefaultS3Client implements Client {
         this.networkInboundLimiter.shutdown();
         this.networkOutboundLimiter.shutdown();
         this.requestSender.shutdown();
-        this.metricsExporter.shutdown();
         LOGGER.info("S3Client shutdown successfully");
     }
 

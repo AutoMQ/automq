@@ -17,14 +17,15 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
+import io.netty.buffer.Unpooled;
 import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
-import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +112,7 @@ public class MetaStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<AppendResult> append(RecordBatch batch) {
+    public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch batch) {
         throw new UnsupportedOperationException("append record batch is not supported in meta stream");
     }
 
@@ -148,8 +149,8 @@ public class MetaStream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
-        return innerStream.fetch(startOffset, endOffset, maxBytesHint, readOptions);
+    public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
+        return innerStream.fetch(context, startOffset, endOffset, maxBytesHint);
     }
 
     @Override

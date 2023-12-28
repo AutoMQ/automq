@@ -22,12 +22,13 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -296,7 +297,7 @@ class AlwaysSuccessClientTest {
             }
 
             @Override
-            public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+            public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
                 Exception exception = exceptionHint.generateException();
                 if (exception != null) {
                     exceptionHint = exceptionHint.moveToNext();
@@ -308,7 +309,7 @@ class AlwaysSuccessClientTest {
             }
 
             @Override
-            public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint, ReadOptions readOptions) {
+            public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxSizeHint) {
                 Exception exception = exceptionHint.generateException();
                 if (exception != null) {
                     exceptionHint = exceptionHint.moveToNext();
