@@ -37,7 +37,7 @@ public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
     }
 
     @Override
-    ComparableItem<Long> get(int index) {
+    protected ComparableItem<Long> get(int index) {
         return records.get(index);
     }
 

@@ -19,9 +19,9 @@ package com.automq.stream.utils.biniarysearch;
 
 public abstract class AbstractOrderedCollection<T> {
 
-    abstract int size();
+    protected abstract int size();
 
-    abstract ComparableItem<T> get(int index);
+    protected abstract ComparableItem<T> get(int index);
 
     public int search(T target) {
         int low = 0;

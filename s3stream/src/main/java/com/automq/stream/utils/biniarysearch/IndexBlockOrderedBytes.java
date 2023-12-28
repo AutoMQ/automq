@@ -27,12 +27,12 @@ public class IndexBlockOrderedBytes extends AbstractOrderedCollection<IndexBlock
     }
 
     @Override
-    int size() {
+    protected int size() {
         return this.byteBuf.readableBytes() / ComparableStreamRange.SIZE;
     }
 
     @Override
-    ComparableItem<TargetStreamOffset> get(int index) {
+    protected ComparableItem<TargetStreamOffset> get(int index) {
         int start = index * ComparableStreamRange.SIZE;
         long streamId = this.byteBuf.getLong(start);
         long startOffset = this.byteBuf.getLong(start + 8);
