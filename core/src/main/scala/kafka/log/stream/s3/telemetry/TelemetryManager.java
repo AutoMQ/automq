@@ -67,9 +67,9 @@ import java.util.logging.Level;
 public class TelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(TelemetryManager.class);
     private static final Integer EXPORTER_TIMEOUT_MS = 5000;
-    public static boolean isTracerEnabled = false;
     private static java.util.logging.Logger metricsLogger;
     private static OpenTelemetrySdk openTelemetrySdk;
+    private static boolean traceEnable = false;
     private final KafkaConfig kafkaConfig;
     private final String clusterId;
     private final Map<AttributeKey<String>, String> labelMap;
@@ -85,7 +85,6 @@ public class TelemetryManager {
         this.metricReaderList = new ArrayList<>();
         this.autoCloseables = new ArrayList<>();
         this.attributesBuilderSupplier = Attributes::builder;
-        isTracerEnabled = kafkaConfig.s3TracerEnable();
         init();
     }
 
@@ -95,6 +94,10 @@ public class TelemetryManager {
             return roles.last().toString();
         }
         return "server";
+    }
+
+    public static boolean isTraceEnable() {
+        return traceEnable;
     }
 
     private void init() {
@@ -109,6 +112,8 @@ public class TelemetryManager {
         labelMap.put(AttributeKey.stringKey("node_id"), String.valueOf(kafkaConfig.nodeId()));
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
+
+        traceEnable = kafkaConfig.s3TracerEnable();
 
         if (kafkaConfig.s3MetricsEnable()) {
             SdkMeterProvider sdkMeterProvider = getMetricsProvider(resource);
@@ -137,6 +142,7 @@ public class TelemetryManager {
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
             S3StreamMetricsManager.initAttributesBuilder(() -> {
                 //TODO: cache and reuse attributes
+                //TODO: support metrics level
                 AttributesBuilder builder = attributesBuilderSupplier.get();
                 labelMap.forEach(builder::put);
                 return builder;
@@ -254,7 +260,6 @@ public class TelemetryManager {
             }
         });
         if (prometheusHttpServer != null) {
-            prometheusHttpServer.forceFlush();
             prometheusHttpServer.close();
         }
         metricReaderList.forEach(metricReader -> {

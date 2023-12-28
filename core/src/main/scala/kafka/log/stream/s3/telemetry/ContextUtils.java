@@ -35,7 +35,7 @@ public class ContextUtils {
 
     public static TraceContext createTraceContext() {
         OpenTelemetrySdk openTelemetrySdk = TelemetryManager.getOpenTelemetrySdk();
-        boolean isTraceEnabled = openTelemetrySdk != null && TelemetryManager.isTracerEnabled;
+        boolean isTraceEnabled = openTelemetrySdk != null && TelemetryManager.isTraceEnable();
         Tracer tracer = null;
         if (isTraceEnabled) {
             tracer = openTelemetrySdk.getTracer(TelemetryConstants.TELEMETRY_SCOPE_NAME);
