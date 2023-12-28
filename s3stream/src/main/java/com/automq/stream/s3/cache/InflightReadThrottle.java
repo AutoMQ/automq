@@ -18,9 +18,11 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,6 +84,12 @@ public class InflightReadThrottle implements Runnable {
     }
 
     public CompletableFuture<Void> acquire(UUID uuid, int readSize) {
+        return acquire(TraceContext.DEFAULT, uuid, readSize);
+    }
+
+    @WithSpan
+    public CompletableFuture<Void> acquire(TraceContext context, UUID uuid, int readSize) {
+        context.currentContext();
         lock.lock();
         try {
             if (readSize > maxInflightReadBytes) {

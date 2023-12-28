@@ -21,7 +21,10 @@ import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,6 +103,10 @@ public class LogCache {
         return full;
     }
 
+    public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        return get(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+    }
+
     /**
      * Get streamId [startOffset, endOffset) range records with maxBytes limit.
      * <p>
@@ -124,7 +131,13 @@ public class LogCache {
      * </p>
      * Note: the records is retained, the caller should release it.
      */
-    public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+    @WithSpan
+    public List<StreamRecordBatch> get(TraceContext context,
+                                       @SpanAttribute long streamId,
+                                       @SpanAttribute long startOffset,
+                                       @SpanAttribute long endOffset,
+                                       @SpanAttribute int maxBytes) {
+        context.currentContext();
         TimerUtil timerUtil = new TimerUtil();
         List<StreamRecordBatch> records;
         readLock.lock();

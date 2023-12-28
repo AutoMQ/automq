@@ -17,8 +17,9 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
@@ -37,9 +38,17 @@ public interface Storage {
      *
      * @param streamRecord {@link StreamRecordBatch}
      */
-    CompletableFuture<Void> append(StreamRecordBatch streamRecord);
+    CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord);
 
-    CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions);
+    default CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
+        return append(AppendContext.DEFAULT, streamRecord);
+    }
+
+    CompletableFuture<ReadDataBlock> read(FetchContext context, long streamId, long startOffset, long endOffset, int maxBytes);
+
+    default CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+        return read(FetchContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+    }
 
     /**
      * Force stream record in WAL upload to s3

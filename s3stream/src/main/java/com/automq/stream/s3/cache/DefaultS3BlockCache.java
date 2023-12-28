@@ -24,8 +24,12 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,10 +77,16 @@ public class DefaultS3BlockCache implements S3BlockCache {
     }
 
     @Override
-    public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
+    @WithSpan
+    public CompletableFuture<ReadDataBlock> read(TraceContext traceContext,
+                                                 @SpanAttribute long streamId,
+                                                 @SpanAttribute long startOffset,
+                                                 @SpanAttribute long endOffset,
+                                                 @SpanAttribute int maxBytes) {
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("[S3BlockCache] read data, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, maxBytes);
+            LOGGER.debug("[S3BlockCache] read data, stream={}, {}-{}, total bytes: {}", streamId, startOffset, endOffset, maxBytes);
         }
+        final TraceContext finalTraceContext = new TraceContext(traceContext);
         this.readAheadManager.updateReadProgress(streamId, startOffset);
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
@@ -88,7 +98,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         // submit read task to mainExecutor to avoid read slower the caller thread.
         mainExecutor.execute(() -> {
             try {
-                FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, uuid, context).whenComplete((ret, ex) -> {
+                FutureUtil.propagate(read0(finalTraceContext, streamId, startOffset, endOffset, maxBytes, uuid, context).whenComplete((ret, ex) -> {
                     if (ex != null) {
                         LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
                         this.inflightReadThrottle.release(uuid);
@@ -101,9 +111,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
                     long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
                     boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
+                    Span.fromContext(finalTraceContext.currentContext()).setAttribute("cache_hit", isCacheHit);
                     S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_BLOCK_CACHE, isCacheHit);
                     if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {} ",
+                        LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {}",
                                 ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT, streamId, startOffset, endOffset, totalReturnedSize);
                     }
                     this.inflightReadThrottle.release(uuid);
@@ -119,7 +130,13 @@ public class DefaultS3BlockCache implements S3BlockCache {
         return readCf;
     }
 
-    public CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, UUID uuid, ReadTaskContext context) {
+    @WithSpan
+    public CompletableFuture<ReadDataBlock> read0(TraceContext traceContext,
+                                                  @SpanAttribute long streamId,
+                                                  @SpanAttribute long startOffset,
+                                                  @SpanAttribute long endOffset,
+                                                  @SpanAttribute int maxBytes,
+                                                  UUID uuid, ReadTaskContext context) {
         ReadAheadAgent agent = context.agent;
 
         if (LOGGER.isDebugEnabled()) {
@@ -138,13 +155,13 @@ public class DefaultS3BlockCache implements S3BlockCache {
             CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
             context.setStatus(ReadBlockCacheStatus.WAIT_INFLIGHT_RA);
             inflightReadAheadTaskContext.cf.whenComplete((nil, ex) -> FutureUtil.exec(() -> FutureUtil.propagate(
-                    read0(streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0"));
+                    read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0"));
             return readCf;
         }
 
         // 1. get from cache
         context.setStatus(ReadBlockCacheStatus.GET_FROM_CACHE);
-        BlockCache.GetCacheResult cacheRst = cache.get(streamId, nextStartOffset, endOffset, nextMaxBytes);
+        BlockCache.GetCacheResult cacheRst = cache.get(traceContext, streamId, nextStartOffset, endOffset, nextMaxBytes);
         List<StreamRecordBatch> cacheRecords = cacheRst.getRecords();
         if (!cacheRecords.isEmpty()) {
             asyncReadAhead(streamId, agent, cacheRst.getReadAheadRecords());
@@ -161,7 +178,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("[S3BlockCache] read data partially hit cache, stream={}, {}-{}, total bytes: {} ", streamId, nextStartOffset, endOffset, nextMaxBytes);
                 }
-                return read0(streamId, nextStartOffset, endOffset, nextMaxBytes, uuid, context).thenApply(rst -> {
+                return read0(traceContext, streamId, nextStartOffset, endOffset, nextMaxBytes, uuid, context).thenApply(rst -> {
                     List<StreamRecordBatch> records = new ArrayList<>(cacheRecords);
                     records.addAll(rst.getRecords());
                     return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);
@@ -174,14 +191,14 @@ public class DefaultS3BlockCache implements S3BlockCache {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] read data cache miss, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, maxBytes);
         }
-        return streamReader.syncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, uuid)
+        return streamReader.syncReadAhead(traceContext, streamId, startOffset, endOffset, maxBytes, agent, uuid)
                 .thenCompose(rst -> {
                     if (!rst.isEmpty()) {
                         int remainBytes = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
                         long lastOffset = rst.get(rst.size() - 1).getLastOffset();
                         if (remainBytes > 0 && lastOffset < endOffset) {
                             // retry read
-                            return read0(streamId, lastOffset, endOffset, remainBytes, uuid, context).thenApply(rst2 -> {
+                            return read0(traceContext, streamId, lastOffset, endOffset, remainBytes, uuid, context).thenApply(rst2 -> {
                                 List<StreamRecordBatch> records = new ArrayList<>(rst);
                                 records.addAll(rst2.getRecords());
                                 return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);

@@ -29,6 +29,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Threads;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -77,7 +78,7 @@ public class StreamReaderTest {
 
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, Mockito.mock(BlockCache.class), new HashMap<>(), new InflightReadThrottle());
         StreamReader.ReadContext context = new StreamReader.ReadContext(15L, 1024);
-        streamReader.getDataBlockIndices(233L, 1024L, context).thenAccept(v -> {
+        streamReader.getDataBlockIndices(TraceContext.DEFAULT, 233L, 1024L, context).thenAccept(v -> {
             Assertions.assertEquals(40L, context.nextStartOffset);
             Assertions.assertEquals(0, context.nextMaxBytes);
             Assertions.assertEquals(2, context.streamDataBlocksPair.size());
@@ -115,7 +116,7 @@ public class StreamReaderTest {
                 List.of(new StreamDataBlock(streamId, 64, 128, objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
         doReturn(new CompletableFuture<>()).when(reader).read(index1);
 
-        streamReader.syncReadAhead(streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
+        streamReader.syncReadAhead(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
         Threads.sleep(1000);
         Assertions.assertEquals(2, inflightReadAheadTasks.size());
         ReadAheadTaskKey key1 = new ReadAheadTaskKey(233L, startOffset);
@@ -171,7 +172,7 @@ public class StreamReaderTest {
         });
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
-        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(233L, 0,
+        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT,233L, 0,
                 999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         cf.whenComplete((rst, ex) -> {
@@ -233,7 +234,7 @@ public class StreamReaderTest {
         ReadAheadTaskKey key = new ReadAheadTaskKey(233L, startOffset);
         context.taskKeySet.add(key);
         inflightReadAheadTasks.put(key, new DefaultS3BlockCache.ReadAheadTaskContext(new CompletableFuture<>(), DefaultS3BlockCache.ReadBlockCacheStatus.INIT));
-        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(233L, startOffset,
+        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, startOffset,
                 999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         cf.whenComplete((rst, ex) -> {
@@ -294,7 +295,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
-        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(233L, 0,
+        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
                 512, 1024, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         Threads.sleep(1000);
