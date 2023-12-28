@@ -23,13 +23,14 @@ import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.OpenStreamOptions;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
@@ -253,22 +254,22 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
-        public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
             CompletableFuture<AppendResult> cf = new CompletableFuture<>();
             if (appendCallbackAsync) {
-                append0(recordBatch, cf);
+                append0(context, recordBatch, cf);
             } else {
-                append0WithSyncCallback(recordBatch, cf);
+                append0WithSyncCallback(context, recordBatch, cf);
             }
             return cf;
         }
 
-        private void append0(RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
-            stream.append(recordBatch).whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
+        private void append0(AppendContext context, RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
+            stream.append(context, recordBatch).whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
                 if (ex != null) {
                     if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
                         LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
-                        appendRetryScheduler.schedule(() -> append0(recordBatch, cf), 3, TimeUnit.SECONDS);
+                        appendRetryScheduler.schedule(() -> append0(context, recordBatch, cf), 3, TimeUnit.SECONDS);
                     }
                 } else {
                     cf.complete(rst);
@@ -280,12 +281,12 @@ public class AlwaysSuccessClient implements Client {
          * Append to stream without using async callback threadPools.
          * <strong> Used for tests only.</strong>
          */
-        private void append0WithSyncCallback(RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
-            stream.append(recordBatch).whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
+        private void append0WithSyncCallback(AppendContext context, RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
+            stream.append(context, recordBatch).whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
                 if (ex != null) {
                     if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
                         LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
-                        appendRetryScheduler.schedule(() -> append0(recordBatch, cf), 3, TimeUnit.SECONDS);
+                        appendRetryScheduler.schedule(() -> append0(context, recordBatch, cf), 3, TimeUnit.SECONDS);
                     }
                 } else {
                     cf.complete(rst);
@@ -294,15 +295,15 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
+        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             Timeout timeout = fetchTimeout.newTimeout(t -> LOGGER.warn("fetch timeout, stream[{}] [{}, {})", streamId(), startOffset, endOffset), 1, TimeUnit.MINUTES);
-            fetch0(startOffset, endOffset, maxBytesHint, readOptions, cf);
+            fetch0(context, startOffset, endOffset, maxBytesHint, cf);
             return cf.whenComplete((rst, ex) -> timeout.cancel());
         }
 
-        private void fetch0(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions, CompletableFuture<FetchResult> cf) {
-            stream.fetch(startOffset, endOffset, maxBytesHint, readOptions).whenCompleteAsync((rst, e) -> FutureUtil.suppress(() -> {
+        private void fetch0(FetchContext context, long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
+            stream.fetch(context, startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, e) -> FutureUtil.suppress(() -> {
                 Throwable ex = FutureUtil.cause(e);
                 if (ex != null) {
                     if (!(ex instanceof FastReadFailFastException)) {
