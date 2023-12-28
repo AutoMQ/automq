@@ -960,7 +960,7 @@ project(':core') {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
-//    implementation libs.opentelemetryJava17
+
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
     implementation libs.opentelemetrySdk
