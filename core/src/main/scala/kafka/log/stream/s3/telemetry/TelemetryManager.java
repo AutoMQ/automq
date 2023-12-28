@@ -31,8 +31,9 @@ import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporterBuilder;
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
-import io.opentelemetry.instrumentation.runtimemetrics.java17.JfrFeature;
-import io.opentelemetry.instrumentation.runtimemetrics.java17.RuntimeMetrics;
+import io.opentelemetry.instrumentation.runtimemetrics.java8.Cpu;
+import io.opentelemetry.instrumentation.runtimemetrics.java8.GarbageCollector;
+import io.opentelemetry.instrumentation.runtimemetrics.java8.MemoryPools;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.OpenTelemetrySdkBuilder;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
@@ -74,7 +75,7 @@ public class TelemetryManager {
     private final Map<AttributeKey<String>, String> labelMap;
     private final Supplier<AttributesBuilder> attributesBuilderSupplier;
     private final List<MetricReader> metricReaderList;
-    private RuntimeMetrics runtimeMetrics;
+    private final List<AutoCloseable> autoCloseables;
     private PrometheusHttpServer prometheusHttpServer;
 
     public TelemetryManager(KafkaConfig kafkaConfig, String clusterId) {
@@ -82,6 +83,7 @@ public class TelemetryManager {
         this.clusterId = clusterId;
         this.labelMap = new HashMap<>();
         this.metricReaderList = new ArrayList<>();
+        this.autoCloseables = new ArrayList<>();
         this.attributesBuilderSupplier = Attributes::builder;
         isTracerEnabled = kafkaConfig.s3TracerEnable();
         init();
@@ -127,13 +129,9 @@ public class TelemetryManager {
             // set JVM metrics opt-in to prevent metrics conflict.
             System.setProperty("otel.semconv-stability.opt-in", "jvm");
             // JVM metrics
-            runtimeMetrics = RuntimeMetrics.builder(openTelemetrySdk)
-                    .enableFeature(JfrFeature.GC_DURATION_METRICS)
-                    .enableFeature(JfrFeature.CPU_UTILIZATION_METRICS)
-                    .enableFeature(JfrFeature.MEMORY_POOL_METRICS)
-                    .enableFeature(JfrFeature.MEMORY_ALLOCATION_METRICS)
-                    .enableFeature(JfrFeature.NETWORK_IO_METRICS)
-                    .build();
+            autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
+            autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
+            autoCloseables.addAll(GarbageCollector.registerObservers(openTelemetrySdk));
 
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
@@ -248,21 +246,25 @@ public class TelemetryManager {
     }
 
     public void shutdown() {
+        autoCloseables.forEach(autoCloseable -> {
+            try {
+                autoCloseable.close();
+            } catch (Exception e) {
+                LOGGER.error("Failed to close auto closeable", e);
+            }
+        });
         if (prometheusHttpServer != null) {
             prometheusHttpServer.forceFlush();
             prometheusHttpServer.close();
         }
-        for (MetricReader metricReader : metricReaderList) {
+        metricReaderList.forEach(metricReader -> {
             metricReader.forceFlush();
             try {
                 metricReader.close();
-            } catch (IOException ignored) {
-
+            } catch (IOException e) {
+                LOGGER.error("Failed to close metric reader", e);
             }
-        }
-        if (runtimeMetrics != null) {
-            runtimeMetrics.close();
-        }
+        });
         if (openTelemetrySdk != null) {
             openTelemetrySdk.close();
         }

@@ -228,6 +228,7 @@ libs += [
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   s3stream: "com.automq.elasticstream:s3stream:$versions.s3stream",
   opentelemetryJava17: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java17:$versions.opentelemetryAlpha",
+  opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",
   opentelemetrySdkMetrics: "io.opentelemetry:opentelemetry-sdk-metrics:$versions.opentelemetry",
