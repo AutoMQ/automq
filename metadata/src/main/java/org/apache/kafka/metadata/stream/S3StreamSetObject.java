@@ -55,10 +55,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3StreamSetObject(long objectId, int nodeId, List<StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.nodeId = nodeId;
+        streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
         streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::getStreamId));
         this.ranges = encode(streamOffsetRanges);
         this.dataTimeInMs = dataTimeInMs;
