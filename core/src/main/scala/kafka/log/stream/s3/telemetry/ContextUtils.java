@@ -20,20 +20,27 @@ package kafka.log.stream.s3.telemetry;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.trace.context.TraceContext;
-import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
 
 public class ContextUtils {
     public static FetchContext creaetFetchContext() {
-        return new FetchContext(TelemetryManager.isTracerEnabled, GlobalOpenTelemetry.getTracer(TelemetryConstants.TELEMETRY_SCOPE_NAME), Context.current());
+        return new FetchContext(createTraceContext());
     }
 
     public static AppendContext createAppendContext() {
-        return new AppendContext(TelemetryManager.isTracerEnabled, GlobalOpenTelemetry.getTracer(TelemetryConstants.TELEMETRY_SCOPE_NAME), Context.current());
+        return new AppendContext(createTraceContext());
     }
 
     public static TraceContext createTraceContext() {
-        return new TraceContext(TelemetryManager.isTracerEnabled, GlobalOpenTelemetry.getTracer(TelemetryConstants.TELEMETRY_SCOPE_NAME), Context.current());
+        OpenTelemetrySdk openTelemetrySdk = TelemetryManager.getOpenTelemetrySdk();
+        boolean isTraceEnabled = openTelemetrySdk != null && TelemetryManager.isTracerEnabled;
+        Tracer tracer = null;
+        if (isTraceEnabled) {
+            tracer = openTelemetrySdk.getTracer(TelemetryConstants.TELEMETRY_SCOPE_NAME);
+        }
+        return new TraceContext(isTraceEnabled, tracer, Context.current());
     }
 
 }

@@ -68,13 +68,13 @@ public class TelemetryManager {
     private static final Integer EXPORTER_TIMEOUT_MS = 5000;
     public static boolean isTracerEnabled = false;
     private static java.util.logging.Logger metricsLogger;
+    private static OpenTelemetrySdk openTelemetrySdk;
     private final KafkaConfig kafkaConfig;
     private final String clusterId;
     private final Map<AttributeKey<String>, String> labelMap;
     private final Supplier<AttributesBuilder> attributesBuilderSupplier;
     private final List<MetricReader> metricReaderList;
     private RuntimeMetrics runtimeMetrics;
-    private OpenTelemetrySdk openTelemetrySdk;
     private PrometheusHttpServer prometheusHttpServer;
 
     public TelemetryManager(KafkaConfig kafkaConfig, String clusterId) {
@@ -85,10 +85,6 @@ public class TelemetryManager {
         this.attributesBuilderSupplier = Attributes::builder;
         isTracerEnabled = kafkaConfig.s3TracerEnable();
         init();
-    }
-
-    private String buildServiceName() {
-        return clusterId + "_" + getNodeType() + "_" + kafkaConfig.nodeId();
     }
 
     private String getNodeType() {
@@ -125,7 +121,7 @@ public class TelemetryManager {
         openTelemetrySdk = openTelemetrySdkBuilder
                 .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
                         W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
-                .buildAndRegisterGlobal();
+                .build();
 
         if (kafkaConfig.s3MetricsEnable()) {
             // set JVM metrics opt-in to prevent metrics conflict.
@@ -151,6 +147,10 @@ public class TelemetryManager {
 
         LOGGER.info("Instrument manager initialized with metrics: {}, trace: {} report interval: {}",
                 kafkaConfig.s3MetricsEnable(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
+    }
+
+    public static OpenTelemetrySdk getOpenTelemetrySdk() {
+        return openTelemetrySdk;
     }
 
     private SdkTracerProvider getTraceProvider(Resource resource) {
