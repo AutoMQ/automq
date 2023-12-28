@@ -960,13 +960,17 @@ project(':core') {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
-    implementation libs.opentelemetryApi
+    implementation libs.opentelemetryJava17
+    implementation libs.opentelemetryOshi
     implementation libs.opentelemetrySdk
     implementation libs.opentelemetrySdkMetrics
     implementation libs.opentelemetryExporterLogging
-    implementation libs.opentelemetrySemconv
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
+
+    implementation(libs.oshi) {
+      exclude group: 'org.slf4j', module: '*'
+    }
 
     // https://github.com/netty/netty-tcnative/issues/716
     // After 2.0.48, gradle project need explicitly declare the tcnative dependencies with classifiers

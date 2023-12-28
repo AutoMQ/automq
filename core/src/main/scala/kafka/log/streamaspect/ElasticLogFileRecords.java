@@ -19,12 +19,18 @@ package kafka.log.streamaspect;
 
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
+import io.opentelemetry.api.common.Attributes;
+import kafka.log.stream.s3.telemetry.ContextUtils;
+import kafka.log.stream.s3.telemetry.TelemetryConstants;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -105,29 +111,41 @@ public class ElasticLogFileRecords {
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
         if (ReadHint.isReadAll()) {
             ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).pooledBuf(true).build();
-            return readAll0(startOffset, maxOffset, maxSize, readOptions);
+            FetchContext fetchContext = ContextUtils.creaetFetchContext();
+            fetchContext.setReadOptions(readOptions);
+            Attributes attributes = Attributes.builder()
+                    .put(TelemetryConstants.START_OFFSET_NAME, startOffset)
+                    .put(TelemetryConstants.END_OFFSET_NAME, maxOffset)
+                    .put(TelemetryConstants.MAX_BYTES_NAME, maxSize)
+                    .build();
+            try {
+                return TraceUtils.runWithSpanAsync(fetchContext, attributes, "ElasticLogFileRecords::read",
+                        () -> readAll0(fetchContext, startOffset, maxOffset, maxSize));
+            } catch (Throwable ex) {
+                return CompletableFuture.failedFuture(ex);
+            }
         } else {
             return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
         }
     }
 
-    private CompletableFuture<Records> readAll0(long startOffset, long maxOffset, int maxSize, ReadOptions readOptions) {
+    private CompletableFuture<Records> readAll0(FetchContext context, long startOffset, long maxOffset, int maxSize) {
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         if (nextFetchOffset >= endOffset) {
             return CompletableFuture.completedFuture(null);
         }
-        return fetch0(nextFetchOffset, endOffset, maxSize, readOptions)
-                .thenApply(rst -> PooledMemoryRecords.of(rst, readOptions.pooledBuf()));
+        return fetch0(context, nextFetchOffset, endOffset, maxSize)
+                .thenApply(rst -> PooledMemoryRecords.of(rst, context.readOptions().pooledBuf()));
     }
 
-    private CompletableFuture<LinkedList<FetchResult>> fetch0(long startOffset, long endOffset, int maxSize, ReadOptions readOptions) {
+    private CompletableFuture<LinkedList<FetchResult>> fetch0(FetchContext context, long startOffset, long endOffset, int maxSize) {
         if (startOffset >= endOffset || maxSize <= 0) {
             return CompletableFuture.completedFuture(new LinkedList<>());
         }
         int adjustedMaxSize = Math.min(maxSize, 1024 * 1024);
-        return streamSlice.fetch(startOffset, endOffset, adjustedMaxSize, readOptions)
+        return streamSlice.fetch(context, startOffset, endOffset, adjustedMaxSize)
                 .thenCompose(rst -> {
                     long nextFetchOffset = startOffset;
                     int readSize = 0;
@@ -141,7 +159,7 @@ public class ElasticLogFileRecords {
                         }
                         readSize += recordBatchWithContext.rawPayload().remaining();
                     }
-                    return fetch0(nextFetchOffset, endOffset, maxSize - readSize, readOptions)
+                    return fetch0(context, nextFetchOffset, endOffset, maxSize - readSize)
                             .thenApply(rstList -> {
                                 // add to first since we need to reverse the order.
                                 rstList.addFirst(rst);
@@ -171,7 +189,16 @@ public class ElasticLogFileRecords {
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset.get());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
-        CompletableFuture<?> cf = streamSlice.append(batch);
+
+        AppendContext context = ContextUtils.createAppendContext();
+        CompletableFuture<?> cf;
+        try {
+            cf = TraceUtils.runWithSpanAsync(context, Attributes.empty(), "ElasticLogFileRecords::append",
+                    () -> streamSlice.append(context, batch));
+        } catch (Throwable ex) {
+            throw new IOException("Failed to append to stream " + streamSlice.stream().streamId(), ex);
+        }
+
         nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
         cf.whenComplete((rst, e) -> {
@@ -485,7 +512,7 @@ public class ElasticLogFileRecords {
             }
             Records records = null;
             try {
-                records = elasticLogFileRecords.readAll0(startOffset, maxOffset, fetchSize, ReadOptions.DEFAULT).get();
+                records = elasticLogFileRecords.readAll0(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }
