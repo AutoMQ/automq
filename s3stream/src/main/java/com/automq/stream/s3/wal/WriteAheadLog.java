@@ -18,6 +18,7 @@
 package com.automq.stream.s3.wal;
 
 
+import com.automq.stream.s3.trace.context.TraceContext;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
@@ -45,10 +46,18 @@ public interface WriteAheadLog {
      *
      * @return The data position will be written.
      */
-    AppendResult append(ByteBuf data, int crc) throws OverCapacityException;
+    AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException;
+
+    default AppendResult append(TraceContext context, ByteBuf data) throws OverCapacityException {
+        return append(context, data, 0);
+    }
+
+    default AppendResult append(ByteBuf data, int crc) throws OverCapacityException {
+        return append(TraceContext.DEFAULT, data, crc);
+    }
 
     default AppendResult append(ByteBuf data) throws OverCapacityException {
-        return append(data, 0);
+        return append(TraceContext.DEFAULT, data, 0);
     }
 
     Iterator<RecoverResult> recover();

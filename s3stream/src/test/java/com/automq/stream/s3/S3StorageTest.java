@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -103,9 +102,9 @@ public class S3StorageTest {
         cf2.get(3, TimeUnit.SECONDS);
         cf3.get(3, TimeUnit.SECONDS);
 
-        ReadDataBlock readRst = storage.read(233, 10, 13, 90, ReadOptions.DEFAULT).get();
+        ReadDataBlock readRst = storage.read(233, 10, 13, 90).get();
         assertEquals(1, readRst.getRecords().size());
-        readRst = storage.read(233, 10, 13, 200, ReadOptions.DEFAULT).get();
+        readRst = storage.read(233, 10, 13, 200).get();
         assertEquals(2, readRst.getRecords().size());
 
         storage.forceUpload(233L).get();
@@ -252,7 +251,7 @@ public class S3StorageTest {
     public void testWALOverCapacity() throws WriteAheadLog.OverCapacityException {
         storage.append(newRecord(233L, 10L));
         storage.append(newRecord(233L, 11L));
-        doThrow(new WriteAheadLog.OverCapacityException("test")).when(wal).append(any());
+        doThrow(new WriteAheadLog.OverCapacityException("test")).when(wal).append(any(), any());
 
         Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
         CommitStreamSetObjectResponse resp = new CommitStreamSetObjectResponse();

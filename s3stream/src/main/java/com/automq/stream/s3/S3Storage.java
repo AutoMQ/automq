@@ -17,12 +17,13 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -32,6 +33,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
@@ -40,6 +42,8 @@ import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -259,14 +263,15 @@ public class S3Storage implements Storage {
 
 
     @Override
-    public CompletableFuture<Void> append(StreamRecordBatch streamRecord) {
+    @WithSpan
+    public CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // encoded before append to free heap ByteBuf.
         streamRecord.encoded();
-        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf);
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf, context);
         handleAppendRequest(writeRequest);
-        append0(writeRequest, false);
+        append0(context, writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE);
@@ -279,7 +284,7 @@ public class S3Storage implements Storage {
      *
      * @return backoff status.
      */
-    public boolean append0(WalWriteRequest request, boolean fromBackoff) {
+    public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
         // TODO: storage status check, fast fail the request when storage closed.
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
@@ -304,7 +309,7 @@ public class S3Storage implements Storage {
                 Lock lock = confirmOffsetCalculator.addLock();
                 lock.lock();
                 try {
-                    appendResult = deltaWAL.append(streamRecord.encoded());
+                    appendResult = deltaWAL.append(new TraceContext(context), streamRecord.encoded());
                 } finally {
                     lock.unlock();
                 }
@@ -344,7 +349,7 @@ public class S3Storage implements Storage {
                 if (request == null) {
                     break;
                 }
-                if (append0(request, true)) {
+                if (append0(request.context, request, true)) {
                     LOGGER.warn("try drain backoff record fail, still backoff");
                     break;
                 }
@@ -356,20 +361,30 @@ public class S3Storage implements Storage {
     }
 
     @Override
-    public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
+    @WithSpan
+    public CompletableFuture<ReadDataBlock> read(FetchContext context,
+                                                 @SpanAttribute long streamId,
+                                                 @SpanAttribute long startOffset,
+                                                 @SpanAttribute long endOffset,
+                                                 @SpanAttribute int maxBytes) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        FutureUtil.propagate(read0(streamId, startOffset, endOffset, maxBytes, readOptions), cf);
+        FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
         cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.READ_STORAGE));
         return cf;
     }
 
-    private CompletableFuture<ReadDataBlock> read0(long streamId, long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(streamId, startOffset, endOffset, maxBytes);
+    @WithSpan
+    private CompletableFuture<ReadDataBlock> read0(FetchContext context,
+                                                   @SpanAttribute long streamId,
+                                                   @SpanAttribute long startOffset,
+                                                   @SpanAttribute long endOffset,
+                                                   @SpanAttribute int maxBytes) {
+        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
-        if (readOptions.fastRead()) {
+        if (context.readOptions().fastRead()) {
             // fast read fail fast when need read from block cache.
             logCacheRecords.forEach(StreamRecordBatch::release);
             logCacheRecords.clear();
@@ -380,7 +395,7 @@ public class S3Storage implements Storage {
         }
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
         long finalEndOffset = endOffset;
-        return blockCache.read(streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
+        return blockCache.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
             List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
             int readIndex = -1;
