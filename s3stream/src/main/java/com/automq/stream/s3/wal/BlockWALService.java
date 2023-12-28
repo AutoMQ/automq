@@ -23,6 +23,8 @@ import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.trace.TraceUtils;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.ThreadUtils;
@@ -380,13 +382,18 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(ByteBuf buf, int crc) throws OverCapacityException {
+    public AppendResult append(TraceContext context, ByteBuf buf, int crc) throws OverCapacityException {
+        // get current method name
+        TraceContext.Scope scope = TraceUtils.createAndStartSpan(context, "BlockWALService::append");
         TimerUtil timerUtil = new TimerUtil();
         try {
-            return append0(buf, crc);
+            AppendResult result = append0(buf, crc);
+            result.future().whenComplete((nil, ex) -> TraceUtils.endSpan(scope, ex));
+            return result;
         } catch (OverCapacityException ex) {
             buf.release();
             S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_WAL_FULL);
+            TraceUtils.endSpan(scope, ex);
             throw ex;
         }
     }

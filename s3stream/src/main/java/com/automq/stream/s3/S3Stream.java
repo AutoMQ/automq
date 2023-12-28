@@ -21,7 +21,6 @@ import com.automq.stream.DefaultAppendResult;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
@@ -29,6 +28,8 @@ import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
@@ -38,6 +39,8 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -139,7 +142,8 @@ public class S3Stream implements Stream {
     }
 
     @Override
-    public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+    @WithSpan
+    public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         TimerUtil timerUtil = new TimerUtil();
         writeLock.lock();
         S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM_WRITE_LOCK);
@@ -148,7 +152,7 @@ public class S3Stream implements Stream {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
                 }
-                return append0(recordBatch);
+                return append0(context, recordBatch);
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
@@ -161,13 +165,14 @@ public class S3Stream implements Stream {
         }
     }
 
-    private CompletableFuture<AppendResult> append0(RecordBatch recordBatch) {
+    @WithSpan
+    private CompletableFuture<AppendResult> append0(AppendContext context, RecordBatch recordBatch) {
         if (!status.isWritable()) {
             return FutureUtil.failedFuture(new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is not writable"));
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
         StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
-        CompletableFuture<AppendResult> cf = storage.append(streamRecordBatch).thenApply(nil -> {
+        CompletableFuture<AppendResult> cf = storage.append(context, streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);
         });
@@ -186,12 +191,16 @@ public class S3Stream implements Stream {
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
+    @WithSpan
+    public CompletableFuture<FetchResult> fetch(FetchContext context,
+                                                @SpanAttribute long startOffset,
+                                                @SpanAttribute long endOffset,
+                                                @SpanAttribute int maxBytes) {
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
         S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM_READ_LOCK);
         try {
-            CompletableFuture<FetchResult> cf = exec(() -> fetch0(startOffset, endOffset, maxBytes, readOptions), LOGGER, "fetch");
+            CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
                 S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM);
@@ -216,7 +225,8 @@ public class S3Stream implements Stream {
         }
     }
 
-    private CompletableFuture<FetchResult> fetch0(long startOffset, long endOffset, int maxBytes, ReadOptions readOptions) {
+    @WithSpan
+    private CompletableFuture<FetchResult> fetch0(FetchContext context, long startOffset, long endOffset, int maxBytes) {
         if (!status.isReadable()) {
             return FutureUtil.failedFuture(new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is already closed"));
         }
@@ -237,12 +247,12 @@ public class S3Stream implements Stream {
         if (startOffset == endOffset) {
             return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT, false));
         }
-        return storage.read(streamId, startOffset, endOffset, maxBytes, readOptions).thenApply(dataBlock -> {
+        return storage.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("{} stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", logIdent, startOffset, endOffset, maxBytes, records.size());
             }
-            return new DefaultFetchResult(records, dataBlock.getCacheAccessType(), readOptions.pooledBuf());
+            return new DefaultFetchResult(records, dataBlock.getCacheAccessType(), context.readOptions().pooledBuf());
         });
     }
 

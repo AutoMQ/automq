@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.trace.context.TraceContext;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
@@ -45,7 +46,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(ByteBuf data, int crc) {
+    public AppendResult append(TraceContext traceContext, ByteBuf data, int crc) {
         data.release();
         long offset = offsetAlloc.getAndIncrement();
         return new AppendResult() {

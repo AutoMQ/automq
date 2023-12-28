@@ -18,20 +18,27 @@
 package com.automq.stream.s3;
 
 
+import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {
     final StreamRecordBatch record;
+    final AppendContext context;
     long offset;
     final CompletableFuture<Void> cf;
     boolean persisted;
 
     public WalWriteRequest(StreamRecordBatch record, long offset, CompletableFuture<Void> cf) {
+        this(record, offset, cf, AppendContext.DEFAULT);
+    }
+
+    public WalWriteRequest(StreamRecordBatch record, long offset, CompletableFuture<Void> cf, AppendContext context) {
         this.record = record;
         this.offset = offset;
         this.cf = cf;
+        this.context = context;
     }
 
     @Override

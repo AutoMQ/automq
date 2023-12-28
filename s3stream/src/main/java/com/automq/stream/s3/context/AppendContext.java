@@ -15,22 +15,24 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.cache;
+package com.automq.stream.s3.context;
 
 import com.automq.stream.s3.trace.context.TraceContext;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 
-import java.util.concurrent.CompletableFuture;
+public class AppendContext extends TraceContext {
+    public static final AppendContext DEFAULT = new AppendContext();
 
-/**
- * Like linux page cache, S3BlockCache is responsible for:
- * 1. read from S3 when the data block is not in cache.
- * 2. caching the data blocks of S3 objects.
- */
-public interface S3BlockCache {
+    public AppendContext() {
+        super(false, null, null);
+    }
 
-    CompletableFuture<ReadDataBlock> read(TraceContext context, long streamId, long startOffset, long endOffset, int maxBytes);
+    public AppendContext(TraceContext context) {
+        super(context);
+    }
 
-    default CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return read(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+    public AppendContext(boolean isTraceEnabled, Tracer tracer, Context currentContext) {
+        super(isTraceEnabled, tracer, currentContext);
     }
 }

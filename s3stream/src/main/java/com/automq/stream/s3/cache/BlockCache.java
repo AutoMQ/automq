@@ -22,7 +22,10 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
+import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -209,11 +212,21 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         return nextMaxBytes <= 0;
     }
 
+    public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        return get(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+    }
+
     /**
      * Get records from cache.
      * Note: the records is retained, the caller should release it.
      */
-    public GetCacheResult get(long streamId, long startOffset, long endOffset, int maxBytes) {
+    @WithSpan
+    public GetCacheResult get(TraceContext context,
+                              @SpanAttribute long streamId,
+                              @SpanAttribute long startOffset,
+                              @SpanAttribute long endOffset,
+                              @SpanAttribute int maxBytes) {
+        context.currentContext();
         if (startOffset >= endOffset || maxBytes <= 0) {
             return GetCacheResult.empty();
         }

@@ -18,6 +18,8 @@
 package com.automq.stream.api;
 
 import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -54,7 +56,11 @@ public interface Stream {
      * @return - complete success with async {@link AppendResult}, when append success.
      * - complete exception with {@link StreamClientException}, when append fail. TODO: specify the exception.
      */
-    CompletableFuture<AppendResult> append(RecordBatch recordBatch);
+    CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch);
+
+    default CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        return append(AppendContext.DEFAULT, recordBatch);
+    }
 
     /**
      * Fetch recordBatch list from stream. Note the startOffset may be in the middle in the first recordBatch.
@@ -67,10 +73,10 @@ public interface Stream {
      * @return - complete success with {@link FetchResult}, when fetch success.
      * - complete exception with {@link StreamClientException}, when startOffset is bigger than stream end offset.
      */
-    CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions);
+    CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint);
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return fetch(startOffset, endOffset, maxBytesHint, ReadOptions.DEFAULT);
+        return fetch(FetchContext.DEFAULT, startOffset, endOffset, maxBytesHint);
     }
 
     /**
