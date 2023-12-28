@@ -83,11 +83,11 @@ public class NodeMetadataImageTest {
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image1 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 1,
             Map.of(
-                0L, new S3StreamSetObject(0L, BROKER0, Map.of(
-                    STREAM0, new StreamOffsetRange(STREAM0, 0L, 100L),
-                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
-                1L, new S3StreamSetObject(1L, BROKER0, Map.of(
-                    STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
+                0L, new S3StreamSetObject(0L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 0L, 100L),
+                    new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
+                1L, new S3StreamSetObject(1L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -110,10 +110,10 @@ public class NodeMetadataImageTest {
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image2 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 2,
             Map.of(
-                0L, new S3StreamSetObject(0L, BROKER0, Map.of(
-                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
-                1L, new S3StreamSetObject(1L, BROKER0, Map.of(
-                    STREAM0, new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
+                0L, new S3StreamSetObject(0L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
+                1L, new S3StreamSetObject(1L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 101L, 200L)), 1L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
 
@@ -126,8 +126,8 @@ public class NodeMetadataImageTest {
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image3 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 2,
             Map.of(
-                0L, new S3StreamSetObject(0L, BROKER0, Map.of(
-                    STREAM1, new StreamOffsetRange(STREAM1, 0L, 200L)), 0L)));
+                0L, new S3StreamSetObject(0L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM1, 0L, 200L)), 0L)));
         assertEquals(image3, delta2.apply());
         testToImageAndBack(image3);
     }

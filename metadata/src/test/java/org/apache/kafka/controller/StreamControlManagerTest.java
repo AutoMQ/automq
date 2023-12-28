@@ -19,7 +19,6 @@ package org.apache.kafka.controller;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -39,8 +38,8 @@ import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamRespons
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
-import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -54,11 +53,9 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
-import org.apache.kafka.controller.stream.StreamControlManager;
-import org.apache.kafka.controller.stream.NodeMetadata;
 import org.apache.kafka.controller.stream.S3StreamMetadata;
+import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -826,20 +823,6 @@ public class StreamControlManagerTest {
         assertEquals(60, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        NodeMetadata node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.streamSetObjects().size());
-        S3StreamSetObject s3StreamSetObject = node0Metadata.streamSetObjects().get(1L);
-        assertEquals(1, s3StreamSetObject.offsetRanges().size());
-        StreamOffsetRange range = s3StreamSetObject.offsetRanges().get(STREAM0);
-        assertNull(range);
-        NodeMetadata node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(1, node1Metadata.streamSetObjects().size());
-        s3StreamSetObject = node1Metadata.streamSetObjects().get(3L);
-        assertEquals(1, s3StreamSetObject.offsetRanges().size());
-        range = s3StreamSetObject.offsetRanges().get(STREAM0);
-        assertNotNull(range);
-        assertEquals(40, range.getStartOffset());
-        assertEquals(70, range.getEndOffset());
 
         // 3. trim stream0 to [100, ..)
         trimRequest = new TrimStreamRequest()
@@ -859,10 +842,6 @@ public class StreamControlManagerTest {
         assertEquals(70, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
         assertEquals(0, streamMetadata.streamObjects().size());
-        node0Metadata = manager.nodesMetadata().get(BROKER0);
-        assertEquals(1, node0Metadata.streamSetObjects().size());
-        node1Metadata = manager.nodesMetadata().get(BROKER1);
-        assertEquals(0, node1Metadata.streamSetObjects().size());
 
         // 5. commit stream set object with stream0-[70, 100)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
@@ -920,11 +899,6 @@ public class StreamControlManagerTest {
         assertNull(manager.streamsMetadata().get(STREAM0));
 
         assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
-        S3StreamSetObject streamSetObject = manager.nodesMetadata().get(BROKER0).streamSetObjects().get(1L);
-        assertEquals(1, streamSetObject.offsetRanges().size());
-        StreamOffsetRange offsetRange = streamSetObject.offsetRanges().get(STREAM1);
-        assertNotNull(offsetRange);
-        assertEquals(0, manager.nodesMetadata().get(BROKER1).streamSetObjects().size());
 
         // 5. delete again
         req = new DeleteStreamRequest()

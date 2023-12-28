@@ -19,6 +19,8 @@ package org.apache.kafka.image;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
+import com.automq.stream.utils.biniarysearch.ComparableItem;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
@@ -176,25 +178,29 @@ public final class S3StreamsMetadataImage {
 
         private Queue<S3ObjectMetadataWrapper> rangeOfStreamSetObjects() {
             NodeS3StreamSetObjectMetadataImage streamSetObjectImage = nodeStreamSetObjectMetadata.get(nodeId);
-            return streamSetObjectImage.orderList().stream()
-                .filter(obj -> obj.offsetRanges().containsKey(streamId))
-                .filter(obj -> {
-                    StreamOffsetRange offsetRange = obj.offsetRanges().get(streamId);
-                    long objectStartOffset = offsetRange.getStartOffset();
-                    long objectEndOffset = offsetRange.getEndOffset();
-                    return objectStartOffset < endOffset && objectEndOffset > startOffset;
-                }).map(obj -> {
-                    StreamOffsetRange offsetRange = obj.offsetRanges().get(streamId);
-                    long startOffset = offsetRange.getStartOffset();
-                    long endOffset = offsetRange.getEndOffset();
-                    List<StreamOffsetRange> offsetRanges = obj.offsetRanges().values().stream().sorted()
-                        .collect(Collectors.toList());
-                    S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
-                        obj.objectId(), obj.objectType(), offsetRanges, obj.dataTimeInMs(),
+            List<S3StreamSetObject> streamSetObjects = streamSetObjectImage.orderList();
+            Queue<S3ObjectMetadataWrapper> s3ObjectMetadataList = new LinkedList<>();
+            for (S3StreamSetObject obj : streamSetObjects) {
+                // TODO: cache the stream offset ranges to accelerate the search
+                // TODO: cache the last search index, to accelerate the search
+                List<StreamOffsetRange> ranges = obj.offsetRangeList();
+                int index = new StreamOffsetRanges(ranges).search(streamId);
+                if (index < 0) {
+                    continue;
+                }
+                StreamOffsetRange range = ranges.get(index);
+                if (range.getStartOffset() >= endOffset || range.getEndOffset() < startOffset) {
+                    continue;
+                }
+                S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
+                        obj.objectId(), obj.objectType(), ranges, obj.dataTimeInMs(),
                         obj.orderId());
-                    return new S3ObjectMetadataWrapper(s3ObjectMetadata, startOffset, endOffset);
-                })
-                .collect(Collectors.toCollection(LinkedList::new));
+                s3ObjectMetadataList.add(new S3ObjectMetadataWrapper(s3ObjectMetadata, range.getStartOffset(), range.getEndOffset()));
+                if (range.getEndOffset() >= endOffset) {
+                    break;
+                }
+            }
+            return s3ObjectMetadataList;
         }
 
         private Queue<S3ObjectMetadataWrapper> rangeOfStreamObjects() {
@@ -339,5 +345,35 @@ public final class S3StreamsMetadataImage {
                 ", nodeWALMetadata=" + nodeStreamSetObjectMetadata.entrySet().stream().
                 map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
                 '}';
+    }
+
+    static class StreamOffsetRanges extends AbstractOrderedCollection<Long> {
+        private final List<StreamOffsetRange> ranges;
+
+        public StreamOffsetRanges(List<StreamOffsetRange> ranges) {
+            this.ranges = ranges;
+        }
+
+        @Override
+        protected int size() {
+            return ranges.size();
+        }
+
+        @Override
+        protected ComparableItem<Long> get(int index) {
+            StreamOffsetRange range = ranges.get(index);
+            return new ComparableItem<>() {
+                @Override
+                public boolean isLessThan(Long o) {
+                    return range.getStreamId() < o;
+                }
+
+                @Override
+                public boolean isGreaterThan(Long o) {
+                    return range.getStreamId() > o;
+                }
+            };
+        }
+
     }
 }
