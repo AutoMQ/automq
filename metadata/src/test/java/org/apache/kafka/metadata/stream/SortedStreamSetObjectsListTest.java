@@ -19,6 +19,7 @@ package org.apache.kafka.metadata.stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
@@ -31,11 +32,11 @@ public class SortedStreamSetObjectsListTest {
     @Test
     public void testSorted() {
         SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
-        objects.add(new S3StreamSetObject(0, -1, null, 2));
-        objects.add(new S3StreamSetObject(1, -1, null, 1));
-        objects.add(new S3StreamSetObject(2, -1, null, 3));
-        objects.add(new S3StreamSetObject(3, -1, null, 0));
-        objects.add(new S3StreamSetObject(4, -1, null, 4));
+        objects.add(new S3StreamSetObject(0, -1, Collections.emptyList(), 2));
+        objects.add(new S3StreamSetObject(1, -1, Collections.emptyList(), 1));
+        objects.add(new S3StreamSetObject(2, -1, Collections.emptyList(), 3));
+        objects.add(new S3StreamSetObject(3, -1, Collections.emptyList(), 0));
+        objects.add(new S3StreamSetObject(4, -1, Collections.emptyList(), 4));
 
         assertEquals(5, objects.size());
         List<Long> expectedOrderIds = List.of(0L, 1L, 2L, 3L, 4L);
