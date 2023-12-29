@@ -58,7 +58,7 @@ public class LazyStream implements Stream {
         if (streamId != NOOP_STREAM_ID) {
             try {
                 // open exist stream
-                inner = client.openStream(streamId, OpenStreamOptions.newBuilder().epoch(epoch).build()).get();
+                inner = client.openStream(streamId, OpenStreamOptions.builder().epoch(epoch).build()).get();
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             } catch (ExecutionException e) {
@@ -75,7 +75,7 @@ public class LazyStream implements Stream {
     public void warmUp() throws IOException {
         if (this.inner == NOOP_STREAM) {
             try {
-                this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
+                this.inner = client.createAndOpenStream(CreateStreamOptions.builder().replicaCount(replicaCount)
                         .epoch(epoch).build()).get();
                 LOGGER.info("warmup, created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
@@ -110,7 +110,7 @@ public class LazyStream implements Stream {
     public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
             try {
-                this.inner = client.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(replicaCount)
+                this.inner = client.createAndOpenStream(CreateStreamOptions.builder().replicaCount(replicaCount)
                         .epoch(epoch).build()).get();
                 LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
