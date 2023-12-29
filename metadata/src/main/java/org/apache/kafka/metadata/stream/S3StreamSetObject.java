@@ -17,21 +17,29 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.github.luben.zstd.Zstd;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
+    public static final byte MAGIC = 0x01;
+    public static final byte ZSTD_COMPRESSED = 1 << 1;
+    private static final int COMPRESSION_THRESHOLD = 50;
 
     private final long objectId;
     private final int nodeId;
-    private final Map<Long/*streamId*/, StreamOffsetRange> streamOffsetRanges;
+    private final byte[] ranges;
 
     /**
      * The order id of the object. Sort by this field to get the order of the objects which contains logically increasing streams.
@@ -43,51 +51,44 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3StreamSetObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId) {
+    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId) {
         this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3StreamSetObject(long objectId, int nodeId, final Map<Long, StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3StreamSetObject(long objectId, int nodeId, List<StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.nodeId = nodeId;
-        this.streamOffsetRanges = streamOffsetRanges;
+        streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
+        streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::getStreamId));
+        this.ranges = encode(streamOffsetRanges);
         this.dataTimeInMs = dataTimeInMs;
     }
 
-    public boolean intersect(long streamId, long startOffset, long endOffset) {
-        StreamOffsetRange offsetRange = streamOffsetRanges.get(streamId);
-        if (offsetRange == null) {
-            return false;
-        }
-        return startOffset >= offsetRange.getStartOffset() && startOffset <= offsetRange.getEndOffset();
-    }
-
-    public Map<Long, StreamOffsetRange> offsetRanges() {
-        return streamOffsetRanges;
+    public List<StreamOffsetRange> offsetRangeList() {
+        return decode(ranges);
     }
 
     public ApiMessageAndVersion toRecord() {
+        // TODO: S3StreamSetObjectRecord also use raw data
+        List<StreamOffsetRange> rangesList = decode(ranges);
         return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-            .setObjectId(objectId)
-            .setNodeId(nodeId)
-            .setOrderId(orderId)
-            .setDataTimeInMs(dataTimeInMs)
-            .setStreamsIndex(
-                streamOffsetRanges
-                    .values()
-                    .stream()
-                    .map(Convertor::to)
-                    .collect(Collectors.toList())), (short) 0);
+                .setObjectId(objectId)
+                .setNodeId(nodeId)
+                .setOrderId(orderId)
+                .setDataTimeInMs(dataTimeInMs)
+                .setStreamsIndex(
+                        rangesList
+                                .stream()
+                                .map(Convertor::to)
+                                .collect(Collectors.toList())), (short) 0);
     }
 
     public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
-        Map<Long, StreamOffsetRange> offsetRanges = record.streamsIndex()
-            .stream()
-            .collect(Collectors.toMap(S3StreamSetObjectRecord.StreamIndex::streamId,
-                index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())));
+        List<StreamOffsetRange> offsetRanges = record.streamsIndex()
+                .stream().map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())).collect(Collectors.toList());
         return new S3StreamSetObject(record.objectId(), record.nodeId(),
-            offsetRanges, record.orderId(), record.dataTimeInMs());
+                offsetRanges, record.orderId(), record.dataTimeInMs());
     }
 
     public Integer nodeId() {
@@ -130,16 +131,69 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     @Override
     public String toString() {
         return "S3StreamSetObject{" +
-            "objectId=" + objectId +
-            ", orderId=" + orderId +
-            ", nodeId=" + nodeId +
-            ", streamOffsetRanges=" + streamOffsetRanges +
-            ", dataTimeInMs=" + dataTimeInMs +
-            '}';
+                "objectId=" + objectId +
+                ", orderId=" + orderId +
+                ", nodeId=" + nodeId +
+                ", dataTimeInMs=" + dataTimeInMs +
+                '}';
     }
 
     @Override
     public int compareTo(S3StreamSetObject o) {
         return Long.compare(this.orderId, o.orderId);
+    }
+
+    public static byte[] encode(List<StreamOffsetRange> streamOffsetRanges) {
+        boolean compressed = streamOffsetRanges.size() > COMPRESSION_THRESHOLD;
+        int flag = 0;
+        if (compressed) {
+            flag = flag | ZSTD_COMPRESSED;
+        }
+        ByteBuf rangesBuf = Unpooled.buffer(streamOffsetRanges.size() * 20);
+        streamOffsetRanges.forEach(r -> {
+            rangesBuf.writeLong(r.getStreamId());
+            rangesBuf.writeLong(r.getStartOffset());
+            rangesBuf.writeInt((int) (r.getEndOffset() - r.getStartOffset()));
+        });
+        byte[] compressedBytes;
+        if (compressed) {
+            compressedBytes = Zstd.compress(rangesBuf.array());
+        } else {
+            compressedBytes = rangesBuf.array();
+        }
+        ByteBuf buf = Unpooled.buffer(1 /* magic */ + 1 /* flag */ + 4 /* origin size */ + compressedBytes.length);
+        buf.writeByte(MAGIC);
+        buf.writeByte(flag);
+        buf.writeInt(rangesBuf.readableBytes());
+        buf.writeBytes(compressedBytes);
+        return buf.array();
+    }
+
+    public static List<StreamOffsetRange> decode(byte[] bytes) {
+        ByteBuf buf = Unpooled.wrappedBuffer(bytes);
+        byte magic = buf.readByte();
+        if (magic != MAGIC) {
+            throw new IllegalArgumentException("Invalid magic byte: " + magic);
+        }
+        byte flag = buf.readByte();
+        int rangeBytesSize = buf.readInt();
+        byte[] rangesBytes;
+        boolean compressed = (flag & ZSTD_COMPRESSED) != 0;
+        byte[] compressedBytes = new byte[buf.readableBytes()];
+        buf.readBytes(compressedBytes);
+        if (compressed) {
+            rangesBytes = Zstd.decompress(compressedBytes, rangeBytesSize);
+        } else {
+            rangesBytes = compressedBytes;
+        }
+        List<StreamOffsetRange> ranges = new ArrayList<>(rangeBytesSize / 20);
+        ByteBuf rangesBuf = Unpooled.wrappedBuffer(rangesBytes);
+        while (rangesBuf.readableBytes() > 0) {
+            long streamId = rangesBuf.readLong();
+            long startOffset = rangesBuf.readLong();
+            int count = rangesBuf.readInt();
+            ranges.add(new StreamOffsetRange(streamId, startOffset, startOffset + count));
+        }
+        return ranges;
     }
 }
