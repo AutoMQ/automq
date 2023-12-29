@@ -1,0 +1,40 @@
+# This is a basic configuration file for Tempo
+# For more details, see [Configure Tempo](https://grafana.com/docs/tempo/latest/configuration/)
+server:
+  http_listen_port: 3200 # listen port for Tempo
+distributor:
+  receivers: # configure receivers for different protocols
+    otlp: # accept OTLP spans
+      protocols:
+        grpc: # OTLP gRPC
+          endpoint: 0.0.0.0:4320
+ingester:
+  trace_idle_period: 120s # the length of time after a trace has not received spans to consider it complete and flush it
+  max_block_bytes: 524288000 # 500MB
+  max_block_duration: 30m
+compactor:
+  compaction:
+    compaction_window: 1h # blocks in this time window will be compacted together
+    max_block_bytes: 10737418240 # 10G
+    block_retention: 72h # delete blocks older than 3d
+    compacted_block_retention: 10m # delete compacted blocks older than 10m
+storage:
+  trace:
+    backend: local # use local storage as the backend
+    local:
+      path: /tmp/tempo/ # where to store the blocks locally
+# Overrides configuration block
+overrides:
+  # Global ingestion limits configurations
+  defaults:
+    # Ingestion related overrides
+    ingestion:
+        # Burst size (bytes) used in ingestion.
+        burst_size_bytes: 104857600 # 100MB
+
+        # Per-user ingestion rate limit (bytes) used in ingestion.
+        rate_limit_bytes: 52428800 # 50MB
+
+        # Maximum number of active traces per user, per ingester.
+        # A value of 0 disables the check.
+        max_traces_per_user: 0
