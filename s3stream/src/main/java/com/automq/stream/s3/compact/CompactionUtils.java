@@ -17,16 +17,14 @@
 
 package com.automq.stream.s3.compact;
 
-import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import org.slf4j.Logger;
-
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,6 +34,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
 
 public class CompactionUtils {
     public static List<ObjectStreamRange> buildObjectStreamRange(List<StreamDataBlock> streamDataBlocks) {
@@ -73,7 +72,7 @@ public class CompactionUtils {
                                                                           S3Operator s3Operator,
                                                                           Logger logger) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
-                .collect(Collectors.toMap(StreamMetadata::getStreamId, s -> s));
+                .collect(Collectors.toMap(StreamMetadata::streamId, s -> s));
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
         for (S3ObjectMetadata objectMetadata : objectMetadataList) {
             DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, s3Operator);
@@ -91,7 +90,7 @@ public class CompactionUtils {
                                 // non-exist stream
                                 continue;
                             }
-                            if (streamDataBlock.getEndOffset() <= streamMetadataMap.get(streamDataBlock.getStreamId()).getStartOffset()) {
+                            if (streamDataBlock.getEndOffset() <= streamMetadataMap.get(streamDataBlock.getStreamId()).startOffset()) {
                                 // trimmed stream data block
                                 continue;
                             }

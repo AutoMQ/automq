@@ -53,6 +53,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -618,8 +619,13 @@ public class DefaultS3Operator implements S3Operator {
             String exceptionMsg = String.format("Failed to write/read/delete object on S3. You are using s3Context: %s.", s3Context);
 
             Throwable cause = e.getCause();
-            if (cause instanceof SdkClientException && cause.getMessage().startsWith("Unable to execute HTTP request")) {
-                exceptionMsg += "\nUnable to execute HTTP request. Please check your network connection and make sure you can access S3.";
+            if (cause instanceof SdkClientException) {
+                if (cause.getMessage().contains("UnknownHostException")) {
+                    Throwable rootCause = ExceptionUtils.getRootCause(cause);
+                    exceptionMsg += "\nUnable to resolve Host \"" + rootCause.getMessage() + "\". Please check your S3 endpoint.";
+                } else if (cause.getMessage().startsWith("Unable to execute HTTP request")) {
+                    exceptionMsg += "\nUnable to execute HTTP request. Please check your network connection and make sure you can access S3.";
+                }
             }
 
             if (e instanceof TimeoutException || cause instanceof TimeoutException) {
@@ -627,7 +633,7 @@ public class DefaultS3Operator implements S3Operator {
             }
 
             if (cause instanceof NoSuchBucketException) {
-                exceptionMsg += "\nBucket " + bucket +  " not found. Please check your bucket name.";
+                exceptionMsg += "\nBucket \"" + bucket + "\" not found. Please check your bucket name.";
             }
 
             List<String> advices = s3Context.advices();

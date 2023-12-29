@@ -23,7 +23,10 @@ public class CreateStreamOptions {
     private int replicaCount;
     private long epoch;
 
-    public static Builder newBuilder() {
+    private CreateStreamOptions() {
+    }
+
+    public static Builder builder() {
         return new Builder();
     }
 

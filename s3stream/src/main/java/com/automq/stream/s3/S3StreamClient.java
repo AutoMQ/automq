@@ -31,9 +31,6 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +42,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
@@ -145,8 +144,8 @@ public class S3StreamClient implements StreamClient {
                             .eligibleStreamObjectLivingTimeInMs(config.streamObjectCompactionLivingTimeMinutes() * 60L * 1000)
                             .s3ObjectLogEnabled(config.objectLogEnable()).executor(streamCompactionExecutor);
                     S3Stream stream = new S3Stream(
-                            metadata.getStreamId(), metadata.getEpoch(),
-                            metadata.getStartOffset(), metadata.getEndOffset(),
+                            metadata.streamId(), metadata.epoch(),
+                            metadata.startOffset(), metadata.endOffset(),
                             storage, streamManager, builder, id -> {
                         openedStreams.remove(id);
                         return null;
