@@ -21,7 +21,6 @@ import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
@@ -33,7 +32,6 @@ import java.util.function.Supplier;
 public class S3StreamMetricsManager {
     private static LongCounter s3DownloadSizeInTotal = new NoopLongCounter();
     private static LongCounter s3UploadSizeInTotal = new NoopLongCounter();
-    private static LongCounter operationNumInTotal = new NoopLongCounter();
     private static LongHistogram operationLatency = new NoopLongHistogram();
     private static LongCounter objectNumInTotal = new NoopLongCounter();
     private static LongHistogram objectStageCost = new NoopLongHistogram();
@@ -71,10 +69,9 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> availableInflightS3ReadQuotaSupplier = () -> 0;
     private static Supplier<Integer> availableInflightS3WriteQuotaSupplier = () -> 0;
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
-    private static Supplier<AttributesBuilder> attributesBuilderSupplier = null;
 
     public static void initAttributesBuilder(Supplier<AttributesBuilder> attributesBuilderSupplier) {
-        S3StreamMetricsManager.attributesBuilderSupplier = attributesBuilderSupplier;
+        AttributesCache.INSTANCE.setDefaultAttributes(attributesBuilderSupplier.get().build());
     }
 
     public static void initMetrics(Meter meter) {
@@ -89,9 +86,6 @@ public class S3StreamMetricsManager {
         s3UploadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.UPLOAD_SIZE_METRIC_NAME)
                 .setDescription("S3 upload size")
                 .setUnit("bytes")
-                .build();
-        operationNumInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.OPERATION_COUNT_METRIC_NAME)
-                .setDescription("Operations count")
                 .build();
         operationLatency = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OPERATION_LATENCY_METRIC_NAME)
                 .setDescription("Operations latency")
@@ -130,20 +124,20 @@ public class S3StreamMetricsManager {
                 .setDescription("Network inbound available bandwidth")
                 .setUnit("bytes")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(networkInboundAvailableBandwidthSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(networkInboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         networkOutboundAvailableBandwidth = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME)
                 .setDescription("Network outbound available bandwidth")
                 .setUnit("bytes")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(networkOutboundAvailableBandwidthSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(networkOutboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         networkInboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
                 .setDescription("Network inbound limiter queue size")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) networkInboundLimiterQueueSizeSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) networkInboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         networkOutboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
                 .setDescription("Network outbound limiter queue size")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         networkInboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
                 .setDescription("Network inbound limiter queue time")
                 .setUnit("nanoseconds")
@@ -169,38 +163,38 @@ public class S3StreamMetricsManager {
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
                 .setDescription("Delta WAL start offset")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(deltaWalStartOffsetSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(deltaWalStartOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         deltaWalTrimmedOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_TRIMMED_OFFSET)
                 .setDescription("Delta WAL trimmed offset")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(deltaWalTrimmedOffsetSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(deltaWalTrimmedOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         deltaWalCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.DELTA_WAL_CACHE_SIZE)
                 .setDescription("Delta WAL cache size")
                 .setUnit("bytes")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(deltaWALCacheSizeSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(deltaWALCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         blockCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BLOCK_CACHE_SIZE)
                 .setDescription("Block cache size")
                 .setUnit("bytes")
                 .ofLongs()
-                .buildWithCallback(result -> result.record(blockCacheSizeSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record(blockCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         availableInflightReadAheadSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_INFLIGHT_READ_AHEAD_SIZE_METRIC_NAME)
                 .setDescription("Available inflight read ahead size")
                 .setUnit("bytes")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) availableInflightReadAheadSizeSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) availableInflightReadAheadSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         availableInflightS3ReadQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_READ_QUOTA_METRIC_NAME)
                 .setDescription("Available inflight S3 read quota")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) availableInflightS3ReadQuotaSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) availableInflightS3ReadQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         availableInflightS3WriteQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_WRITE_QUOTA_METRIC_NAME)
                 .setDescription("Available inflight S3 write quota")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) availableInflightS3WriteQuotaSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) availableInflightS3WriteQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         inflightWALUploadTasksCount = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME)
                 .setDescription("Inflight upload WAL tasks count")
                 .ofLongs()
-                .buildWithCallback(result -> result.record((long) inflightWALUploadTasksCountSupplier.get(), newAttributesBuilder().build()));
+                .buildWithCallback(result -> result.record((long) inflightWALUploadTasksCountSupplier.get(), AttributesCache.INSTANCE.defaultAttributes()));
         compactionReadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.COMPACTION_READ_SIZE_METRIC_NAME)
                 .setDescription("Compaction read size")
                 .setUnit("bytes")
@@ -209,13 +203,6 @@ public class S3StreamMetricsManager {
                 .setDescription("Compaction write size")
                 .setUnit("bytes")
                 .build();
-    }
-
-    private static AttributesBuilder newAttributesBuilder() {
-        if (attributesBuilderSupplier != null) {
-            return attributesBuilderSupplier.get();
-        }
-        return Attributes.builder();
     }
 
     public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
@@ -233,7 +220,6 @@ public class S3StreamMetricsManager {
         }
     }
 
-    //TODO: 各broker当前stream数量、各stream流量？、各broker的s3 object number, size
     public static void registerDeltaWalOffsetSupplier(Supplier<Long> deltaWalStartOffsetSupplier,
                                                       Supplier<Long> deltaWalTrimmedOffsetSupplier) {
         S3StreamMetricsManager.deltaWalStartOffsetSupplier = deltaWalStartOffsetSupplier;
@@ -265,19 +251,11 @@ public class S3StreamMetricsManager {
     }
 
     public static void recordS3UploadSize(long value) {
-        s3UploadSizeInTotal.add(value, newAttributesBuilder().build());
+        s3UploadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordS3DownloadSize(long value) {
-        s3DownloadSizeInTotal.add(value, newAttributesBuilder().build());
-    }
-
-    public static void recordOperationNum(long value, S3Operation operation) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .build();
-        operationNumInTotal.add(value, attributes);
+        s3DownloadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordOperationLatency(long value, S3Operation operation) {
@@ -293,99 +271,65 @@ public class S3StreamMetricsManager {
     }
 
     public static void recordOperationLatency(long value, S3Operation operation, long size, boolean isSuccess) {
-        AttributesBuilder attributesBuilder = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_STATUS, isSuccess ? "success" : "failed");
-        if (operation == S3Operation.GET_OBJECT || operation == S3Operation.PUT_OBJECT || operation == S3Operation.UPLOAD_PART) {
-            attributesBuilder.put(S3StreamMetricsConstant.LABEL_SIZE_NAME, getObjectBucketLabel(size));
-        }
-        operationLatency.record(value, attributesBuilder.build());
+        operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, size, isSuccess));
     }
 
     public static void recordStageLatency(long value, S3Stage stage) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, stage.getOperation().getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, stage.getOperation().getName())
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
-                .build();
-        operationLatency.record(value, attributes);
+        operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(stage));
     }
 
     public static void recordReadCacheLatency(long value, S3Operation operation, boolean isCacheHit) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_STATUS, isCacheHit ? "hit" : "miss")
-                .build();
-        operationLatency.record(value, attributes);
+        operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, isCacheHit ? "hit" : "miss"));
     }
 
     public static void recordReadAheadLatency(long value, S3Operation operation, boolean isSync) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_STATUS, isSync ? "sync" : "async")
-                .build();
-        operationLatency.record(value, attributes);
-    }
-
-    public static String getObjectBucketLabel(long objectSize) {
-        int index = (int) Math.ceil(Math.log((double) objectSize / (16 * 1024)) / Math.log(2));
-        index = Math.min(S3StreamMetricsConstant.OBJECT_SIZE_BUCKET_NAMES.length - 1, Math.max(0, index));
-        return S3StreamMetricsConstant.OBJECT_SIZE_BUCKET_NAMES[index];
+        operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, isSync ? "sync" : "async"));
     }
 
     public static void recordObjectNum(long value) {
-        objectNumInTotal.add(value, newAttributesBuilder().build());
+        objectNumInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordObjectStageCost(long value, S3ObjectStage stage) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
-                .build();
-        objectStageCost.record(value, attributes);
+        objectStageCost.record(value, AttributesCache.INSTANCE.getAttributes(stage));
     }
 
     public static void recordObjectUploadSize(long value) {
-        objectUploadSize.record(value, newAttributesBuilder().build());
+        objectUploadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordObjectDownloadSize(long value) {
-        objectDownloadSize.record(value, newAttributesBuilder().build());
+        objectDownloadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordNetworkInboundUsage(long value) {
-        networkInboundUsageInTotal.add(value, newAttributesBuilder().build());
+        networkInboundUsageInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordNetworkOutboundUsage(long value) {
-        networkOutboundUsageInTotal.add(value, newAttributesBuilder().build());
+        networkOutboundUsageInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordNetworkLimiterQueueTime(long value, AsyncNetworkBandwidthLimiter.Type type) {
         switch (type) {
-            case INBOUND -> networkInboundLimiterQueueTime.record(value, newAttributesBuilder().build());
-            case OUTBOUND -> networkOutboundLimiterQueueTime.record(value, newAttributesBuilder().build());
+            case INBOUND -> networkInboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
+            case OUTBOUND -> networkOutboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
         }
     }
 
     public static void recordAllocateByteBufSize(long value, String source) {
-        Attributes attributes = newAttributesBuilder()
-                .put(S3StreamMetricsConstant.LABEL_ALLOCATE_BYTE_BUF_SOURCE, source)
-                .build();
-        allocateByteBufSize.record(value, attributes);
+        allocateByteBufSize.record(value, AttributesCache.INSTANCE.getAttributes(source));
     }
 
     public static void recordReadAheadSize(long value) {
-        readAheadSize.record(value, newAttributesBuilder().build());
+        readAheadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordCompactionReadSizeIn(long value) {
-        compactionReadSizeInTotal.add(value, newAttributesBuilder().build());
+        compactionReadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 
     public static void recordCompactionWriteSize(long value) {
-        compactionWriteSizeInTotal.add(value, newAttributesBuilder().build());
+        compactionWriteSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
     }
 }
