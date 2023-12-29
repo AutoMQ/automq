@@ -157,6 +157,10 @@ def do_release(tag_version):
     cmd("Pushing tag %s" % tag_version, ["git", "push", "origin", tag_version])
 
 
+def clean_local_tags():
+    tags = cmd_output('git tag -l').split()
+    cmd("Cleaning local tags", ['git', 'tag', '-d'] + tags)
+
 def check_before_started(tag_version):
     check_tools(["git"])
     cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
@@ -165,7 +169,9 @@ def check_before_started(tag_version):
     if starting_branch != main_branch:
         fail("You must run this script from the %s branch. current: %s" % (main_branch, starting_branch))
     cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
+
     # Validate that the release doesn't already exist
+    clean_local_tags()
     cmd("Fetching tags from upstream", 'git fetch --tags')
     tags = cmd_output('git tag').split()
 
