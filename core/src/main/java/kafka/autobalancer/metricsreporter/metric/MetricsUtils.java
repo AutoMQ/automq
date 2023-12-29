@@ -188,12 +188,8 @@ public final class MetricsUtils {
         }
         switch (name) {
             case BYTES_IN_PER_SEC:
-                // network inbound bandwidth capacity is in KB/s
-                value = value / 1024;
                 return bytesInToMetric(topic, partition, nowMs, brokerId, brokerRack, value);
             case BYTES_OUT_PER_SEC:
-                // network inbound bandwidth capacity is in KB/s
-                value = value / 1024;
                 return bytesOutToMetric(topic, partition, nowMs, brokerId, brokerRack, value);
             case SIZE:
                 if (partition == -1) {
