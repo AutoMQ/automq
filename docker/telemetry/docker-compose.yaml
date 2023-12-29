@@ -1,0 +1,60 @@
+version: '3'
+services:
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: grafana
+    restart: unless-stopped
+    user: '0'
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_PATHS_CONFIG=/etc/grafana/grafana.ini
+    volumes:
+      - ${DATA_PATH}/grafana/data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - 9090:9090
+    user: '0'
+    command:
+      - "--storage.tsdb.retention.time=3d" # set the expire time to three day
+      - "--config.file=/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./prometheus/prometheus.yml:/prometheus/prometheus.yml
+      - ${DATA_PATH}/prometheus/data:/prometheus
+    depends_on:
+      - otel-collector
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the Collector
+      - 8890:8890 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+      - ${DATA_PATH}/tempo/data:/tmp/tempo
+    ports:
+      - "3200:3200"   # tempo
+      - "9095:9095" # tempo grpc
+      - "4320:4320"  # otlp grpc
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
