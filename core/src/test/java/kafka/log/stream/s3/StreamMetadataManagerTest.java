@@ -17,16 +17,19 @@
 
 package kafka.log.stream.s3;
 
-import kafka.log.stream.s3.metadata.StreamMetadataManager;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamState;
 import kafka.log.stream.s3.metadata.MetadataListener;
+import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import kafka.server.metadata.BrokerMetadataListener;
 import kafka.server.metadata.KRaftMetadataCache;
 import org.apache.kafka.image.DeltaMap;
-import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
+import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.S3StreamsMetadataImage;
@@ -34,11 +37,8 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metadata.StreamState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,6 +47,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -94,7 +95,7 @@ public class StreamMetadataManagerTest {
     private static MetadataImage image2;
 
     static {
-        DeltaMap<Long, S3Object> map = new DeltaMap<>(new int[] {});
+        DeltaMap<Long, S3Object> map = new DeltaMap<>(new int[]{});
         map.putAll(Map.of(
                 0L, new S3Object(0L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
                 1L, new S3Object(1L, 128, null, -1, -1, -1, -1, S3ObjectState.COMMITTED),
@@ -110,10 +111,10 @@ public class StreamMetadataManagerTest {
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
 
         NodeS3StreamSetObjectMetadataImage walMetadataImage0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
-                1L, new S3StreamSetObject(1L, BROKER0, Map.of(
-                        STREAM1, new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
-                2L, new S3StreamSetObject(2L, BROKER0, Map.of(
-                        STREAM2, new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
+                1L, new S3StreamSetObject(1L, BROKER0, List.of(
+                        new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
+                2L, new S3StreamSetObject(2L, BROKER0, List.of(
+                        new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
                 Map.of(BROKER0, walMetadataImage0));

@@ -68,7 +68,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -445,41 +444,7 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // remove stream set object or remove stream range in stream set object
-        // TODO: optimize
-        this.nodesMetadata.values()
-                .stream()
-                .flatMap(entry -> entry.streamSetObjects().values().stream())
-                .filter(streamSetObject -> streamSetObject.offsetRanges().containsKey(streamId))
-                .filter(streamSetObject -> streamSetObject.offsetRanges().get(streamId).getEndOffset() <= newStartOffset)
-                .forEach(streamSetObj -> {
-                    if (streamSetObj.offsetRanges().size() == 1) {
-                        // only this range, but we will remove this range, so now we can remove this stream set object
-                        records.add(new ApiMessageAndVersion(
-                                new RemoveStreamSetObjectRecord()
-                                        .setNodeId(streamSetObj.nodeId())
-                                        .setObjectId(streamSetObj.objectId()), (short) 0
-                        ));
-                        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                                List.of(streamSetObj.objectId()));
-                        if (!markDestroyResult.response()) {
-                            log.error("[TrimStream] Mark destroy stream set object: {} failed", streamSetObj.objectId());
-                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-                            return;
-                        }
-                        records.addAll(markDestroyResult.records());
-                        return;
-                    }
-                    Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
-                    // remove offset range
-                    newOffsetRange.remove(streamId);
-                    records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-                            .setObjectId(streamSetObj.objectId())
-                            .setNodeId(streamSetObj.nodeId())
-                            .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                            .setDataTimeInMs(streamSetObj.dataTimeInMs())
-                            .setOrderId(streamSetObj.orderId()), (short) 0));
-                });
+        // the data in stream set object will be removed by compaction
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -523,39 +488,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         records.addAll(markDestroyResult.records());
-        // remove stream set object or remove stream-offset-range in stream set object
-        this.nodesMetadata.values()
-                .stream()
-                .flatMap(entry -> entry.streamSetObjects().values().stream())
-                .filter(streamsSetObject -> streamsSetObject.offsetRanges().containsKey(streamId))
-                .forEach(streamSetObj -> {
-                    if (streamSetObj.offsetRanges().size() == 1) {
-                        // only this range, but we will remove this range, so now we can remove this stream set object
-                        records.add(new ApiMessageAndVersion(
-                                new RemoveStreamSetObjectRecord()
-                                        .setNodeId(streamSetObj.nodeId())
-                                        .setObjectId(streamSetObj.objectId()), (short) 0
-                        ));
-                        ControllerResult<Boolean> result = this.s3ObjectControlManager.markDestroyObjects(
-                                List.of(streamSetObj.objectId()));
-                        if (!result.response()) {
-                            log.error("[DeleteStream]: Mark destroy stream set object: {} failed", streamSetObj.objectId());
-                            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-                            return;
-                        }
-                        records.addAll(result.records());
-                        return;
-                    }
-                    Map<Long, StreamOffsetRange> newOffsetRange = new HashMap<>(streamSetObj.offsetRanges());
-                    // remove offset range
-                    newOffsetRange.remove(streamId);
-                    records.add(new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-                            .setObjectId(streamSetObj.objectId())
-                            .setNodeId(streamSetObj.nodeId())
-                            .setStreamsIndex(newOffsetRange.values().stream().map(Convertor::to).collect(Collectors.toList()))
-                            .setDataTimeInMs(streamSetObj.dataTimeInMs())
-                            .setOrderId(streamSetObj.orderId()), (short) 0));
-                });
+        // the data in stream set object will be removed by compaction
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -1043,10 +976,8 @@ public class StreamControlManager {
         }
 
         // create stream set object
-        Map<Long, StreamOffsetRange> indexMap = streamIndexes
-                .stream()
-                .collect(Collectors.toMap(StreamIndex::streamId, Convertor::to));
-        nodeMetadata.streamSetObjects().put(objectId, new S3StreamSetObject(objectId, nodeId, indexMap, orderId, dataTs));
+        List<StreamOffsetRange> ranges = streamIndexes.stream().map(Convertor::to).collect(Collectors.toList());
+        nodeMetadata.streamSetObjects().put(objectId, new S3StreamSetObject(objectId, nodeId, ranges, orderId, dataTs));
 
         // update range
         record.streamsIndex().forEach(index -> {
