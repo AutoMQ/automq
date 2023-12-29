@@ -66,7 +66,7 @@ class AlwaysSuccessClientTest {
         client.start();
         Stream stream = client
                 .streamClient()
-                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                .createAndOpenStream(CreateStreamOptions.builder().epoch(0).replicaCount(1).build())
                 .get();
         List<byte[]> payloads = List.of("hello".getBytes(), "world".getBytes());
         CompletableFuture.allOf(
@@ -110,7 +110,7 @@ class AlwaysSuccessClientTest {
 
         Stream stream = client
                 .streamClient()
-                .createAndOpenStream(CreateStreamOptions.newBuilder().epoch(0).replicaCount(1).build())
+                .createAndOpenStream(CreateStreamOptions.builder().epoch(0).replicaCount(1).build())
                 .join();
 
         AtomicInteger exceptionCount = new AtomicInteger(0);
@@ -177,7 +177,7 @@ class AlwaysSuccessClientTest {
     private CompletableFuture<Stream> openStream(long streamId) {
         return client
                 .streamClient()
-                .openStream(streamId, OpenStreamOptions.newBuilder().epoch(1).build());
+                .openStream(streamId, OpenStreamOptions.builder().epoch(1).build());
     }
 
     private void checkAppendAndFetch(List<byte[]> rawPayloads, FetchResult fetched) {
