@@ -190,14 +190,13 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
 
         //Add AUTO_BALANCER_BROKER_NW_IN/OUT_CAPACITY by S3NetworkBaselineBandwidthProp config value if not set
-        if (configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()) != null) {
+        Object s3NetworkBaselineBandwidth = configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp());
+        if (s3NetworkBaselineBandwidth != null) {
             if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY))
-                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY,
-                        configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()));
+                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY, s3NetworkBaselineBandwidth);
 
             if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY))
-                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY,
-                        configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp()));
+                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY, s3NetworkBaselineBandwidth);
         }
 
         AutoBalancerMetricsReporterConfig reporterConfig = new AutoBalancerMetricsReporterConfig(configs, false);
