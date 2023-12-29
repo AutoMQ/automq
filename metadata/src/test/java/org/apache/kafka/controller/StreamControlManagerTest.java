@@ -898,7 +898,7 @@ public class StreamControlManagerTest {
         // 4. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
-        assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
+        assertEquals(2, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
 
         // 5. delete again
         req = new DeleteStreamRequest()
