@@ -107,7 +107,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
                     .map(object -> {
                         S3Object s3Object = this.objectsImage.getObjectMetadata(object.objectId());
                         return new S3ObjectMetadata(object.objectId(), object.objectType(),
-                                new ArrayList<>(object.offsetRanges().values()), object.dataTimeInMs(),
+                                object.offsetRangeList(), object.dataTimeInMs(),
                                 s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
                                 object.orderId());
                     })

@@ -19,10 +19,11 @@ package kafka.log.streamaspect;
 
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.utils.FutureUtil;
 import org.apache.kafka.common.utils.Utils;
 
@@ -71,18 +72,18 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+    public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         if (sealed) {
             return FutureUtil.failedFuture(new IllegalStateException("stream segment " + this + " is sealed"));
         }
         nextOffset += recordBatch.count();
-        return stream.append(recordBatch).thenApply(AppendResultWrapper::new);
+        return stream.append(context, recordBatch).thenApply(AppendResultWrapper::new);
     }
 
     @Override
-    public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint, ReadOptions readOptions) {
+    public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
         long fixedStartOffset = Utils.max(startOffset, 0);
-        return stream.fetch(startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint, readOptions)
+        return stream.fetch(context, startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint)
                 .thenApplyAsync(FetchResultWrapper::new, executorService);
     }
 

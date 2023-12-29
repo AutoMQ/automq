@@ -322,6 +322,9 @@ object Defaults {
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
   val S3RefillPeriodMs: Int = 1000 // 1s
   val S3MetricsExporterReportIntervalMs = 60000 // 1min
+  val S3SpanScheduledDelayMs = 1000 // 1s
+  val S3SpanMaxQueueSize = 5120
+  val S3SpanMaxBatchSize = 1024
 }
 
 object KafkaConfig {
@@ -722,11 +725,16 @@ object KafkaConfig {
   val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
   val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
   val S3FailoverEnableProp = "s3.failover.enable"
-  val S3MetricsExporterTypeProp = "s3.metrics.exporter.type"
-  val S3MetricsExporterOTLPEndpointProp = "s3.metrics.exporter.otlp.endpoint"
+  val S3MetricsEnableProp = "s3.telemetry.metrics.enable"
+  val S3TracerEnableProp = "s3.telemetry.tracer.enable"
+  val S3ExporterOTLPEndpointProp = "s3.telemetry.exporter.otlp.endpoint"
+  val S3ExporterReportIntervalMsProp = "s3.telemetry.exporter.report.interval.ms"
+  val S3MetricsExporterTypeProp = "s3.telemetry.metrics.exporter.type"
   val S3MetricsExporterPromHostProp = "s3.metrics.exporter.prom.host"
   val S3MetricsExporterPromPortProp = "s3.metrics.exporter.prom.port"
-  val S3MetricsExporterReportIntervalMsProp = "s3.metrics.exporter.report.interval.ms"
+  val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
+  val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
+  val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -765,11 +773,16 @@ object KafkaConfig {
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
   val S3FailoverEnableDoc = "Failover mode: if enable, the controller will scan failed node and failover the failed node"
+  val S3MetricsEnableDoc = "Whether to enable metrics exporter for s3stream."
+  val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
   val S3MetricsExporterTypeDoc = "The enabled S3 metrics exporters type, seperated by comma. Supported type: otlp, prometheus, log"
-  val S3MetricsExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
+  val S3ExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
+  val S3ExporterReportIntervalMsDoc = "The interval in milliseconds to report telemetry"
   val S3MetricsExporterPromHostDoc = "The host address of Prometheus http server to expose the metrics"
   val S3MetricsExporterPromPortDoc = "The port of Prometheus http server to expose the metrics"
-  val S3MetricsExporterReportIntervalMsDoc = "The interval in milliseconds to report metrics"
+  val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
+  val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
+  val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
 
   // AutoMQ for Kafka inject end
 
@@ -1605,11 +1618,16 @@ object KafkaConfig {
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
       .define(S3FailoverEnableProp, BOOLEAN, false, MEDIUM, S3FailoverEnableDoc)
+      .define(S3MetricsEnableProp, BOOLEAN, true, MEDIUM, S3MetricsEnableDoc)
+      .define(S3TracerEnableProp, BOOLEAN, false, MEDIUM, S3TracerEnableDoc)
       .define(S3MetricsExporterTypeProp, STRING, null, MEDIUM, S3MetricsExporterTypeDoc)
-      .define(S3MetricsExporterOTLPEndpointProp, STRING, null, MEDIUM, S3MetricsExporterOTLPEndpointDoc)
+      .define(S3ExporterOTLPEndpointProp, STRING, null, MEDIUM, S3ExporterOTLPEndpointDoc)
       .define(S3MetricsExporterPromHostProp, STRING, null, MEDIUM, S3MetricsExporterPromHostDoc)
       .define(S3MetricsExporterPromPortProp, INT, 0, MEDIUM, S3MetricsExporterPromPortDoc)
-      .define(S3MetricsExporterReportIntervalMsProp, INT, Defaults.S3MetricsExporterReportIntervalMs, MEDIUM, S3MetricsExporterReportIntervalMsDoc)
+      .define(S3ExporterReportIntervalMsProp, INT, Defaults.S3MetricsExporterReportIntervalMs, MEDIUM, S3ExporterReportIntervalMsDoc)
+      .define(S3SpanScheduledDelayMsProp, INT, Defaults.S3SpanScheduledDelayMs, MEDIUM, S3SpanScheduledDelayMsDoc)
+      .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3SpanMaxQueueSize, MEDIUM, S3SpanMaxQueueSizeDoc)
+      .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3SpanMaxBatchSize, MEDIUM, S3SpanMaxBatchSizeDoc)
     // AutoMQ for Kafka inject end
   }
 
@@ -2182,11 +2200,17 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
   val s3FailoverEnable = getBoolean(KafkaConfig.S3FailoverEnableProp)
+  val s3MetricsEnable = getBoolean(KafkaConfig.S3MetricsEnableProp)
+  val s3TracerEnable = getBoolean(KafkaConfig.S3TracerEnableProp)
   val s3MetricsExporterType = getString(KafkaConfig.S3MetricsExporterTypeProp)
-  val s3MetricsExporterOTLPEndpoint = getString(KafkaConfig.S3MetricsExporterOTLPEndpointProp)
+  val s3ExporterOTLPEndpoint = getString(KafkaConfig.S3ExporterOTLPEndpointProp)
+  val s3ExporterReportIntervalMs = getInt(KafkaConfig.S3ExporterReportIntervalMsProp)
   val s3MetricsExporterPromHost = getString(KafkaConfig.S3MetricsExporterPromHostProp)
   val s3MetricsExporterPromPort = getInt(KafkaConfig.S3MetricsExporterPromPortProp)
-  val s3MetricsExporterReportIntervalMs = getInt(KafkaConfig.S3MetricsExporterReportIntervalMsProp)
+  val s3SpanScheduledDelayMs = getInt(KafkaConfig.S3SpanScheduledDelayMsProp)
+  val s3SpanMaxQueueSize = getInt(KafkaConfig.S3SpanMaxQueueSizeProp)
+  val s3SpanMaxBatchSize = getInt(KafkaConfig.S3SpanMaxBatchSizeProp)
+
   // AutoMQ for Kafka inject end
 
   def addReconfigurable(reconfigurable: Reconfigurable): Unit = {

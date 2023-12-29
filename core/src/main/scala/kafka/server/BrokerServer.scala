@@ -26,6 +26,7 @@ import kafka.cluster.Broker.ServerInfo
 import kafka.coordinator.group.{GroupCoordinator, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
+import kafka.log.stream.s3.telemetry.TelemetryManager
 import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
@@ -151,6 +152,8 @@ class BrokerServer(
 
   var controllerNodeProvider: RaftControllerNodeProvider = _
 
+  var telemetryManager: TelemetryManager = _
+
   def kafkaYammerMetrics: KafkaYammerMetrics = KafkaYammerMetrics.INSTANCE
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -207,6 +210,7 @@ class BrokerServer(
       // AutoMQ for Kafka inject start
       // ElasticLogManager should be marked before LogManager is created.
       ElasticLogManager.enable(config.elasticStreamEnabled)
+      telemetryManager = new TelemetryManager(config, sharedServer.metaProps.clusterId)
       // AutoMQ for Kafka inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
@@ -603,8 +607,12 @@ class BrokerServer(
         CoreUtils.swallow(logManager.shutdown(), this)
 
       // log manager need clientToControllerChannelManager to send request to controller.
-      if (clientToControllerChannelManager != null)
+      if (clientToControllerChannelManager != null) {
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
+      }
+      if (telemetryManager != null) {
+        CoreUtils.swallow(telemetryManager.shutdown(), this)
+      }
       // AutoMQ for Kafka inject end
 
       if (quotaManagers != null)

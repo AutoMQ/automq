@@ -27,11 +27,12 @@ import com.automq.stream.api.KeyValue;
 import com.automq.stream.api.KeyValue.Key;
 import com.automq.stream.api.KeyValue.Value;
 import com.automq.stream.api.OpenStreamOptions;
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -98,14 +99,14 @@ public class MemoryClient implements Client {
         }
 
         @Override
-        public synchronized CompletableFuture<AppendResult> append(RecordBatch recordBatch) {
+        public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
             long baseOffset = nextOffsetAlloc.getAndAdd(recordBatch.count());
             recordMap.put(baseOffset, new RecordBatchWithContextWrapper(recordBatch, baseOffset));
             return CompletableFuture.completedFuture(() -> baseOffset);
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxSizeHint, ReadOptions readOptions) {
+        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxSizeHint) {
             Long floorKey = recordMap.floorKey(startOffset);
             if (floorKey == null) {
                 return CompletableFuture.completedFuture(ArrayList::new);
