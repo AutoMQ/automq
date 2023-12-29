@@ -24,7 +24,10 @@ public class OpenStreamOptions {
     private ReadMode readMode = ReadMode.MULTIPLE;
     private long epoch;
 
-    public static Builder newBuilder() {
+    private OpenStreamOptions() {
+    }
+
+    public static Builder builder() {
         return new Builder();
     }
 

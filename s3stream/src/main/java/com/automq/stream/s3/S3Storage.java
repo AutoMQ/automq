@@ -187,13 +187,13 @@ public class S3Storage implements Storage {
         }
         deltaWAL.reset().get();
         for (StreamMetadata stream : streams) {
-            long newEndOffset = streamEndOffsets.getOrDefault(stream.getStreamId(), stream.getEndOffset());
+            long newEndOffset = streamEndOffsets.getOrDefault(stream.streamId(), stream.endOffset());
             logger.info("recover try close stream {} with new end offset {}", stream, newEndOffset);
         }
         CompletableFuture.allOf(
                 streams
                         .stream()
-                        .map(s -> streamManager.closeStream(s.getStreamId(), s.getEpoch()))
+                        .map(s -> streamManager.closeStream(s.streamId(), s.epoch()))
                         .toArray(CompletableFuture[]::new)
         ).get();
     }
@@ -203,7 +203,7 @@ public class S3Storage implements Storage {
     }
 
     static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it, List<StreamMetadata> openingStreams, Logger logger) {
-        Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::getStreamId, StreamMetadata::getEndOffset));
+        Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
         long logEndOffset = -1L;
         Map<Long, Long> streamNextOffsets = new HashMap<>();

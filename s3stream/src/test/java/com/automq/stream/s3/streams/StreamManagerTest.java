@@ -45,11 +45,11 @@ class StreamManagerTest {
         // Create and open stream with epoch 0.
         Long streamId = streamManager.createStream().join();
         StreamMetadata streamMetadata = streamManager.openStream(streamId, 0).join();
-        assertEquals(streamId, streamMetadata.getStreamId());
-        assertEquals(0, streamMetadata.getEpoch());
-        assertEquals(0, streamMetadata.getStartOffset());
-        assertEquals(0, streamMetadata.getEndOffset());
-        assertEquals(StreamState.OPENED, streamMetadata.getState());
+        assertEquals(streamId, streamMetadata.streamId());
+        assertEquals(0, streamMetadata.epoch());
+        assertEquals(0, streamMetadata.startOffset());
+        assertEquals(0, streamMetadata.endOffset());
+        assertEquals(StreamState.OPENED, streamMetadata.state());
     }
 
     @Test
@@ -60,12 +60,12 @@ class StreamManagerTest {
 
         // Close stream with epoch 1.
         CompletableFuture<Void> future = streamManager.closeStream(streamId, 1);
-        assertEquals(StreamState.OPENED, streamMetadata.getState());
+        assertEquals(StreamState.OPENED, streamMetadata.state());
         assertTrue(future.isCompletedExceptionally());
 
         // Close stream with epoch 0.
         streamManager.closeStream(streamId, 0).join();
-        assertEquals(StreamState.CLOSED, streamMetadata.getState());
+        assertEquals(StreamState.CLOSED, streamMetadata.state());
 
         // Open stream with epoch 0.
         CompletableFuture<StreamMetadata> future1 = streamManager.openStream(streamId, 0);
@@ -73,15 +73,15 @@ class StreamManagerTest {
 
         // Open stream with epoch 1.
         streamMetadata = streamManager.openStream(streamId, 1).join();
-        assertEquals(streamId, streamMetadata.getStreamId());
-        assertEquals(1, streamMetadata.getEpoch());
-        assertEquals(0, streamMetadata.getStartOffset());
-        assertEquals(0, streamMetadata.getEndOffset());
-        assertEquals(StreamState.OPENED, streamMetadata.getState());
+        assertEquals(streamId, streamMetadata.streamId());
+        assertEquals(1, streamMetadata.epoch());
+        assertEquals(0, streamMetadata.startOffset());
+        assertEquals(0, streamMetadata.endOffset());
+        assertEquals(StreamState.OPENED, streamMetadata.state());
 
         // Close stream with epoch 1.
         streamManager.closeStream(streamId, 1).join();
-        assertEquals(StreamState.CLOSED, streamMetadata.getState());
+        assertEquals(StreamState.CLOSED, streamMetadata.state());
         streamManager.deleteStream(streamId, 1).join();
         List<StreamMetadata> streamMetadataList = streamManager.getOpeningStreams().join();
         assertEquals(0, streamMetadataList.size());
@@ -113,10 +113,10 @@ class StreamManagerTest {
         streamObjectList.add(streamObject);
         request.setStreamObjects(streamObjectList);
         ((ObjectManager) streamManager).commitStreamSetObject(request).join();
-        assertEquals(10, streamMetadata.getEndOffset());
+        assertEquals(10, streamMetadata.endOffset());
 
         streamManager.trimStream(streamId, 0, 5).join();
-        assertEquals(5, streamMetadata.getStartOffset());
+        assertEquals(5, streamMetadata.startOffset());
     }
 
     @Test
@@ -134,11 +134,11 @@ class StreamManagerTest {
         // Get streams.
         List<StreamMetadata> streamMetadataList = streamManager.getStreams(streamIds).join();
         assertEquals(2, streamMetadataList.size());
-        assertEquals(streamId, streamMetadataList.get(1).getStreamId());
-        assertEquals(0, streamMetadataList.get(1).getEpoch());
-        assertEquals(0, streamMetadataList.get(1).getStartOffset());
-        assertEquals(0, streamMetadataList.get(1).getEndOffset());
-        assertEquals(StreamState.OPENED, streamMetadataList.get(1).getState());
+        assertEquals(streamId, streamMetadataList.get(1).streamId());
+        assertEquals(0, streamMetadataList.get(1).epoch());
+        assertEquals(0, streamMetadataList.get(1).startOffset());
+        assertEquals(0, streamMetadataList.get(1).endOffset());
+        assertEquals(StreamState.OPENED, streamMetadataList.get(1).state());
 
         streamIds.add(Long.MAX_VALUE);
         streamMetadataList = streamManager.getStreams(streamIds).join();

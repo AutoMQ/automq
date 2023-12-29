@@ -18,9 +18,9 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3ObjectLogger;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -38,7 +38,6 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.github.bucket4j.Bucket;
 import io.netty.util.concurrent.DefaultThreadFactory;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -56,7 +55,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -476,7 +474,7 @@ public class CompactionManager {
     boolean isSanityCheckFailed(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> compactedObjects,
                                 CommitStreamSetObjectRequest request) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
-                .collect(Collectors.toMap(StreamMetadata::getStreamId, e -> e));
+                .collect(Collectors.toMap(StreamMetadata::streamId, e -> e));
         Map<Long, S3ObjectMetadata> objectMetadataMap = compactedObjects.stream()
                 .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
 
@@ -493,7 +491,7 @@ public class CompactionManager {
                     // skip non-exist stream
                     continue;
                 }
-                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.getStreamId()).getStartOffset();
+                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.getStreamId()).startOffset();
                 if (streamOffsetRange.getEndOffset() <= streamStartOffset) {
                     // skip stream offset range that has been trimmed
                     continue;
