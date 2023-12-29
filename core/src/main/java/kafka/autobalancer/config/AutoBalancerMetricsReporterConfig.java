@@ -45,8 +45,8 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_CONFIG = PREFIX + "producer.batch.size";
     public static final String AUTO_BALANCER_METRICS_REPORTER_KUBERNETES_MODE_CONFIG = PREFIX + "kubernetes.mode";
     /* Default values */
-    public static final double DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY = 100 * 1024; // 100MB/s
-    public static final double DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY = 100 * 1024; // 100MB/s
+    public static final double DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY = 100 * 1024 * 1024; // 100MB/s
+    public static final double DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY = 100 * 1024 * 1024; // 100MB/s
     public static final String DEFAULT_AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID = "AutoBalancerMetricsReporterProducer";
     public static final long DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
     public static final Integer DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES = 5;
@@ -57,8 +57,8 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
     public static final boolean DEFAULT_AUTO_BALANCER_METRICS_REPORTER_KUBERNETES_MODE = false;
     public static final int DEFAULT_AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES = 2;
     /* Documents */
-    public static final String AUTO_BALANCER_BROKER_NW_IN_CAPACITY_DOC = "Maximum network input bandwidth available for the broker in KB/s";
-    public static final String AUTO_BALANCER_BROKER_NW_OUT_CAPACITY_DOC = "Maximum network output bandwidth available for the broker in KB/s";
+    public static final String AUTO_BALANCER_BROKER_NW_IN_CAPACITY_DOC = "Maximum network input bandwidth available for the broker in Bytes/s";
+    public static final String AUTO_BALANCER_BROKER_NW_OUT_CAPACITY_DOC = "Maximum network output bandwidth available for the broker in Bytes/s";
     private static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS_DOC = "Timeout on the Auto Balancer metrics topic creation";
     private static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES_DOC = "Number of retries of the Auto Balancer metrics reporter"
             + " for the topic creation";

@@ -34,7 +34,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class BrokerUpdater {
     private static final Logger LOGGER = LoggerFactory.getLogger(BrokerUpdater.class);
-    private static final Double IGNORED_CAPACITY_VALUE = -1.0;
     private final Lock lock = new ReentrantLock();
     private final Broker broker;
 
@@ -52,7 +51,7 @@ public class BrokerUpdater {
 
         public Broker(int brokerId) {
             this.brokerId = brokerId;
-            Arrays.fill(this.brokerCapacity, IGNORED_CAPACITY_VALUE);
+            Arrays.fill(this.brokerCapacity, Resource.IGNORED_CAPACITY_VALUE);
         }
 
         public Broker(Broker other) {
@@ -103,7 +102,7 @@ public class BrokerUpdater {
 
         public double utilizationFor(Resource resource) {
             double capacity = capacity(resource);
-            if (capacity == IGNORED_CAPACITY_VALUE) {
+            if (capacity == Resource.IGNORED_CAPACITY_VALUE) {
                 return 0.0;
             }
             if (capacity == 0.0) {
@@ -143,12 +142,27 @@ public class BrokerUpdater {
 
         @Override
         public String toString() {
-            return "Broker{" +
-                    "brokerId=" + brokerId +
-                    ", brokerCapacity=" + Arrays.toString(brokerCapacity) +
-                    ", brokerLoad=" + Arrays.toString(brokerLoad) +
-                    ", active=" + active +
-                    '}';
+            StringBuilder builder = new StringBuilder();
+            builder.append("{brokerId=")
+                    .append(brokerId)
+                    .append(", brokerCapacity=[");
+            for (int i = 0; i < brokerCapacity.length; i++) {
+                builder.append(Resource.of(i).resourceString(brokerCapacity[i]));
+                if (i != brokerCapacity.length - 1) {
+                    builder.append(", ");
+                }
+            }
+            builder.append("], brokerLoad=[");
+            for (int i = 0; i < brokerLoad.length; i++) {
+                builder.append(Resource.of(i).resourceString(brokerLoad[i]));
+                if (i != brokerLoad.length - 1) {
+                    builder.append(", ");
+                }
+            }
+            builder.append("], active=").append(active)
+                    .append(", timestamp=").append(timestamp)
+                    .append("}");
+            return builder.toString();
         }
     }
 

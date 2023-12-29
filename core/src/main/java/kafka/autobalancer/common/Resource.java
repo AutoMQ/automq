@@ -22,23 +22,28 @@ package kafka.autobalancer.common;
 
 import java.util.List;
 
-
 /**
  * CPU: a host and broker-level resource.
  * NW (in and out): a host-level resource.
  * DISK: a broker-level resource.
  */
 public enum Resource {
-    CPU("cpu", 0, 0.001),
-    NW_IN("networkInbound", 1, 10),
-    NW_OUT("networkOutbound", 2, 10);
+    CPU("CPU", 0, 0.001),
+    NW_IN("NWIn", 1, 10),
+    NW_OUT("NWOut", 2, 10),
+    UNKNOWN("UNKNOWN", 999, 0);
 
+    public static final Double IGNORED_CAPACITY_VALUE = -1.0;
     // EPSILON_PERCENT defines the acceptable nuance when comparing the utilization of the resource.
     // This nuance is generated due to precision loss when summing up float type utilization value.
     // In stress test we find that for cluster of around 800,000 replicas, the summed up nuance can be
     // more than 0.1% of sum value.
     private static final double EPSILON_PERCENT = 0.0008;
-    private static final List<Resource> CACHED_VALUES = List.of(values());
+    private static final List<Resource> CACHED_VALUES = List.of(
+            Resource.CPU,
+            Resource.NW_IN,
+            Resource.NW_OUT
+    );
     private final String resource;
     private final int id;
     private final double epsilon;
@@ -47,6 +52,33 @@ public enum Resource {
         this.resource = resource;
         this.id = id;
         this.epsilon = epsilon;
+    }
+
+    public static Resource of(int id) {
+        if (id < 0 || id >= CACHED_VALUES.size()) {
+            return UNKNOWN;
+        }
+        return CACHED_VALUES.get(id);
+    }
+
+    public String resourceString(double value) {
+        String valueStr = "";
+        if (value == IGNORED_CAPACITY_VALUE) {
+            valueStr = "ignored";
+        } else {
+            switch (this) {
+                case CPU:
+                    valueStr = String.format("%.2f%%", value * 100);
+                    break;
+                case NW_IN:
+                case NW_OUT:
+                    valueStr = String.format("%.2fKB/s", value / 1024);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return this.resource + "=" + valueStr;
     }
 
     /**
