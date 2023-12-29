@@ -228,6 +228,7 @@ if (file('.git').exists()) {
         '.github/**',
         'CODE_OF_CONDUCT.md',
         'CONTRIBUTING_GUIDE.md',
+        'docker/telemetry/**'
     ])
   }
 } else {
