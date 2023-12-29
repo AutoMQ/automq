@@ -84,17 +84,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
                 assert stream != null;
                 if (request.getCompactedObjectIds().isEmpty()) {
                     // Commit new object.
-                    if (stream.getEndOffset() != range.getStartOffset()) {
-                        throw new IllegalArgumentException("stream " + range.getStreamId() + " end offset " + stream.getEndOffset() + " is not equal to start offset of request " + range.getStartOffset());
+                    if (stream.endOffset() != range.getStartOffset()) {
+                        throw new IllegalArgumentException("stream " + range.getStreamId() + " end offset " + stream.endOffset() + " is not equal to start offset of request " + range.getStartOffset());
                     }
-                    stream.setEndOffset(range.getEndOffset());
+                    stream.endOffset(range.getEndOffset());
                 } else {
                     // Compact old object.
-                    if (stream.getEndOffset() < range.getEndOffset()) {
-                        throw new IllegalArgumentException("stream " + range.getStreamId() + " end offset " + stream.getEndOffset() + " is lesser than request " + range.getEndOffset());
+                    if (stream.endOffset() < range.getEndOffset()) {
+                        throw new IllegalArgumentException("stream " + range.getStreamId() + " end offset " + stream.endOffset() + " is lesser than request " + range.getEndOffset());
                     }
-                    if (stream.getStartOffset() > range.getStartOffset()) {
-                        throw new IllegalArgumentException("stream " + range.getStreamId() + " start offset " + stream.getStartOffset() + " is greater than request " + range.getStartOffset());
+                    if (stream.startOffset() > range.getStartOffset()) {
+                        throw new IllegalArgumentException("stream " + range.getStreamId() + " start offset " + stream.startOffset() + " is greater than request " + range.getStartOffset());
                     }
                 }
             }
@@ -111,17 +111,17 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             assert stream != null;
             if (request.getCompactedObjectIds().isEmpty()) {
                 // Commit new object.
-                if (stream.getEndOffset() != streamObject.getStartOffset()) {
-                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " end offset " + stream.getEndOffset() + " is not equal to start offset of request " + streamObject.getStartOffset());
+                if (stream.endOffset() != streamObject.getStartOffset()) {
+                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " end offset " + stream.endOffset() + " is not equal to start offset of request " + streamObject.getStartOffset());
                 }
-                stream.setEndOffset(streamObject.getEndOffset());
+                stream.endOffset(streamObject.getEndOffset());
             } else {
                 // Compact old object.
-                if (stream.getEndOffset() < streamObject.getEndOffset()) {
-                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " end offset " + stream.getEndOffset() + " is lesser than request " + streamObject.getEndOffset());
+                if (stream.endOffset() < streamObject.getEndOffset()) {
+                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " end offset " + stream.endOffset() + " is lesser than request " + streamObject.getEndOffset());
                 }
-                if (stream.getStartOffset() > streamObject.getStartOffset()) {
-                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " start offset " + stream.getStartOffset() + " is greater than request " + streamObject.getStartOffset());
+                if (stream.startOffset() > streamObject.getStartOffset()) {
+                    throw new IllegalArgumentException("stream " + streamObject.getStreamId() + " start offset " + stream.startOffset() + " is greater than request " + streamObject.getStartOffset());
                 }
             }
 
@@ -142,11 +142,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         long streamId = request.getStreamId();
         StreamMetadata stream = streams.get(streamId);
         assert stream != null;
-        if (stream.getEndOffset() < request.getEndOffset()) {
-            throw new IllegalArgumentException("stream " + streamId + " end offset " + stream.getEndOffset() + " is lesser than request " + request.getEndOffset());
+        if (stream.endOffset() < request.getEndOffset()) {
+            throw new IllegalArgumentException("stream " + streamId + " end offset " + stream.endOffset() + " is lesser than request " + request.getEndOffset());
         }
-        if (stream.getStartOffset() > request.getStartOffset()) {
-            throw new IllegalArgumentException("stream " + streamId + " start offset " + stream.getStartOffset() + " is greater than request " + request.getStartOffset());
+        if (stream.startOffset() > request.getStartOffset()) {
+            throw new IllegalArgumentException("stream " + streamId + " start offset " + stream.startOffset() + " is greater than request " + request.getStartOffset());
         }
 
         streamObjects.computeIfAbsent(streamId, id -> new LinkedList<>())
@@ -207,7 +207,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public synchronized CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
-        return CompletableFuture.completedFuture(streams.values().stream().filter(stream -> stream.getState() == StreamState.OPENED).toList());
+        return CompletableFuture.completedFuture(streams.values().stream().filter(stream -> stream.state() == StreamState.OPENED).toList());
     }
 
     @Override
@@ -228,14 +228,14 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         if (stream == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " not found"));
         }
-        if (stream.getState() == StreamState.OPENED) {
+        if (stream.state() == StreamState.OPENED) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " has been opened"));
         }
-        if (stream.getEpoch() >= epoch) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not newer than current epoch " + stream.getEpoch()));
+        if (stream.epoch() >= epoch) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not newer than current epoch " + stream.epoch()));
         }
-        stream.setEpoch(epoch);
-        stream.setState(StreamState.OPENED);
+        stream.epoch(epoch);
+        stream.state(StreamState.OPENED);
         return CompletableFuture.completedFuture(stream);
     }
 
@@ -245,19 +245,19 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         if (stream == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " not found"));
         }
-        if (stream.getState() != StreamState.OPENED) {
+        if (stream.state() != StreamState.OPENED) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " is not opened"));
         }
-        if (stream.getEpoch() != epoch) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.getEpoch()));
+        if (stream.epoch() != epoch) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.epoch()));
         }
-        if (newStartOffset < stream.getStartOffset()) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " new start offset " + newStartOffset + " is less than current start offset " + stream.getStartOffset()));
+        if (newStartOffset < stream.startOffset()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " new start offset " + newStartOffset + " is less than current start offset " + stream.startOffset()));
         }
-        if (newStartOffset > stream.getEndOffset()) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " new start offset " + newStartOffset + " is greater than current end offset " + stream.getEndOffset()));
+        if (newStartOffset > stream.endOffset()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " new start offset " + newStartOffset + " is greater than current end offset " + stream.endOffset()));
         }
-        stream.setStartOffset(newStartOffset);
+        stream.startOffset(newStartOffset);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -267,13 +267,13 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         if (stream == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " not found"));
         }
-        if (stream.getState() != StreamState.OPENED) {
+        if (stream.state() != StreamState.OPENED) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " is not opened"));
         }
-        if (stream.getEpoch() != epoch) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.getEpoch()));
+        if (stream.epoch() != epoch) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.epoch()));
         }
-        stream.setState(StreamState.CLOSED);
+        stream.state(StreamState.CLOSED);
         return CompletableFuture.completedFuture(null);
     }
 
@@ -283,11 +283,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         if (stream == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " not found"));
         }
-        if (stream.getState() != StreamState.CLOSED) {
+        if (stream.state() != StreamState.CLOSED) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " is not closed"));
         }
-        if (stream.getEpoch() != epoch) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.getEpoch()));
+        if (stream.epoch() != epoch) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.epoch()));
         }
         streams.remove(streamId);
         return CompletableFuture.completedFuture(null);

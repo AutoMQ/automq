@@ -87,9 +87,9 @@ class ObjectManagerTest {
 
         List<StreamMetadata> streamMetadataList = streamManager.getStreams(List.of(0L, 1L, 2L)).join();
         assertEquals(3, streamMetadataList.size());
-        assertEquals(3, streamMetadataList.get(0).getEndOffset());
-        assertEquals(5, streamMetadataList.get(1).getEndOffset());
-        assertEquals(20, streamMetadataList.get(2).getEndOffset());
+        assertEquals(3, streamMetadataList.get(0).endOffset());
+        assertEquals(5, streamMetadataList.get(1).endOffset());
+        assertEquals(20, streamMetadataList.get(2).endOffset());
 
         List<S3ObjectMetadata> streamSetObjectMetadataList = objectManager.getServerObjects().join();
         assertEquals(1, streamSetObjectMetadataList.size());

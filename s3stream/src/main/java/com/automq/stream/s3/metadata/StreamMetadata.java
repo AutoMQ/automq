@@ -36,43 +36,43 @@ public class StreamMetadata {
         this.state = state;
     }
 
-    public long getStreamId() {
+    public long streamId() {
         return streamId;
     }
 
-    public void setStreamId(long streamId) {
+    public void streamId(long streamId) {
         this.streamId = streamId;
     }
 
-    public long getEpoch() {
+    public long epoch() {
         return epoch;
     }
 
-    public void setEpoch(long epoch) {
+    public void epoch(long epoch) {
         this.epoch = epoch;
     }
 
-    public long getStartOffset() {
+    public long startOffset() {
         return startOffset;
     }
 
-    public void setStartOffset(long startOffset) {
+    public void startOffset(long startOffset) {
         this.startOffset = startOffset;
     }
 
-    public long getEndOffset() {
+    public long endOffset() {
         return endOffset;
     }
 
-    public void setEndOffset(long endOffset) {
+    public void endOffset(long endOffset) {
         this.endOffset = endOffset;
     }
 
-    public StreamState getState() {
+    public StreamState state() {
         return state;
     }
 
-    public void setState(StreamState state) {
+    public void state(StreamState state) {
         this.state = state;
     }
 
