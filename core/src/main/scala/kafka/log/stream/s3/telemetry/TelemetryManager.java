@@ -17,6 +17,7 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.AttributeKey;
@@ -59,6 +60,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -139,22 +141,35 @@ public class TelemetryManager {
             autoCloseables.addAll(GarbageCollector.registerObservers(openTelemetrySdk));
 
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
+            S3StreamMetricsManager.setMetricsLevel(metricsLevel());
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
             S3StreamMetricsManager.initAttributesBuilder(() -> {
-                //TODO: cache and reuse attributes
-                //TODO: support metrics level
                 AttributesBuilder builder = attributesBuilderSupplier.get();
                 labelMap.forEach(builder::put);
                 return builder;
             });
         }
 
-        LOGGER.info("Instrument manager initialized with metrics: {}, trace: {} report interval: {}",
-                kafkaConfig.s3MetricsEnable(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
+        LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",
+                kafkaConfig.s3MetricsEnable(), kafkaConfig.s3MetricsLevel(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
     }
 
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
         return openTelemetrySdk;
+    }
+
+    private MetricsLevel metricsLevel() {
+        String levelStr = kafkaConfig.s3MetricsLevel();
+        if (StringUtils.isBlank(levelStr)) {
+            return MetricsLevel.INFO;
+        }
+        try {
+            String up = levelStr.toUpperCase(Locale.ENGLISH);
+            return MetricsLevel.valueOf(up);
+        } catch (Exception e) {
+            LOGGER.error("illegal metrics level: {}", levelStr);
+            return MetricsLevel.INFO;
+        }
     }
 
     private SdkTracerProvider getTraceProvider(Resource resource) {
@@ -185,6 +200,7 @@ public class TelemetryManager {
         }
         String[] exporterTypeArray = exporterTypes.split(",");
         for (String exporterType : exporterTypeArray) {
+            exporterType = exporterType.trim();
             switch (exporterType) {
                 case "otlp":
                     initOTLPExporter(sdkMeterProviderBuilder, kafkaConfig);
