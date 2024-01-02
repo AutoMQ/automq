@@ -26,11 +26,10 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
 import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
@@ -118,10 +117,10 @@ public class Failover {
         @Override
         public String toString() {
             return "FailoverTask{" +
-                    "request=" + request +
-                    ", nodeId=" + nodeId +
-                    ", epoch=" + epoch +
-                    '}';
+                "request=" + request +
+                ", nodeId=" + nodeId +
+                ", epoch=" + epoch +
+                '}';
         }
     }
 

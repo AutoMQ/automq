@@ -25,9 +25,6 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.AsyncRateLimiter;
 import com.automq.stream.utils.FutureUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -37,12 +34,14 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class DeltaWALUploadTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(DeltaWALUploadTask.class);
-    private long startTimestamp;
+    final boolean forceSplit;
     private final Logger s3ObjectLogger;
     private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
     private final int objectBlockSize;
@@ -50,17 +49,18 @@ public class DeltaWALUploadTask {
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
-    final boolean forceSplit;
     private final boolean s3ObjectLogEnable;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
-    private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
     private final CompletableFuture<CommitStreamSetObjectRequest> uploadCf = new CompletableFuture<>();
     private final ExecutorService executor;
     private final double rate;
     private final AsyncRateLimiter limiter;
+    private long startTimestamp;
+    private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
 
-    public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, S3Operator s3Operator,
-                              ExecutorService executor, boolean forceSplit, double rate) {
+    public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
+        ObjectManager objectManager, S3Operator s3Operator,
+        ExecutorService executor, boolean forceSplit, double rate) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = config.objectBlockSize();
@@ -85,12 +85,12 @@ public class DeltaWALUploadTask {
             prepareCf.complete(NOOP_OBJECT_ID);
         } else {
             objectManager
-                    .prepareObject(1, TimeUnit.MINUTES.toMillis(60))
-                    .thenAcceptAsync(prepareCf::complete, executor)
-                    .exceptionally(ex -> {
-                        prepareCf.completeExceptionally(ex);
-                        return null;
-                    });
+                .prepareObject(1, TimeUnit.MINUTES.toMillis(60))
+                .thenAcceptAsync(prepareCf::complete, executor)
+                .exceptionally(ex -> {
+                    prepareCf.completeExceptionally(ex);
+                    return null;
+                });
         }
         return prepareCf;
     }
@@ -135,7 +135,7 @@ public class DeltaWALUploadTask {
         request.setObjectId(objectId);
         request.setOrderId(objectId);
         CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetWriteCfList.toArray(new CompletableFuture[0]))
-                .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> request.setObjectSize(streamSetObject.size())));
+            .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> request.setObjectSize(streamSetObject.size())));
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
@@ -150,7 +150,7 @@ public class DeltaWALUploadTask {
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> objectManager.commitStreamSetObject(request).thenAccept(resp -> {
             LOGGER.info("Upload delta WAL {}, cost {}ms, rate limiter {}bytes/s", commitStreamSetObjectRequest,
-                    System.currentTimeMillis() - startTimestamp, rate);
+                System.currentTimeMillis() - startTimestamp, rate);
             if (s3ObjectLogEnable) {
                 s3ObjectLogger.trace("{}", commitStreamSetObjectRequest);
             }
@@ -227,10 +227,10 @@ public class DeltaWALUploadTask {
                 boolean forceSplit = streamRecordsMap.size() == 1;
                 if (!forceSplit) {
                     Optional<Boolean> hasStreamSetData = streamRecordsMap.values()
-                            .stream()
-                            .map(records -> records.stream().mapToLong(StreamRecordBatch::size).sum() >= config.streamSplitSize())
-                            .filter(split -> !split)
-                            .findAny();
+                        .stream()
+                        .map(records -> records.stream().mapToLong(StreamRecordBatch::size).sum() >= config.streamSplitSize())
+                        .filter(split -> !split)
+                        .findAny();
                     if (hasStreamSetData.isEmpty()) {
                         forceSplit = true;
                     }

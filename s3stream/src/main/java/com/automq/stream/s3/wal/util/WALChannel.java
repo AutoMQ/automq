@@ -20,10 +20,9 @@ package com.automq.stream.s3.wal.util;
 import com.automq.stream.s3.wal.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.WALNotInitializedException;
 import io.netty.buffer.ByteBuf;
+import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 /**
  * There are two implementations of WALChannel:

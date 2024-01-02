@@ -18,14 +18,13 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.utils.LogContext;
-import org.slf4j.Logger;
-
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
 
 public class ReadAheadManager implements BlockCache.CacheEvictListener {
     private static final Logger LOGGER = new LogContext("[S3BlockCache] ").logger(ReadAheadManager.class);

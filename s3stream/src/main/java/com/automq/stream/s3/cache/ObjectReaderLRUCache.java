@@ -18,7 +18,6 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
-
 import java.util.Optional;
 
 public class ObjectReaderLRUCache extends LRUCache<Long, ObjectReader> {
@@ -43,12 +42,12 @@ public class ObjectReaderLRUCache extends LRUCache<Long, ObjectReader> {
 
     private int objectSize() {
         return cacheEntrySet.stream().filter(entry -> entry.getValue().basicObjectInfo().isDone())
-                .mapToInt(entry -> {
-                    try {
-                        return entry.getValue().basicObjectInfo().get().size();
-                    } catch (Exception e) {
-                        return 0;
-                    }
-                }).sum();
+            .mapToInt(entry -> {
+                try {
+                    return entry.getValue().basicObjectInfo().get().size();
+                } catch (Exception e) {
+                    return 0;
+                }
+            }).sum();
     }
 }

@@ -21,13 +21,12 @@ import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
 import io.netty.util.internal.PlatformDependent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class containing native hooks and utility methods for performing direct I/O, using
@@ -38,9 +37,9 @@ import java.util.List;
  * when given a string for a file or directory.
  */
 public class DirectIOLib {
+    static final int PC_REC_XFER_ALIGN = 0x11;
     private static final Logger logger = LoggerFactory.getLogger(DirectIOLib.class);
     public static boolean binit;
-    static final int PC_REC_XFER_ALIGN = 0x11;
 
     static {
         binit = false;
@@ -97,7 +96,6 @@ public class DirectIOLib {
         this.fsBlockNotMask = -((long) fsBlockSize);
     }
 
-
     /**
      * Static method to register JNA hooks for doing direct I/O
      *
@@ -108,7 +106,7 @@ public class DirectIOLib {
         int fsBlockSize = initilizeSoftBlockSize(workingDir);
         if (fsBlockSize == -1) {
             logger.warn("O_DIRECT support non available on your version of Linux (" + System.getProperty("os.version") + "), " +
-                    "please upgrade your kernel in order to use jaydio.");
+                "please upgrade your kernel in order to use jaydio.");
             return null;
         }
         return new DirectIOLib(fsBlockSize);
@@ -155,7 +153,6 @@ public class DirectIOLib {
 
         return fsBlockSize;
     }
-
 
     // -- Java interfaces to native methods
 
@@ -216,7 +213,6 @@ public class DirectIOLib {
      * @return 0 on success, one of the C error codes on failure.
      */
     public static native int posix_memalign(PointerByReference memptr, NativeLong alignment, NativeLong size);
-
 
     // -- alignment logic utility methods
 

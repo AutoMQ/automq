@@ -19,19 +19,18 @@ package com.automq.stream.s3.trace;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
-
 import java.lang.reflect.Method;
 
 public final class SpanAttributesExtractor {
 
     private final MethodCache<AttributeBindings> cache;
 
-    public static SpanAttributesExtractor create() {
-        return new SpanAttributesExtractor(new MethodCache<>());
-    }
-
     SpanAttributesExtractor(MethodCache<AttributeBindings> cache) {
         this.cache = cache;
+    }
+
+    public static SpanAttributesExtractor create() {
+        return new SpanAttributesExtractor(new MethodCache<>());
     }
 
     public Attributes extract(Method method, String[] parametersNames, Object[] args) {

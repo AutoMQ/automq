@@ -24,14 +24,13 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
@@ -128,7 +127,8 @@ public class ObjectReader implements AutoCloseable {
      */
     public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
 
-        public static BasicObjectInfo parse(ByteBuf objectTailBuf, S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
+        public static BasicObjectInfo parse(ByteBuf objectTailBuf,
+            S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + objectTailBuf.readableBytes() < s3ObjectMetadata.objectSize()) {
@@ -217,14 +217,14 @@ public class ObjectReader implements AutoCloseable {
                     int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
                     int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
                     rst.add(new StreamDataBlock(streamId, rangeStartOffset, rangeEndOffset, s3ObjectMetadata.objectId(),
-                            new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount)));
+                        new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount)));
 
                     // we consider first block as not matched because we do not know exactly how many bytes are within
                     // the range in first block, as a result we may read one more block than expected.
                     if (matched) {
                         int recordPayloadSize = blockSize
-                                - recordCount * StreamRecordBatchCodec.HEADER_SIZE // sum of encoded record header size
-                                - ObjectWriter.DataBlock.BLOCK_HEADER_SIZE; // block header size
+                            - recordCount * StreamRecordBatchCodec.HEADER_SIZE // sum of encoded record header size
+                            - ObjectWriter.DataBlock.BLOCK_HEADER_SIZE; // block header size
                         nextMaxBytes -= Math.min(nextMaxBytes, recordPayloadSize);
                     }
                     if ((endOffset != NOOP_OFFSET && nextStartOffset >= endOffset) || nextMaxBytes == 0) {
@@ -272,11 +272,11 @@ public class ObjectReader implements AutoCloseable {
         @Override
         public String toString() {
             return "DataBlockIndex{" +
-                    "blockId=" + blockId +
-                    ", startPosition=" + startPosition +
-                    ", size=" + size +
-                    ", recordCount=" + recordCount +
-                    '}';
+                "blockId=" + blockId +
+                ", startPosition=" + startPosition +
+                ", size=" + size +
+                ", recordCount=" + recordCount +
+                '}';
         }
     }
 

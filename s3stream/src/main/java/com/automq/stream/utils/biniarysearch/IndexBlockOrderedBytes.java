@@ -46,7 +46,7 @@ public class IndexBlockOrderedBytes extends AbstractOrderedCollection<IndexBlock
     }
 
     private record ComparableStreamRange(long streamId, long startOffset, int recordCount, int blockIndex)
-            implements ComparableItem<TargetStreamOffset> {
+        implements ComparableItem<TargetStreamOffset> {
         private static final int SIZE = 8 + 8 + 4 + 4;
 
         public long endOffset() {

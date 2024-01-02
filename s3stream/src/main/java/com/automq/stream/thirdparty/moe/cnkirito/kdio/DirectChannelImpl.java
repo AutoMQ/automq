@@ -24,9 +24,9 @@ import java.nio.channels.NonWritableChannelException;
 public class DirectChannelImpl implements DirectChannel {
     private final DirectIOLib lib;
     private final int fd;
+    private final boolean isReadOnly;
     private boolean isOpen;
     private long fileLength;
-    private final boolean isReadOnly;
 
     private DirectChannelImpl(DirectIOLib lib, int fd, long fileLength, boolean readOnly) {
         this.lib = lib;
@@ -87,7 +87,7 @@ public class DirectChannelImpl implements DirectChannel {
         ensureWritable();
         if (DirectIOLib.ftruncate(fd, length) < 0) {
             throw new IOException("Error during truncate on descriptor " + fd + ": " +
-                    DirectIOLib.getLastError());
+                DirectIOLib.getLastError());
         }
         fileLength = length;
         return this;
@@ -102,7 +102,6 @@ public class DirectChannelImpl implements DirectChannel {
     public int getFD() {
         return fd;
     }
-
 
     @Override
     public boolean isOpen() {
@@ -122,7 +121,7 @@ public class DirectChannelImpl implements DirectChannel {
         isOpen = false;
         if (lib.close(fd) < 0) {
             throw new IOException("Error closing file with descriptor " + fd + ": " +
-                    DirectIOLib.getLastError());
+                DirectIOLib.getLastError());
         }
     }
 }

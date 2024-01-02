@@ -25,7 +25,6 @@ import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -77,7 +76,8 @@ public class BlockImpl implements Block {
      * Note: this method is NOT thread safe.
      */
     @Override
-    public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier, CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
+    public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier,
+        CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
         assert data == null;
         long requiredCapacity = nextOffset + recordSize;
         if (requiredCapacity > maxSize) {

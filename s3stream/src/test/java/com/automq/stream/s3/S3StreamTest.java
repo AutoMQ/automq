@@ -23,16 +23,15 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,7 +56,7 @@ public class S3StreamTest {
     public void testFetch() throws Throwable {
         stream.confirmOffset.set(120L);
         Mockito.when(storage.read(any(), eq(233L), eq(110L), eq(120L), eq(100)))
-                .thenReturn(CompletableFuture.completedFuture(newReadDataBlock(110, 115, 110)));
+            .thenReturn(CompletableFuture.completedFuture(newReadDataBlock(110, 115, 110)));
         FetchResult rst = stream.fetch(110, 120, 100).get(1, TimeUnit.SECONDS);
         assertEquals(1, rst.recordBatchList().size());
         assertEquals(110, rst.recordBatchList().get(0).baseOffset());

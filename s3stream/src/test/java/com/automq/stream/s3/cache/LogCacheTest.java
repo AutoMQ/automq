@@ -19,15 +19,13 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class LogCacheTest {
-
 
     @Test
     public void testPutGet() {

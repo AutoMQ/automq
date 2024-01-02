@@ -44,8 +44,9 @@ public class FutureTicker {
 
     /**
      * Create a ticker with a delay and a executor
-     * @param delay the delay
-     * @param unit the time unit of the delay
+     *
+     * @param delay    the delay
+     * @param unit     the time unit of the delay
      * @param executor the executor, the {@link CompletableFuture} returned by {@link #tick()} will be completed by this executor
      */
     public FutureTicker(long delay, TimeUnit unit, Executor executor) {
@@ -67,7 +68,8 @@ public class FutureTicker {
     private synchronized CompletableFuture<Void> maybeNextTick() {
         if (currentTick.isDone()) {
             // a future which will complete after delay
-            currentTick = CompletableFuture.runAsync(() -> { }, delayedExecutor);
+            currentTick = CompletableFuture.runAsync(() -> {
+            }, delayedExecutor);
         }
         return currentTick;
     }

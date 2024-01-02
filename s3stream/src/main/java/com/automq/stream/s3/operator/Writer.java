@@ -18,14 +18,13 @@
 package com.automq.stream.s3.operator;
 
 import io.netty.buffer.ByteBuf;
-
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Multipart object writer.
  * <p>
- *     Writer should ensure that a part, even with size smaller than {@link Writer#MIN_PART_SIZE}, can still be uploaded.
- *     For other S3 limits, it is upper layer's responsibility to prevent reaching the limits.
+ * Writer should ensure that a part, even with size smaller than {@link Writer#MIN_PART_SIZE}, can still be uploaded.
+ * For other S3 limits, it is upper layer's responsibility to prevent reaching the limits.
  */
 public interface Writer {
     /**

@@ -22,12 +22,12 @@ public class FailoverRequest {
     private String volumeId;
     private String device;
 
-    public void setNodeId(int nodeId) {
-        this.nodeId = nodeId;
-    }
-
     public int getNodeId() {
         return nodeId;
+    }
+
+    public void setNodeId(int nodeId) {
+        this.nodeId = nodeId;
     }
 
     public String getVolumeId() {
@@ -49,9 +49,9 @@ public class FailoverRequest {
     @Override
     public String toString() {
         return "FailoverRequest{" +
-                "nodeId=" + nodeId +
-                ", volumeId='" + volumeId + '\'' +
-                ", device='" + device + '\'' +
-                '}';
+            "nodeId=" + nodeId +
+            ", volumeId='" + volumeId + '\'' +
+            ", device='" + device + '\'' +
+            '}';
     }
 }

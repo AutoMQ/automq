@@ -24,12 +24,11 @@ import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -73,7 +72,6 @@ public class ObjectReaderTest {
         blocks.writeLong((long) blockSize1 + blockSize2 + blockSize2);
         blocks.writeInt(blockSize3);
         blocks.writeInt(recordCnt3);
-
 
         ByteBuf streamRanges = Unpooled.buffer(3 * (8 + 8 + 4 + 4));
         streamRanges.writeLong(streamId1);

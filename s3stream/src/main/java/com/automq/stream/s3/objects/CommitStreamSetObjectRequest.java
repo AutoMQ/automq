@@ -74,15 +74,15 @@ public class CommitStreamSetObjectRequest {
         this.objectSize = objectSize;
     }
 
-    public void setCompactedObjectIds(List<Long> compactedObjectIds) {
-        this.compactedObjectIds = compactedObjectIds;
-    }
-
     public List<Long> getCompactedObjectIds() {
         if (compactedObjectIds == null) {
             return Collections.emptyList();
         }
         return compactedObjectIds;
+    }
+
+    public void setCompactedObjectIds(List<Long> compactedObjectIds) {
+        this.compactedObjectIds = compactedObjectIds;
     }
 
     public List<ObjectStreamRange> getStreamRanges() {
@@ -132,12 +132,12 @@ public class CommitStreamSetObjectRequest {
     @Override
     public String toString() {
         return "CommitStreamSetObjectRequest{" +
-                "objectId=" + objectId +
-                ", orderId=" + orderId +
-                ", objectSize=" + objectSize +
-                ", streamRanges=" + streamRanges +
-                ", streamObjects=" + streamObjects +
-                ", compactedObjectIds=" + compactedObjectIds +
-                '}';
+            "objectId=" + objectId +
+            ", orderId=" + orderId +
+            ", objectSize=" + objectSize +
+            ", streamRanges=" + streamRanges +
+            ", streamObjects=" + streamObjects +
+            ", compactedObjectIds=" + compactedObjectIds +
+            '}';
     }
 }

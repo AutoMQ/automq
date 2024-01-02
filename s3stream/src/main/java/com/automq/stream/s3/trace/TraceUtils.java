@@ -24,20 +24,20 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
+import java.lang.reflect.Method;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-
 public class TraceUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(TraceUtils.class);
     private static final SpanAttributesExtractor EXTRACTOR = SpanAttributesExtractor.create();
 
-    public static Object trace(TraceContext context, ProceedingJoinPoint joinPoint, WithSpan withSpan) throws Throwable {
+    public static Object trace(TraceContext context, ProceedingJoinPoint joinPoint,
+        WithSpan withSpan) throws Throwable {
         if (context.isTraceDisabled()) {
             return joinPoint.proceed();
         }
@@ -69,7 +69,8 @@ public class TraceUtils {
         }
     }
 
-    public static <T> T runWithSpanSync(TraceContext context, Attributes attributes, String spanName, Callable<T> callable) throws Throwable {
+    public static <T> T runWithSpanSync(TraceContext context, Attributes attributes, String spanName,
+        Callable<T> callable) throws Throwable {
         TraceContext.Scope scope = createAndStartSpan(context, spanName);
         if (scope == null) {
             return callable.call();
@@ -85,8 +86,9 @@ public class TraceUtils {
         }
     }
 
-    public static <T> CompletableFuture<T> runWithSpanAsync(TraceContext context, Attributes attributes, String spanName,
-                                                            Callable<CompletableFuture<T>> callable) throws Throwable {
+    public static <T> CompletableFuture<T> runWithSpanAsync(TraceContext context, Attributes attributes,
+        String spanName,
+        Callable<CompletableFuture<T>> callable) throws Throwable {
         TraceContext.Scope scope = createAndStartSpan(context, spanName);
         if (scope == null) {
             return callable.call();
@@ -109,8 +111,8 @@ public class TraceUtils {
         Tracer tracer = context.tracer();
         Context parentContext = context.currentContext();
         Span span = tracer.spanBuilder(name)
-                .setParent(parentContext)
-                .startSpan();
+            .setParent(parentContext)
+            .startSpan();
 
         return context.attachContext(parentContext.with(span));
     }
@@ -129,12 +131,14 @@ public class TraceUtils {
         scope.close();
     }
 
-    private static CompletableFuture<?> doTraceWhenReturnCompletableFuture(TraceContext.Scope scope, ProceedingJoinPoint joinPoint) throws Throwable {
+    private static CompletableFuture<?> doTraceWhenReturnCompletableFuture(TraceContext.Scope scope,
+        ProceedingJoinPoint joinPoint) throws Throwable {
         CompletableFuture<?> future = (CompletableFuture<?>) joinPoint.proceed();
         return future.whenComplete((r, t) -> endSpan(scope, t));
     }
 
-    private static Object doTraceWhenReturnObject(TraceContext.Scope scope, ProceedingJoinPoint joinPoint) throws Throwable {
+    private static Object doTraceWhenReturnObject(TraceContext.Scope scope,
+        ProceedingJoinPoint joinPoint) throws Throwable {
         Object result = joinPoint.proceed();
         endSpan(scope, null);
         return result;

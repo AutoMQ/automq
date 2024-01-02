@@ -79,11 +79,11 @@ public class StreamMetadata {
     @Override
     public String toString() {
         return "StreamMetadata{" +
-                "streamId=" + streamId +
-                ", epoch=" + epoch +
-                ", startOffset=" + startOffset +
-                ", endOffset=" + endOffset +
-                ", state=" + state +
-                '}';
+            "streamId=" + streamId +
+            ", epoch=" + epoch +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", state=" + state +
+            '}';
     }
 }

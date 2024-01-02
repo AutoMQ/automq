@@ -18,7 +18,6 @@
 package com.automq.stream.s3;
 
 import io.netty.buffer.ByteBuf;
-
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -38,7 +37,8 @@ public class StreamDataBlock {
     private final CompletableFuture<ByteBuf> dataCf = new CompletableFuture<>();
     private final AtomicInteger refCount = new AtomicInteger(1);
 
-    public StreamDataBlock(long streamId, long startOffset, long endOffset, long objectId, ObjectReader.DataBlockIndex dataBlockIndex) {
+    public StreamDataBlock(long streamId, long startOffset, long endOffset, long objectId,
+        ObjectReader.DataBlockIndex dataBlockIndex) {
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
@@ -47,7 +47,7 @@ public class StreamDataBlock {
     }
 
     public StreamDataBlock(long streamId, long startOffset, long endOffset, int blockId,
-                           long objectId, long blockPosition, int blockSize, int recordCount) {
+        long objectId, long blockPosition, int blockSize, int recordCount) {
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
@@ -120,21 +120,23 @@ public class StreamDataBlock {
     @Override
     public String toString() {
         return "StreamDataBlock{" +
-                "objectId=" + objectId +
-                ", streamId=" + streamId +
-                ", startOffset=" + startOffset +
-                ", endOffset=" + endOffset +
-                ", dataBlockIndex=" + dataBlockIndex +
-                '}';
+            "objectId=" + objectId +
+            ", streamId=" + streamId +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", dataBlockIndex=" + dataBlockIndex +
+            '}';
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
         StreamDataBlock that = (StreamDataBlock) o;
         return streamId == that.streamId && startOffset == that.startOffset && endOffset == that.endOffset
-                && objectId == that.objectId && dataBlockIndex.equals(that.dataBlockIndex);
+            && objectId == that.objectId && dataBlockIndex.equals(that.dataBlockIndex);
     }
 
     @Override

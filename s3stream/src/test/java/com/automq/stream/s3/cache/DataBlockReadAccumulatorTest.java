@@ -22,16 +22,15 @@ import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -42,6 +41,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class DataBlockReadAccumulatorTest {
+
+    private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
+    }
 
     @Test
     public void test() throws ExecutionException, InterruptedException, TimeoutException {
@@ -65,8 +68,8 @@ public class DataBlockReadAccumulatorTest {
 
         ObjectReader.DataBlock dataBlock = mock(ObjectReader.DataBlock.class);
         List<StreamRecordBatch> records = List.of(
-                newRecord(10, 10, 2, 1),
-                newRecord(10, 12, 2, 1)
+            newRecord(10, 10, 2, 1),
+            newRecord(10, 12, 2, 1)
         );
         when(dataBlock.recordCount()).thenReturn(2);
         when(dataBlock.iterator()).thenAnswer(args -> {
@@ -109,10 +112,6 @@ public class DataBlockReadAccumulatorTest {
         accumulator.readDataBlock(reader, dataBlockIndex);
         verify(reader, times(2)).read(any());
         reserveResults3.get(0).cf().get().release();
-    }
-
-    private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
-        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
     }
 
 }

@@ -17,15 +17,14 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -117,38 +116,6 @@ public class StreamObjectCopier {
         return size;
     }
 
-    private class IndexBlock {
-        private final CompositeByteBuf buf;
-        private final long position;
-
-        public IndexBlock() {
-            position = nextObjectDataStartPosition;
-            buf = DirectByteBufAlloc.compositeByteBuffer();
-            // block count
-            buf.addComponent(true, DirectByteBufAlloc.byteBuffer(4).writeInt(blockCount));
-            // block index
-            for (StreamObjectIndexData indexData : completedObjects) {
-                buf.addComponent(true, indexData.blockBuf());
-            }
-            // object stream range
-            for (StreamObjectIndexData indexData : completedObjects) {
-                buf.addComponent(true, indexData.rangesBuf());
-            }
-        }
-
-        public ByteBuf buffer() {
-            return buf.duplicate();
-        }
-
-        public long position() {
-            return position;
-        }
-
-        public int size() {
-            return buf.readableBytes();
-        }
-    }
-
     static class StreamObjectIndexData {
         private final ByteBuf blockBuf;
         private final ByteBuf rangesBuf;
@@ -182,6 +149,38 @@ public class StreamObjectCopier {
 
         public ByteBuf rangesBuf() {
             return rangesBuf.duplicate();
+        }
+    }
+
+    private class IndexBlock {
+        private final CompositeByteBuf buf;
+        private final long position;
+
+        public IndexBlock() {
+            position = nextObjectDataStartPosition;
+            buf = DirectByteBufAlloc.compositeByteBuffer();
+            // block count
+            buf.addComponent(true, DirectByteBufAlloc.byteBuffer(4).writeInt(blockCount));
+            // block index
+            for (StreamObjectIndexData indexData : completedObjects) {
+                buf.addComponent(true, indexData.blockBuf());
+            }
+            // object stream range
+            for (StreamObjectIndexData indexData : completedObjects) {
+                buf.addComponent(true, indexData.rangesBuf());
+            }
+        }
+
+        public ByteBuf buffer() {
+            return buf.duplicate();
+        }
+
+        public long position() {
+            return position;
+        }
+
+        public int size() {
+            return buf.readableBytes();
         }
     }
 }

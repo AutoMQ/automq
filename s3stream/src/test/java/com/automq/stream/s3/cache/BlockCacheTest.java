@@ -19,10 +19,9 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,28 +31,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class BlockCacheTest {
 
+    private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
+    }
+
     private BlockCache createBlockCache() {
         BlockCache blockCache = new BlockCache(1024 * 1024 * 1024);
 
         blockCache.put(233L, List.of(
-                newRecord(233L, 10L, 2, 1),
-                newRecord(233L, 12L, 2, 1)
+            newRecord(233L, 10L, 2, 1),
+            newRecord(233L, 12L, 2, 1)
         ));
 
         blockCache.put(233L, List.of(
-                newRecord(233L, 16L, 4, 1),
-                newRecord(233L, 20L, 2, 1)
+            newRecord(233L, 16L, 4, 1),
+            newRecord(233L, 20L, 2, 1)
         ));
 
         // overlap
         blockCache.put(233L, List.of(
-                newRecord(233L, 12L, 2, 1),
-                newRecord(233L, 14L, 1, 1),
-                newRecord(233L, 15L, 1, BlockCache.BLOCK_SIZE),
-                newRecord(233L, 16L, 4, 1),
-                newRecord(233L, 20L, 2, 1),
-                newRecord(233L, 22L, 1, 1),
-                newRecord(233L, 23L, 1, 1)
+            newRecord(233L, 12L, 2, 1),
+            newRecord(233L, 14L, 1, 1),
+            newRecord(233L, 15L, 1, BlockCache.BLOCK_SIZE),
+            newRecord(233L, 16L, 4, 1),
+            newRecord(233L, 20L, 2, 1),
+            newRecord(233L, 22L, 1, 1),
+            newRecord(233L, 23L, 1, 1)
         ));
         return blockCache;
     }
@@ -90,8 +93,8 @@ public class BlockCacheTest {
     public void testPutGet3() {
         BlockCache blockCache = createBlockCache();
         blockCache.put(233L, 26L, 40L, List.of(
-                newRecord(233L, 26L, 4, 1),
-                newRecord(233L, 30L, 10, 4)
+            newRecord(233L, 26L, 4, 1),
+            newRecord(233L, 30L, 10, 4)
         ));
 
         BlockCache.GetCacheResult rst = blockCache.get(233L, 27L, 35L, BlockCache.BLOCK_SIZE * 2);
@@ -107,8 +110,8 @@ public class BlockCacheTest {
     public void testRangeCheck() {
         BlockCache blockCache = createBlockCache();
         blockCache.put(233L, List.of(
-                newRecord(233L, 26L, 4, 1),
-                newRecord(233L, 30L, 10, 4)
+            newRecord(233L, 26L, 4, 1),
+            newRecord(233L, 30L, 10, 4)
         ));
 
         assertTrue(blockCache.checkRange(233, 10, 2));
@@ -122,15 +125,15 @@ public class BlockCacheTest {
     public void testEvict() {
         BlockCache blockCache = new BlockCache(4);
         blockCache.put(233L, List.of(
-                newRecord(233L, 10L, 2, 2),
-                newRecord(233L, 12L, 2, 1)
+            newRecord(233L, 10L, 2, 2),
+            newRecord(233L, 12L, 2, 1)
         ));
 
         assertEquals(2, blockCache.get(233L, 10L, 20L, 1000).getRecords().size());
 
         blockCache.put(233L, List.of(
-                newRecord(233L, 16L, 4, 1),
-                newRecord(233L, 20L, 2, 1)
+            newRecord(233L, 16L, 4, 1),
+            newRecord(233L, 20L, 2, 1)
         ));
         assertEquals(0, blockCache.get(233L, 10L, 20L, 1000).getRecords().size());
         assertEquals(2, blockCache.get(233L, 16, 21L, 1000).getRecords().size());
@@ -153,8 +156,8 @@ public class BlockCacheTest {
     public void testReadAhead() {
         BlockCache blockCache = new BlockCache(16 * 1024 * 1024);
         blockCache.put(233L, 10L, 12L, List.of(
-                newRecord(233L, 10, 1, 1024 * 1024),
-                newRecord(233L, 11, 1, 1024)
+            newRecord(233L, 10, 1, 1024 * 1024),
+            newRecord(233L, 11, 1, 1024)
         ));
 
         // first read the block
@@ -166,10 +169,6 @@ public class BlockCacheTest {
         // repeat read the block, the readahead mark is clear.
         rst = blockCache.get(233L, 10, 11, Integer.MAX_VALUE);
         assertTrue(rst.getReadAheadRecords().isEmpty());
-    }
-
-    private static StreamRecordBatch newRecord(long streamId, long offset, int count, int size) {
-        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(size));
     }
 
 }

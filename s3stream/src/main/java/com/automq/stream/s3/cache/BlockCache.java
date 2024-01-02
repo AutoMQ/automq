@@ -17,18 +17,14 @@
 
 package com.automq.stream.s3.cache;
 
-
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -37,16 +33,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.SortedMap;
-
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BlockCache implements DirectByteBufAlloc.OOMHandler {
-    private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     public static final Integer ASYNC_READ_AHEAD_NOOP_OFFSET = -1;
     static final int BLOCK_SIZE = 1024 * 1024;
-    private final long maxSize;
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);
     final Map<Long, StreamCache> stream2cache = new HashMap<>();
+    private final long maxSize;
     private final LRUCache<CacheBlockKey, Integer> inactive = new LRUCache<>();
     private final LRUCache<CacheBlockKey, Integer> active = new LRUCache<>();
     private final AtomicLong size = new AtomicLong();
@@ -134,7 +131,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                 partSize += record.size();
             } else {
                 ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
-                        new ReadAheadRecord(raEndOffset) : null;
+                    new ReadAheadRecord(raEndOffset) : null;
                 put(streamId, streamCache, new CacheBlock(batchList, raRecord));
                 batchList = new LinkedList<>();
                 batchList.add(record);
@@ -144,7 +141,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
         if (!batchList.isEmpty()) {
             ReadAheadRecord raRecord = isWithinRange(raAsyncOffset, batchList.getFirst().getBaseOffset(), batchList.getLast().getLastOffset()) ?
-                    new ReadAheadRecord(raEndOffset) : null;
+                new ReadAheadRecord(raEndOffset) : null;
             put(streamId, streamCache, new CacheBlock(batchList, raRecord));
         }
     }
@@ -222,10 +219,10 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
      */
     @WithSpan
     public GetCacheResult get(TraceContext context,
-                              @SpanAttribute long streamId,
-                              @SpanAttribute long startOffset,
-                              @SpanAttribute long endOffset,
-                              @SpanAttribute int maxBytes) {
+        @SpanAttribute long streamId,
+        @SpanAttribute long startOffset,
+        @SpanAttribute long endOffset,
+        @SpanAttribute int maxBytes) {
         context.currentContext();
         if (startOffset >= endOffset || maxBytes <= 0) {
             return GetCacheResult.empty();
@@ -282,7 +279,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     }
 
     private int readFromCacheBlock(LinkedList<StreamRecordBatch> records, CacheBlock cacheBlock,
-                                   long nextStartOffset, long endOffset, int nextMaxBytes) {
+        long nextStartOffset, long endOffset, int nextMaxBytes) {
         boolean matched = false;
         StreamRecordBatchList streamRecordBatchList = new StreamRecordBatchList(cacheBlock.records);
         int startIndex = streamRecordBatchList.search(nextStartOffset);
@@ -363,7 +360,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
                 for (Map.Entry<Long, CacheBlock> entry : streamCache.blocks().entrySet()) {
                     CacheBlockKey key = new CacheBlockKey(streamId, entry.getValue().firstOffset);
                     LOGGER.debug("[S3BlockCache] stream cache block, stream={}, {}-{}, inactive={}, active={}, total bytes: {} ",
-                            streamId, entry.getValue().firstOffset, entry.getValue().lastOffset, inactive.containsKey(key), active.containsKey(key), entry.getValue().size);
+                        streamId, entry.getValue().firstOffset, entry.getValue().lastOffset, inactive.containsKey(key), active.containsKey(key), entry.getValue().size);
                 }
             }
         } finally {
@@ -388,6 +385,10 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         } finally {
             writeLock.unlock();
         }
+    }
+
+    public interface CacheEvictListener {
+        void onCacheEvict(long streamId, long startOffset, long endOffset, int size);
     }
 
     record CacheBlockKey(long streamId, long startOffset) {
@@ -443,9 +444,5 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         public List<ReadAheadRecord> getReadAheadRecords() {
             return readAheadRecords;
         }
-    }
-
-    public interface CacheEvictListener {
-        void onCacheEvict(long streamId, long startOffset, long endOffset, int size);
     }
 }
