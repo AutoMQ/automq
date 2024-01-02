@@ -18,7 +18,6 @@
 package com.automq.stream.utils.biniarysearch;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
-
 import java.util.List;
 
 public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {

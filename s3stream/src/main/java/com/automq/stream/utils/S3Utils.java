@@ -21,6 +21,17 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -42,23 +53,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
-import java.util.Random;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-
 public class S3Utils {
 
     /**
      * Check s3 access with context.
      * This method is generally used to help users figure out problems in using S3.
+     *
      * @param context s3 context.
      */
     public static void checkS3Access(S3Context context) {
@@ -91,6 +91,36 @@ public class S3Utils {
 
     }
 
+    private static String range(long start, long end) {
+        if (end == -1L) {
+            return "bytes=" + start + "-";
+        }
+        return "bytes=" + start + "-" + end;
+    }
+
+    private static S3AsyncClient newS3AsyncClient(String endpoint, String region, boolean forcePathStyle,
+        String accessKey, String secretKey) {
+        S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
+        if (StringUtils.isNotBlank(endpoint)) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
+        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
+        builder.credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
+        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
+            .apiCallAttemptTimeout(Duration.ofSeconds(30)));
+        return builder.build();
+    }
+
+    private static String hideSecret(String secret) {
+        if (secret == null) {
+            return null;
+        }
+        if (secret.length() < 6) {
+            return "*".repeat(secret.length());
+        }
+        return secret.substring(0, 3) + "*".repeat(secret.length() - 6) + secret.substring(secret.length() - 3);
+    }
+
     private static abstract class S3CheckTask implements AutoCloseable {
         protected final S3AsyncClient client;
         protected final String bucketName;
@@ -100,6 +130,16 @@ public class S3Utils {
             this.client = newS3AsyncClient(context.endpoint, context.region, context.forcePathStyle, context.accessKey, context.secretKey);
             this.bucketName = context.bucketName;
             this.taskName = taskName;
+        }
+
+        protected static void showErrorInfo(Exception e) {
+            if (e.getCause() instanceof S3Exception se) {
+                System.err.println("get S3 exception: ");
+                se.printStackTrace();
+            } else {
+                System.err.println("get other exception: ");
+                e.printStackTrace();
+            }
         }
 
         protected void run() {
@@ -115,23 +155,6 @@ public class S3Utils {
                 client.close();
             }
         }
-
-        protected static void showErrorInfo(Exception e) {
-            if (e.getCause() instanceof S3Exception se) {
-                System.err.println("get S3 exception: ");
-                se.printStackTrace();
-            } else {
-                System.err.println("get other exception: ");
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private static String range(long start, long end) {
-        if (end == -1L) {
-            return "bytes=" + start + "-";
-        }
-        return "bytes=" + start + "-" + end;
     }
 
     private static class MultipartObjectOperationTask extends ObjectOperationTask {
@@ -186,7 +209,8 @@ public class S3Utils {
             }
         }
 
-        private CompletableFuture<String> createMultipartUpload(S3AsyncClient writeS3Client, String bucketName, String path) {
+        private CompletableFuture<String> createMultipartUpload(S3AsyncClient writeS3Client, String bucketName,
+            String path) {
             CompletableFuture<String> cf = new CompletableFuture<>();
             CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucketName).key(path).build();
             writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
@@ -200,7 +224,8 @@ public class S3Utils {
             return cf;
         }
 
-        public CompletableFuture<Void> completeMultipartUpload(S3AsyncClient writeS3Client, String path, String bucket, String uploadId, List<CompletedPart> parts) {
+        public CompletableFuture<Void> completeMultipartUpload(S3AsyncClient writeS3Client, String path, String bucket,
+            String uploadId, List<CompletedPart> parts) {
             CompletableFuture<Void> cf = new CompletableFuture<>();
             CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(parts).build();
             CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
@@ -216,16 +241,18 @@ public class S3Utils {
             return cf;
         }
 
-        private CompletableFuture<CompletedPart> writePart(String uploadId, String path, String bucket, ByteBuf data, int partNum) {
+        private CompletableFuture<CompletedPart> writePart(String uploadId, String path, String bucket, ByteBuf data,
+            int partNum) {
             CompletableFuture<CompletedPart> cf = new CompletableFuture<>();
             uploadPart(client, cf, path, uploadId, partNum, bucket, data);
             return cf;
         }
 
-        private void uploadPart(S3AsyncClient writeS3Client, CompletableFuture<CompletedPart> cf, String path, String uploadId, int partNumber, String bucket, ByteBuf part) {
+        private void uploadPart(S3AsyncClient writeS3Client, CompletableFuture<CompletedPart> cf, String path,
+            String uploadId, int partNumber, String bucket, ByteBuf part) {
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
             UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
-                    .partNumber(partNumber).build();
+                .partNumber(partNumber).build();
             CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
             uploadPartCf.thenAccept(uploadPartResponse -> {
                 CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
@@ -286,7 +313,8 @@ public class S3Utils {
             }
         }
 
-        private void writeObject(S3AsyncClient writeS3Client, String path, ByteBuffer data, CompletableFuture<Void> cf, String bucket) {
+        private void writeObject(S3AsyncClient writeS3Client, String path, ByteBuffer data, CompletableFuture<Void> cf,
+            String bucket) {
             int objectSize = data.remaining();
             PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data);
@@ -300,24 +328,26 @@ public class S3Utils {
             });
         }
 
-        protected void readRange(S3AsyncClient readS3Client, String path, CompletableFuture<ByteBuf> cf, String bucket, long start, long end) {
+        protected void readRange(S3AsyncClient readS3Client, String path, CompletableFuture<ByteBuf> cf, String bucket,
+            long start, long end) {
             GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
             readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
-                    .thenAccept(responsePublisher -> {
-                        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
-                        responsePublisher.subscribe((bytes) -> {
-                            // the aws client will copy DefaultHttpContent to heap ByteBuffer
-                            buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
-                        }).thenAccept(v -> {
-                            cf.complete(buf);
-                        });
-                    }).exceptionally(ex -> {
-                        cf.completeExceptionally(ex);
-                        return null;
+                .thenAccept(responsePublisher -> {
+                    CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+                    responsePublisher.subscribe((bytes) -> {
+                        // the aws client will copy DefaultHttpContent to heap ByteBuffer
+                        buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                    }).thenAccept(v -> {
+                        cf.complete(buf);
                     });
+                }).exceptionally(ex -> {
+                    cf.completeExceptionally(ex);
+                    return null;
+                });
         }
 
-        protected void deleteObject(S3AsyncClient deleteS3Client, String path, CompletableFuture<Void> cf, String bucket) {
+        protected void deleteObject(S3AsyncClient deleteS3Client, String path, CompletableFuture<Void> cf,
+            String bucket) {
             DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(bucket).key(path).build();
             deleteS3Client.deleteObject(request).thenAccept(deleteObjectResponse -> {
                 System.out.printf("deleted object %s%n", path);
@@ -328,7 +358,6 @@ public class S3Utils {
                 return null;
             });
         }
-
 
         @Override
         public void close() {
@@ -352,48 +381,26 @@ public class S3Utils {
             super(context, HelloS3Task.class.getSimpleName());
         }
 
-        @Override
-        public void run() {
-            System.out.println("Trying to list all buckets in your account ...");
-            listBuckets(client);
-        }
-
         private static void listBuckets(S3AsyncClient s3) {
             try {
                 s3.listBuckets(ListBucketsRequest.builder().build())
-                        .thenAccept(response -> {
-                            List<Bucket> bucketList = response.buckets();
-                            bucketList.forEach(bucket -> {
-                                System.out.println("Bucket Name: " + bucket.name());
-                            });
-                        }).get();
+                    .thenAccept(response -> {
+                        List<Bucket> bucketList = response.buckets();
+                        bucketList.forEach(bucket -> {
+                            System.out.println("Bucket Name: " + bucket.name());
+                        });
+                    }).get();
             } catch (ExecutionException | InterruptedException e) {
                 showErrorInfo(e);
                 throw new RuntimeException(e);
             }
         }
-    }
 
-    private static S3AsyncClient newS3AsyncClient(String endpoint, String region, boolean forcePathStyle, String accessKey, String secretKey) {
-        S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
-        if (StringUtils.isNotBlank(endpoint)) {
-            builder.endpointOverride(URI.create(endpoint));
+        @Override
+        public void run() {
+            System.out.println("Trying to list all buckets in your account ...");
+            listBuckets(client);
         }
-        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
-        builder.credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
-        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
-                .apiCallAttemptTimeout(Duration.ofSeconds(30)));
-        return builder.build();
-    }
-
-    private static String hideSecret(String secret) {
-        if (secret == null) {
-            return null;
-        }
-        if (secret.length() < 6) {
-            return "*".repeat(secret.length());
-        }
-        return secret.substring(0, 3) + "*".repeat(secret.length() - 6) + secret.substring(secret.length() - 3);
     }
 
     public static class S3Context {
@@ -404,13 +411,18 @@ public class S3Utils {
         private final String region;
         private final boolean forcePathStyle;
 
-        public S3Context(String endpoint, String accessKey, String secretKey, String bucketName, String region, boolean forcePathStyle) {
+        public S3Context(String endpoint, String accessKey, String secretKey, String bucketName, String region,
+            boolean forcePathStyle) {
             this.endpoint = endpoint;
             this.accessKey = accessKey;
             this.secretKey = secretKey;
             this.bucketName = bucketName;
             this.region = region;
             this.forcePathStyle = forcePathStyle;
+        }
+
+        public static Builder builder() {
+            return new Builder();
         }
 
         public List<String> advices() {
@@ -454,17 +466,13 @@ public class S3Utils {
         @Override
         public String toString() {
             return "S3CheckContext{" +
-                    "endpoint='" + endpoint + '\'' +
-                    ", accessKey='" + hideSecret(accessKey) + '\'' +
-                    ", secretKey='" + hideSecret(secretKey) + '\'' +
-                    ", bucketName='" + bucketName + '\'' +
-                    ", region='" + region + '\'' +
-                    ", forcePathStyle=" + forcePathStyle +
-                    '}';
-        }
-
-        public static Builder builder() {
-            return new Builder();
+                "endpoint='" + endpoint + '\'' +
+                ", accessKey='" + hideSecret(accessKey) + '\'' +
+                ", secretKey='" + hideSecret(secretKey) + '\'' +
+                ", bucketName='" + bucketName + '\'' +
+                ", region='" + region + '\'' +
+                ", forcePathStyle=" + forcePathStyle +
+                '}';
         }
 
         public static class Builder {

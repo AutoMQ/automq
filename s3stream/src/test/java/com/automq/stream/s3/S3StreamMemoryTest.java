@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3;
 
-
 //import com.automq.stream.api.AppendResult;
 //import com.automq.stream.api.CreateStreamOptions;
 //import com.automq.stream.api.FetchResult;
@@ -34,6 +33,7 @@ package com.automq.stream.s3;
 //import com.automq.stream.s3.streams.StreamManager;
 //import com.automq.stream.s3.wal.MemoryWriteAheadLog;
 //import org.junit.jupiter.api.BeforeEach;
+
 import org.junit.jupiter.api.Tag;
 //import org.junit.jupiter.api.Test;
 //import org.slf4j.Logger;

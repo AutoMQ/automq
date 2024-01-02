@@ -148,14 +148,14 @@ public class LogContext {
         @Override
         public void trace(String format, Object arg) {
             if (logger.isTraceEnabled()) {
-                writeLog(null, LocationAwareLogger.TRACE_INT, format, new Object[]{arg}, null);
+                writeLog(null, LocationAwareLogger.TRACE_INT, format, new Object[] {arg}, null);
             }
         }
 
         @Override
         public void trace(String format, Object arg1, Object arg2) {
             if (logger.isTraceEnabled()) {
-                writeLog(null, LocationAwareLogger.TRACE_INT, format, new Object[]{arg1, arg2}, null);
+                writeLog(null, LocationAwareLogger.TRACE_INT, format, new Object[] {arg1, arg2}, null);
             }
         }
 
@@ -183,14 +183,14 @@ public class LogContext {
         @Override
         public void trace(Marker marker, String format, Object arg) {
             if (logger.isTraceEnabled()) {
-                writeLog(marker, LocationAwareLogger.TRACE_INT, format, new Object[]{arg}, null);
+                writeLog(marker, LocationAwareLogger.TRACE_INT, format, new Object[] {arg}, null);
             }
         }
 
         @Override
         public void trace(Marker marker, String format, Object arg1, Object arg2) {
             if (logger.isTraceEnabled()) {
-                writeLog(marker, LocationAwareLogger.TRACE_INT, format, new Object[]{arg1, arg2}, null);
+                writeLog(marker, LocationAwareLogger.TRACE_INT, format, new Object[] {arg1, arg2}, null);
             }
         }
 
@@ -218,14 +218,14 @@ public class LogContext {
         @Override
         public void debug(String format, Object arg) {
             if (logger.isDebugEnabled()) {
-                writeLog(null, LocationAwareLogger.DEBUG_INT, format, new Object[]{arg}, null);
+                writeLog(null, LocationAwareLogger.DEBUG_INT, format, new Object[] {arg}, null);
             }
         }
 
         @Override
         public void debug(String format, Object arg1, Object arg2) {
             if (logger.isDebugEnabled()) {
-                writeLog(null, LocationAwareLogger.DEBUG_INT, format, new Object[]{arg1, arg2}, null);
+                writeLog(null, LocationAwareLogger.DEBUG_INT, format, new Object[] {arg1, arg2}, null);
             }
         }
 
@@ -253,14 +253,14 @@ public class LogContext {
         @Override
         public void debug(Marker marker, String format, Object arg) {
             if (logger.isDebugEnabled()) {
-                writeLog(marker, LocationAwareLogger.DEBUG_INT, format, new Object[]{arg}, null);
+                writeLog(marker, LocationAwareLogger.DEBUG_INT, format, new Object[] {arg}, null);
             }
         }
 
         @Override
         public void debug(Marker marker, String format, Object arg1, Object arg2) {
             if (logger.isDebugEnabled()) {
-                writeLog(marker, LocationAwareLogger.DEBUG_INT, format, new Object[]{arg1, arg2}, null);
+                writeLog(marker, LocationAwareLogger.DEBUG_INT, format, new Object[] {arg1, arg2}, null);
             }
         }
 
@@ -285,12 +285,12 @@ public class LogContext {
 
         @Override
         public void warn(String format, Object arg) {
-            writeLog(null, LocationAwareLogger.WARN_INT, format, new Object[]{arg}, null);
+            writeLog(null, LocationAwareLogger.WARN_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void warn(String message, Object arg1, Object arg2) {
-            writeLog(null, LocationAwareLogger.WARN_INT, message, new Object[]{arg1, arg2}, null);
+            writeLog(null, LocationAwareLogger.WARN_INT, message, new Object[] {arg1, arg2}, null);
         }
 
         @Override
@@ -310,12 +310,12 @@ public class LogContext {
 
         @Override
         public void warn(Marker marker, String format, Object arg) {
-            writeLog(marker, LocationAwareLogger.WARN_INT, format, new Object[]{arg}, null);
+            writeLog(marker, LocationAwareLogger.WARN_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void warn(Marker marker, String format, Object arg1, Object arg2) {
-            writeLog(marker, LocationAwareLogger.WARN_INT, format, new Object[]{arg1, arg2}, null);
+            writeLog(marker, LocationAwareLogger.WARN_INT, format, new Object[] {arg1, arg2}, null);
         }
 
         @Override
@@ -335,12 +335,12 @@ public class LogContext {
 
         @Override
         public void error(String format, Object arg) {
-            writeLog(null, LocationAwareLogger.ERROR_INT, format, new Object[]{arg}, null);
+            writeLog(null, LocationAwareLogger.ERROR_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void error(String format, Object arg1, Object arg2) {
-            writeLog(null, LocationAwareLogger.ERROR_INT, format, new Object[]{arg1, arg2}, null);
+            writeLog(null, LocationAwareLogger.ERROR_INT, format, new Object[] {arg1, arg2}, null);
         }
 
         @Override
@@ -360,12 +360,12 @@ public class LogContext {
 
         @Override
         public void error(Marker marker, String format, Object arg) {
-            writeLog(marker, LocationAwareLogger.ERROR_INT, format, new Object[]{arg}, null);
+            writeLog(marker, LocationAwareLogger.ERROR_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void error(Marker marker, String format, Object arg1, Object arg2) {
-            writeLog(marker, LocationAwareLogger.ERROR_INT, format, new Object[]{arg1, arg2}, null);
+            writeLog(marker, LocationAwareLogger.ERROR_INT, format, new Object[] {arg1, arg2}, null);
         }
 
         @Override
@@ -385,12 +385,12 @@ public class LogContext {
 
         @Override
         public void info(String format, Object arg) {
-            writeLog(null, LocationAwareLogger.INFO_INT, format, new Object[]{arg}, null);
+            writeLog(null, LocationAwareLogger.INFO_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void info(String format, Object arg1, Object arg2) {
-            writeLog(null, LocationAwareLogger.INFO_INT, format, new Object[]{arg1, arg2}, null);
+            writeLog(null, LocationAwareLogger.INFO_INT, format, new Object[] {arg1, arg2}, null);
         }
 
         @Override
@@ -410,12 +410,12 @@ public class LogContext {
 
         @Override
         public void info(Marker marker, String format, Object arg) {
-            writeLog(marker, LocationAwareLogger.INFO_INT, format, new Object[]{arg}, null);
+            writeLog(marker, LocationAwareLogger.INFO_INT, format, new Object[] {arg}, null);
         }
 
         @Override
         public void info(Marker marker, String format, Object arg1, Object arg2) {
-            writeLog(marker, LocationAwareLogger.INFO_INT, format, new Object[]{arg1, arg2}, null);
+            writeLog(marker, LocationAwareLogger.INFO_INT, format, new Object[] {arg1, arg2}, null);
         }
 
         @Override

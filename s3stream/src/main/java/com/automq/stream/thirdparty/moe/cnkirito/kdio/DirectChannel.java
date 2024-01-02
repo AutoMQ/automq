@@ -23,12 +23,8 @@ public interface DirectChannel extends Channel {
     /**
      * Writes from the <tt>src</tt> buffer into this channel at <tt>position</tt>.
      *
-     * @param src
-     *        The {@link ByteBuffer} to write from
-     *
-     * @param position
-     *        The position within the file at which to start writing
-     *
+     * @param src      The {@link ByteBuffer} to write from
+     * @param position The position within the file at which to start writing
      * @return How many bytes were written from <tt>src</tt> into the file
      * @throws IOException
      */
@@ -37,12 +33,8 @@ public interface DirectChannel extends Channel {
     /**
      * Reads from this channel into the <tt>dst</tt> buffer from <tt>position</tt>.
      *
-     * @param dst
-     *        The {@link ByteBuffer} to read into
-     *
-     * @param position
-     *        The position within the file at which to start reading
-     *
+     * @param dst      The {@link ByteBuffer} to read into
+     * @param position The position within the file at which to start reading
      * @return How many bytes were placed into <tt>dst</tt>
      * @throws IOException
      */
@@ -62,9 +54,7 @@ public interface DirectChannel extends Channel {
      * Truncates this file's length to <tt>fileLength</tt>.
      *
      * @param fileLength The length to which to truncate
-     *
      * @return This UnsafeByteAlignedChannel
-     *
      * @throws IOException
      */
     DirectChannel truncate(long fileLength) throws IOException;

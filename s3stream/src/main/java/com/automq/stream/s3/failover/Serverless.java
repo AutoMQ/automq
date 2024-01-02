@@ -75,11 +75,10 @@ public interface Serverless {
         @Override
         public String toString() {
             return "FailedNode{" +
-                    "nodeId=" + nodeId +
-                    ", volumeId='" + volumeId + '\'' +
-                    '}';
+                "nodeId=" + nodeId +
+                ", volumeId='" + volumeId + '\'' +
+                '}';
         }
     }
-
 
 }

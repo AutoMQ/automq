@@ -17,7 +17,6 @@
 
 package com.automq.stream.api;
 
-
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
@@ -44,8 +43,10 @@ public class KeyValue {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
         KeyValue keyValue = (KeyValue) o;
         return Objects.equals(key, keyValue.key) && Objects.equals(value, keyValue.value);
     }
@@ -131,8 +132,10 @@ public class KeyValue {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Value)) return false;
+            if (this == o)
+                return true;
+            if (!(o instanceof Value))
+                return false;
             Value value1 = (Value) o;
             return Objects.equals(value, value1.value);
         }

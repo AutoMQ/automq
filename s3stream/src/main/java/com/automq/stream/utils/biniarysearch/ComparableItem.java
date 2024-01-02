@@ -19,5 +19,6 @@ package com.automq.stream.utils.biniarysearch;
 
 public interface ComparableItem<T> {
     boolean isLessThan(T value);
+
     boolean isGreaterThan(T value);
 }

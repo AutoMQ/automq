@@ -144,10 +144,6 @@ public class DefaultS3Operator implements S3Operator {
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits);
     }
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
     // used for test only.
     public DefaultS3Operator(S3AsyncClient s3Client, String bucket) {
         this(s3Client, bucket, false);
@@ -166,6 +162,23 @@ public class DefaultS3Operator implements S3Operator {
         if (!manualMergeRead) {
             scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         }
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    private static boolean checkPartNumbers(CompletedMultipartUpload multipartUpload) {
+        Optional<Integer> maxOpt = multipartUpload.parts().stream().map(CompletedPart::partNumber).max(Integer::compareTo);
+        return maxOpt.isPresent() && maxOpt.get() == multipartUpload.parts().size();
+    }
+
+    private static boolean isUnrecoverable(Throwable ex) {
+        ex = cause(ex);
+        if (ex instanceof S3Exception s3Ex) {
+            return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
+        }
+        return false;
     }
 
     @Override
@@ -559,24 +572,11 @@ public class DefaultS3Operator implements S3Operator {
         });
     }
 
-    private static boolean checkPartNumbers(CompletedMultipartUpload multipartUpload) {
-        Optional<Integer> maxOpt = multipartUpload.parts().stream().map(CompletedPart::partNumber).max(Integer::compareTo);
-        return maxOpt.isPresent() && maxOpt.get() == multipartUpload.parts().size();
-    }
-
     private String range(long start, long end) {
         if (end == -1L) {
             return "bytes=" + start + "-";
         }
         return "bytes=" + start + "-" + end;
-    }
-
-    private static boolean isUnrecoverable(Throwable ex) {
-        ex = cause(ex);
-        if (ex instanceof S3Exception s3Ex) {
-            return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
-        }
-        return false;
     }
 
     private void checkConfig() {

@@ -19,7 +19,6 @@ package com.automq.stream;
 
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
-
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
@@ -31,6 +30,12 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
     public RecordBatchWithContextWrapper(RecordBatch recordBatch, long baseOffset) {
         this.recordBatch = recordBatch;
         this.baseOffset = baseOffset;
+    }
+
+    public static RecordBatchWithContextWrapper decode(ByteBuffer buffer) {
+        long baseOffset = buffer.getLong();
+        int count = buffer.getInt();
+        return new RecordBatchWithContextWrapper(new DefaultRecordBatch(count, 0, Collections.emptyMap(), buffer), baseOffset);
     }
 
     @Override
@@ -65,16 +70,10 @@ public class RecordBatchWithContextWrapper implements RecordBatchWithContext {
 
     public byte[] encode() {
         ByteBuffer buffer = ByteBuffer.allocate(8 + 4 + recordBatch.rawPayload().remaining())
-                .putLong(baseOffset)
-                .putInt(recordBatch.count())
-                .put(recordBatch.rawPayload().duplicate())
-                .flip();
+            .putLong(baseOffset)
+            .putInt(recordBatch.count())
+            .put(recordBatch.rawPayload().duplicate())
+            .flip();
         return buffer.array();
-    }
-
-    public static RecordBatchWithContextWrapper decode(ByteBuffer buffer) {
-        long baseOffset = buffer.getLong();
-        int count = buffer.getInt();
-        return new RecordBatchWithContextWrapper(new DefaultRecordBatch(count, 0, Collections.emptyMap(), buffer), baseOffset);
     }
 }

@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3.objects;
 
-
 import java.util.List;
 
 public class StreamObject {
@@ -83,12 +82,12 @@ public class StreamObject {
     @Override
     public String toString() {
         return "StreamObject{" +
-                "objectId=" + objectId +
-                ", objectSize=" + objectSize +
-                ", streamId=" + streamId +
-                ", startOffset=" + startOffset +
-                ", endOffset=" + endOffset +
-                ", sourceObjectIds=" + sourceObjectIds +
-                '}';
+            "objectId=" + objectId +
+            ", objectSize=" + objectSize +
+            ", streamId=" + streamId +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", sourceObjectIds=" + sourceObjectIds +
+            '}';
     }
 }

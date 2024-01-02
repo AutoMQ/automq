@@ -27,7 +27,6 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -42,9 +41,9 @@ public class DataBlockWriter {
     private final List<StreamDataBlock> waitingUploadBlocks;
     private final Map<StreamDataBlock, CompletableFuture<Void>> waitingUploadBlockCfs;
     private final List<StreamDataBlock> completedBlocks;
-    private IndexBlock indexBlock;
     private final Writer writer;
     private final long objectId;
+    private IndexBlock indexBlock;
     private long nextDataBlockPosition;
     private long size;
 

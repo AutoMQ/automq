@@ -17,10 +17,8 @@
 
 package com.automq.stream.s3.wal;
 
-
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
@@ -46,7 +44,8 @@ public interface Block {
      * @param future         The future of this record, which will be completed when the record is written to the WAL.
      * @return The start offset of this record. If the size of this block exceeds the limit, return -1.
      */
-    long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier, CompletableFuture<AppendResult.CallbackResult> future);
+    long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier,
+        CompletableFuture<AppendResult.CallbackResult> future);
 
     /**
      * Futures of all records in this block.

@@ -17,18 +17,17 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,7 +58,6 @@ public class ObjectWriterTest {
         assertEquals(234, streamRanges.get(1).getStreamId());
         assertEquals(0, streamRanges.get(1).getStartOffset());
         assertEquals(5, streamRanges.get(1).getEndOffset());
-
 
         int objectSize = s3Operator.rangeRead(metadata.key(), 0L, objectWriter.size()).get().readableBytes();
         assertEquals(objectSize, objectWriter.size());

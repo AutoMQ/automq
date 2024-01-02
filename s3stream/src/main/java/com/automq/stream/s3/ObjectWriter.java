@@ -24,7 +24,6 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -42,6 +41,14 @@ public interface ObjectWriter {
     // TODO: first n bit is the compressed flag
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
+    static ObjectWriter writer(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
+        return new DefaultObjectWriter(objectId, s3Operator, blockSizeThreshold, partSizeThreshold);
+    }
+
+    static ObjectWriter noop(long objectId) {
+        return new NoopObjectWriter(objectId);
+    }
+
     void write(long streamId, List<StreamRecordBatch> records);
 
     CompletableFuture<Void> close();
@@ -52,25 +59,16 @@ public interface ObjectWriter {
 
     long size();
 
-    static ObjectWriter writer(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
-        return new DefaultObjectWriter(objectId, s3Operator, blockSizeThreshold, partSizeThreshold);
-    }
-
-    static ObjectWriter noop(long objectId) {
-        return new NoopObjectWriter(objectId);
-    }
-
     class DefaultObjectWriter implements ObjectWriter {
 
         private final int blockSizeThreshold;
         private final int partSizeThreshold;
         private final List<DataBlock> waitingUploadBlocks;
-        private int waitingUploadBlocksSize;
         private final List<DataBlock> completedBlocks;
-        private IndexBlock indexBlock;
         private final Writer writer;
         private final long objectId;
-
+        private int waitingUploadBlocksSize;
+        private IndexBlock indexBlock;
         private long size;
 
         /**
@@ -81,7 +79,8 @@ public interface ObjectWriter {
          * @param blockSizeThreshold the max size of a block
          * @param partSizeThreshold  the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
          */
-        public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
+        public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold,
+            int partSizeThreshold) {
             this.objectId = objectId;
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
@@ -194,7 +193,6 @@ public interface ObjectWriter {
         public long size() {
             return size;
         }
-
 
         class IndexBlock {
             private final ByteBuf buf;

@@ -24,6 +24,7 @@ public interface Client {
     void start();
 
     void shutdown();
+
     /**
      * Get stream client.
      *

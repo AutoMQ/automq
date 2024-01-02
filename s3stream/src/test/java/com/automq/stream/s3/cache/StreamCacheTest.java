@@ -19,11 +19,10 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.NavigableMap;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class StreamCacheTest {
 
@@ -31,17 +30,17 @@ public class StreamCacheTest {
     public void testTailMap() {
         StreamCache streamCache = new StreamCache();
         BlockCache.CacheBlock block1 = new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 0, 10, TestUtils.random(8)),
-                new StreamRecordBatch(0, 0, 10, 20, TestUtils.random(8))), null);
+            new StreamRecordBatch(0, 0, 0, 10, TestUtils.random(8)),
+            new StreamRecordBatch(0, 0, 10, 20, TestUtils.random(8))), null);
         streamCache.put(block1);
 
         BlockCache.CacheBlock block2 = new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 50, 20, TestUtils.random(8)),
-                new StreamRecordBatch(0, 0, 70, 30, TestUtils.random(8))), null);
+            new StreamRecordBatch(0, 0, 50, 20, TestUtils.random(8)),
+            new StreamRecordBatch(0, 0, 70, 30, TestUtils.random(8))), null);
         streamCache.put(block2);
 
         BlockCache.CacheBlock block3 = new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 30, 20, TestUtils.random(8))), null);
+            new StreamRecordBatch(0, 0, 30, 20, TestUtils.random(8))), null);
         streamCache.put(block3);
 
         NavigableMap<Long, BlockCache.CacheBlock> tailBlocks = streamCache.tailBlocks(5);
@@ -57,15 +56,15 @@ public class StreamCacheTest {
     public void testRemove() {
         StreamCache streamCache = new StreamCache();
         streamCache.put(new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 0, 10, TestUtils.random(8)),
-                new StreamRecordBatch(0, 0, 10, 20, TestUtils.random(8))), null));
+            new StreamRecordBatch(0, 0, 0, 10, TestUtils.random(8)),
+            new StreamRecordBatch(0, 0, 10, 20, TestUtils.random(8))), null));
 
         streamCache.put(new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 50, 20, TestUtils.random(8)),
-                new StreamRecordBatch(0, 0, 70, 30, TestUtils.random(8))), null));
+            new StreamRecordBatch(0, 0, 50, 20, TestUtils.random(8)),
+            new StreamRecordBatch(0, 0, 70, 30, TestUtils.random(8))), null));
 
         streamCache.put(new BlockCache.CacheBlock(List.of(
-                new StreamRecordBatch(0, 0, 30, 20, TestUtils.random(8))), null));
+            new StreamRecordBatch(0, 0, 30, 20, TestUtils.random(8))), null));
 
         streamCache.remove(30);
 

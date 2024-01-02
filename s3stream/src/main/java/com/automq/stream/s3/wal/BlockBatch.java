@@ -32,13 +32,13 @@ public class BlockBatch {
         assert !blocks.isEmpty();
         this.blocks = blocks;
         this.startOffset = blocks.stream()
-                .map(Block::startOffset)
-                .min(Long::compareTo)
-                .orElseThrow();
+            .map(Block::startOffset)
+            .min(Long::compareTo)
+            .orElseThrow();
         this.endOffset = blocks.stream()
-                .map(b -> b.startOffset() + b.size())
-                .max(Long::compareTo)
-                .orElseThrow();
+            .map(b -> b.startOffset() + b.size())
+            .max(Long::compareTo)
+            .orElseThrow();
     }
 
     public long startOffset() {
@@ -55,9 +55,9 @@ public class BlockBatch {
 
     public List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures() {
         return blocks.stream()
-                .map(Block::futures)
-                .flatMap(List::stream)
-                .toList();
+            .map(Block::futures)
+            .flatMap(List::stream)
+            .toList();
 
     }
 

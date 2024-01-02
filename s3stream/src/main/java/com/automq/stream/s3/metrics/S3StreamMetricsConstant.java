@@ -18,55 +18,55 @@
 package com.automq.stream.s3.metrics;
 
 import io.opentelemetry.api.common.AttributeKey;
-
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class S3StreamMetricsConstant {
     // value = 16KB * 2^i
-    public static final String[] OBJECT_SIZE_BUCKET_NAMES = {"16KB",
-                                                             "32KB",
-                                                             "64KB",
-                                                             "128KB",
-                                                             "256KB",
-                                                             "512KB",
-                                                             "1MB",
-                                                             "2MB",
-                                                             "4MB",
-                                                             "8MB",
-                                                             "16MB",
-                                                             "32MB",
-                                                             "64MB",
-                                                             "128MB",
-                                                             "inf"};
+    public static final String[] OBJECT_SIZE_BUCKET_NAMES = {
+        "16KB",
+        "32KB",
+        "64KB",
+        "128KB",
+        "256KB",
+        "512KB",
+        "1MB",
+        "2MB",
+        "4MB",
+        "8MB",
+        "16MB",
+        "32MB",
+        "64MB",
+        "128MB",
+        "inf"};
     public static final List<Long> LATENCY_BOUNDARIES = List.of(
-            TimeUnit.MICROSECONDS.toNanos(1),
-            TimeUnit.MICROSECONDS.toNanos(10),
-            TimeUnit.MICROSECONDS.toNanos(100),
-            TimeUnit.MILLISECONDS.toNanos(1),
-            TimeUnit.MILLISECONDS.toNanos(3),
-            TimeUnit.MILLISECONDS.toNanos(5),
-            TimeUnit.MILLISECONDS.toNanos(7),
-            TimeUnit.MILLISECONDS.toNanos(10),
-            TimeUnit.MILLISECONDS.toNanos(20),
-            TimeUnit.MILLISECONDS.toNanos(30),
-            TimeUnit.MILLISECONDS.toNanos(40),
-            TimeUnit.MILLISECONDS.toNanos(50),
-            TimeUnit.MILLISECONDS.toNanos(60),
-            TimeUnit.MILLISECONDS.toNanos(70),
-            TimeUnit.MILLISECONDS.toNanos(80),
-            TimeUnit.MILLISECONDS.toNanos(90),
-            TimeUnit.MILLISECONDS.toNanos(100),
-            TimeUnit.MILLISECONDS.toNanos(200),
-            TimeUnit.MILLISECONDS.toNanos(500),
-            TimeUnit.SECONDS.toNanos(1),
-            TimeUnit.SECONDS.toNanos(3),
-            TimeUnit.SECONDS.toNanos(5),
-            TimeUnit.SECONDS.toNanos(10),
-            TimeUnit.SECONDS.toNanos(30),
-            TimeUnit.MINUTES.toNanos(1),
-            TimeUnit.MINUTES.toNanos(3),
-            TimeUnit.MINUTES.toNanos(5)
+        TimeUnit.MICROSECONDS.toNanos(1),
+        TimeUnit.MICROSECONDS.toNanos(10),
+        TimeUnit.MICROSECONDS.toNanos(100),
+        TimeUnit.MILLISECONDS.toNanos(1),
+        TimeUnit.MILLISECONDS.toNanos(3),
+        TimeUnit.MILLISECONDS.toNanos(5),
+        TimeUnit.MILLISECONDS.toNanos(7),
+        TimeUnit.MILLISECONDS.toNanos(10),
+        TimeUnit.MILLISECONDS.toNanos(20),
+        TimeUnit.MILLISECONDS.toNanos(30),
+        TimeUnit.MILLISECONDS.toNanos(40),
+        TimeUnit.MILLISECONDS.toNanos(50),
+        TimeUnit.MILLISECONDS.toNanos(60),
+        TimeUnit.MILLISECONDS.toNanos(70),
+        TimeUnit.MILLISECONDS.toNanos(80),
+        TimeUnit.MILLISECONDS.toNanos(90),
+        TimeUnit.MILLISECONDS.toNanos(100),
+        TimeUnit.MILLISECONDS.toNanos(200),
+        TimeUnit.MILLISECONDS.toNanos(500),
+        TimeUnit.SECONDS.toNanos(1),
+        TimeUnit.SECONDS.toNanos(3),
+        TimeUnit.SECONDS.toNanos(5),
+        TimeUnit.SECONDS.toNanos(10),
+        TimeUnit.SECONDS.toNanos(30),
+        TimeUnit.MINUTES.toNanos(1),
+        TimeUnit.MINUTES.toNanos(3),
+        TimeUnit.MINUTES.toNanos(5)
     );
 
     public static final String UPLOAD_SIZE_METRIC_NAME = "upload_size_total";

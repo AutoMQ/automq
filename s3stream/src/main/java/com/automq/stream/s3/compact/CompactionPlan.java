@@ -17,9 +17,8 @@
 
 package com.automq.stream.s3.compact;
 
-import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.StreamDataBlock;
-
+import com.automq.stream.s3.compact.objects.CompactedObject;
 import java.util.List;
 import java.util.Map;
 
@@ -28,7 +27,7 @@ public class CompactionPlan {
     private final Map<Long/* Object id*/, List<StreamDataBlock>> streamDataBlocksMap;
 
     public CompactionPlan(List<CompactedObject> compactedObjects,
-                          Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
         this.compactedObjects = compactedObjects;
         this.streamDataBlocksMap = streamDataBlocksMap;
     }

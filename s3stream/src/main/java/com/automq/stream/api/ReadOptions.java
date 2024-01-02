@@ -25,16 +25,16 @@ public class ReadOptions {
     private boolean fastRead;
     private boolean pooledBuf;
 
+    public static Builder builder() {
+        return new Builder();
+    }
+
     public boolean fastRead() {
         return fastRead;
     }
 
     public boolean pooledBuf() {
         return pooledBuf;
-    }
-
-    public static Builder builder() {
-        return new Builder();
     }
 
     public static class Builder {

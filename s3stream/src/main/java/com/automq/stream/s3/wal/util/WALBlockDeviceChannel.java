@@ -23,13 +23,12 @@ import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;
 import io.netty.buffer.ByteBuf;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
@@ -68,7 +67,8 @@ public class WALBlockDeviceChannel implements WALChannel {
         this(path, capacityWant, 0, 0, false);
     }
 
-    public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize, boolean recoveryMode) {
+    public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
+        boolean recoveryMode) {
         this.path = path;
         this.recoveryMode = recoveryMode;
         if (recoveryMode) {
@@ -102,7 +102,7 @@ public class WALBlockDeviceChannel implements WALChannel {
         }
         if (!DirectIOUtils.allocatorAvailable()) {
             return "java.nio.DirectByteBuffer.<init>(long, int) not available." +
-                    " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
+                " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
         }
         if (!path.startsWith(DEVICE_PREFIX) && !tryOpenFileWithDirectIO(String.format(CHECK_DIRECT_IO_AVAILABLE_FORMAT, path))) {
             return "O_DIRECT not supported by the file system, path: " + path;

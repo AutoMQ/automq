@@ -27,10 +27,10 @@ public enum S3MetricsType {
     S3Network("S3Network");
 
     private static final Map<String, S3MetricsType> MAP = Map.of(
-            "S3Stream", S3Stream,
-            "S3Storage", S3Storage,
-            "S3Request", S3Request,
-            "S3Object", S3Object
+        "S3Stream", S3Stream,
+        "S3Storage", S3Storage,
+        "S3Request", S3Request,
+        "S3Object", S3Object
     );
 
     private final String name;
@@ -50,7 +50,7 @@ public enum S3MetricsType {
     @Override
     public String toString() {
         return "S3MetricsType{" +
-                "name='" + name + '\'' +
-                '}';
+            "name='" + name + '\'' +
+            '}';
     }
 }

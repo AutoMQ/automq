@@ -58,13 +58,13 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         NODE_ID_ALLOC.getAndIncrement();
     }
 
+    private static StreamOffsetRange to(ObjectStreamRange s) {
+        return new StreamOffsetRange(s.getStreamId(), s.getStartOffset(), s.getEndOffset());
+    }
+
     @Override
     public synchronized CompletableFuture<Long> prepareObject(int count, long ttl) {
         return CompletableFuture.completedFuture(objectIdAlloc.getAndAdd(count));
-    }
-
-    private static StreamOffsetRange to(ObjectStreamRange s) {
-        return new StreamOffsetRange(s.getStreamId(), s.getStartOffset(), s.getEndOffset());
     }
 
     @Override

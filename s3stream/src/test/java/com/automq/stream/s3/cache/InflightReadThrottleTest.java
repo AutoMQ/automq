@@ -18,11 +18,10 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.utils.Threads;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class InflightReadThrottleTest {
     @Test

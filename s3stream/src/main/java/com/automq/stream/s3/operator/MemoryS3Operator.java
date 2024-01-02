@@ -20,12 +20,11 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 public class MemoryS3Operator implements S3Operator {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
@@ -115,12 +114,14 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy) {
+    public CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data,
+        ThrottleStrategy throttleStrategy) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     @Override
-    public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber) {
+    public CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end,
+        String uploadId, int partNumber) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 

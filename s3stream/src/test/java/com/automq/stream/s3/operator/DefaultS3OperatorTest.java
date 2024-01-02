@@ -19,6 +19,10 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
 import io.netty.buffer.ByteBuf;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -27,11 +31,6 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -64,17 +63,17 @@ class DefaultS3OperatorTest {
     @Test
     void testDeleteObjectsSuccess() {
         when(s3.deleteObjects(any(DeleteObjectsRequest.class)))
-                .thenAnswer(invocation -> {
-                    DeleteObjectsRequest request = invocation.getArgument(0);
-                    DeleteObjectsResponse response = DeleteObjectsResponse.builder()
-                            .deleted(request.delete().objects().stream()
-                                    .map(o -> DeletedObject.builder()
-                                            .key(o.key())
-                                            .build())
-                                    .toList())
-                            .build();
-                    return CompletableFuture.completedFuture(response);
-                });
+            .thenAnswer(invocation -> {
+                DeleteObjectsRequest request = invocation.getArgument(0);
+                DeleteObjectsResponse response = DeleteObjectsResponse.builder()
+                    .deleted(request.delete().objects().stream()
+                        .map(o -> DeletedObject.builder()
+                            .key(o.key())
+                            .build())
+                        .toList())
+                    .build();
+                return CompletableFuture.completedFuture(response);
+            });
         List<String> keys = List.of("test1", "test2");
         List<String> deleted = operator.delete(keys).join();
         assertEquals(keys, deleted);
@@ -83,7 +82,7 @@ class DefaultS3OperatorTest {
     @Test
     void testDeleteObjectsFail() {
         when(s3.deleteObjects(any(DeleteObjectsRequest.class)))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("test")));
+            .thenReturn(CompletableFuture.failedFuture(new RuntimeException("test")));
         List<String> keys = List.of("test1", "test2");
         List<String> deleted = operator.delete(keys).join();
         assertEquals(Collections.emptyList(), deleted);
@@ -92,7 +91,7 @@ class DefaultS3OperatorTest {
     @Test
     public void testMergeTask() {
         DefaultS3Operator.MergedReadTask mergedReadTask = new DefaultS3Operator.MergedReadTask(
-                new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0);
+            new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0);
         boolean ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 1024, 2048, new CompletableFuture<>()));
         assertTrue(ret);
         assertEquals(0, mergedReadTask.dataSparsityRate);
@@ -108,7 +107,7 @@ class DefaultS3OperatorTest {
     @Test
     public void testMergeTask2() {
         DefaultS3Operator.MergedReadTask mergedReadTask = new DefaultS3Operator.MergedReadTask(
-                new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0.5f);
+            new DefaultS3Operator.ReadTask("obj0", 0, 1024, new CompletableFuture<>()), 0.5f);
         boolean ret = mergedReadTask.tryMerge(new DefaultS3Operator.ReadTask("obj0", 2048, 4096, new CompletableFuture<>()));
         assertTrue(ret);
         assertEquals(0.25, mergedReadTask.dataSparsityRate, 0.01);

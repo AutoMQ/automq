@@ -23,16 +23,15 @@ import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
-
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -100,7 +99,7 @@ public class WALBlockDeviceChannelTest {
         channel.open();
 
         ExecutorService executor = Threads.newFixedThreadPool(threads,
-                ThreadUtils.createThreadFactory("test-block-device-channel-write-%d", false), null);
+            ThreadUtils.createThreadFactory("test-block-device-channel-write-%d", false), null);
         for (int i = 0; i < count; i++) {
             final int index = i;
             executor.submit(() -> {

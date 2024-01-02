@@ -19,7 +19,6 @@ import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
 import io.netty.util.internal.PlatformDependent;
-
 import java.nio.ByteBuffer;
 
 public class DirectIOUtils {
@@ -38,7 +37,7 @@ public class DirectIOUtils {
     public static ByteBuffer allocateForDirectIO(DirectIOLib lib, int capacity) {
         if (capacity % lib.blockSize() > 0) {
             throw new IllegalArgumentException("Capacity (" + capacity + ") must be a multiple"
-                    + "of the block size (" + lib.blockSize() + ")");
+                + "of the block size (" + lib.blockSize() + ")");
         }
         NativeLong blockSize = new NativeLong(lib.blockSize());
         PointerByReference pointerToPointer = new PointerByReference();

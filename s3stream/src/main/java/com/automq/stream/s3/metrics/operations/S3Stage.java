@@ -59,8 +59,8 @@ public enum S3Stage {
     @Override
     public String toString() {
         return "S3Stage{" +
-                "operation=" + operation.getName() +
-                ", name='" + name + '\'' +
-                '}';
+            "operation=" + operation.getName() +
+            ", name='" + name + '\'' +
+            '}';
     }
 }

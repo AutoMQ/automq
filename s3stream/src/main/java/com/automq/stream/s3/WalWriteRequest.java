@@ -17,17 +17,15 @@
 
 package com.automq.stream.s3;
 
-
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
-
 import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {
     final StreamRecordBatch record;
     final AppendContext context;
-    long offset;
     final CompletableFuture<Void> cf;
+    long offset;
     boolean persisted;
 
     public WalWriteRequest(StreamRecordBatch record, long offset, CompletableFuture<Void> cf) {

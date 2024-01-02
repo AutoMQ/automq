@@ -17,17 +17,16 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,7 +61,6 @@ public class StreamObjectCopierTest {
         streamObjectCopyer.close().get();
         long targetObjectSize = streamObjectCopyer.size();
         S3ObjectMetadata metadata = new S3ObjectMetadata(targetObjectId, targetObjectSize, S3ObjectType.STREAM);
-
 
         int objectSize = s3Operator.rangeRead(metadata.key(), 0L, targetObjectSize).get().readableBytes();
         assertEquals(targetObjectSize, objectSize);

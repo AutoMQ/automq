@@ -20,7 +20,6 @@ package com.automq.stream.s3.network;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import io.netty.util.concurrent.DefaultThreadFactory;
-
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -37,11 +36,11 @@ public class AsyncNetworkBandwidthLimiter {
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
     private final long maxTokens;
-    private long availableTokens;
     private final ScheduledExecutorService refillThreadPool;
     private final ExecutorService callbackThreadPool;
     private final Queue<BucketItem> queuedCallbacks;
     private final Type type;
+    private long availableTokens;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokenSize) {
         this.type = type;
@@ -156,13 +155,6 @@ public class AsyncNetworkBandwidthLimiter {
         }
     }
 
-    record BucketItem(int priority, long size, CompletableFuture<Void> cf) implements Comparable<BucketItem> {
-        @Override
-        public int compareTo(BucketItem o) {
-            return Long.compare(priority, o.priority);
-        }
-    }
-
     public enum Type {
         INBOUND("Inbound"),
         OUTBOUND("Outbound");
@@ -175,6 +167,13 @@ public class AsyncNetworkBandwidthLimiter {
 
         public String getName() {
             return name;
+        }
+    }
+
+    record BucketItem(int priority, long size, CompletableFuture<Void> cf) implements Comparable<BucketItem> {
+        @Override
+        public int compareTo(BucketItem o) {
+            return Long.compare(priority, o.priority);
         }
     }
 }

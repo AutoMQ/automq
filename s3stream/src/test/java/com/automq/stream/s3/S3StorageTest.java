@@ -34,14 +34,6 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mockito;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -49,6 +41,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,6 +69,10 @@ public class S3StorageTest {
     S3Storage storage;
     Config config;
 
+    private static StreamRecordBatch newRecord(long streamId, long offset) {
+        return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
+    }
+
     @BeforeEach
     public void setup() {
         config = new Config();
@@ -79,7 +82,7 @@ public class S3StorageTest {
         wal = spy(new MemoryWriteAheadLog());
         s3Operator = new MemoryS3Operator();
         storage = new S3Storage(config, wal,
-                streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, s3Operator), s3Operator);
+            streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, s3Operator), s3Operator);
     }
 
     @Test
@@ -89,13 +92,13 @@ public class S3StorageTest {
         Mockito.when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
         CompletableFuture<Void> cf1 = storage.append(
-                new StreamRecordBatch(233, 1, 10, 1, random(100))
+            new StreamRecordBatch(233, 1, 10, 1, random(100))
         );
         CompletableFuture<Void> cf2 = storage.append(
-                new StreamRecordBatch(233, 1, 11, 2, random(100))
+            new StreamRecordBatch(233, 1, 11, 2, random(100))
         );
         CompletableFuture<Void> cf3 = storage.append(
-                new StreamRecordBatch(234, 3, 100, 1, random(100))
+            new StreamRecordBatch(234, 3, 100, 1, random(100))
         );
 
         cf1.get(3, TimeUnit.SECONDS);
@@ -218,11 +221,11 @@ public class S3StorageTest {
     @Test
     public void testRecoverContinuousRecords() {
         List<WriteAheadLog.RecoverResult> recoverResults = List.of(
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L))),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L))),
-                new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)))
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)))
         );
 
         List<StreamMetadata> openingStreams = List.of(new StreamMetadata(233L, 0L, 0L, 11L, StreamState.OPENED));
@@ -234,10 +237,9 @@ public class S3StorageTest {
         assertEquals(11L, streamRecords.get(0).getBaseOffset());
         assertEquals(12L, streamRecords.get(1).getBaseOffset());
 
-
         //
         openingStreams = List.of(
-                new StreamMetadata(233L, 0L, 0L, 5L, StreamState.OPENED));
+            new StreamMetadata(233L, 0L, 0L, 5L, StreamState.OPENED));
         boolean exception = false;
         try {
             storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
@@ -268,10 +270,6 @@ public class S3StorageTest {
         assertEquals(233L, range.getStreamId());
         assertEquals(10L, range.getStartOffset());
         assertEquals(12L, range.getEndOffset());
-    }
-
-    private static StreamRecordBatch newRecord(long streamId, long offset) {
-        return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
     }
 
     static class TestRecoverResult implements WriteAheadLog.RecoverResult {

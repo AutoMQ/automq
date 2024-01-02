@@ -20,7 +20,6 @@ package com.automq.stream.api;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
-
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -47,7 +46,6 @@ public interface Stream {
      * Get stream next append record offset.
      */
     long nextOffset();
-
 
     /**
      * Append recordBatch to stream.

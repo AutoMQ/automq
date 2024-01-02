@@ -19,16 +19,15 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Accumulate inflight data block read requests to one real read request.

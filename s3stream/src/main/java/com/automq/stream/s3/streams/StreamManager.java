@@ -17,18 +17,16 @@
 
 package com.automq.stream.s3.streams;
 
-
 import com.automq.stream.s3.metadata.StreamMetadata;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-
 
 public interface StreamManager {
 
     /**
      * Get current server opening streams.
      * When server is starting or recovering, WAL in EBS need streams offset to determine the recover point.
+     *
      * @return list of {@link StreamMetadata}
      */
     CompletableFuture<List<StreamMetadata>> getOpeningStreams();
@@ -40,8 +38,7 @@ public interface StreamManager {
      * @return list of {@link StreamMetadata}
      */
     CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds);
-    
-    
+
     /**
      * Create a new stream.
      *

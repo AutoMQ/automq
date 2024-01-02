@@ -19,6 +19,7 @@ package com.automq.stream.utils;
 
 public class Utils {
     public static final String MAX_MERGE_READ_SPARSITY_RATE_NAME = "MERGE_READ_SPARSITY_RATE";
+
     public static float getMaxMergeReadSparsityRate() {
         float rate;
         try {
