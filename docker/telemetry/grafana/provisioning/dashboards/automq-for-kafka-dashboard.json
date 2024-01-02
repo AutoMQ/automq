@@ -30,7 +30,7 @@
         "y": 0
       },
       "id": 44,
-      "title": "System Overview",
+      "title": "JVM Overview",
       "type": "row"
     },
     {
@@ -120,7 +120,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}_jvm_cpu_recent_utilization_ratio{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}",
+          "expr": "${namespace}jvm_cpu_recent_utilization_ratio{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -190,7 +190,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "percentunit"
         },
         "overrides": [
           {
@@ -200,12 +200,8 @@
             },
             "properties": [
               {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "unit",
-                "value": "percentunit"
+                "id": "displayName",
+                "value": "${__field.labels.service_name}_${__field.labels.service_instance_id}"
               }
             ]
           }
@@ -238,9 +234,9 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}_jvm_memory_used_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
+          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_used_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
           "fullMetaSearch": false,
-          "hide": false,
+          "hide": true,
           "includeNullMetadata": true,
           "instant": false,
           "legendFormat": "{{service_name}}_{{service_instance_id}}",
@@ -255,7 +251,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_name, service_instance_id, service_namespace) (${namespace}_jvm_memory_limit_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
+          "expr": "sum by(service_name, service_instance_id, service_namespace) (${namespace}jvm_memory_limit_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -277,7 +273,7 @@
           "type": "math"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Heap Memory Utilization",
       "type": "timeseries"
     },
     {
@@ -389,7 +385,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, service_name, service_instance_id, jvm_gc_action) (rate(${namespace}_jvm_gc_duration_seconds_bucket{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, service_name, service_instance_id, jvm_gc_action) (rate(${namespace}jvm_gc_duration_seconds_bucket{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -406,7 +402,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(jvm_gc_action, service_name, service_instance_id) (rate(${namespace}_jvm_gc_duration_seconds_count{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(jvm_gc_action, service_name, service_instance_id) (rate(${namespace}jvm_gc_duration_seconds_count{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -418,6 +414,141 @@
         }
       ],
       "title": "JVM GC Monitor",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "utilization"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 49,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_limit_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{service_name}}_{{service_instance_id}}_limit",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_used_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "{{service_name}}_{{service_instance_id}}_usage",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Heap Memory Usage",
       "type": "timeseries"
     },
     {
@@ -519,7 +650,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(operation_name, operation_type) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval]))",
+          "expr": "sum by(operation_name, operation_type) (rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -592,7 +723,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(status) (${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\", status=~\".*\"})",
+          "expr": "sum by(status) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\", status=~\".*\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -692,7 +823,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -804,7 +935,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_log_cache|append_callback|append_wal_full\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_log_cache|append_callback|append_wal_full\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -820,7 +951,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_wal\", stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_wal\", stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -837,7 +968,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_operation_count_total{operation_type=\"S3Storage\", operation_name=\"append_log_cache_full\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}operation_count_total{operation_type=\"S3Storage\", operation_name=\"append_log_cache_full\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -938,7 +1069,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, stage) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"append_wal\", stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, stage) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"append_wal\", stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -954,7 +1085,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"append_callback|append_log_cache\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"append_callback|append_log_cache\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1015,7 +1146,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1053,7 +1185,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1113,7 +1245,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1152,7 +1285,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1212,7 +1345,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1251,7 +1385,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}_${prefix}_wal_start_offset{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "expr": "${namespace}${prefix}wal_start_offset{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -1268,7 +1402,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "${namespace}_${prefix}_wal_trimmed_offset{cluster_id=\"$cluster_id\"}",
+          "expr": "${namespace}${prefix}wal_trimmed_offset{cluster_id=\"$cluster_id\"}",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -1303,7 +1437,7 @@
           "refId": "C"
         }
       ],
-      "title": "Delta WAL Size",
+      "title": "Delta WAL Size（DEBUG only）",
       "type": "timeseries"
     },
     {
@@ -1366,7 +1500,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1404,7 +1539,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1464,7 +1599,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1503,7 +1639,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1563,7 +1699,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1571,7 +1708,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "ns"
         },
         "overrides": []
       },
@@ -1581,7 +1718,7 @@
         "x": 0,
         "y": 83
       },
-      "id": 36,
+      "id": 40,
       "options": {
         "legend": {
           "calcs": [],
@@ -1601,19 +1738,18 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "${namespace}_${prefix}_block_cache_size_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "editorMode": "builder",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_ahead\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "size",
+          "legendFormat": "{{operation_name}}_{{status}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Block Cache Size",
+      "title": "Read Ahead Latency P99",
       "type": "timeseries"
     },
     {
@@ -1663,7 +1799,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1671,7 +1808,7 @@
               }
             ]
           },
-          "unit": "ns"
+          "unit": "binBps"
         },
         "overrides": []
       },
@@ -1681,7 +1818,7 @@
         "x": 12,
         "y": 83
       },
-      "id": 40,
+      "id": 51,
       "options": {
         "legend": {
           "calcs": [],
@@ -1702,17 +1839,218 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_ahead\", status=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "rate(default_kafka_stream_read_ahead_size_bytes_sum{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{operation_name}}_{{status}}",
+          "legendFormat": "{{node_type}}_{{node_id}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Read Ahead Latency P99",
+      "title": "Read Ahead Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 95
+      },
+      "id": 36,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}block_cache_size_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "size",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Block Cache Size (DEBUG only)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 95
+      },
+      "id": 50,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}available_inflight_read_ahead_size_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Available Inflight Read Ahead Size (DEBUG only)",
       "type": "timeseries"
     },
     {
@@ -1721,7 +2059,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 95
+        "y": 107
       },
       "id": 7,
       "panels": [],
@@ -1775,7 +2113,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1791,7 +2130,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 108
       },
       "id": 4,
       "options": {
@@ -1814,7 +2153,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_network_inbound_usage_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}network_inbound_usage_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1830,7 +2169,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_network_outbound_usage_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}network_outbound_usage_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1891,7 +2230,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1907,7 +2247,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 108
       },
       "id": 25,
       "options": {
@@ -1930,7 +2270,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_download_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}download_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1946,7 +2286,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_upload_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}upload_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -2007,7 +2347,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2023,7 +2364,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 120
       },
       "id": 5,
       "options": {
@@ -2046,7 +2387,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}_${prefix}_network_inbound_available_bandwidth_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "expr": "${namespace}${prefix}network_inbound_available_bandwidth_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2062,7 +2403,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}_${prefix}_network_outbound_available_bandwidth_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "expr": "${namespace}${prefix}network_outbound_available_bandwidth_bytes{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -2123,240 +2464,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 108
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "${namespace}_${prefix}_network_inbound_limiter_queue_size{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "inbound",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "${namespace}_${prefix}_network_outbound_limiter_queue_size{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "outbound",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        }
-      ],
-      "title": "S3 Network Limiter",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 120
-      },
-      "id": 29,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "${namespace}_${prefix}_available_s3_inflight_read_quota{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "read",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "${namespace}_${prefix}_available_s3_inflight_write_quota{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": true,
-          "instant": false,
-          "legendFormat": "write",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        }
-      ],
-      "title": "Available S3 Inflight Quota",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2395,7 +2504,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}_${prefix}_network_inbound_limiter_queue_time_nanoseconds_bucket{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}${prefix}network_inbound_limiter_queue_time_nanoseconds_bucket{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2411,7 +2520,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}_${prefix}_network_outbound_limiter_queue_time_nanoseconds_bucket{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}${prefix}network_outbound_limiter_queue_time_nanoseconds_bucket{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -2426,12 +2535,247 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 132
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}available_s3_inflight_read_quota{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "read",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}available_s3_inflight_write_quota{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "write",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
+        }
+      ],
+      "title": "Available S3 Inflight Quota (DEBUG only)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 132
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}network_inbound_limiter_queue_size{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "inbound",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "code",
+          "expr": "${namespace}${prefix}network_outbound_limiter_queue_size{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "outbound",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
+        }
+      ],
+      "title": "S3 Network Limiter Queue Size (DEBUG  only)",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 132
+        "y": 144
       },
       "id": 8,
       "panels": [],
@@ -2485,7 +2829,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2500,7 +2845,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 133
+        "y": 145
       },
       "id": 12,
       "options": {
@@ -2523,7 +2868,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_object_count_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}object_count_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2583,7 +2928,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2599,7 +2945,7 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 133
+        "y": 145
       },
       "id": 14,
       "options": {
@@ -2622,7 +2968,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(${namespace}_${prefix}_object_stage_cost_nanoseconds_bucket{stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(${namespace}${prefix}object_stage_cost_nanoseconds_bucket{stage=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2660,7 +3006,7 @@
         "h": 14,
         "w": 3,
         "x": 0,
-        "y": 147
+        "y": 159
       },
       "id": 38,
       "options": {
@@ -2695,7 +3041,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(size) (${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"})",
+          "expr": "sum by(size) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2755,7 +3101,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2771,7 +3118,7 @@
         "h": 14,
         "w": 9,
         "x": 3,
-        "y": 147
+        "y": 159
       },
       "id": 26,
       "options": {
@@ -2794,7 +3141,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, size) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=\"get_object\", size=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, size) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=\"get_object\", size=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2832,7 +3179,7 @@
         "h": 14,
         "w": 3,
         "x": 12,
-        "y": 147
+        "y": 159
       },
       "id": 39,
       "options": {
@@ -2867,7 +3214,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(size) (${namespace}_${prefix}_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"})",
+          "expr": "sum by(size) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2927,7 +3274,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2943,7 +3291,7 @@
         "h": 14,
         "w": 9,
         "x": 15,
-        "y": 147
+        "y": 159
       },
       "id": 37,
       "options": {
@@ -2966,7 +3314,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, size) (rate(${namespace}_${prefix}_operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", size=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, size) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", size=~\".*\", cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2985,7 +3333,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 161
+        "y": 173
       },
       "id": 10,
       "panels": [],
@@ -3039,7 +3387,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3055,7 +3404,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 162
+        "y": 174
       },
       "id": 15,
       "options": {
@@ -3078,7 +3427,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_compaction_read_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}compaction_read_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3094,7 +3443,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}_${prefix}_compaction_write_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(${namespace}${prefix}compaction_write_size_bytes_total{cluster_id=\"$cluster_id\", node_id=\"$node_id\", node_type=\"$node_type\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3110,16 +3459,15 @@
     }
   ],
   "refresh": "5s",
-  "schemaVersion": 39,
+  "schemaVersion": 38,
   "tags": [],
   "templating": {
     "list": [
       {
         "current": {
-          "isNone": true,
           "selected": false,
-          "text": "None",
-          "value": ""
+          "text": "xJGnLhprSXareHmTpNkpHg",
+          "value": "xJGnLhprSXareHmTpNkpHg"
         },
         "datasource": {
           "type": "prometheus",
@@ -3137,7 +3485,7 @@
           "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_namespace)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
@@ -3145,39 +3493,39 @@
       },
       {
         "current": {
-          "selected": true,
-          "text": "default",
-          "value": "default"
+          "selected": false,
+          "text": "default_",
+          "value": "default_"
         },
         "hide": 0,
         "name": "namespace",
         "options": [
           {
             "selected": true,
-            "text": "default",
-            "value": "default"
+            "text": "default_",
+            "value": "default_"
           }
         ],
-        "query": "default",
+        "query": "default_",
         "skipUrlSync": false,
         "type": "textbox"
       },
       {
         "current": {
-          "selected": true,
-          "text": "kafka_stream",
-          "value": "kafka_stream"
+          "selected": false,
+          "text": "kafka_stream_",
+          "value": "kafka_stream_"
         },
         "hide": 0,
         "name": "prefix",
         "options": [
           {
             "selected": true,
-            "text": "kafka_stream",
-            "value": "kafka_stream"
+            "text": "kafka_stream_",
+            "value": "kafka_stream_"
           }
         ],
-        "query": "kafka_stream",
+        "query": "kafka_stream_",
         "skipUrlSync": false,
         "type": "textbox"
       },
@@ -3248,7 +3596,7 @@
           "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_instance_id)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
@@ -3279,7 +3627,7 @@
           "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
@@ -3306,13 +3654,13 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "automq-for-kafka",
   "uid": "c25319fc-1031-4843-aaca-813f9d2b8438",
-  "version": 11,
+  "version": 21,
   "weekStart": ""
 }
