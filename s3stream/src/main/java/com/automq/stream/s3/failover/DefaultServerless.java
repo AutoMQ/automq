@@ -22,7 +22,6 @@ import com.automq.stream.utils.CommandUtils;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -30,42 +29,6 @@ import java.util.stream.Collectors;
 
 public class DefaultServerless implements Serverless {
     private static final String SERVERLESS_CMD = "/opt/automq/scripts/amq-serverless";
-
-    @Override
-    public String attach(String volumeId, int nodeId) throws ExecutionException {
-        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "attach", "-v", volumeId, "-n", Integer.toString(nodeId)};
-        CommandResult result = CommandUtils.run(cmd);
-        check(cmd, result);
-        return jsonParse(result.stdout(), AttachResult.class).getDeviceName();
-    }
-
-    @Override
-    public void delete(String volumeId) throws ExecutionException {
-        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "delete", "-v", volumeId};
-        CommandResult result = CommandUtils.run(cmd);
-        check(cmd, result);
-    }
-
-    @Override
-    public void fence(String volumeId) throws ExecutionException {
-        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "fence", "-v", volumeId};
-        CommandResult result = CommandUtils.run(cmd);
-        check(cmd, result);
-    }
-
-    @Override
-    public List<FailedNode> scan() throws ExecutionException {
-        String[] cmd = new String[]{SERVERLESS_CMD, "volume", "queryFailover"};
-        CommandResult result = CommandUtils.run(cmd);
-        check(cmd, result);
-        QueryFailedNode[] nodes = jsonParse(result.stdout(), QueryFailedNode[].class);
-        return Arrays.stream(nodes).map(n -> {
-            FailedNode failedNode = new FailedNode();
-            failedNode.setNodeId(Integer.parseInt(n.getFirstBindNodeId()));
-            failedNode.setVolumeId(n.getVolumeId());
-            return failedNode;
-        }).collect(Collectors.toList());
-    }
 
     private static void check(String[] cmd, CommandResult rst) throws ExecutionException {
         if (rst.code() != 0) {
@@ -80,6 +43,42 @@ public class DefaultServerless implements Serverless {
         } catch (JsonProcessingException e) {
             throw new ExecutionException("json parse (" + raw + ") fail", e);
         }
+    }
+
+    @Override
+    public String attach(String volumeId, int nodeId) throws ExecutionException {
+        String[] cmd = new String[] {SERVERLESS_CMD, "volume", "attach", "-v", volumeId, "-n", Integer.toString(nodeId)};
+        CommandResult result = CommandUtils.run(cmd);
+        check(cmd, result);
+        return jsonParse(result.stdout(), AttachResult.class).getDeviceName();
+    }
+
+    @Override
+    public void delete(String volumeId) throws ExecutionException {
+        String[] cmd = new String[] {SERVERLESS_CMD, "volume", "delete", "-v", volumeId};
+        CommandResult result = CommandUtils.run(cmd);
+        check(cmd, result);
+    }
+
+    @Override
+    public void fence(String volumeId) throws ExecutionException {
+        String[] cmd = new String[] {SERVERLESS_CMD, "volume", "fence", "-v", volumeId};
+        CommandResult result = CommandUtils.run(cmd);
+        check(cmd, result);
+    }
+
+    @Override
+    public List<FailedNode> scan() throws ExecutionException {
+        String[] cmd = new String[] {SERVERLESS_CMD, "volume", "queryFailover"};
+        CommandResult result = CommandUtils.run(cmd);
+        check(cmd, result);
+        QueryFailedNode[] nodes = jsonParse(result.stdout(), QueryFailedNode[].class);
+        return Arrays.stream(nodes).map(n -> {
+            FailedNode failedNode = new FailedNode();
+            failedNode.setNodeId(Integer.parseInt(n.getFirstBindNodeId()));
+            failedNode.setVolumeId(n.getVolumeId());
+            return failedNode;
+        }).collect(Collectors.toList());
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

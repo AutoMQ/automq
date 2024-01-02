@@ -17,15 +17,11 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.utils.LogContext;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -37,6 +33,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
 
 public class CompactionAnalyzer {
     private final Logger logger;
@@ -45,12 +44,13 @@ public class CompactionAnalyzer {
     private final int maxStreamNumInStreamSet;
     private final int maxStreamObjectNum;
 
-    public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize, int maxStreamNumInStreamSet, int maxStreamObjectNum) {
+    public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize, int maxStreamNumInStreamSet,
+        int maxStreamObjectNum) {
         this(compactionCacheSize, streamSplitSize, maxStreamNumInStreamSet, maxStreamObjectNum, new LogContext("[CompactionAnalyzer]"));
     }
 
     public CompactionAnalyzer(long compactionCacheSize, long streamSplitSize,
-                              int maxStreamNumInStreamSet, int maxStreamObjectNum, LogContext logContext) {
+        int maxStreamNumInStreamSet, int maxStreamObjectNum, LogContext logContext) {
         this.logger = logContext.logger(CompactionAnalyzer.class);
         this.compactionCacheSize = compactionCacheSize;
         this.streamSplitSize = streamSplitSize;
@@ -58,7 +58,8 @@ public class CompactionAnalyzer {
         this.maxStreamObjectNum = maxStreamObjectNum;
     }
 
-    public List<CompactionPlan> analyze(Map<Long, List<StreamDataBlock>> streamDataBlockMap, Set<Long> excludedObjectIds) {
+    public List<CompactionPlan> analyze(Map<Long, List<StreamDataBlock>> streamDataBlockMap,
+        Set<Long> excludedObjectIds) {
         if (streamDataBlockMap.isEmpty()) {
             return Collections.emptyList();
         }
@@ -81,10 +82,11 @@ public class CompactionAnalyzer {
      * with compaction limitation ({@code maxStreamObjectNum} and {@code maxStreamNumInStreamSet}).
      *
      * @param streamDataBlockMap stream data blocks map, key: object id, value: stream data blocks
-     * @param excludedObjectIds objects that are excluded from compaction because of compaction limitation
+     * @param excludedObjectIds  objects that are excluded from compaction because of compaction limitation
      * @return list of {@link CompactedObjectBuilder}
      */
-    List<CompactedObjectBuilder> groupObjectWithLimits(Map<Long, List<StreamDataBlock>> streamDataBlockMap, Set<Long> excludedObjectIds) {
+    List<CompactedObjectBuilder> groupObjectWithLimits(Map<Long, List<StreamDataBlock>> streamDataBlockMap,
+        Set<Long> excludedObjectIds) {
         List<StreamDataBlock> sortedStreamDataBlocks = sortStreamRangePositions(streamDataBlockMap);
         List<CompactedObjectBuilder> compactedObjectBuilders = new ArrayList<>();
         CompactionStats stats = null;
@@ -121,7 +123,8 @@ public class CompactionAnalyzer {
             streamNumInStreamSet = stats.getStreamRecord().streamNumInStreamSet();
             streamObjectNum = stats.getStreamRecord().streamObjectNum();
             logger.info("Current stream num in stream set: {}, max: {}, stream object num: {}, max: {}", streamNumInStreamSet, maxStreamNumInStreamSet, streamObjectNum, maxStreamObjectNum);
-        } while (streamNumInStreamSet > maxStreamNumInStreamSet || streamObjectNum > maxStreamObjectNum);
+        }
+        while (streamNumInStreamSet > maxStreamNumInStreamSet || streamObjectNum > maxStreamObjectNum);
 
         return compactedObjectBuilders;
     }
@@ -129,14 +132,14 @@ public class CompactionAnalyzer {
     /**
      * Find objects to exclude from compaction.
      *
-     * @param compactionType {@link CompactionType#COMPACT} means to exclude objects to reduce stream number in stream set object;
-     *                       {@link CompactionType#SPLIT} means to exclude objects to reduce stream object number
+     * @param compactionType          {@link CompactionType#COMPACT} means to exclude objects to reduce stream number in stream set object;
+     *                                {@link CompactionType#SPLIT} means to exclude objects to reduce stream object number
      * @param compactedObjectBuilders all compacted object builders
-     * @param stats compaction stats
-     * @param objectsToRemove objects to remove
+     * @param stats                   compaction stats
+     * @param objectsToRemove         objects to remove
      */
     private void addObjectsToRemove(CompactionType compactionType, List<CompactedObjectBuilder> compactedObjectBuilders,
-                                    CompactionStats stats, Set<Long> objectsToRemove) {
+        CompactionStats stats, Set<Long> objectsToRemove) {
         List<CompactedObjectBuilder> sortedCompactedObjectIndexList = new ArrayList<>();
         for (CompactedObjectBuilder compactedObjectBuilder : compactedObjectBuilders) {
             // find all compacted objects of the same type
@@ -151,8 +154,8 @@ public class CompactionAnalyzer {
             CompactedObjectBuilder compactedObjectToRemove = sortedCompactedObjectIndexList.get(0);
             // add all objects in the compacted object
             objectsToRemove.addAll(compactedObjectToRemove.streamDataBlocks().stream()
-                    .map(StreamDataBlock::getObjectId)
-                    .collect(Collectors.toSet()));
+                .map(StreamDataBlock::getObjectId)
+                .collect(Collectors.toSet()));
         } else {
             // try to find out one stream to remove
             // key: stream id, value: id of all objects that contains the stream
@@ -232,8 +235,8 @@ public class CompactionAnalyzer {
     }
 
     private CompactedObjectBuilder addOrMergeCompactedObject(CompactedObjectBuilder compactedObjectBuilder,
-                                                             List<CompactedObject> compactedObjects,
-                                                             CompactedObjectBuilder compactedStreamSetObjectBuilder) {
+        List<CompactedObject> compactedObjects,
+        CompactedObjectBuilder compactedStreamSetObjectBuilder) {
         if (compactedObjectBuilder.type() == CompactionType.SPLIT) {
             compactedObjects.add(compactedObjectBuilder.build());
         } else {
@@ -251,7 +254,8 @@ public class CompactionAnalyzer {
         return true;
     }
 
-    private CompactionPlan generateCompactionPlan(List<CompactedObject> compactedObjects, CompactedObjectBuilder compactedStreamSetObject) {
+    private CompactionPlan generateCompactionPlan(List<CompactedObject> compactedObjects,
+        CompactedObjectBuilder compactedStreamSetObject) {
         if (compactedStreamSetObject != null) {
             compactedObjects.add(compactedStreamSetObject.build());
         }
@@ -292,7 +296,7 @@ public class CompactionAnalyzer {
                 } else {
                     // should not go there
                     logger.error("FATAL ERROR: illegal stream range position, last offset: {}, curr: {}",
-                            builder.lastOffset(), streamDataBlock);
+                        builder.lastOffset(), streamDataBlock);
                     return new ArrayList<>();
                 }
             } else {
@@ -316,21 +320,21 @@ public class CompactionAnalyzer {
     Map<Long, List<StreamDataBlock>> filterBlocksToCompact(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
         // group stream data blocks by stream id, key: stream id, value: ids of objects that contains this stream
         Map<Long, Set<Long>> streamToObjectIds = streamDataBlocksMap.values().stream()
-                .flatMap(Collection::stream)
-                .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())));
+            .flatMap(Collection::stream)
+            .collect(Collectors.groupingBy(StreamDataBlock::getStreamId, Collectors.mapping(StreamDataBlock::getObjectId, Collectors.toSet())));
         Set<Long> objectIdsToCompact = streamToObjectIds
-                .entrySet().stream()
-                .filter(e -> e.getValue().size() > 1)
-                .flatMap(e -> e.getValue().stream())
-                .collect(Collectors.toSet());
+            .entrySet().stream()
+            .filter(e -> e.getValue().size() > 1)
+            .flatMap(e -> e.getValue().stream())
+            .collect(Collectors.toSet());
         return streamDataBlocksMap.entrySet().stream()
-                .filter(e -> objectIdsToCompact.contains(e.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            .filter(e -> objectIdsToCompact.contains(e.getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private CompactedObjectBuilder splitAndAddBlock(CompactedObjectBuilder builder,
-                                                    StreamDataBlock streamDataBlock,
-                                                    List<CompactedObjectBuilder> compactedObjectBuilders) {
+        StreamDataBlock streamDataBlock,
+        List<CompactedObjectBuilder> compactedObjectBuilders) {
         if (builder.currStreamBlockSize() > streamSplitSize) {
             builder = splitObject(builder, compactedObjectBuilders);
         }
@@ -339,7 +343,7 @@ public class CompactionAnalyzer {
     }
 
     private CompactedObjectBuilder splitObject(CompactedObjectBuilder builder,
-                                               List<CompactedObjectBuilder> compactedObjectBuilders) {
+        List<CompactedObjectBuilder> compactedObjectBuilders) {
         CompactedObjectBuilder splitBuilder = builder.splitCurrentStream();
         splitBuilder.setType(CompactionType.SPLIT);
         if (builder.totalBlockSize() != 0) {
@@ -377,7 +381,7 @@ public class CompactionAnalyzer {
 
         protected int compareCompactedObject(CompactedObjectBuilder o1, CompactedObjectBuilder o2) {
             return Integer.compare(CompactionUtils.getTotalObjectStats(o1, objectStatsMap),
-                    CompactionUtils.getTotalObjectStats(o2, objectStatsMap));
+                CompactionUtils.getTotalObjectStats(o2, objectStatsMap));
         }
     }
 

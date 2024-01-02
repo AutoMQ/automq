@@ -17,16 +17,15 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.objects.ObjectStreamRange;
+import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -37,10 +36,10 @@ public class CompactionUtilTest extends CompactionTestBase {
     @Test
     public void testBuildObjectStreamRanges() {
         List<StreamDataBlock> streamDataBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 0, 20, 1),
-                new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 20, 5, 1),
-                new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 25, 80, 1),
-                new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 105, 30, 1));
+            new StreamDataBlock(STREAM_0, 0, 20, 2, 1, 0, 20, 1),
+            new StreamDataBlock(STREAM_0, 20, 25, 3, 0, 20, 5, 1),
+            new StreamDataBlock(STREAM_2, 40, 120, 0, 2, 25, 80, 1),
+            new StreamDataBlock(STREAM_2, 120, 150, 1, 3, 105, 30, 1));
         CompactedObject compactedObject = new CompactedObject(CompactionType.COMPACT, streamDataBlocks);
         List<ObjectStreamRange> result = CompactionUtils.buildObjectStreamRange(compactedObject.streamDataBlocks());
         assertEquals(2, result.size());
@@ -55,11 +54,11 @@ public class CompactionUtilTest extends CompactionTestBase {
     @Test
     public void testMergeStreamDataBlocks() {
         List<StreamDataBlock> streamDataBlocks = List.of(
-                new StreamDataBlock(STREAM_0, 0, 15, 0, 1, 0, 20, 1),
-                new StreamDataBlock(STREAM_0, 15, 30, 1, 1, 20, 5, 1),
-                new StreamDataBlock(STREAM_0, 30, 100, 2, 1, 25, 80, 1),
-                new StreamDataBlock(STREAM_2, 40, 100, 3, 1, 105, 80, 1),
-                new StreamDataBlock(STREAM_2, 120, 150, 4, 1, 185, 30, 1));
+            new StreamDataBlock(STREAM_0, 0, 15, 0, 1, 0, 20, 1),
+            new StreamDataBlock(STREAM_0, 15, 30, 1, 1, 20, 5, 1),
+            new StreamDataBlock(STREAM_0, 30, 100, 2, 1, 25, 80, 1),
+            new StreamDataBlock(STREAM_2, 40, 100, 3, 1, 105, 80, 1),
+            new StreamDataBlock(STREAM_2, 120, 150, 4, 1, 185, 30, 1));
         List<List<StreamDataBlock>> result = CompactionUtils.groupStreamDataBlocks(streamDataBlocks);
         assertEquals(3, result.size());
         Assertions.assertEquals(List.of(streamDataBlocks.get(0), streamDataBlocks.get(1), streamDataBlocks.get(2)), result.get(0));

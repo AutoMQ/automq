@@ -50,9 +50,9 @@ public class CommandResult {
     @Override
     public String toString() {
         return "CommandResult{" +
-                "code=" + code +
-                ", stdout='" + stdout + '\'' +
-                ", stderr='" + stderr + '\'' +
-                '}';
+            "code=" + code +
+            ", stdout='" + stdout + '\'' +
+            ", stderr='" + stderr + '\'' +
+            '}';
     }
 }

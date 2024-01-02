@@ -18,21 +18,20 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
-import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CompactionUploader {
     private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
@@ -50,9 +49,9 @@ public class CompactionUploader {
         this.s3Operator = s3Operator;
         this.config = config;
         this.streamObjectUploadPool = Threads.newFixedThreadPool(config.streamSetObjectCompactionUploadConcurrency(),
-                ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
+            ThreadUtils.createThreadFactory("compaction-stream-object-uploader-%d", true), LOGGER);
         this.streamSetObjectUploadPool = Threads.newSingleThreadScheduledExecutor(
-                ThreadUtils.createThreadFactory("compaction-stream-set-object-uploader-%d", true), LOGGER);
+            ThreadUtils.createThreadFactory("compaction-stream-set-object-uploader-%d", true), LOGGER);
     }
 
     public void stop() {
@@ -60,7 +59,8 @@ public class CompactionUploader {
         this.streamObjectUploadPool.shutdown();
     }
 
-    public CompletableFuture<Void> chainWriteStreamSetObject(CompletableFuture<Void> prev, CompactedObject compactedObject) {
+    public CompletableFuture<Void> chainWriteStreamSetObject(CompletableFuture<Void> prev,
+        CompactedObject compactedObject) {
         if (compactedObject.type() != CompactionType.COMPACT) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("wrong compacted object type, expected COMPACT"));
         }
@@ -93,30 +93,30 @@ public class CompactionUploader {
             return CompletableFuture.completedFuture(null);
         }
         return objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
-                .thenComposeAsync(objectId -> {
-                    if (isAborted) {
-                        // release data that has not been uploaded
+            .thenComposeAsync(objectId -> {
+                if (isAborted) {
+                    // release data that has not been uploaded
+                    compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                    return CompletableFuture.completedFuture(null);
+                }
+                DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
+                CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(dataBlockWriter, compactedObject.streamDataBlocks(), streamObjectUploadPool);
+                return cf.thenCompose(nil -> dataBlockWriter.close()).thenApply(nil -> {
+                    StreamObject streamObject = new StreamObject();
+                    streamObject.setObjectId(objectId);
+                    streamObject.setStreamId(compactedObject.streamDataBlocks().get(0).getStreamId());
+                    streamObject.setStartOffset(compactedObject.streamDataBlocks().get(0).getStartOffset());
+                    streamObject.setEndOffset(compactedObject.streamDataBlocks().get(compactedObject.streamDataBlocks().size() - 1).getEndOffset());
+                    streamObject.setObjectSize(dataBlockWriter.size());
+                    return streamObject;
+                }).whenComplete((ret, ex) -> {
+                    if (ex != null) {
+                        LOGGER.error("write to stream object {} failed", objectId, ex);
+                        dataBlockWriter.release();
                         compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                        return CompletableFuture.completedFuture(null);
                     }
-                    DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
-                    CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(dataBlockWriter, compactedObject.streamDataBlocks(), streamObjectUploadPool);
-                    return cf.thenCompose(nil -> dataBlockWriter.close()).thenApply(nil -> {
-                        StreamObject streamObject = new StreamObject();
-                        streamObject.setObjectId(objectId);
-                        streamObject.setStreamId(compactedObject.streamDataBlocks().get(0).getStreamId());
-                        streamObject.setStartOffset(compactedObject.streamDataBlocks().get(0).getStartOffset());
-                        streamObject.setEndOffset(compactedObject.streamDataBlocks().get(compactedObject.streamDataBlocks().size() - 1).getEndOffset());
-                        streamObject.setObjectSize(dataBlockWriter.size());
-                        return streamObject;
-                    }).whenComplete((ret, ex) -> {
-                        if (ex != null) {
-                            LOGGER.error("write to stream object {} failed", objectId, ex);
-                            dataBlockWriter.release();
-                            compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                        }
-                    });
-                }, streamObjectUploadPool);
+                });
+            }, streamObjectUploadPool);
     }
 
     public CompletableFuture<Void> forceUploadStreamSetObject() {

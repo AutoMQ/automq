@@ -20,7 +20,6 @@ package com.automq.stream.s3.trace;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
-
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
@@ -52,20 +51,6 @@ public class AttributeBindings {
             }
         }
         return new AttributeBindings(bindings);
-    }
-
-    public boolean isEmpty() {
-        return bindings == null || bindings.length == 0;
-    }
-
-    public void apply(AttributesBuilder target, Object[] args) {
-        if (args.length != bindings.length) {
-            return;
-        }
-
-        for (int i = 0; i < args.length; i++) {
-            bindings[i].apply(target, args[i]);
-        }
     }
 
     static BiFunction<AttributesBuilder, Object, AttributesBuilder> emptyBinding() {
@@ -102,5 +87,19 @@ public class AttributeBindings {
         // Default parameter types
         AttributeKey<String> key = AttributeKey.stringKey(name);
         return (builder, arg) -> builder.put(key, arg.toString());
+    }
+
+    public boolean isEmpty() {
+        return bindings == null || bindings.length == 0;
+    }
+
+    public void apply(AttributesBuilder target, Object[] args) {
+        if (args.length != bindings.length) {
+            return;
+        }
+
+        for (int i = 0; i < args.length; i++) {
+            bindings[i].apply(target, args[i]);
+        }
     }
 }

@@ -31,9 +31,6 @@ import com.automq.stream.utils.Threads;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,6 +40,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
@@ -62,10 +61,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
         this.cache = new BlockCache(config.blockCacheSize());
         this.readAheadManager = new ReadAheadManager(blockSize, this.cache);
         this.mainExecutor = Threads.newFixedThreadPoolWithMonitor(
-                2,
-                "s3-block-cache-main",
-                false,
-                LOGGER);
+            2,
+            "s3-block-cache-main",
+            false,
+            LOGGER);
         this.inflightReadThrottle = new InflightReadThrottle();
         this.streamReader = new StreamReader(s3Operator, objectManager, cache, inflightReadAheadTasks, inflightReadThrottle);
     }
@@ -80,10 +79,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
     @Override
     @WithSpan
     public CompletableFuture<ReadDataBlock> read(TraceContext traceContext,
-                                                 @SpanAttribute long streamId,
-                                                 @SpanAttribute long startOffset,
-                                                 @SpanAttribute long endOffset,
-                                                 @SpanAttribute int maxBytes) {
+        @SpanAttribute long streamId,
+        @SpanAttribute long startOffset,
+        @SpanAttribute long endOffset,
+        @SpanAttribute int maxBytes) {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] read data, stream={}, {}-{}, total bytes: {}", streamId, startOffset, endOffset, maxBytes);
         }
@@ -93,7 +92,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
         ReadAheadAgent agent = this.readAheadManager.getOrCreateReadAheadAgent(streamId, startOffset);
         UUID uuid = UUID.randomUUID();
-        ReadTaskKey key = new ReadTaskKey(streamId, startOffset, endOffset, maxBytes , uuid);
+        ReadTaskKey key = new ReadTaskKey(streamId, startOffset, endOffset, maxBytes, uuid);
         ReadTaskContext context = new ReadTaskContext(agent, ReadBlockCacheStatus.INIT);
         this.inflightReadStatusMap.put(key, context);
         // submit read task to mainExecutor to avoid read slower the caller thread.
@@ -108,7 +107,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     }
                     int totalReturnedSize = ret.getRecords().stream().mapToInt(StreamRecordBatch::size).sum();
                     this.readAheadManager.updateReadResult(streamId, startOffset,
-                            ret.getRecords().get(ret.getRecords().size() - 1).getLastOffset(), totalReturnedSize);
+                        ret.getRecords().get(ret.getRecords().size() - 1).getLastOffset(), totalReturnedSize);
 
                     long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
                     boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
@@ -116,7 +115,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     S3StreamMetricsManager.recordReadCacheLatency(MetricsLevel.INFO, timeElapsed, S3Operation.READ_STORAGE_BLOCK_CACHE, isCacheHit);
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {}",
-                                ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT, streamId, startOffset, endOffset, totalReturnedSize);
+                            ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT, streamId, startOffset, endOffset, totalReturnedSize);
                     }
                     this.inflightReadThrottle.release(uuid);
                     this.inflightReadStatusMap.remove(key);
@@ -133,11 +132,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     @WithSpan
     public CompletableFuture<ReadDataBlock> read0(TraceContext traceContext,
-                                                  @SpanAttribute long streamId,
-                                                  @SpanAttribute long startOffset,
-                                                  @SpanAttribute long endOffset,
-                                                  @SpanAttribute int maxBytes,
-                                                  UUID uuid, ReadTaskContext context) {
+        @SpanAttribute long streamId,
+        @SpanAttribute long startOffset,
+        @SpanAttribute long endOffset,
+        @SpanAttribute int maxBytes,
+        UUID uuid, ReadTaskContext context) {
         ReadAheadAgent agent = context.agent;
 
         if (LOGGER.isDebugEnabled()) {
@@ -156,7 +155,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
             CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
             context.setStatus(ReadBlockCacheStatus.WAIT_INFLIGHT_RA);
             inflightReadAheadTaskContext.cf.whenComplete((nil, ex) -> FutureUtil.exec(() -> FutureUtil.propagate(
-                    read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0"));
+                read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0"));
             return readCf;
         }
 
@@ -193,21 +192,21 @@ public class DefaultS3BlockCache implements S3BlockCache {
             LOGGER.debug("[S3BlockCache] read data cache miss, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, maxBytes);
         }
         return streamReader.syncReadAhead(traceContext, streamId, startOffset, endOffset, maxBytes, agent, uuid)
-                .thenCompose(rst -> {
-                    if (!rst.isEmpty()) {
-                        int remainBytes = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
-                        long lastOffset = rst.get(rst.size() - 1).getLastOffset();
-                        if (remainBytes > 0 && lastOffset < endOffset) {
-                            // retry read
-                            return read0(traceContext, streamId, lastOffset, endOffset, remainBytes, uuid, context).thenApply(rst2 -> {
-                                List<StreamRecordBatch> records = new ArrayList<>(rst);
-                                records.addAll(rst2.getRecords());
-                                return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);
-                            });
-                        }
+            .thenCompose(rst -> {
+                if (!rst.isEmpty()) {
+                    int remainBytes = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
+                    long lastOffset = rst.get(rst.size() - 1).getLastOffset();
+                    if (remainBytes > 0 && lastOffset < endOffset) {
+                        // retry read
+                        return read0(traceContext, streamId, lastOffset, endOffset, remainBytes, uuid, context).thenApply(rst2 -> {
+                            List<StreamRecordBatch> records = new ArrayList<>(rst);
+                            records.addAll(rst2.getRecords());
+                            return new ReadDataBlock(records, CacheAccessType.BLOCK_CACHE_MISS);
+                        });
                     }
-                    return CompletableFuture.completedFuture(new ReadDataBlock(rst, CacheAccessType.BLOCK_CACHE_MISS));
-                });
+                }
+                return CompletableFuture.completedFuture(new ReadDataBlock(rst, CacheAccessType.BLOCK_CACHE_MISS));
+            });
     }
 
     private void asyncReadAhead(long streamId, ReadAheadAgent agent, List<ReadAheadRecord> readAheadRecords) {
@@ -221,7 +220,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] async read ahead, stream={}, {}-{}, total bytes: {} ",
-                    streamId, nextRaOffset, NOOP_OFFSET, nextRaSize);
+                streamId, nextRaOffset, NOOP_OFFSET, nextRaSize);
         }
 
         // check if next ra hits cache
@@ -230,6 +229,19 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
 
         streamReader.asyncReadAhead(streamId, nextRaOffset, NOOP_OFFSET, nextRaSize, agent);
+    }
+
+    public enum ReadBlockCacheStatus {
+        /* Status for read request */
+        INIT,
+        WAIT_INFLIGHT_RA,
+        GET_FROM_CACHE,
+        GET_FROM_S3,
+
+        /* Status for read ahead request */
+        WAIT_DATA_INDEX,
+        WAIT_FETCH_DATA,
+        WAIT_THROTTLE,
     }
 
     public record ReadAheadTaskKey(long streamId, long startOffset) {
@@ -254,12 +266,12 @@ public class DefaultS3BlockCache implements S3BlockCache {
         @Override
         public String toString() {
             return "ReadTaskKey{" +
-                    "streamId=" + streamId +
-                    ", startOffset=" + startOffset +
-                    ", endOffset=" + endOffset +
-                    ", maxBytes=" + maxBytes +
-                    ", uuid=" + uuid +
-                    '}';
+                "streamId=" + streamId +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                ", maxBytes=" + maxBytes +
+                ", uuid=" + uuid +
+                '}';
         }
     }
 
@@ -278,19 +290,6 @@ public class DefaultS3BlockCache implements S3BlockCache {
     }
 
     public record ReadAheadRecord(long nextRAOffset) {
-    }
-
-    public enum ReadBlockCacheStatus {
-        /* Status for read request */
-        INIT,
-        WAIT_INFLIGHT_RA,
-        GET_FROM_CACHE,
-        GET_FROM_S3,
-
-        /* Status for read ahead request */
-        WAIT_DATA_INDEX,
-        WAIT_FETCH_DATA,
-        WAIT_THROTTLE,
     }
 
 }

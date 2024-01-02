@@ -19,7 +19,6 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.trace.context.TraceContext;
 import io.netty.buffer.ByteBuf;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;

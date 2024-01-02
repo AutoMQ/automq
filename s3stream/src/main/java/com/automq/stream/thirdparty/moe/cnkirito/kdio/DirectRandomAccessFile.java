@@ -24,22 +24,18 @@ import java.nio.ByteBuffer;
 
 /**
  * Class to emulate the behavior of {@link RandomAccessFile}, but using direct I/O.
- *
  */
 public class DirectRandomAccessFile implements Closeable {
 
     private final DirectChannel channel;
 
-
     /**
      * @param file The file to open
-     *
      * @param mode Either "rw" or "r", depending on whether this file is read only
-     *
      * @throws IOException
      */
     public DirectRandomAccessFile(File file, String mode)
-            throws IOException {
+        throws IOException {
 
         boolean readOnly = false;
         if ("r".equals(mode)) {
@@ -59,7 +55,6 @@ public class DirectRandomAccessFile implements Closeable {
     public void close() throws IOException {
         channel.close();
     }
-
 
     public int write(ByteBuffer src, long position) throws IOException {
         return channel.write(src, position);

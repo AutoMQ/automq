@@ -25,12 +25,11 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class ObjectReaderLRUCacheTest {
 

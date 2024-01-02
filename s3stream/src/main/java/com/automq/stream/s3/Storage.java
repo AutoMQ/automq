@@ -21,7 +21,6 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
-
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -44,7 +43,8 @@ public interface Storage {
         return append(AppendContext.DEFAULT, streamRecord);
     }
 
-    CompletableFuture<ReadDataBlock> read(FetchContext context, long streamId, long startOffset, long endOffset, int maxBytes);
+    CompletableFuture<ReadDataBlock> read(FetchContext context, long streamId, long startOffset, long endOffset,
+        int maxBytes);
 
     default CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
         return read(FetchContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);

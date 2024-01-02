@@ -23,9 +23,6 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -36,6 +33,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class InflightReadThrottle implements Runnable {
     private static final Logger LOGGER = LoggerFactory.getLogger(InflightReadThrottle.class);
@@ -46,7 +45,7 @@ public class InflightReadThrottle implements Runnable {
     private final Map<UUID, Integer> inflightQuotaMap = new HashMap<>();
     private final Queue<InflightReadItem> inflightReadQueue = new LinkedList<>();
     private final ExecutorService executorService = Threads.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("inflight-read-throttle-%d", false), LOGGER);
+        ThreadUtils.createThreadFactory("inflight-read-throttle-%d", false), LOGGER);
 
     private int remainingInflightReadBytes;
 
@@ -94,7 +93,7 @@ public class InflightReadThrottle implements Runnable {
         try {
             if (readSize > maxInflightReadBytes) {
                 return CompletableFuture.failedFuture(new IllegalArgumentException(String.format(
-                        "read size %d exceeds max inflight read size %d", readSize, maxInflightReadBytes)));
+                    "read size %d exceeds max inflight read size %d", readSize, maxInflightReadBytes)));
             }
             if (readSize <= 0) {
                 return CompletableFuture.completedFuture(null);

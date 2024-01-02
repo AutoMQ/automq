@@ -30,7 +30,8 @@ public class CompactStreamObjectRequest {
      */
     private List<Long> sourceObjectIds;
 
-    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset, List<Long> sourceObjectIds) {
+    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset,
+        List<Long> sourceObjectIds) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.streamId = streamId;
@@ -90,12 +91,12 @@ public class CompactStreamObjectRequest {
     @Override
     public String toString() {
         return "CommitStreamObjectRequest{" +
-                "objectId=" + objectId +
-                ", objectSize=" + objectSize +
-                ", streamId=" + streamId +
-                ", startOffset=" + startOffset +
-                ", endOffset=" + endOffset +
-                ", sourceObjectIds=" + sourceObjectIds +
-                '}';
+            "objectId=" + objectId +
+            ", objectSize=" + objectSize +
+            ", streamId=" + streamId +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", sourceObjectIds=" + sourceObjectIds +
+            '}';
     }
 }

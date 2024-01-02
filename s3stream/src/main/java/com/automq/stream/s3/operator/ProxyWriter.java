@@ -22,7 +22,6 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,11 +29,11 @@ import java.util.concurrent.CompletableFuture;
  * Else, we should use multi-part upload to upload it.
  */
 class ProxyWriter implements Writer {
+    final ObjectWriter objectWriter = new ObjectWriter();
     private final S3Operator operator;
     private final String path;
     private final long minPartSize;
     private final ThrottleStrategy throttleStrategy;
-    final ObjectWriter objectWriter = new ObjectWriter();
     Writer multiPartWriter = null;
 
     public ProxyWriter(S3Operator operator, String path, long minPartSize, ThrottleStrategy throttleStrategy) {

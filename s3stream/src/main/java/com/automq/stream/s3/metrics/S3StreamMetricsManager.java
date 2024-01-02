@@ -26,7 +26,6 @@ import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
-
 import java.util.function.Supplier;
 
 public class S3StreamMetricsManager {
@@ -85,182 +84,182 @@ public class S3StreamMetricsManager {
 
     public static void initMetrics(Meter meter, String prefix) {
         s3DownloadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.DOWNLOAD_SIZE_METRIC_NAME)
-                .setDescription("S3 download size")
-                .setUnit("bytes")
-                .build();
+            .setDescription("S3 download size")
+            .setUnit("bytes")
+            .build();
         s3UploadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.UPLOAD_SIZE_METRIC_NAME)
-                .setDescription("S3 upload size")
-                .setUnit("bytes")
-                .build();
+            .setDescription("S3 upload size")
+            .setUnit("bytes")
+            .build();
         operationLatency = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OPERATION_LATENCY_METRIC_NAME)
-                .setDescription("Operations latency")
-                .setUnit("nanoseconds")
-                .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-                .build();
+            .setDescription("Operations latency")
+            .setUnit("nanoseconds")
+            .ofLongs()
+            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
+            .build();
         objectNumInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.OBJECT_COUNT_METRIC_NAME)
-                .setDescription("Objects count")
-                .build();
+            .setDescription("Objects count")
+            .build();
         objectStageCost = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_STAGE_COST_METRIC_NAME)
-                .setDescription("Objects stage cost")
-                .setUnit("nanoseconds")
-                .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-                .build();
+            .setDescription("Objects stage cost")
+            .setUnit("nanoseconds")
+            .ofLongs()
+            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
+            .build();
         objectUploadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_UPLOAD_SIZE_METRIC_NAME)
-                .setDescription("Objects upload size")
-                .setUnit("bytes")
-                .ofLongs()
-                .build();
+            .setDescription("Objects upload size")
+            .setUnit("bytes")
+            .ofLongs()
+            .build();
         objectDownloadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_DOWNLOAD_SIZE_METRIC_NAME)
-                .setDescription("Objects download size")
-                .setUnit("bytes")
-                .ofLongs()
-                .build();
+            .setDescription("Objects download size")
+            .setUnit("bytes")
+            .ofLongs()
+            .build();
         networkInboundUsageInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_USAGE_METRIC_NAME)
-                .setDescription("Network inbound usage")
-                .setUnit("bytes")
-                .build();
+            .setDescription("Network inbound usage")
+            .setUnit("bytes")
+            .build();
         networkOutboundUsageInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_USAGE_METRIC_NAME)
-                .setDescription("Network outbound usage")
-                .setUnit("bytes")
-                .build();
+            .setDescription("Network outbound usage")
+            .setUnit("bytes")
+            .build();
         networkInboundAvailableBandwidth = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME)
-                .setDescription("Network inbound available bandwidth")
-                .setUnit("bytes")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsLevel)) {
-                        result.record(networkInboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Network inbound available bandwidth")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsLevel)) {
+                    result.record(networkInboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         networkOutboundAvailableBandwidth = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME)
-                .setDescription("Network outbound available bandwidth")
-                .setUnit("bytes")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsLevel)) {
-                        result.record(networkOutboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Network outbound available bandwidth")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsLevel)) {
+                    result.record(networkOutboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         networkInboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
-                .setDescription("Network inbound limiter queue size")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) networkInboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Network inbound limiter queue size")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) networkInboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         networkOutboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
-                .setDescription("Network outbound limiter queue size")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Network outbound limiter queue size")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         networkInboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
-                .setDescription("Network inbound limiter queue time")
-                .setUnit("nanoseconds")
-                .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-                .build();
+            .setDescription("Network inbound limiter queue time")
+            .setUnit("nanoseconds")
+            .ofLongs()
+            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
+            .build();
         networkOutboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
-                .setDescription("Network outbound limiter queue time")
-                .setUnit("nanoseconds")
-                .ofLongs()
-                .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-                .build();
+            .setDescription("Network outbound limiter queue time")
+            .setUnit("nanoseconds")
+            .ofLongs()
+            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
+            .build();
         allocateByteBufSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME)
-                .setDescription("Allocate byte buf size")
-                .setUnit("bytes")
-                .ofLongs()
-                .build();
+            .setDescription("Allocate byte buf size")
+            .setUnit("bytes")
+            .ofLongs()
+            .build();
         readAheadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.READ_AHEAD_SIZE_METRIC_NAME)
-                .setDescription("Read ahead size")
-                .setUnit("bytes")
-                .ofLongs()
-                .build();
+            .setDescription("Read ahead size")
+            .setUnit("bytes")
+            .ofLongs()
+            .build();
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
-                .setDescription("Delta WAL start offset")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record(deltaWalStartOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Delta WAL start offset")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record(deltaWalStartOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         deltaWalTrimmedOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_TRIMMED_OFFSET)
-                .setDescription("Delta WAL trimmed offset")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record(deltaWalTrimmedOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Delta WAL trimmed offset")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record(deltaWalTrimmedOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         deltaWalCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.DELTA_WAL_CACHE_SIZE)
-                .setDescription("Delta WAL cache size")
-                .setUnit("bytes")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record(deltaWALCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Delta WAL cache size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record(deltaWALCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         blockCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BLOCK_CACHE_SIZE)
-                .setDescription("Block cache size")
-                .setUnit("bytes")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record(blockCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Block cache size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record(blockCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         availableInflightReadAheadSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_INFLIGHT_READ_AHEAD_SIZE_METRIC_NAME)
-                .setDescription("Available inflight read ahead size")
-                .setUnit("bytes")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) availableInflightReadAheadSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Available inflight read ahead size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) availableInflightReadAheadSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         availableInflightS3ReadQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_READ_QUOTA_METRIC_NAME)
-                .setDescription("Available inflight S3 read quota")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) availableInflightS3ReadQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Available inflight S3 read quota")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) availableInflightS3ReadQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         availableInflightS3WriteQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_WRITE_QUOTA_METRIC_NAME)
-                .setDescription("Available inflight S3 write quota")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) availableInflightS3WriteQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Available inflight S3 write quota")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) availableInflightS3WriteQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         inflightWALUploadTasksCount = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME)
-                .setDescription("Inflight upload WAL tasks count")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                        result.record((long) inflightWALUploadTasksCountSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
-                    }
-                });
+            .setDescription("Inflight upload WAL tasks count")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
+                    result.record((long) inflightWALUploadTasksCountSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                }
+            });
         compactionReadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.COMPACTION_READ_SIZE_METRIC_NAME)
-                .setDescription("Compaction read size")
-                .setUnit("bytes")
-                .build();
+            .setDescription("Compaction read size")
+            .setUnit("bytes")
+            .build();
         compactionWriteSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.COMPACTION_WRITE_SIZE_METRIC_NAME)
-                .setDescription("Compaction write size")
-                .setUnit("bytes")
-                .build();
+            .setDescription("Compaction write size")
+            .setUnit("bytes")
+            .build();
     }
 
     public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
-                                                      Supplier<Long> networkAvailableBandwidthSupplier,
-                                                      Supplier<Integer> networkLimiterQueueSizeSupplier) {
+        Supplier<Long> networkAvailableBandwidthSupplier,
+        Supplier<Integer> networkLimiterQueueSizeSupplier) {
         switch (type) {
             case INBOUND -> {
                 S3StreamMetricsManager.networkInboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
@@ -274,7 +273,7 @@ public class S3StreamMetricsManager {
     }
 
     public static void registerDeltaWalOffsetSupplier(Supplier<Long> deltaWalStartOffsetSupplier,
-                                                      Supplier<Long> deltaWalTrimmedOffsetSupplier) {
+        Supplier<Long> deltaWalTrimmedOffsetSupplier) {
         S3StreamMetricsManager.deltaWalStartOffsetSupplier = deltaWalStartOffsetSupplier;
         S3StreamMetricsManager.deltaWalTrimmedOffsetSupplier = deltaWalTrimmedOffsetSupplier;
     }
@@ -295,11 +294,13 @@ public class S3StreamMetricsManager {
         S3StreamMetricsManager.availableInflightS3WriteQuotaSupplier = inflightS3WriteQuotaSupplier;
     }
 
-    public static void registerInflightReadSizeLimiterSupplier(Supplier<Integer> availableInflightReadAheadSizeSupplier) {
+    public static void registerInflightReadSizeLimiterSupplier(
+        Supplier<Integer> availableInflightReadAheadSizeSupplier) {
         S3StreamMetricsManager.availableInflightReadAheadSizeSupplier = availableInflightReadAheadSizeSupplier;
     }
 
-    public static void registerInflightWALUploadTasksCountSupplier(Supplier<Integer> inflightWALUploadTasksCountSupplier) {
+    public static void registerInflightWALUploadTasksCountSupplier(
+        Supplier<Integer> inflightWALUploadTasksCountSupplier) {
         S3StreamMetricsManager.inflightWALUploadTasksCountSupplier = inflightWALUploadTasksCountSupplier;
     }
 
@@ -319,7 +320,8 @@ public class S3StreamMetricsManager {
         recordOperationLatency(level, value, operation, 0, true);
     }
 
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation, boolean isSuccess) {
+    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation,
+        boolean isSuccess) {
         recordOperationLatency(level, value, operation, 0, isSuccess);
     }
 
@@ -327,7 +329,8 @@ public class S3StreamMetricsManager {
         recordOperationLatency(level, value, operation, size, true);
     }
 
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation, long size, boolean isSuccess) {
+    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation, long size,
+        boolean isSuccess) {
         if (level.isWithin(metricsLevel)) {
             operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, size, isSuccess));
         }
@@ -339,7 +342,8 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static void recordReadCacheLatency(MetricsLevel level, long value, S3Operation operation, boolean isCacheHit) {
+    public static void recordReadCacheLatency(MetricsLevel level, long value, S3Operation operation,
+        boolean isCacheHit) {
         if (level.isWithin(metricsLevel)) {
             operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, isCacheHit ? "hit" : "miss"));
         }
@@ -387,11 +391,14 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static void recordNetworkLimiterQueueTime(MetricsLevel level, long value, AsyncNetworkBandwidthLimiter.Type type) {
+    public static void recordNetworkLimiterQueueTime(MetricsLevel level, long value,
+        AsyncNetworkBandwidthLimiter.Type type) {
         if (level.isWithin(metricsLevel)) {
             switch (type) {
-                case INBOUND -> networkInboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
-                case OUTBOUND -> networkOutboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
+                case INBOUND ->
+                    networkInboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
+                case OUTBOUND ->
+                    networkOutboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
             }
         }
     }

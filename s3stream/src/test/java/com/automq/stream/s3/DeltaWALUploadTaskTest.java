@@ -27,11 +27,6 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +35,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -73,21 +72,21 @@ public class DeltaWALUploadTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-                new StreamRecordBatch(233, 0, 10, 2, random(512)),
-                new StreamRecordBatch(233, 0, 12, 2, random(128)),
-                new StreamRecordBatch(233, 0, 14, 2, random(512))
+            new StreamRecordBatch(233, 0, 10, 2, random(512)),
+            new StreamRecordBatch(233, 0, 12, 2, random(128)),
+            new StreamRecordBatch(233, 0, 14, 2, random(512))
         ));
         map.put(234L, List.of(
-                new StreamRecordBatch(234, 0, 20, 2, random(128)),
-                new StreamRecordBatch(234, 0, 22, 2, random(128))
+            new StreamRecordBatch(234, 0, 20, 2, random(128)),
+            new StreamRecordBatch(234, 0, 22, 2, random(128))
         ));
 
         Config config = new Config()
-                .objectBlockSize(16 * 1024 * 1024)
-                .objectPartSize(16 * 1024 * 1024)
-                .streamSplitSize(1000);
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(1000);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-                .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -119,7 +118,7 @@ public class DeltaWALUploadTaskTest {
             S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
             ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
-                    .streamDataBlocks().get(0).dataBlockIndex();
+                .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
             try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
                 StreamRecordBatch record = it.next();
@@ -134,7 +133,7 @@ public class DeltaWALUploadTaskTest {
             S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
             ObjectReader objectReader = new ObjectReader(streamObjectMetadata, s3Operator);
             ObjectReader.DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
-                    .streamDataBlocks().get(0).dataBlockIndex();
+                .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlock dataBlock = objectReader.read(blockIndex).get();
             try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
                 StreamRecordBatch r1 = it.next();
@@ -158,16 +157,16 @@ public class DeltaWALUploadTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-                new StreamRecordBatch(233, 0, 10, 2, random(512)),
-                new StreamRecordBatch(233, 0, 12, 2, random(128)),
-                new StreamRecordBatch(233, 0, 14, 2, random(512))
+            new StreamRecordBatch(233, 0, 10, 2, random(512)),
+            new StreamRecordBatch(233, 0, 12, 2, random(128)),
+            new StreamRecordBatch(233, 0, 14, 2, random(512))
         ));
         Config config = new Config()
-                .objectBlockSize(16 * 1024 * 1024)
-                .objectPartSize(16 * 1024 * 1024)
-                .streamSplitSize(16 * 1024 * 1024);
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(16 * 1024 * 1024);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-                .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -175,7 +174,6 @@ public class DeltaWALUploadTaskTest {
 
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
-
 
         ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
         verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
@@ -193,18 +191,18 @@ public class DeltaWALUploadTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-                new StreamRecordBatch(233, 0, 10, 2, random(512))
+            new StreamRecordBatch(233, 0, 10, 2, random(512))
         ));
         map.put(234L, List.of(
-                new StreamRecordBatch(234, 0, 20, 2, random(128))
+            new StreamRecordBatch(234, 0, 20, 2, random(128))
         ));
 
         Config config = new Config()
-                .objectBlockSize(16 * 1024 * 1024)
-                .objectPartSize(16 * 1024 * 1024)
-                .streamSplitSize(64);
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(64);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-                .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
         assertTrue(deltaWALUploadTask.forceSplit);
     }
 }

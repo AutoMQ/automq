@@ -19,10 +19,9 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 public interface S3Operator {
 
@@ -31,9 +30,9 @@ public interface S3Operator {
     /**
      * Range read from object.
      *
-     * @param path  object path.
-     * @param start range start.
-     * @param end   range end.
+     * @param path             object path.
+     * @param start            range start.
+     * @param end              range end.
      * @param throttleStrategy throttle strategy.
      * @return data.
      */
@@ -46,8 +45,8 @@ public interface S3Operator {
     /**
      * Write data to object.
      *
-     * @param path object path. The path should not start with '/' since Aliyun OSS does not support it.
-     * @param data data.
+     * @param path             object path. The path should not start with '/' since Aliyun OSS does not support it.
+     * @param data             data.
      * @param throttleStrategy throttle strategy.
      */
     CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy);
@@ -59,20 +58,21 @@ public interface S3Operator {
     /**
      * New multipart object writer.
      *
-     * @param path         object path
+     * @param path             object path
      * @param throttleStrategy throttle strategy.
      * @return {@link Writer}
      */
     Writer writer(String path, ThrottleStrategy throttleStrategy);
 
     default Writer writer(String path) {
-        return writer(path,  ThrottleStrategy.BYPASS);
+        return writer(path, ThrottleStrategy.BYPASS);
     }
 
     CompletableFuture<Void> delete(String path);
 
     /**
      * Delete a list of objects.
+     *
      * @param objectKeys object keys to delete.
      * @return deleted object keys.
      */
@@ -82,6 +82,7 @@ public interface S3Operator {
 
     /**
      * Create mutlipart upload
+     *
      * @param path object path.
      * @return upload id.
      */
@@ -89,9 +90,11 @@ public interface S3Operator {
 
     /**
      * Upload part.
+     *
      * @return {@link CompletedPart}
      */
-    CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data, ThrottleStrategy throttleStrategy);
+    CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data,
+        ThrottleStrategy throttleStrategy);
 
     default CompletableFuture<CompletedPart> uploadPart(String path, String uploadId, int partNumber, ByteBuf data) {
         return uploadPart(path, uploadId, partNumber, data, ThrottleStrategy.BYPASS);
@@ -99,9 +102,11 @@ public interface S3Operator {
 
     /**
      * Upload part copy
+     *
      * @return {@link CompletedPart}
      */
-    CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber);
+    CompletableFuture<CompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end,
+        String uploadId, int partNumber);
 
     CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<CompletedPart> parts);
 }

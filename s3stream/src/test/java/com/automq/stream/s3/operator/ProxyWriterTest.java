@@ -20,13 +20,12 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
-
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -51,7 +50,6 @@ public class ProxyWriterTest {
         operator = mock(S3Operator.class);
         writer = new ProxyWriter(operator, "testpath", null);
     }
-
 
     @Test
     public void testWrite_onePart() {
@@ -88,7 +86,7 @@ public class ProxyWriterTest {
     public void testWrite_copyWrite() {
         when(operator.createMultipartUpload(eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
         when(operator.uploadPartCopy(eq("test_src_path"), eq("testpath"), eq(0L), eq(15L * 1024 * 1024), eq("test_upload_id"), eq(1)))
-                .thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
+            .thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
         when(operator.completeMultipartUpload(eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         writer.copyWrite("test_src_path", 0, 15 * 1024 * 1024);

@@ -18,7 +18,6 @@
 package com.automq.stream.s3.objects;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -61,10 +60,11 @@ public interface ObjectManager {
      *     <li> Returned objects aren't physical object concept, they are logical object concept.
      *     (regard each returned object-metadata as a slice of object)
      * </ul>
-     * @param streamId stream id.
+     *
+     * @param streamId    stream id.
      * @param startOffset get range start offset.
-     * @param endOffset get range end offset. NOOP_OFFSET represent endOffset is unlimited.
-     * @param limit max object range count.
+     * @param endOffset   get range end offset. NOOP_OFFSET represent endOffset is unlimited.
+     * @param limit       max object range count.
      * @return {@link S3ObjectMetadata}
      */
     CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit);
@@ -82,12 +82,14 @@ public interface ObjectManager {
      *      <li> Returned stream objects can be discontinuous of stream range.
      *      <li> Ranges of the returned stream objects are <strong>in ascending order</strong>.
      * </ul>
-     * @param streamId stream id.
+     *
+     * @param streamId    stream id.
      * @param startOffset get range start offset.
-     * @param endOffset get range end offset.
-     * @param limit max object count.
+     * @param endOffset   get range end offset.
+     * @param limit       max object count.
      * @return {@link S3ObjectMetadata}
      */
-    CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit);
+    CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset,
+        int limit);
 }
 

@@ -19,6 +19,13 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
 import io.netty.buffer.ByteBuf;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,14 +43,6 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
-
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -87,20 +86,20 @@ class MultiPartWriterTest {
         writer.uploadIdCf.get();
 
         List<ByteBuf> payloads = List.of(
-                // case 2
-                TestUtils.random(120),
-                // case 1
-                TestUtils.random(20),
-                // case 3
-                TestUtils.random(40),
-                // case 4
-                TestUtils.random(60),
-                // case 1
-                TestUtils.random(80),
-                // case 5
-                TestUtils.random(200),
-                // last part
-                TestUtils.random(10)
+            // case 2
+            TestUtils.random(120),
+            // case 1
+            TestUtils.random(20),
+            // case 3
+            TestUtils.random(40),
+            // case 4
+            TestUtils.random(60),
+            // case 1
+            TestUtils.random(80),
+            // case 5
+            TestUtils.random(200),
+            // last part
+            TestUtils.random(10)
         );
 
         payloads.forEach(writer::write);
@@ -109,8 +108,8 @@ class MultiPartWriterTest {
         assertEquals("unit-test-bucket", requests.get(0).bucket());
         assertEquals("test-path", requests.get(0).key());
         assertEquals(List.of(1, 2, 3, 4), requests.stream()
-                .map(UploadPartRequest::partNumber)
-                .collect(Collectors.toList()));
+            .map(UploadPartRequest::partNumber)
+            .collect(Collectors.toList()));
         assertEquals(List.of(120L, 120L, 280L, 10L), contentLengths);
     }
 
@@ -137,7 +136,6 @@ class MultiPartWriterTest {
         method.setAccessible(true);
         method.invoke(copyBuilder, copyResultBuilder);
 
-
         when(s3.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
             UploadPartRequest request = invocation.getArgument(0);
             uploadPartRequests.add(request);
@@ -161,7 +159,7 @@ class MultiPartWriterTest {
 
             GetObjectResponse.Builder responseBuilder = GetObjectResponse.builder();
             software.amazon.awssdk.core.async.ResponsePublisher<software.amazon.awssdk.services.s3.model.GetObjectResponse> responsePublisher
-                    = new ResponsePublisher<>(responseBuilder.build(), AsyncRequestBody.fromByteBuffer(TestUtils.random((int) (end - start + 1)).nioBuffer()));
+                = new ResponsePublisher<>(responseBuilder.build(), AsyncRequestBody.fromByteBuffer(TestUtils.random((int) (end - start + 1)).nioBuffer()));
             return CompletableFuture.completedFuture(responsePublisher);
         });
 
@@ -198,15 +196,15 @@ class MultiPartWriterTest {
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).sourceBucket());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).destinationBucket());
         assertEquals(List.of("path-1"), uploadPartCopyRequests.stream()
-                .map(UploadPartCopyRequest::sourceKey)
-                .collect(Collectors.toList()));
+            .map(UploadPartCopyRequest::sourceKey)
+            .collect(Collectors.toList()));
         assertEquals("test-path-2", uploadPartCopyRequests.get(0).destinationKey());
         assertEquals(List.of(1), uploadPartCopyRequests.stream()
-                .map(UploadPartCopyRequest::partNumber)
-                .collect(Collectors.toList()));
+            .map(UploadPartCopyRequest::partNumber)
+            .collect(Collectors.toList()));
         assertEquals(List.of("bytes=0-119"), uploadPartCopyRequests.stream()
-                .map(UploadPartCopyRequest::copySourceRange)
-                .collect(Collectors.toList()));
+            .map(UploadPartCopyRequest::copySourceRange)
+            .collect(Collectors.toList()));
     }
 
 }

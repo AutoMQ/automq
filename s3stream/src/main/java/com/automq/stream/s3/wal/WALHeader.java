@@ -20,7 +20,6 @@ package com.automq.stream.s3.wal;
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
-
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -54,14 +53,14 @@ import java.util.concurrent.atomic.AtomicLong;
 class WALHeader {
     public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
     public static final int WAL_HEADER_SIZE = 4 // magic code
-            + 8 // capacity
-            + 8 // trim offset
-            + 8 // last write timestamp
-            + 8 // sliding window max length
-            + 4 // shutdown type
-            + 4 // node id
-            + 4 // node epoch
-            + 8; // crc
+        + 8 // capacity
+        + 8 // trim offset
+        + 8 // last write timestamp
+        + 8 // sliding window max length
+        + 4 // shutdown type
+        + 4 // node id
+        + 4 // node epoch
+        + 8; // crc
     public static final int WAL_HEADER_WITHOUT_CRC_SIZE = WAL_HEADER_SIZE - 4;
     private final AtomicLong trimOffset2 = new AtomicLong(-1);
     private final AtomicLong flushedTrimOffset = new AtomicLong(0);
@@ -176,16 +175,16 @@ class WALHeader {
     @Override
     public String toString() {
         return "WALHeader{"
-                + "magicCode=" + magicCode0
-                + ", capacity=" + capacity1
-                + ", trimOffset=" + trimOffset2
-                + ", lastWriteTimestamp=" + lastWriteTimestamp3
-                + ", slidingWindowMaxLength=" + slidingWindowMaxLength4
-                + ", shutdownType=" + shutdownType5
-                + ", nodeId=" + nodeId6
-                + ", epoch=" + epoch7
-                + ", crc=" + crc8
-                + '}';
+            + "magicCode=" + magicCode0
+            + ", capacity=" + capacity1
+            + ", trimOffset=" + trimOffset2
+            + ", lastWriteTimestamp=" + lastWriteTimestamp3
+            + ", slidingWindowMaxLength=" + slidingWindowMaxLength4
+            + ", shutdownType=" + shutdownType5
+            + ", nodeId=" + nodeId6
+            + ", epoch=" + epoch7
+            + ", crc=" + crc8
+            + '}';
     }
 
     private ByteBuf marshalHeaderExceptCRC() {

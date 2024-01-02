@@ -23,7 +23,7 @@ import io.netty.buffer.ByteBuf;
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
     public static final int HEADER_SIZE =
-            1 // magic
+        1 // magic
             + 8 // streamId
             + 8 // epoch
             + 8 // baseOffset

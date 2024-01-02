@@ -22,7 +22,6 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -76,9 +75,9 @@ public class AttributesCache {
 
     private Attributes buildAttributes(S3Operation operation, String sizeLabelName, boolean isSuccess) {
         AttributesBuilder attributesBuilder = defaultAttributes().toBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_STATUS, isSuccess ? "success" : "failed");
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
+            .put(S3StreamMetricsConstant.LABEL_STATUS, isSuccess ? "success" : "failed");
         if (operation == S3Operation.GET_OBJECT || operation == S3Operation.PUT_OBJECT || operation == S3Operation.UPLOAD_PART) {
             attributesBuilder.put(S3StreamMetricsConstant.LABEL_SIZE_NAME, sizeLabelName);
         }
@@ -87,30 +86,30 @@ public class AttributesCache {
 
     private Attributes buildAttributes(S3Stage stage) {
         return defaultAttributes().toBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, stage.getOperation().getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, stage.getOperation().getName())
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
-                .build();
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, stage.getOperation().getType().getName())
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, stage.getOperation().getName())
+            .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
+            .build();
     }
 
     private Attributes buildAttributes(S3Operation operation, String status) {
         return defaultAttributes().toBuilder()
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-                .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
-                .put(S3StreamMetricsConstant.LABEL_STATUS, status)
-                .build();
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
+            .put(S3StreamMetricsConstant.LABEL_STATUS, status)
+            .build();
     }
 
     private Attributes buildAttributes(S3ObjectStage stage) {
         return defaultAttributes().toBuilder()
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
-                .build();
+            .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
+            .build();
     }
 
     private Attributes buildAttributes(String source) {
         return defaultAttributes().toBuilder()
-                .put(S3StreamMetricsConstant.LABEL_ALLOCATE_BYTE_BUF_SOURCE, source)
-                .build();
+            .put(S3StreamMetricsConstant.LABEL_ALLOCATE_BYTE_BUF_SOURCE, source)
+            .build();
     }
 
 }

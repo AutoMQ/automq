@@ -32,10 +32,6 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import org.apache.commons.lang3.time.StopWatch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
@@ -49,6 +45,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
+import org.apache.commons.lang3.time.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
@@ -166,7 +165,8 @@ public class BlockWALService implements WriteAheadLog {
      *
      * @throws ReadRecordException if the record is not found or the record is corrupted
      */
-    private ByteBuf readRecord(long recoverStartOffset, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+    private ByteBuf readRecord(long recoverStartOffset,
+        Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         final ByteBuf recordHeader = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         SlidingWindowService.RecordHeaderCoreData readRecordHeader;
         try {
@@ -187,29 +187,30 @@ public class BlockWALService implements WriteAheadLog {
         return recordBody;
     }
 
-    private SlidingWindowService.RecordHeaderCoreData parseRecordHeader(long recoverStartOffset, ByteBuf recordHeader, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+    private SlidingWindowService.RecordHeaderCoreData parseRecordHeader(long recoverStartOffset, ByteBuf recordHeader,
+        Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         final long position = logicalToPhysical.apply(recoverStartOffset);
         try {
             int read = walChannel.read(recordHeader, position);
             if (read != RECORD_HEADER_SIZE) {
                 throw new ReadRecordException(
-                        WALUtil.alignNextBlock(recoverStartOffset),
-                        String.format("failed to read record header: expected %d bytes, actual %d bytes, recoverStartOffset: %d", RECORD_HEADER_SIZE, read, recoverStartOffset)
+                    WALUtil.alignNextBlock(recoverStartOffset),
+                    String.format("failed to read record header: expected %d bytes, actual %d bytes, recoverStartOffset: %d", RECORD_HEADER_SIZE, read, recoverStartOffset)
                 );
             }
         } catch (IOException e) {
             LOGGER.error("failed to read record header, position: {}, recoverStartOffset: {}", position, recoverStartOffset, e);
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset),
-                    String.format("failed to read record header, recoverStartOffset: %d", recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset),
+                String.format("failed to read record header, recoverStartOffset: %d", recoverStartOffset)
             );
         }
 
         SlidingWindowService.RecordHeaderCoreData readRecordHeader = SlidingWindowService.RecordHeaderCoreData.unmarshal(recordHeader);
         if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset),
-                    String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset),
+                String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
             );
         }
 
@@ -217,30 +218,31 @@ public class BlockWALService implements WriteAheadLog {
         int calculatedRecordHeaderCRC = WALUtil.crc32(recordHeader, RECORD_HEADER_WITHOUT_CRC_SIZE);
         if (recordHeaderCRC != calculatedRecordHeaderCRC) {
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset),
-                    String.format("record header crc mismatch: expected %d, actual %d, recoverStartOffset: %d", calculatedRecordHeaderCRC, recordHeaderCRC, recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset),
+                String.format("record header crc mismatch: expected %d, actual %d, recoverStartOffset: %d", calculatedRecordHeaderCRC, recordHeaderCRC, recoverStartOffset)
             );
         }
 
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
         if (recordBodyLength <= 0) {
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset),
-                    String.format("invalid record body length: %d, recoverStartOffset: %d", recordBodyLength, recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset),
+                String.format("invalid record body length: %d, recoverStartOffset: %d", recordBodyLength, recoverStartOffset)
             );
         }
 
         long recordBodyOffset = readRecordHeader.getRecordBodyOffset();
         if (recordBodyOffset != recoverStartOffset + RECORD_HEADER_SIZE) {
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset),
-                    String.format("invalid record body offset: expected %d, actual %d, recoverStartOffset: %d", recoverStartOffset + RECORD_HEADER_SIZE, recordBodyOffset, recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset),
+                String.format("invalid record body offset: expected %d, actual %d, recoverStartOffset: %d", recoverStartOffset + RECORD_HEADER_SIZE, recordBodyOffset, recoverStartOffset)
             );
         }
         return readRecordHeader;
     }
 
-    private void parseRecordBody(long recoverStartOffset, SlidingWindowService.RecordHeaderCoreData readRecordHeader, ByteBuf recordBody, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+    private void parseRecordBody(long recoverStartOffset, SlidingWindowService.RecordHeaderCoreData readRecordHeader,
+        ByteBuf recordBody, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         long recordBodyOffset = readRecordHeader.getRecordBodyOffset();
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
         try {
@@ -248,15 +250,15 @@ public class BlockWALService implements WriteAheadLog {
             int read = walChannel.read(recordBody, position);
             if (read != recordBodyLength) {
                 throw new ReadRecordException(
-                        WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
-                        String.format("failed to read record body: expected %d bytes, actual %d bytes, recoverStartOffset: %d", recordBodyLength, read, recoverStartOffset)
+                    WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
+                    String.format("failed to read record body: expected %d bytes, actual %d bytes, recoverStartOffset: %d", recordBodyLength, read, recoverStartOffset)
                 );
             }
         } catch (IOException e) {
             LOGGER.error("failed to read record body, position: {}, recoverStartOffset: {}", recordBodyOffset, recoverStartOffset, e);
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
-                    String.format("failed to read record body, recoverStartOffset: %d", recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
+                String.format("failed to read record body, recoverStartOffset: %d", recoverStartOffset)
             );
         }
 
@@ -264,8 +266,8 @@ public class BlockWALService implements WriteAheadLog {
         int calculatedRecordBodyCRC = WALUtil.crc32(recordBody);
         if (recordBodyCRC != calculatedRecordBodyCRC) {
             throw new ReadRecordException(
-                    WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
-                    String.format("record body crc mismatch: expected %d, actual %d, recoverStartOffset: %d", calculatedRecordBodyCRC, recordBodyCRC, recoverStartOffset)
+                WALUtil.alignNextBlock(recoverStartOffset + RECORD_HEADER_SIZE + recordBodyLength),
+                String.format("record body crc mismatch: expected %d, actual %d, recoverStartOffset: %d", calculatedRecordBodyCRC, recordBodyCRC, recoverStartOffset)
             );
         }
     }
@@ -275,8 +277,8 @@ public class BlockWALService implements WriteAheadLog {
         StopWatch stopWatch = StopWatch.createStarted();
 
         walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
-                .map(WALHeader::getCapacity)
-                .orElse(null));
+            .map(WALHeader::getCapacity)
+            .orElse(null));
 
         WALHeader header = tryReadWALHeader(walChannel);
         if (null == header) {
@@ -364,8 +366,8 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         boolean gracefulShutdown = Optional.ofNullable(slidingWindowService)
-                .map(s -> s.shutdown(1, TimeUnit.DAYS))
-                .orElse(true);
+            .map(s -> s.shutdown(1, TimeUnit.DAYS))
+            .orElse(true);
         try {
             flushWALHeader(gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY);
         } catch (IOException e) {
@@ -432,11 +434,11 @@ public class BlockWALService implements WriteAheadLog {
 
     private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
         return new SlidingWindowService.RecordHeaderCoreData()
-                .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-                .setRecordBodyLength(body.readableBytes())
-                .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-                .setRecordBodyCRC(crc)
-                .marshal();
+            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
+            .setRecordBodyLength(body.readableBytes())
+            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
+            .setRecordBodyCRC(crc)
+            .marshal();
     }
 
     private ByteBuf record(ByteBuf body, int crc, long start) {
@@ -562,17 +564,17 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder config(Config config) {
             return this
-                    .capacity(config.walCapacity())
-                    .initBufferSize(config.walInitBufferSize())
-                    .maxBufferSize(config.walMaxBufferSize())
-                    .ioThreadNums(config.walThread())
-                    .slidingWindowInitialSize(config.walWindowInitial())
-                    .slidingWindowScaleUnit(config.walWindowIncrement())
-                    .slidingWindowUpperLimit(config.walWindowMax())
-                    .blockSoftLimit(config.walBlockSoftLimit())
-                    .writeRateLimit(config.walWriteRateLimit())
-                    .nodeId(config.nodeId())
-                    .epoch(config.nodeEpoch());
+                .capacity(config.walCapacity())
+                .initBufferSize(config.walInitBufferSize())
+                .maxBufferSize(config.walMaxBufferSize())
+                .ioThreadNums(config.walThread())
+                .slidingWindowInitialSize(config.walWindowInitial())
+                .slidingWindowScaleUnit(config.walWindowIncrement())
+                .slidingWindowUpperLimit(config.walWindowMax())
+                .blockSoftLimit(config.walBlockSoftLimit())
+                .writeRateLimit(config.walWriteRateLimit())
+                .nodeId(config.nodeId())
+                .epoch(config.nodeEpoch());
         }
 
         public BlockWALServiceBuilder direct(boolean direct) {
@@ -643,10 +645,10 @@ public class BlockWALService implements WriteAheadLog {
             BlockWALService blockWALService = new BlockWALService();
 
             WALChannel.WALChannelBuilder walChannelBuilder = WALChannel.builder(blockDevicePath)
-                    .capacity(blockDeviceCapacityWant)
-                    .initBufferSize(initBufferSize)
-                    .maxBufferSize(maxBufferSize)
-                    .recoveryMode(recoveryMode);
+                .capacity(blockDeviceCapacityWant)
+                .initBufferSize(initBufferSize)
+                .maxBufferSize(maxBufferSize)
+                .recoveryMode(recoveryMode);
             if (direct != null) {
                 walChannelBuilder.direct(direct);
             }
@@ -662,13 +664,13 @@ public class BlockWALService implements WriteAheadLog {
                 slidingWindowUpperLimit = Math.min(slidingWindowUpperLimit, blockDeviceCapacityWant - WAL_HEADER_TOTAL_CAPACITY);
                 blockWALService.initialWindowSize = slidingWindowInitialSize;
                 blockWALService.slidingWindowService = new SlidingWindowService(
-                        blockWALService.walChannel,
-                        ioThreadNums,
-                        slidingWindowUpperLimit,
-                        slidingWindowScaleUnit,
-                        blockSoftLimit,
-                        writeRateLimit,
-                        blockWALService.flusher()
+                    blockWALService.walChannel,
+                    ioThreadNums,
+                    slidingWindowUpperLimit,
+                    slidingWindowScaleUnit,
+                    blockSoftLimit,
+                    writeRateLimit,
+                    blockWALService.flusher()
                 );
             }
 
@@ -687,21 +689,21 @@ public class BlockWALService implements WriteAheadLog {
         @Override
         public String toString() {
             return "BlockWALServiceBuilder{"
-                    + "blockDevicePath='" + blockDevicePath
-                    + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
-                    + ", direct=" + direct
-                    + ", initBufferSize=" + initBufferSize
-                    + ", maxBufferSize=" + maxBufferSize
-                    + ", ioThreadNums=" + ioThreadNums
-                    + ", slidingWindowInitialSize=" + slidingWindowInitialSize
-                    + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
-                    + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
-                    + ", blockSoftLimit=" + blockSoftLimit
-                    + ", writeRateLimit=" + writeRateLimit
-                    + ", nodeId=" + nodeId
-                    + ", epoch=" + epoch
-                    + ", recoveryMode=" + recoveryMode
-                    + '}';
+                + "blockDevicePath='" + blockDevicePath
+                + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
+                + ", direct=" + direct
+                + ", initBufferSize=" + initBufferSize
+                + ", maxBufferSize=" + maxBufferSize
+                + ", ioThreadNums=" + ioThreadNums
+                + ", slidingWindowInitialSize=" + slidingWindowInitialSize
+                + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
+                + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
+                + ", blockSoftLimit=" + blockSoftLimit
+                + ", writeRateLimit=" + writeRateLimit
+                + ", nodeId=" + nodeId
+                + ", epoch=" + epoch
+                + ", recoveryMode=" + recoveryMode
+                + '}';
         }
     }
 
@@ -718,9 +720,9 @@ public class BlockWALService implements WriteAheadLog {
         @Override
         public String toString() {
             return "RecoverResultImpl{"
-                    + "record=" + record
-                    + ", recordOffset=" + recordOffset
-                    + '}';
+                + "record=" + record
+                + ", recordOffset=" + recordOffset
+                + '}';
         }
     }
 
@@ -796,7 +798,7 @@ public class BlockWALService implements WriteAheadLog {
                     if (firstInvalidOffset == -1 && WALUtil.isAligned(nextRecoverOffset) && nextRecoverOffset != skipRecordAtOffset) {
                         // first invalid offset
                         LOGGER.info("meet the first invalid offset during recovery. offset: {}, window: {}, detail: '{}'",
-                                nextRecoverOffset, windowLength, e.getMessage());
+                            nextRecoverOffset, windowLength, e.getMessage());
                         firstInvalidOffset = nextRecoverOffset;
                     }
                     nextRecoverOffset = e.getJumpNextRecoverOffset();

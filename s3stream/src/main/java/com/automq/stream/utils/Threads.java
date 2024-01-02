@@ -18,14 +18,13 @@
 package com.automq.stream.utils;
 
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-import org.slf4j.Logger;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
 
 public class Threads {
 
@@ -41,7 +40,8 @@ public class Threads {
         };
     }
 
-    public static ExecutorService newFixedThreadPoolWithMonitor(int nThreads, String namePrefix, boolean isDaemen, Logger logger) {
+    public static ExecutorService newFixedThreadPoolWithMonitor(int nThreads, String namePrefix, boolean isDaemen,
+        Logger logger) {
         return S3StreamThreadPoolMonitor.createAndMonitor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, namePrefix, isDaemen, Integer.MAX_VALUE, throwable -> {
             if (throwable != null) {
                 logger.error("[FATAL] Uncaught exception in executor thread {}", Thread.currentThread().getName(), throwable);
@@ -50,15 +50,18 @@ public class Threads {
         });
     }
 
-    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(String name, boolean daemon, Logger logger) {
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(String name, boolean daemon,
+        Logger logger) {
         return newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory(name, true), logger, false);
     }
 
-    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger) {
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory,
+        Logger logger) {
         return newSingleThreadScheduledExecutor(threadFactory, logger, false);
     }
 
-    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory, Logger logger, boolean removeOnCancelPolicy) {
+    public static ScheduledThreadPoolExecutor newSingleThreadScheduledExecutor(ThreadFactory threadFactory,
+        Logger logger, boolean removeOnCancelPolicy) {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, threadFactory) {
             @Override
             protected void afterExecute(Runnable r, Throwable t) {

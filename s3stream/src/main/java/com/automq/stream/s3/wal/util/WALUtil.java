@@ -20,7 +20,6 @@ package com.automq.stream.s3.wal.util;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 import io.netty.buffer.ByteBuf;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -30,8 +29,8 @@ import java.util.zip.CRC32;
 
 public class WALUtil {
     public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
-            "automq.ebswal.blocksize",
-            "4096"
+        "automq.ebswal.blocksize",
+        "4096"
     ));
 
     /**
@@ -108,7 +107,7 @@ public class WALUtil {
      * Get the capacity of the given block device.
      */
     public static long getBlockDeviceCapacity(String path) throws ExecutionException {
-        String[] cmd = new String[]{
+        String[] cmd = new String[] {
             "lsblk",
             "--bytes",
             "--nodeps",

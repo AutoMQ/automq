@@ -107,10 +107,10 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch> {
     @Override
     public String toString() {
         return "StreamRecordBatch{" +
-                "streamId=" + streamId +
-                ", epoch=" + epoch +
-                ", baseOffset=" + baseOffset +
-                ", count=" + count +
-                ", size=" + size() + '}';
+            "streamId=" + streamId +
+            ", epoch=" + epoch +
+            ", baseOffset=" + baseOffset +
+            ", count=" + count +
+            ", size=" + size() + '}';
     }
 }

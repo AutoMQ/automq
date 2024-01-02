@@ -18,15 +18,14 @@
 package com.automq.stream.s3.compact.objects;
 
 import com.automq.stream.s3.StreamDataBlock;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class CompactedObjectBuilder {
-    private CompactionType type;
     private final List<StreamDataBlock> streamDataBlocks;
+    private CompactionType type;
     private int currStreamIndexHead;
     private int currStreamIndexTail;
 

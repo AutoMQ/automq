@@ -20,15 +20,14 @@ package com.automq.stream.s3.cache;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DataBlockRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockRecords.class);

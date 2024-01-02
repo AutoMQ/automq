@@ -32,11 +32,6 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Threads;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +39,10 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -59,14 +58,14 @@ public class StreamReaderTest {
         ObjectManager objectManager = Mockito.mock(ObjectManager.class);
         ObjectWriter objectWriter = ObjectWriter.writer(0, s3Operator, 1024, 1024);
         objectWriter.write(233, List.of(
-                newRecord(233, 10, 5, 512),
-                newRecord(233, 15, 10, 512)
+            newRecord(233, 10, 5, 512),
+            newRecord(233, 15, 10, 512)
         ));
         objectWriter.close();
         ObjectWriter objectWriter2 = ObjectWriter.writer(1, s3Operator, 1024, 1024);
         objectWriter2.write(233, List.of(
-                newRecord(233, 25, 5, 512),
-                newRecord(233, 30, 10, 512)
+            newRecord(233, 25, 5, 512),
+            newRecord(233, 30, 10, 512)
         ));
         objectWriter2.close();
 
@@ -74,7 +73,7 @@ public class StreamReaderTest {
         S3ObjectMetadata metadata2 = new S3ObjectMetadata(1, objectWriter2.size(), S3ObjectType.STREAM);
 
         doAnswer(invocation -> CompletableFuture.completedFuture(List.of(metadata1, metadata2)))
-                .when(objectManager).getObjects(eq(233L), eq(15L), eq(1024L), eq(2));
+            .when(objectManager).getObjects(eq(233L), eq(15L), eq(1024L), eq(2));
 
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, Mockito.mock(BlockCache.class), new HashMap<>(), new InflightReadThrottle());
         StreamReader.ReadContext context = new StreamReader.ReadContext(15L, 1024);
@@ -107,13 +106,13 @@ public class StreamReaderTest {
         long objectId = 1;
         S3ObjectMetadata metadata = new S3ObjectMetadata(objectId, -1, S3ObjectType.STREAM);
         doAnswer(invocation -> CompletableFuture.completedFuture(List.of(metadata)))
-                        .when(objectManager).getObjects(eq(streamId), eq(startOffset), anyLong(), anyInt());
+            .when(objectManager).getObjects(eq(streamId), eq(startOffset), anyLong(), anyInt());
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         doReturn(reader).when(streamReader).getObjectReader(metadata);
         doAnswer(invocation -> CompletableFuture.completedFuture(new ObjectReader.FindIndexResult(true, -1, -1,
-                List.of(new StreamDataBlock(streamId, 64, 128, objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
+            List.of(new StreamDataBlock(streamId, 64, 128, objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
         doReturn(new CompletableFuture<>()).when(reader).read(index1);
 
         streamReader.syncReadAhead(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
@@ -139,8 +138,8 @@ public class StreamReaderTest {
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 256);
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 0, 128, 1, index1))));
+            new ImmutablePair<>(1L, List.of(
+                new StreamDataBlock(233L, 0, 128, 1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -172,8 +171,8 @@ public class StreamReaderTest {
         });
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
-        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT,233L, 0,
-                999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+        CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
+            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
@@ -198,8 +197,8 @@ public class StreamReaderTest {
         StreamReader.ReadContext context = new StreamReader.ReadContext(startOffset, 256);
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 0, 128, 1, index1))));
+            new ImmutablePair<>(1L, List.of(
+                new StreamDataBlock(233L, 0, 128, 1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -235,7 +234,7 @@ public class StreamReaderTest {
         context.taskKeySet.add(key);
         inflightReadAheadTasks.put(key, new DefaultS3BlockCache.ReadAheadTaskContext(new CompletableFuture<>(), DefaultS3BlockCache.ReadBlockCacheStatus.INIT));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, startOffset,
-                999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
@@ -260,9 +259,9 @@ public class StreamReaderTest {
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         ObjectReader.DataBlockIndex index2 = new ObjectReader.DataBlockIndex(1, 256, 256, 128);
         context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 0, 128, 1, index1),
-                        new StreamDataBlock(233L, 128, 256, 1, index2))));
+            new ImmutablePair<>(1L, List.of(
+                new StreamDataBlock(233L, 0, 128, 1, index1),
+                new StreamDataBlock(233L, 128, 256, 1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -296,7 +295,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
-                512, 1024, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+            512, 1024, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
 
         Threads.sleep(1000);
 
@@ -326,8 +325,8 @@ public class StreamReaderTest {
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 256);
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 0, 128, 1, index1))));
+            new ImmutablePair<>(1L, List.of(
+                new StreamDataBlock(233L, 0, 128, 1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -382,9 +381,9 @@ public class StreamReaderTest {
         ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
         ObjectReader.DataBlockIndex index2 = new ObjectReader.DataBlockIndex(1, 256, 256, 128);
         context.streamDataBlocksPair = List.of(
-                new ImmutablePair<>(1L, List.of(
-                        new StreamDataBlock(233L, 0, 128, 1, index1),
-                        new StreamDataBlock(233L, 128, 256, 1, index2))));
+            new ImmutablePair<>(1L, List.of(
+                new StreamDataBlock(233L, 0, 128, 1, index1),
+                new StreamDataBlock(233L, 128, 256, 1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);

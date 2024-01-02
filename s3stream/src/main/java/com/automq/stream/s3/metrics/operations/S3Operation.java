@@ -93,8 +93,8 @@ public enum S3Operation {
     @Override
     public String toString() {
         return "Operation{" +
-                "type='" + type.getName() + '\'' +
-                ", name='" + name + '\'' +
-                '}';
+            "type='" + type.getName() + '\'' +
+            ", name='" + name + '\'' +
+            '}';
     }
 }

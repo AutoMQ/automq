@@ -26,9 +26,6 @@ import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -43,31 +40,33 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class LogCache {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LogCache.class);
     public static final long MATCH_ALL_STREAMS = -1L;
+    private static final Logger LOGGER = LoggerFactory.getLogger(LogCache.class);
     private static final int DEFAULT_MAX_BLOCK_STREAM_COUNT = 10000;
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
+    final List<LogCacheBlock> blocks = new ArrayList<>();
     private final long capacity;
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
-    final List<LogCacheBlock> blocks = new ArrayList<>();
-    private LogCacheBlock activeBlock;
-    private long confirmOffset;
     private final AtomicLong size = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
-
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+    private LogCacheBlock activeBlock;
+    private long confirmOffset;
 
-    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount, Consumer<LogCacheBlock> blockFreeListener) {
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
+        Consumer<LogCacheBlock> blockFreeListener) {
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
@@ -134,10 +133,10 @@ public class LogCache {
      */
     @WithSpan
     public List<StreamRecordBatch> get(TraceContext context,
-                                       @SpanAttribute long streamId,
-                                       @SpanAttribute long startOffset,
-                                       @SpanAttribute long endOffset,
-                                       @SpanAttribute int maxBytes) {
+        @SpanAttribute long streamId,
+        @SpanAttribute long startOffset,
+        @SpanAttribute long endOffset,
+        @SpanAttribute int maxBytes) {
         context.currentContext();
         TimerUtil timerUtil = new TimerUtil();
         List<StreamRecordBatch> records;
@@ -191,8 +190,8 @@ public class LogCache {
                 }
             }
             if (lastBlockStreamStartOffset == NOOP_OFFSET /* Mismatch */
-                    || lastBlockStreamStartOffset >= endOffset /* non-right intersect */
-                    || lastBlockStreamStartOffset <= startOffset /* left intersect */) {
+                || lastBlockStreamStartOffset >= endOffset /* non-right intersect */
+                || lastBlockStreamStartOffset <= startOffset /* left intersect */) {
                 return Collections.emptyList();
             }
             return get0(streamId, lastBlockStreamStartOffset, endOffset, maxBytes);
@@ -211,7 +210,6 @@ public class LogCache {
             writeLock.unlock();
         }
     }
-
 
     public Optional<LogCacheBlock> archiveCurrentBlockIfContains(long streamId) {
         writeLock.lock();
@@ -305,14 +303,14 @@ public class LogCache {
 
     public static class LogCacheBlock {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
+        final Map<Long, StreamCache> map = new ConcurrentHashMap<>();
         private final long blockId;
         private final long maxSize;
         private final int maxStreamCount;
         private final long createdTimestamp = System.currentTimeMillis();
-        final Map<Long, StreamCache> map = new ConcurrentHashMap<>();
         private final AtomicLong size = new AtomicLong();
-        private long confirmOffset;
         volatile boolean free;
+        private long confirmOffset;
 
         public LogCacheBlock(long maxSize, int maxStreamCount) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
@@ -323,7 +321,6 @@ public class LogCache {
         public LogCacheBlock(long maxSize) {
             this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT);
         }
-
 
         public long blockId() {
             return blockId;
@@ -360,8 +357,8 @@ public class LogCache {
 
         public Map<Long, List<StreamRecordBatch>> records() {
             return map.entrySet().stream()
-                    .map(e -> Map.entry(e.getKey(), e.getValue().records))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                .map(e -> Map.entry(e.getKey(), e.getValue().records))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
         public long confirmOffset() {
@@ -415,7 +412,7 @@ public class LogCache {
         synchronized void add(StreamRecordBatch recordBatch) {
             if (recordBatch.getBaseOffset() != endOffset && endOffset != NOOP_OFFSET) {
                 RuntimeException ex = new IllegalArgumentException(String.format("streamId=%s record batch base offset mismatch, expect %s, actual %s",
-                        recordBatch.getStreamId(), endOffset, recordBatch.getBaseOffset()));
+                    recordBatch.getStreamId(), endOffset, recordBatch.getBaseOffset()));
                 LOGGER.error("[FATAL]", ex);
             }
             records.add(recordBatch);

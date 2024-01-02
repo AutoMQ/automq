@@ -27,14 +27,14 @@ public class ThreadUtils {
     /**
      * Create a new ThreadFactory.
      *
-     * @param pattern       The pattern to use.  If this contains %d, it will be
-     *                      replaced with a thread number.  It should not contain more
-     *                      than one %d.
-     * @param daemon        True if we want daemon threads.
-     * @return              The new ThreadFactory.
+     * @param pattern The pattern to use.  If this contains %d, it will be
+     *                replaced with a thread number.  It should not contain more
+     *                than one %d.
+     * @param daemon  True if we want daemon threads.
+     * @return The new ThreadFactory.
      */
     public static ThreadFactory createThreadFactory(final String pattern,
-                                                    final boolean daemon) {
+        final boolean daemon) {
         return new ThreadFactory() {
             private final AtomicLong threadEpoch = new AtomicLong(0);
 

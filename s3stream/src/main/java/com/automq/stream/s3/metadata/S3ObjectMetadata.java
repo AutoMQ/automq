@@ -17,7 +17,6 @@
 
 package com.automq.stream.s3.metadata;
 
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -34,7 +33,6 @@ public class S3ObjectMetadata {
      * </ul>
      */
     private final long orderId;
-    private long objectSize;
     private final S3ObjectType type;
     /**
      * stream offset ranges of the object.
@@ -45,39 +43,39 @@ public class S3ObjectMetadata {
      */
     private final List<StreamOffsetRange> offsetRanges;
     /**
+     * logical timestamp in ms of the data in the object.
+     */
+    private final long dataTimeInMs;
+    private long objectSize;
+    /**
      * real committed timestamp of the data in the object.
      */
     private long committedTimestamp;
 
-    /**
-     * logical timestamp in ms of the data in the object.
-     */
-    private final long dataTimeInMs;
-
     // Only used for testing
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
         this(objectId, type, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, objectSize,
-                S3StreamConstant.INVALID_ORDER_ID);
+            S3StreamConstant.INVALID_ORDER_ID);
     }
 
     public S3ObjectMetadata(long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs) {
         this(objectId, type, offsetRanges, dataTimeInMs, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
-                S3StreamConstant.INVALID_ORDER_ID);
+            S3StreamConstant.INVALID_ORDER_ID);
     }
 
     public S3ObjectMetadata(long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
-                            long orderId) {
+        long orderId) {
         this(objectId, type, offsetRanges, dataTimeInMs, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
-                orderId);
+            orderId);
     }
 
     public S3ObjectMetadata(
-            // these four params come from S3StreamSetObject or S3StreamObject
-            long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
-            // these two params come from S3Object
-            long committedTimestamp, long objectSize,
-            // this param only comes from S3StreamSetObject
-            long orderId) {
+        // these four params come from S3StreamSetObject or S3StreamObject
+        long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
+        // these two params come from S3Object
+        long committedTimestamp, long objectSize,
+        // this param only comes from S3StreamSetObject
+        long orderId) {
         this.objectId = objectId;
         this.orderId = orderId;
         this.objectSize = objectSize;
@@ -151,7 +149,7 @@ public class S3ObjectMetadata {
 
     public String toString() {
         return "S3ObjectMetadata(objectId=" + objectId + ", objectSize=" + objectSize + ", type=" + type + ", offsetRanges=" + offsetRanges
-                + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ")";
+            + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ")";
     }
 
     public String key() {
@@ -168,7 +166,7 @@ public class S3ObjectMetadata {
         }
         S3ObjectMetadata that = (S3ObjectMetadata) o;
         return objectId == that.objectId && orderId == that.orderId && objectSize == that.objectSize && committedTimestamp == that.committedTimestamp
-                && dataTimeInMs == that.dataTimeInMs && type == that.type && offsetRanges.equals(that.offsetRanges);
+            && dataTimeInMs == that.dataTimeInMs && type == that.type && offsetRanges.equals(that.offsetRanges);
     }
 
     @Override

@@ -39,36 +39,36 @@ public class ObjectStreamRange {
         return streamId;
     }
 
-    public long getEpoch() {
-        return epoch;
-    }
-
-    public long getStartOffset() {
-        return startOffset;
-    }
-
-    public long getEndOffset() {
-        return endOffset;
-    }
-
-    public int getSize() {
-        return size;
-    }
-
     public void setStreamId(long streamId) {
         this.streamId = streamId;
+    }
+
+    public long getEpoch() {
+        return epoch;
     }
 
     public void setEpoch(long epoch) {
         this.epoch = epoch;
     }
 
+    public long getStartOffset() {
+        return startOffset;
+    }
+
     public void setStartOffset(long startOffset) {
         this.startOffset = startOffset;
     }
 
+    public long getEndOffset() {
+        return endOffset;
+    }
+
     public void setEndOffset(long endOffset) {
         this.endOffset = endOffset;
+    }
+
+    public int getSize() {
+        return size;
     }
 
     public void setSize(int size) {

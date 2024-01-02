@@ -21,10 +21,9 @@ import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import javax.annotation.concurrent.NotThreadSafe;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.annotation.concurrent.NotThreadSafe;
 
 /**
  * Trace context that holds the current trace context. This class is not thread safe and should be copied before
@@ -32,8 +31,8 @@ import javax.annotation.concurrent.NotThreadSafe;
  */
 @NotThreadSafe
 public class TraceContext {
-    private static final Logger LOGGER = LoggerFactory.getLogger(TraceContext.class);
     public static final TraceContext DEFAULT = new TraceContext(false, null, null);
+    private static final Logger LOGGER = LoggerFactory.getLogger(TraceContext.class);
     private final boolean isTraceEnabled;
     private final Tracer tracer;
     private Context currContext;

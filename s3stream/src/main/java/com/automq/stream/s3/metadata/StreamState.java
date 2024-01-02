@@ -21,11 +21,11 @@ public enum StreamState {
     CLOSED,
     OPENED;
 
-    public byte toByte() {
-        return (byte) ordinal();
-    }
-
     public static StreamState fromByte(byte b) {
         return values()[b];
+    }
+
+    public byte toByte() {
+        return (byte) ordinal();
     }
 }

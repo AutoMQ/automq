@@ -17,10 +17,8 @@
 
 package com.automq.stream.s3.wal;
 
-
 import com.automq.stream.s3.trace.context.TraceContext;
 import io.netty.buffer.ByteBuf;
-
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
@@ -28,7 +26,6 @@ import java.util.concurrent.CompletableFuture;
 public interface WriteAheadLog {
 
     WriteAheadLog start() throws IOException;
-
 
     void shutdownGracefully();
 

@@ -19,7 +19,6 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.CompactionType;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
