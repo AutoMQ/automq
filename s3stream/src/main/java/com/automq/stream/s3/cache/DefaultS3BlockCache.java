@@ -18,6 +18,7 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
@@ -112,7 +113,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
                     boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
                     Span.fromContext(finalTraceContext.currentContext()).setAttribute("cache_hit", isCacheHit);
-                    S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_BLOCK_CACHE, isCacheHit);
+                    S3StreamMetricsManager.recordReadCacheLatency(MetricsLevel.INFO, timeElapsed, S3Operation.READ_STORAGE_BLOCK_CACHE, isCacheHit);
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {}",
                                 ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT, streamId, startOffset, endOffset, totalReturnedSize);

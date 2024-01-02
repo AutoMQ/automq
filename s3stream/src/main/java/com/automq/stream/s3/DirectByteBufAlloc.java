@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -45,7 +46,7 @@ public class DirectByteBufAlloc {
     public static ByteBuf byteBuffer(int initCapacity, String name) {
         try {
             if (name != null) {
-                S3StreamMetricsManager.recordAllocateByteBufSize(initCapacity, name);
+                S3StreamMetricsManager.recordAllocateByteBufSize(MetricsLevel.DEBUG, initCapacity, name);
             }
             return ALLOC.directBuffer(initCapacity);
         } catch (OutOfMemoryError e) {

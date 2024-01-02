@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
@@ -99,7 +100,7 @@ public class LogCache {
         } finally {
             readLock.unlock();
         }
-        S3StreamMetricsManager.recordOperationLatency(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_LOG_CACHE);
+        S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_LOG_CACHE);
         return full;
     }
 
@@ -150,7 +151,7 @@ public class LogCache {
 
         long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
-        S3StreamMetricsManager.recordReadCacheLatency(timeElapsed, S3Operation.READ_STORAGE_LOG_CACHE, isCacheHit);
+        S3StreamMetricsManager.recordReadCacheLatency(MetricsLevel.INFO, timeElapsed, S3Operation.READ_STORAGE_LOG_CACHE, isCacheHit);
         return records;
     }
 

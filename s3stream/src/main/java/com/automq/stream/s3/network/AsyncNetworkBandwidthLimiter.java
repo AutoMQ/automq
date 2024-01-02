@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.network;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
@@ -149,9 +150,9 @@ public class AsyncNetworkBandwidthLimiter {
 
     private void logMetrics(long size) {
         if (type == Type.INBOUND) {
-            S3StreamMetricsManager.recordNetworkInboundUsage(size);
+            S3StreamMetricsManager.recordNetworkInboundUsage(MetricsLevel.INFO, size);
         } else {
-            S3StreamMetricsManager.recordNetworkOutboundUsage(size);
+            S3StreamMetricsManager.recordNetworkOutboundUsage(MetricsLevel.INFO, size);
         }
     }
 
