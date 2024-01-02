@@ -1,6 +1,20 @@
-## Telemetry Deployment Demo for AutoMQ for Kafka
-This module provides a demo for deploying multiple telemetry services (OTel Collector, Prometheus, Tempo, Grafana) 
-for AutoMQ for Kafka.
+## Observing AutoMQ for Kafka
+
+This document provides a guide on leveraging various observability services (OTel Collector, Prometheus, Tempo, Grafana)
+to observe and monitor AutoMQ for Kafka.
+
+### Limitations
+1. S3Stream module utilizes OpenTelemetry for instrumenting (including metrics and traces). AutoMQ for Kafka supports different methods to export them:
+   - Metrics:
+     - Prometheus: Metrics can be exposed via Prometheus HTTP server, which can be scraped by your own Prometheus backend.  
+     - OTLP: Metrics can be exported to OTel Collector via OTLP protocol, which can be then exported to multiple backend as configured.
+     - Logs: Metrics can be directly logged to file system (logs/s3stream-metrics.log)
+   - Traces: Traces are only supported to be exported via OTLP protocol to OTel Collector.
+2. The original JMX metrics from Apache Kafka remain unchanged, you can observe them via JMX exporter or JConsole.
+We are actively working on transforming them into OpenTelemetry metrics for exportation
+3. The deployment configuration contained in this module is only meant for preview purpose, and should not be used in production environment
+due to performance and security concerns.
+
 
 ### Quick Start
 1. (Optional) set environment variables for data storage
@@ -28,6 +42,11 @@ for AutoMQ for Kafka.
    
     # use OTLP exporter to export metrics to OTel Collector
     s3.telemetry.metrics.exporter.type=otlp
+   
+    # or expose metrics for Prometheus backend to scrape
+    # s3.telemetry.metrics.exporter.type=prometheus
+    # s3.metrics.exporter.prom.host=127.0.0.1
+    # s3.metrics.exporter.prom.port=9090 
    
     # enable tracing
     s3.telemetry.tracer.enable=true
