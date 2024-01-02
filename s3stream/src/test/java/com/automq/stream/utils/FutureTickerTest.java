@@ -55,7 +55,9 @@ class FutureTickerTest {
     @Test
     void testDelay() throws InterruptedException {
         CompletableFuture<Void> tick1 = ticker.tick();
-        Thread.sleep(20);
+        // complete the first tick manually to mock the delay
+        // Thread.sleep(20);
+        tick1.complete(null);
         CompletableFuture<Void> tick2 = ticker.tick();
         assertFalse(tick2.isDone());
         assertNotSame(tick1, tick2);
