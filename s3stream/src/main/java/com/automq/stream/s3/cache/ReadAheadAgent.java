@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.LogContext;
@@ -99,7 +100,7 @@ public class ReadAheadAgent {
             lock.lock();
             this.readAheadEndOffset = readAheadEndOffset;
             this.lastReadAheadSize = readAheadSize;
-            S3StreamMetricsManager.recordReadAheadSize(readAheadSize);
+            S3StreamMetricsManager.recordReadAheadSize(MetricsLevel.DEBUG, readAheadSize);
             if (logger.isDebugEnabled()) {
                 logger.debug("update read ahead offset {}, size: {}, lastReadOffset: {}", readAheadEndOffset, readAheadSize, lastReadOffset);
             }

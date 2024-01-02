@@ -18,6 +18,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
@@ -140,14 +141,14 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.READY_CLOSE);
+        S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.READY_CLOSE);
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.TOTAL);
-            S3StreamMetricsManager.recordObjectNum(1);
-            S3StreamMetricsManager.recordObjectUploadSize(totalWriteSize.get());
+            S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.TOTAL);
+            S3StreamMetricsManager.recordObjectNum(MetricsLevel.DEBUG, 1);
+            S3StreamMetricsManager.recordObjectUploadSize(MetricsLevel.DEBUG, totalWriteSize.get());
         });
         return closeCf;
     }
@@ -225,7 +226,7 @@ public class MultiPartWriter implements Writer {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> {
-                S3StreamMetricsManager.recordObjectStageCost(timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
+                S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
             });
         }
 
