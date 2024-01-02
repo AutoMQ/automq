@@ -20,6 +20,7 @@ package com.automq.stream.s3.compact.operator;
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
@@ -63,7 +64,7 @@ public class DataBlockWriter {
 
     public void write(StreamDataBlock dataBlock) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordCompactionWriteSize(dataBlock.getBlockSize()));
+        cf.whenComplete((nil, ex) -> S3StreamMetricsManager.recordCompactionWriteSize(MetricsLevel.INFO, dataBlock.getBlockSize()));
         waitingUploadBlockCfs.put(dataBlock, cf);
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
