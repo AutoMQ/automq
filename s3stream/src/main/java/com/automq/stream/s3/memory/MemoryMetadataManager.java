@@ -166,19 +166,19 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         List<S3ObjectMetadata> streamSetObjectList = streamSetObjects.values()
             .stream()
             .map(Pair::getRight)
-            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.getStreamId() == streamId && r.getEndOffset() > startOffset && (r.getStartOffset() < endOffset || endOffset == -1)))
+            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
             .toList();
         List<S3ObjectMetadata> streamObjectList = streamObjects.computeIfAbsent(streamId, id -> new LinkedList<>())
             .stream()
-            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.getStreamId() == streamId && r.getEndOffset() > startOffset && (r.getStartOffset() < endOffset || endOffset == -1)))
+            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
             .toList();
 
         List<S3ObjectMetadata> result = new ArrayList<>();
         result.addAll(streamSetObjectList);
         result.addAll(streamObjectList);
         result.sort((o1, o2) -> {
-            long startOffset1 = o1.getOffsetRanges().stream().filter(r -> r.getStreamId() == streamId).findFirst().get().getStartOffset();
-            long startOffset2 = o2.getOffsetRanges().stream().filter(r -> r.getStreamId() == streamId).findFirst().get().getStartOffset();
+            long startOffset1 = o1.getOffsetRanges().stream().filter(r -> r.streamId() == streamId).findFirst().get().startOffset();
+            long startOffset2 = o2.getOffsetRanges().stream().filter(r -> r.streamId() == streamId).findFirst().get().startOffset();
             return Long.compare(startOffset1, startOffset2);
         });
 
@@ -199,7 +199,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         long endOffset, int limit) {
         List<S3ObjectMetadata> streamObjectList = streamObjects.computeIfAbsent(streamId, id -> new LinkedList<>())
             .stream()
-            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.getStreamId() == streamId && r.getEndOffset() > startOffset && (r.getStartOffset() < endOffset || endOffset == -1)))
+            .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
             .limit(limit)
             .toList();
         return CompletableFuture.completedFuture(streamObjectList);

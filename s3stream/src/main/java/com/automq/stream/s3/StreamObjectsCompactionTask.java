@@ -358,8 +358,8 @@ public class StreamObjectsCompactionTask {
             }
         }
         if (groups.isEmpty()) {
-            long startOffset = streamObjects.get(0).getOffsetRanges().get(0).getStartOffset();
-            long endOffset = streamObjects.get(streamObjects.size() - 1).getOffsetRanges().get(0).getEndOffset();
+            long startOffset = streamObjects.get(0).getOffsetRanges().get(0).startOffset();
+            long endOffset = streamObjects.get(streamObjects.size() - 1).getOffsetRanges().get(0).endOffset();
             LOGGER.trace("{} no eligible stream objects found for range [{}, {})", logIdent, startOffset, endOffset);
         }
         return groups;
@@ -464,35 +464,35 @@ public class StreamObjectsCompactionTask {
             this.smallSizeCopyWriteCount = smallSizeCopyWriteCount;
         }
 
-        public long getStreamId() {
+        public long streamId() {
             return streamId;
         }
 
-        public long getStartOffset() {
+        public long startOffset() {
             return startOffset;
         }
 
-        public long getEndOffset() {
+        public long endOffset() {
             return endOffset;
         }
 
-        public long getTimeCostInMs() {
+        public long timeCostInMs() {
             return timeCostInMs;
         }
 
-        public long getTotalObjectSize() {
+        public long totalObjectSize() {
             return totalObjectSize;
         }
 
-        public long getSourceObjectsCount() {
+        public long sourceObjectsCount() {
             return sourceObjectsCount;
         }
 
-        public long getTargetObjectCount() {
+        public long targetObjectCount() {
             return targetObjectCount;
         }
 
-        public long getSmallSizeCopyWriteCount() {
+        public long smallSizeCopyWriteCount() {
             return smallSizeCopyWriteCount;
         }
 
