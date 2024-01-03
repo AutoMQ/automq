@@ -1122,7 +1122,7 @@ class ReplicaManager(val config: KafkaConfig,
     // The fetching is done is a separate thread pool to avoid blocking io thread.
     fastFetchExecutor.submit(new Runnable {
       override def run(): Unit = {
-        val fastFetchLimiterHandler = fastFetchLimiter.acquire(bytesNeed)
+        val fastFetchLimiterHandler = fastFetchLimiter.acquire(bytesNeed, params.maxWaitMs)
         if (!checkMaxWaitMs()) {
           fastFetchLimiterHandler.close()
           return
@@ -1146,7 +1146,7 @@ class ReplicaManager(val config: KafkaConfig,
             if (fastReadFailFast) {
               slowFetchExecutor.submit(new Runnable {
                 override def run(): Unit = {
-                  val slowFetchLimiterHandler = slowFetchLimiter.acquire(bytesNeed)
+                  val slowFetchLimiterHandler = slowFetchLimiter.acquire(bytesNeed, params.maxWaitMs)
                   if (!checkMaxWaitMs()) {
                     slowFetchLimiterHandler.close()
                     return
