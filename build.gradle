@@ -228,7 +228,8 @@ if (file('.git').exists()) {
         '.github/**',
         'CODE_OF_CONDUCT.md',
         'CONTRIBUTING_GUIDE.md',
-        'docker/telemetry/**'
+        'docker/telemetry/**',
+        'core/src/main/resources/jmx/rules/**'
     ])
   }
 } else {
@@ -969,6 +970,7 @@ project(':core') {
     implementation libs.opentelemetryExporterLogging
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
+    implementation libs.opentelemetryJmx
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
