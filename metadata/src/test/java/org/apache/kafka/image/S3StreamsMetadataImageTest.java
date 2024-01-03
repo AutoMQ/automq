@@ -34,8 +34,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -77,7 +75,7 @@ public class S3StreamsMetadataImageTest {
                 .setAssignedStreamId(0), (short) 0);
         S3StreamsMetadataDelta delta0 = new S3StreamsMetadataDelta(image0);
         RecordTestUtils.replayAll(delta0, List.of(record0));
-        S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, Collections.emptyMap(), Collections.emptyMap());
+        S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, new DeltaMap<>(), new DeltaMap<>());
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -85,7 +83,7 @@ public class S3StreamsMetadataImageTest {
                 .setAssignedStreamId(10), (short) 0);
         S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
         RecordTestUtils.replayAll(delta1, List.of(record1));
-        S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, Collections.emptyMap(), Collections.emptyMap());
+        S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, new DeltaMap<>(), new DeltaMap<>());
         assertEquals(image2, delta1.apply());
     }
 
@@ -101,21 +99,21 @@ public class S3StreamsMetadataImageTest {
 
     @Test
     public void testGetObjects() {
-        Map<Long, S3StreamSetObject> broker0Objects = Map.of(
+        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
                 0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
                 1L, new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
                 2L, new S3StreamSetObject(2, BROKER0, List.of(new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
                 3L, new S3StreamSetObject(3, BROKER0, List.of(
                         new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
                 4L, new S3StreamSetObject(4, BROKER0, List.of(new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
-        Map<Long, S3StreamSetObject> broker1Objects = Map.of(
+        DeltaMap<Long, S3StreamSetObject> broker1Objects = DeltaMap.of(
                 5L, new S3StreamSetObject(5, BROKER1, List.of(new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
                 6L, new S3StreamSetObject(6, BROKER1, List.of(new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
                 7L, new S3StreamSetObject(7, BROKER1, List.of(new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
         NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
-                new HashMap<>(broker0Objects));
+                broker0Objects);
         NodeS3StreamSetObjectMetadataImage broker1WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
-                new HashMap<>(broker1Objects));
+                broker1Objects);
         Map<Integer, RangeMetadata> ranges = Map.of(
                 0, new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),
                 1, new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),
@@ -127,8 +125,8 @@ public class S3StreamsMetadataImageTest {
                 9L, new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
                 10L, new S3StreamObject(10, STREAM0, 300L, 400L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 4, 10, ranges, streamObjects);
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage));
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage));
 
         // 1. search stream_1
         InRangeObjects objects = streamsImage.getObjects(STREAM1, 10, 100, Integer.MAX_VALUE);

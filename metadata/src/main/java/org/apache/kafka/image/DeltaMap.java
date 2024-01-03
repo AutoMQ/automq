@@ -30,8 +30,12 @@ public class DeltaMap<K, V> {
     private static final double MERGE_DELETE_THRESHOLD = 0.1;
     private final int[] deltaThresholds;
     final List<Map<K, V>> deltas;
-    Set<K> deleted;
-    boolean newDeleted;
+    Set<K> removed;
+    boolean newRemoved;
+
+    public DeltaMap() {
+        this(new int[]{});
+    }
 
     public DeltaMap(int[] deltaThresholds) {
         this.deltaThresholds = deltaThresholds;
@@ -40,26 +44,59 @@ public class DeltaMap<K, V> {
             deltas.add(new HashMap<>(threshold));
         }
         deltas.add(new HashMap<>());
-        deleted = new HashSet<>();
+        removed = new HashSet<>();
     }
 
-    public DeltaMap(int[] deltaThresholds, List<Map<K, V>> deltas, Set<K> deleted) {
+    public DeltaMap(int[] deltaThresholds, List<Map<K, V>> deltas, Set<K> removed) {
         this.deltaThresholds = deltaThresholds;
         this.deltas = deltas;
-        this.deleted = deleted;
+        this.removed = removed;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <K, V> DeltaMap<K, V> of(Object... kvList) {
+        if (kvList.length % 2 != 0) {
+            throw new IllegalArgumentException("kvList must be even length");
+        }
+        DeltaMap<K, V> map = new DeltaMap<>(new int[]{});
+        for (int i = 0; i < kvList.length; i += 2) {
+            map.put((K) kvList[i], (V) kvList[i + 1]);
+        }
+        return map;
+    }
+
+    public void put(K key, V value) {
+        Map<K, V> delta0 = deltas.get(0);
+        delta0.put(key, value);
+        if (!removed.isEmpty()) {
+            Set<K> deleted = getRemovedForModify();
+            deleted.remove(key);
+        }
     }
 
     public void putAll(Map<K, V> addDelta) {
         Map<K, V> delta0 = deltas.get(0);
         delta0.putAll(addDelta);
-        if (!deleted.isEmpty()) {
-            Set<K> deleted = getDeletedForModify();
+        if (!removed.isEmpty()) {
+            Set<K> deleted = getRemovedForModify();
             addDelta.forEach((k, v) -> deleted.remove(k));
         }
     }
 
+    public boolean containsKey(K key) {
+        if (removed.contains(key)) {
+            return false;
+        }
+        for (Map<K, V> delta : deltas) {
+            if (delta.containsKey(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public V get(K key) {
-        if (deleted.contains(key)) {
+        if (removed.contains(key)) {
             return null;
         }
         for (Map<K, V> delta : deltas) {
@@ -71,26 +108,35 @@ public class DeltaMap<K, V> {
         return null;
     }
 
-    public void deleteAll(Collection<K> newDeleted) {
-        getDeletedForModify().addAll(newDeleted);
+    public V getOrDefault(K key, V defaultValue) {
+        V value = get(key);
+        return value == null ? defaultValue : value;
     }
 
-    private Set<K> getDeletedForModify() {
-        if (!newDeleted) {
+    public void remove(K key) {
+        getRemovedForModify().add(key);
+    }
+
+    public void removeAll(Collection<K> newDeleted) {
+        getRemovedForModify().addAll(newDeleted);
+    }
+
+    private Set<K> getRemovedForModify() {
+        if (!newRemoved) {
             int mapSize = deltas.stream().mapToInt(Map::size).sum();
-            if (mapSize > 0 && 1.0 * deleted.size() / mapSize >= MERGE_DELETE_THRESHOLD) {
+            if (mapSize > 0 && 1.0 * removed.size() / mapSize >= MERGE_DELETE_THRESHOLD) {
                 compact();
             }
-            this.deleted = new HashSet<>(deleted);
-            newDeleted = true;
+            this.removed = new HashSet<>(removed);
+            newRemoved = true;
         }
-        return deleted;
+        return removed;
     }
 
     public boolean isEmpty() {
         for (Map<K, V> delta : deltas) {
             int deltaSize = delta.size();
-            for (K deletedKey : deleted) {
+            for (K deletedKey : removed) {
                 if (delta.containsKey(deletedKey)) {
                     deltaSize--;
                 } else {
@@ -105,7 +151,7 @@ public class DeltaMap<K, V> {
     }
 
     public void forEach(BiConsumer<K, V> consumer) {
-        Set<K> done = new HashSet<>(deleted);
+        Set<K> done = new HashSet<>(removed);
         for (int i = 0; i < deltas.size(); i++) {
             boolean lastDelta = i == deltas.size() - 1;
             deltas.get(i).forEach((k, v) -> {
@@ -133,7 +179,7 @@ public class DeltaMap<K, V> {
                 deltas.set(i + 1, next);
             }
         }
-        return new DeltaMap<>(deltaThresholds, deltas, this.deleted);
+        return new DeltaMap<>(deltaThresholds, deltas, this.removed);
     }
 
     private Map<K, V> compact() {
@@ -141,12 +187,12 @@ public class DeltaMap<K, V> {
         for (int i = deltas.size() - 1; i >= 0; i--) {
             all.putAll(deltas.get(i));
         }
-        deleted.forEach(all::remove);
+        removed.forEach(all::remove);
         for (int i = 0; i < deltas.size() - 1; i++) {
             deltas.set(i, new HashMap<>(deltaThresholds[i]));
         }
         deltas.set(deltas.size() - 1, all);
-        deleted = new HashSet<>();
+        removed = new HashSet<>();
         return all;
     }
 

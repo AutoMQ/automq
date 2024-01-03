@@ -31,7 +31,7 @@ public class DeltaMapTest {
     public void testCopy() {
         DeltaMap<Integer, Integer> map = new DeltaMap<>(new int[]{2});
         map.putAll(Map.of(1, 1, 2, 2, 3, 3, 5, 5));
-        map.deleteAll(List.of(3));
+        map.removeAll(List.of(3));
 
         DeltaMap<Integer, Integer> copy1 = map.copy();
         copy1.putAll(Map.of(1, 3));
@@ -49,23 +49,23 @@ public class DeltaMapTest {
     public void testDelete() {
         DeltaMap<Integer, Integer> map = new DeltaMap<>(new int[]{10});
         map.putAll(Map.of(1, 1, 2, 2, 3, 3));
-        map.deleteAll(List.of(3));
+        map.removeAll(List.of(3));
 
         map = map.copy();
         // trigger compact delete
         map.putAll(Map.of(4, 4));
 
         assertNull(map.get(3));
-        assertEquals(0, map.deleted.size());
+        assertEquals(0, map.removed.size());
         assertEquals(0, map.deltas.get(0).size());
         assertEquals(3, map.deltas.get(1).size());
 
-        map.deleteAll(List.of(4));
-        assertEquals(1, map.deleted.size());
+        map.removeAll(List.of(4));
+        assertEquals(1, map.removed.size());
         assertNull(map.get(4));
         map.putAll(Map.of(4, 44));
         assertEquals(44, map.get(4));
-        assertEquals(0, map.deleted.size());
+        assertEquals(0, map.removed.size());
     }
 
 }
