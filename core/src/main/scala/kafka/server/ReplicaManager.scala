@@ -28,6 +28,7 @@ import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
+import kafka.server.ReplicaManager.createLogReadResult
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpointFile, OffsetCheckpoints}
 import kafka.server.metadata.ZkMetadataCache
 import kafka.utils.Implicits._
@@ -187,6 +188,20 @@ object HostedPartition {
 
 object ReplicaManager {
   val HighWatermarkFilename = "replication-offset-checkpoint"
+
+  // AutoMQ for Kafka inject start
+  def createLogReadResult(e: Throwable): LogReadResult = {
+    LogReadResult(info = new FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MemoryRecords.EMPTY),
+      divergingEpoch = None,
+      highWatermark = UnifiedLog.UnknownOffset,
+      leaderLogStartOffset = UnifiedLog.UnknownOffset,
+      leaderLogEndOffset = UnifiedLog.UnknownOffset,
+      followerLogStartOffset = UnifiedLog.UnknownOffset,
+      fetchTimeMs = -1L,
+      lastStableOffset = None,
+      exception = Option(e))
+  }
+  // AutoMQ for Kafka inject end
 }
 
 class ReplicaManager(val config: KafkaConfig,
@@ -1070,18 +1085,8 @@ class ReplicaManager(val config: KafkaConfig,
   ): Unit = {
 
     def responseEmpty(e: Throwable): Unit = {
-      val error = if (e == null) { Errors.NONE } else { Errors.forException(e) }
       val fetchPartitionData = fetchInfos.map { case (tp, _) =>
-        tp -> FetchPartitionData(
-          error = error,
-          highWatermark = -1L,
-          lastStableOffset = None,
-          logStartOffset = -1L,
-          abortedTransactions = None,
-          preferredReadReplica = None,
-          records = MemoryRecords.EMPTY,
-          isReassignmentFetch = false,
-          divergingEpoch = None)
+        tp -> createLogReadResult(e).toFetchPartitionData(false)
       }
       responseCallback(fetchPartitionData)
     }
