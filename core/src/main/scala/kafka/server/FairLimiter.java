@@ -22,7 +22,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class MemoryLimiter {
+/**
+ * A fair limiter whose {@link #acquire} method is fair, i.e. the waiting threads are served in the order of arrival.
+ */
+public class FairLimiter implements Limiter {
     private final int maxPermits;
     /**
      * The lock used to protect @{link #acquireLocked}
@@ -30,36 +33,23 @@ public class MemoryLimiter {
     private final Lock lock = new ReentrantLock(true);
     private final Semaphore permits;
 
-    public MemoryLimiter(int size) {
+    public FairLimiter(int size) {
         maxPermits = size;
         permits = new Semaphore(size);
     }
 
-    /**
-     * Acquire permits, if not enough, block until enough.
-     * Note: this method is fair, which means the waiting threads will be served in order.
-     *
-     * @param permit the number of permits to acquire, should not be negative
-     * @return a handler to release the permits
-     */
+    @Override
     public Handler acquire(int permit) throws InterruptedException {
         lock.lock();
         try {
             permits.acquire(permit);
-            return new Handler(permit);
+            return new FairHandler(permit);
         } finally {
             lock.unlock();
         }
     }
 
-    /**
-     * Acquire permits, if not enough, block until enough or timeout.
-     * Note: this method is fair, which means the waiting threads will be served in order.
-     *
-     * @param permit    the number of permits to acquire, should not be negative
-     * @param timeoutMs the maximum time to wait for the permits, in milliseconds. A non-positive value means not to wait.
-     * @return a handler to release the permits or null if timeout
-     */
+    @Override
     public Handler acquire(int permit, long timeoutMs) throws InterruptedException {
         long start = System.nanoTime();
         if (lock.tryLock(timeoutMs, TimeUnit.MILLISECONDS)) {
@@ -83,13 +73,13 @@ public class MemoryLimiter {
             permit = maxPermits;
         }
         boolean acquired = permits.tryAcquire(permit, timeoutNs, TimeUnit.NANOSECONDS);
-        return acquired ? new Handler(permit) : null;
+        return acquired ? new FairHandler(permit) : null;
     }
 
-    public class Handler implements AutoCloseable {
+    public class FairHandler implements Handler {
         private final int permit;
 
-        public Handler(int permit) {
+        public FairHandler(int permit) {
             this.permit = permit;
         }
 

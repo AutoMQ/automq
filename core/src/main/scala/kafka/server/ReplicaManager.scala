@@ -266,8 +266,8 @@ class ReplicaManager(val config: KafkaConfig,
 
   val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
-  val fastFetchLimiter = new MemoryLimiter(100 * 1024 * 1024)
-  val slowFetchLimiter = new MemoryLimiter(100 * 1024 * 1024)
+  val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024)
+  val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024)
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
