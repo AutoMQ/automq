@@ -1105,7 +1105,8 @@ class ReplicaManager(val config: KafkaConfig,
         try {
           ReadHint.markReadAll()
           ReadHint.markFastRead()
-          fetchMessages0(params, fetchInfos, quota, fastFetchLimiter, responseCallback)
+          // no timeout for fast read
+          fetchMessages0(params, fetchInfos, quota, fastFetchLimiter, 0, responseCallback)
           ReadHint.clear()
         } catch {
           case e: Throwable =>
@@ -1116,7 +1117,7 @@ class ReplicaManager(val config: KafkaConfig,
                 override def run(): Unit = {
                   try {
                     ReadHint.markReadAll()
-                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, responseCallback)
+                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, params.maxWaitMs, responseCallback)
                   } catch {
                     case slowEx: Throwable =>
                       handleError(slowEx)
@@ -1136,11 +1137,12 @@ class ReplicaManager(val config: KafkaConfig,
     fetchInfos: Seq[(TopicIdPartition, PartitionData)],
     quota: ReplicaQuota,
     limiter: Limiter,
+    timeoutMs: Long,
     responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
   ): Unit = {
     // check if this fetch request can be satisfied right away
     // AutoMQ for Kafka inject start
-    val logReadResults = readFromLocalLogV2(params, fetchInfos, quota, readFromPurgatory = false, limiter)
+    val logReadResults = readFromLocalLogV2(params, fetchInfos, quota, readFromPurgatory = false, limiter, timeoutMs)
     // AutoMQ for Kafka inject end
     var bytesReadable: Long = 0
     var errorReadingData = false
@@ -1207,6 +1209,7 @@ class ReplicaManager(val config: KafkaConfig,
   /**
    * A Wrapper of [[readFromLocalLogV2]] which acquire memory permits from limiter.
    * It has the same behavior as [[readFromLocalLogV2]] using the default [[NoopLimiter]].
+   * A non-positive `timeoutMs` means no timeout.
    */
   def readFromLocalLogV2(
                           params: FetchParams,
@@ -1214,7 +1217,7 @@ class ReplicaManager(val config: KafkaConfig,
                           quota: ReplicaQuota,
                           readFromPurgatory: Boolean,
                           limiter: Limiter = NoopLimiter.INSTANCE,
-                          timeoutMs: Option[Long] = None): Seq[(TopicIdPartition, LogReadResult)] = {
+                          timeoutMs: Long = 0): Seq[(TopicIdPartition, LogReadResult)] = {
 
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
@@ -1228,18 +1231,15 @@ class ReplicaManager(val config: KafkaConfig,
       }
     }
 
-    val timeout = timeoutMs.getOrElse(params.maxWaitMs)
-    val handler: Handler = if (params.maxWaitMs <= 0) {
-      // If the max wait time is 0, then no need to check quota or linger.
-      limiter.acquire(bytesNeed())
-    } else {
-      limiter.acquire(bytesNeed(), timeout)
+    val handler: Handler = timeoutMs match {
+      case t if t > 0 => limiter.acquire(bytesNeed(), t)
+      case _ => limiter.acquire(bytesNeed())
     }
 
     if (handler == null) {
       // handler maybe null if it timed out to acquire from limiter
       // TODO add metrics for this
-      // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeout ms.")
+      // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       emptyResult()
     } else {
       Using.resource(handler) { _ =>
