@@ -144,10 +144,10 @@ public class CompactionManager {
         this.uploader.stop();
     }
 
-    private CompletableFuture<Void> compact() {
+    public CompletableFuture<Void> compact() {
         return this.objectManager.getServerObjects().thenComposeAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::getStreamId).distinct().toList();
+                .map(StreamOffsetRange::streamId).distinct().toList();
             return this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList ->
                 this.compact(streamMetadataList, objectMetadataList), compactThreadPool);
         }, compactThreadPool);
@@ -287,7 +287,7 @@ public class CompactionManager {
         //TODO: deal with metadata delay
         this.compactScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::getStreamId).distinct().toList();
+                .map(StreamOffsetRange::streamId).distinct().toList();
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
                 if (objectMetadataList.isEmpty()) {
                     logger.info("No stream set objects to force split");
@@ -488,32 +488,32 @@ public class CompactionManager {
         request.getStreamRanges().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
         request.getStreamObjects().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
         Map<Long, List<StreamOffsetRange>> sortedStreamOffsetRanges = compactedStreamOffsetRanges.stream()
-            .collect(Collectors.groupingBy(StreamOffsetRange::getStreamId));
+            .collect(Collectors.groupingBy(StreamOffsetRange::streamId));
         sortedStreamOffsetRanges.replaceAll((k, v) -> sortAndMerge(v));
         for (long objectId : request.getCompactedObjectIds()) {
             S3ObjectMetadata metadata = objectMetadataMap.get(objectId);
             for (StreamOffsetRange streamOffsetRange : metadata.getOffsetRanges()) {
-                if (!streamMetadataMap.containsKey(streamOffsetRange.getStreamId())) {
+                if (!streamMetadataMap.containsKey(streamOffsetRange.streamId())) {
                     // skip non-exist stream
                     continue;
                 }
-                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.getStreamId()).startOffset();
-                if (streamOffsetRange.getEndOffset() <= streamStartOffset) {
+                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.streamId()).startOffset();
+                if (streamOffsetRange.endOffset() <= streamStartOffset) {
                     // skip stream offset range that has been trimmed
                     continue;
                 }
-                if (streamOffsetRange.getStartOffset() < streamStartOffset) {
+                if (streamOffsetRange.startOffset() < streamStartOffset) {
                     // trim stream offset range
-                    streamOffsetRange = new StreamOffsetRange(streamOffsetRange.getStreamId(), streamStartOffset, streamOffsetRange.getEndOffset());
+                    streamOffsetRange = new StreamOffsetRange(streamOffsetRange.streamId(), streamStartOffset, streamOffsetRange.endOffset());
                 }
-                if (!sortedStreamOffsetRanges.containsKey(streamOffsetRange.getStreamId())) {
-                    logger.error("Sanity check failed, stream {} is missing after compact", streamOffsetRange.getStreamId());
+                if (!sortedStreamOffsetRanges.containsKey(streamOffsetRange.streamId())) {
+                    logger.error("Sanity check failed, stream {} is missing after compact", streamOffsetRange.streamId());
                     return true;
                 }
                 boolean contained = false;
-                for (StreamOffsetRange compactedStreamOffsetRange : sortedStreamOffsetRanges.get(streamOffsetRange.getStreamId())) {
-                    if (streamOffsetRange.getStartOffset() >= compactedStreamOffsetRange.getStartOffset()
-                        && streamOffsetRange.getEndOffset() <= compactedStreamOffsetRange.getEndOffset()) {
+                for (StreamOffsetRange compactedStreamOffsetRange : sortedStreamOffsetRanges.get(streamOffsetRange.streamId())) {
+                    if (streamOffsetRange.startOffset() >= compactedStreamOffsetRange.startOffset()
+                        && streamOffsetRange.endOffset() <= compactedStreamOffsetRange.endOffset()) {
                         contained = true;
                         break;
                     }
@@ -532,7 +532,7 @@ public class CompactionManager {
         if (streamOffsetRangeList.size() < 2) {
             return streamOffsetRangeList;
         }
-        long streamId = streamOffsetRangeList.get(0).getStreamId();
+        long streamId = streamOffsetRangeList.get(0).streamId();
         Collections.sort(streamOffsetRangeList);
         List<StreamOffsetRange> mergedList = new ArrayList<>();
         long start = -1L;
@@ -541,14 +541,14 @@ public class CompactionManager {
             StreamOffsetRange curr = streamOffsetRangeList.get(i);
             StreamOffsetRange next = streamOffsetRangeList.get(i + 1);
             if (start == -1) {
-                start = curr.getStartOffset();
-                end = curr.getEndOffset();
+                start = curr.startOffset();
+                end = curr.endOffset();
             }
-            if (curr.getEndOffset() < next.getStartOffset()) {
-                mergedList.add(new StreamOffsetRange(curr.getStreamId(), start, end));
-                start = next.getStartOffset();
+            if (curr.endOffset() < next.startOffset()) {
+                mergedList.add(new StreamOffsetRange(curr.streamId(), start, end));
+                start = next.startOffset();
             }
-            end = next.getEndOffset();
+            end = next.endOffset();
         }
         mergedList.add(new StreamOffsetRange(streamId, start, end));
 
