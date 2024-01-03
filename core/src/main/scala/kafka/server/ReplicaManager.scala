@@ -1238,8 +1238,8 @@ class ReplicaManager(val config: KafkaConfig,
 
     if (handler == null) {
       // handler maybe null if it timed out to acquire from limiter
-      warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo" +
-        s" since the wait time exceeds $timeout ms.")
+      // TODO add metrics for this
+      // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeout ms.")
       emptyResult()
     } else {
       Using.resource(handler) { _ =>
