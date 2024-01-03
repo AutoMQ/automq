@@ -1105,7 +1105,7 @@ class ReplicaManager(val config: KafkaConfig,
         }
         warn(s"Returning emtpy fetch response for fetch request ${fetchInfos} since the " +
           s"wait time ${waitedTimeMs} exceed ${params.maxWaitMs} ms.")
-        responseEmpty(new TimeoutException(s"wait time ${waitedTimeMs}ms exceed ${params.maxWaitMs}ms."))
+        responseEmpty(null)
         false
       }
     }
