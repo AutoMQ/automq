@@ -62,9 +62,7 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
-        if (deletedStreams.contains(record.streamId())) {
-            deletedStreams.remove(record.streamId());
-        }
+        deletedStreams.remove(record.streamId());
     }
 
     public void replay(RemoveS3StreamRecord record) {
@@ -75,9 +73,7 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(NodeWALMetadataRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
-        if (deletedNodes.contains(record.nodeId())) {
-            deletedNodes.remove(record.nodeId());
-        }
+        deletedNodes.remove(record.nodeId());
     }
 
     public void replay(RemoveNodeWALMetadataRecord record) {
@@ -139,26 +135,16 @@ public final class S3StreamsMetadataDelta {
     }
 
     S3StreamsMetadataImage apply() {
-        Map<Long, S3StreamMetadataImage> newStreams = new HashMap<>(image.streamsMetadata());
-        Map<Integer, NodeS3StreamSetObjectMetadataImage> newNodeStreams = new HashMap<>(image.nodeWALMetadata());
-
+        DeltaMap<Long, S3StreamMetadataImage> streams = image.streamsMetadata().copy();
         // apply the delta changes of old streams since the last image
-        this.changedStreams.forEach((streamId, delta) -> {
-            S3StreamMetadataImage newS3StreamMetadataImage = delta.apply();
-            newStreams.put(streamId, newS3StreamMetadataImage);
-        });
-        // remove the deleted streams
-        deletedStreams.forEach(newStreams::remove);
-
+        changedStreams.forEach((streamId, delta) -> streams.put(streamId, delta.apply()));
+        streams.removeAll(deletedStreams);
+        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes = image.nodeWALMetadata().copy();
         // apply the delta changes of old nodes since the last image
-        this.changedNodes.forEach((nodeId, delta) -> {
-            NodeS3StreamSetObjectMetadataImage newNodeS3StreamSetObjectMetadataImage = delta.apply();
-            newNodeStreams.put(nodeId, newNodeS3StreamSetObjectMetadataImage);
-        });
+        this.changedNodes.forEach((nodeId, delta) -> nodes.put(nodeId, delta.apply()));
         // remove the deleted nodes
-        deletedNodes.forEach(newNodeStreams::remove);
-
-        return new S3StreamsMetadataImage(currentAssignedStreamId, newStreams, newNodeStreams);
+        nodes.removeAll(deletedNodes);
+        return new S3StreamsMetadataImage(currentAssignedStreamId, streams, nodes);
     }
 
     @Override
