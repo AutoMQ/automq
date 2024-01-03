@@ -969,6 +969,7 @@ project(':core') {
     implementation libs.opentelemetryExporterLogging
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
+    implementation libs.opentelemetryJmx
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'

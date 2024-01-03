@@ -20,6 +20,8 @@ package kafka.log.stream.s3.telemetry;
 import io.opentelemetry.api.common.AttributeKey;
 
 public class TelemetryConstants {
+    public static final String BROKER_JMX_YAML_CONFIG_PATH = "/jmx/rules/broker.yaml";
+    public static final String CONTROLLER_JMX_YAML_CONFIG_PATH = "/jmx/rules/controller.yaml";
     public static final String TELEMETRY_SCOPE_NAME = "automq_for_kafka";
     public static final String KAFKA_METRICS_PREFIX = "kafka_stream_";
     public static final AttributeKey<Long> STREAM_ID_NAME = AttributeKey.longKey("streamId");
