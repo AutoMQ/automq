@@ -73,6 +73,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
+import scala.util.Using
 
 /*
  * Result metadata of a log append operation on the log
@@ -1104,7 +1105,7 @@ class ReplicaManager(val config: KafkaConfig,
         try {
           ReadHint.markReadAll()
           ReadHint.markFastRead()
-          fetchMessages0(params, fetchInfos, quota, fastFetchLimiter, response => responseCallback.apply(response))
+          fetchMessages0(params, fetchInfos, quota, fastFetchLimiter, responseCallback)
           ReadHint.clear()
         } catch {
           case e: Throwable =>
@@ -1115,7 +1116,7 @@ class ReplicaManager(val config: KafkaConfig,
                 override def run(): Unit = {
                   try {
                     ReadHint.markReadAll()
-                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, response => responseCallback.apply(response))
+                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, responseCallback)
                   } catch {
                     case slowEx: Throwable =>
                       handleError(slowEx)
@@ -1240,10 +1241,8 @@ class ReplicaManager(val config: KafkaConfig,
         s" since the wait time exceeds $timeout ms.")
       emptyResult()
     } else {
-      try {
+      Using.resource(handler) { _ =>
         readFromLocalLogV2(params, readPartitionInfo, quota, readFromPurgatory)
-      } finally {
-        handler.close()
       }
     }
   }
