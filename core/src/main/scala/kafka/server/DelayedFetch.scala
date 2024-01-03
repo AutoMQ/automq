@@ -18,6 +18,7 @@
 package kafka.server
 
 import kafka.log.streamaspect.ReadHint
+
 import java.util.concurrent.TimeUnit
 import kafka.metrics.KafkaMetricsGroup
 import org.apache.kafka.common.TopicIdPartition
@@ -25,6 +26,7 @@ import org.apache.kafka.common.errors._
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
+import org.apache.kafka.common.utils.Time
 
 import scala.collection._
 
@@ -46,8 +48,15 @@ class DelayedFetch(
   fetchPartitionStatus: Seq[(TopicIdPartition, FetchPartitionStatus)],
   replicaManager: ReplicaManager,
   quota: ReplicaQuota,
+  // AutoMQ for Kafka inject start
+  limiter: Limiter = NoopLimiter.INSTANCE,
+  // AutoMQ for Kafka inject end
   responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
 ) extends DelayedOperation(params.maxWaitMs) {
+
+  // AutoMQ for Kafka inject start
+  private val startMs = Time.SYSTEM.hiResClockMs()
+  // AutoMQ for Kafka inject end
 
   override def toString: String = {
     s"DelayedFetch(params=$params" +
@@ -164,11 +173,16 @@ class DelayedFetch(
 
     // AutoMQ for Kafka inject start
     ReadHint.markReadAll()
+    val elapsedMs = Time.SYSTEM.hiResClockMs() - startMs
+    // leftMs may be non-positive here, but it's OK as it means no waiting
+    val leftMs = params.maxWaitMs - elapsedMs
     val logReadResults = replicaManager.readFromLocalLogV2(
       params,
       fetchInfos,
       quota,
-      readFromPurgatory = true
+      readFromPurgatory = true,
+      limiter = limiter,
+      timeoutMs = Some(leftMs)
     )
     ReadHint.clear()
     // AutoMQ for Kafka inject end
@@ -189,4 +203,3 @@ object DelayedFetchMetrics extends KafkaMetricsGroup {
   val followerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "follower"))
   val consumerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "consumer"))
 }
-

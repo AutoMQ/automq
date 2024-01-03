@@ -1189,8 +1189,9 @@ class ReplicaManager(val config: KafkaConfig,
         fetchPartitionStatus = fetchPartitionStatus,
         replicaManager = this,
         quota = quota,
+        // always use the fast fetch limiter in delayed fetch operations
+        limiter = fastFetchLimiter,
         responseCallback = responseCallback
-        // TODO pass the limiter to the delayed fetcher
       )
 
       // create a list of (topic, partition) pairs to use as keys for this delayed fetch operation
