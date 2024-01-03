@@ -125,14 +125,14 @@ public class S3ObjectMetadata {
         if (offsetRanges == null || offsetRanges.isEmpty()) {
             return S3StreamConstant.INVALID_OFFSET;
         }
-        return offsetRanges.get(0).getStartOffset();
+        return offsetRanges.get(0).startOffset();
     }
 
     public long endOffset() {
         if (offsetRanges == null || offsetRanges.isEmpty()) {
             return S3StreamConstant.INVALID_OFFSET;
         }
-        return offsetRanges.get(offsetRanges.size() - 1).getEndOffset();
+        return offsetRanges.get(offsetRanges.size() - 1).endOffset();
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {
@@ -140,7 +140,7 @@ public class S3ObjectMetadata {
             return false;
         }
         for (StreamOffsetRange offsetRange : offsetRanges) {
-            if (offsetRange.getStreamId() == streamId && offsetRange.intersect(startOffset, endOffset)) {
+            if (offsetRange.streamId() == streamId && offsetRange.intersect(startOffset, endOffset)) {
                 return true;
             }
         }

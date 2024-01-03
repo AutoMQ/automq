@@ -39,15 +39,15 @@ public class StreamOffsetRange implements Comparable<StreamOffsetRange> {
         this.endOffset = endOffset;
     }
 
-    public long getStreamId() {
+    public long streamId() {
         return streamId;
     }
 
-    public long getStartOffset() {
+    public long startOffset() {
         return startOffset;
     }
 
-    public long getEndOffset() {
+    public long endOffset() {
         return endOffset;
     }
 

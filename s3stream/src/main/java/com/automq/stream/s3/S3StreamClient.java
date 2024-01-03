@@ -234,10 +234,10 @@ public class S3StreamClient implements StreamClient {
                     return this;
                 }
                 this.involvedStreamCount++;
-                this.sourceObjectsTotalSize += compactionSummary.getTotalObjectSize();
-                this.sourceObjectsCount += compactionSummary.getSourceObjectsCount();
-                this.targetObjectsCount += compactionSummary.getTargetObjectCount();
-                this.smallSizeCopyWriteCount += compactionSummary.getSmallSizeCopyWriteCount();
+                this.sourceObjectsTotalSize += compactionSummary.totalObjectSize();
+                this.sourceObjectsCount += compactionSummary.sourceObjectsCount();
+                this.targetObjectsCount += compactionSummary.targetObjectCount();
+                this.smallSizeCopyWriteCount += compactionSummary.smallSizeCopyWriteCount();
                 return this;
             }
 

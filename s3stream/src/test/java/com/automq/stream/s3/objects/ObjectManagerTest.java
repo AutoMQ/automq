@@ -97,21 +97,21 @@ class ObjectManagerTest {
         List<StreamOffsetRange> ranges = streamSetMetadata.getOffsetRanges();
         assertEquals(2, ranges.size());
 
-        assertEquals(0, ranges.get(0).getStreamId());
-        assertEquals(0, ranges.get(0).getStartOffset());
-        assertEquals(3, ranges.get(0).getEndOffset());
+        assertEquals(0, ranges.get(0).streamId());
+        assertEquals(0, ranges.get(0).startOffset());
+        assertEquals(3, ranges.get(0).endOffset());
 
-        assertEquals(1, ranges.get(1).getStreamId());
-        assertEquals(0, ranges.get(1).getStartOffset());
-        assertEquals(5, ranges.get(1).getEndOffset());
+        assertEquals(1, ranges.get(1).streamId());
+        assertEquals(0, ranges.get(1).startOffset());
+        assertEquals(5, ranges.get(1).endOffset());
 
         List<S3ObjectMetadata> streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 10, 100).join();
         assertEquals(1, streamObjectMetadataList.size());
         ranges = streamObjectMetadataList.get(0).getOffsetRanges();
         assertEquals(1, ranges.size());
-        assertEquals(2, ranges.get(0).getStreamId());
-        assertEquals(0, ranges.get(0).getStartOffset());
-        assertEquals(10, ranges.get(0).getEndOffset());
+        assertEquals(2, ranges.get(0).streamId());
+        assertEquals(0, ranges.get(0).startOffset());
+        assertEquals(10, ranges.get(0).endOffset());
 
         streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 20, 100).join();
         assertEquals(2, streamObjectMetadataList.size());
@@ -153,9 +153,9 @@ class ObjectManagerTest {
         assertEquals(1, streamObjectMetadataList.size());
         ranges = streamObjectMetadataList.get(0).getOffsetRanges();
         assertEquals(1, ranges.size());
-        assertEquals(2, ranges.get(0).getStreamId());
-        assertEquals(0, ranges.get(0).getStartOffset());
-        assertEquals(20, ranges.get(0).getEndOffset());
+        assertEquals(2, ranges.get(0).streamId());
+        assertEquals(0, ranges.get(0).startOffset());
+        assertEquals(20, ranges.get(0).endOffset());
     }
 
     @Test
