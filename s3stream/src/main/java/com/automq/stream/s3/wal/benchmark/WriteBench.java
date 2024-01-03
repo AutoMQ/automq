@@ -107,7 +107,7 @@ public class WriteBench implements AutoCloseable {
         }
     }
 
-    private static void logIt(Config config, Stat stat) {
+    private static Runnable logIt(Config config, Stat stat) {
         ScheduledExecutorService statExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("stat-thread-%d", true), null);
         statExecutor.scheduleAtFixedRate(() -> {
@@ -120,6 +120,7 @@ public class WriteBench implements AutoCloseable {
                     (double) result.maxCostNanos() / TimeUnit.MILLISECONDS.toNanos(1));
             }
         }, LOG_INTERVAL_SECONDS, LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        return statExecutor::shutdownNow;
     }
 
     private void run(Config config) {
@@ -129,7 +130,7 @@ public class WriteBench implements AutoCloseable {
             config.threads, ThreadUtils.createThreadFactory("append-thread-%d", false), null);
         AppendTaskConfig appendTaskConfig = new AppendTaskConfig(config);
         Stat stat = new Stat();
-        runTrimTask();
+        Runnable stopTrim = runTrimTask();
         for (int i = 0; i < config.threads; i++) {
             int index = i;
             executor.submit(() -> {
@@ -141,7 +142,7 @@ public class WriteBench implements AutoCloseable {
                 }
             });
         }
-        logIt(config, stat);
+        Runnable stopLog = logIt(config, stat);
 
         executor.shutdown();
         try {
@@ -151,11 +152,13 @@ public class WriteBench implements AutoCloseable {
         } catch (InterruptedException e) {
             executor.shutdownNow();
         }
+        stopLog.run();
+        stopTrim.run();
 
         System.out.println("Benchmark finished");
     }
 
-    private void runTrimTask() {
+    private Runnable runTrimTask() {
         ScheduledExecutorService trimExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("trim-thread-%d", true), null);
         trimExecutor.scheduleAtFixedRate(() -> {
@@ -166,6 +169,7 @@ public class WriteBench implements AutoCloseable {
                 e.printStackTrace();
             }
         }, TRIM_INTERVAL_MILLIS, TRIM_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+        return trimExecutor::shutdownNow;
     }
 
     private void runAppendTask(int index, AppendTaskConfig config, Stat stat) throws Exception {
