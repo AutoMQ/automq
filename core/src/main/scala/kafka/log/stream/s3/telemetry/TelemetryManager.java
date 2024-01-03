@@ -177,10 +177,6 @@ public class TelemetryManager {
 
     private void buildMetricConfiguration(MetricConfiguration conf, String path) {
         try (InputStream ins = this.getClass().getResourceAsStream(path)) {
-            if (ins == null) {
-                LOGGER.warn("JMX config file not found: {}", path);
-                return;
-            }
             RuleParser parser = RuleParser.get();
             parser.addMetricDefsTo(conf, ins, path);
         } catch (Exception e) {
