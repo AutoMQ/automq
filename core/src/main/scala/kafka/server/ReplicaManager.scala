@@ -27,6 +27,7 @@ import kafka.log._
 import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
+import kafka.server.Limiter.Handler
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.createLogReadResult
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpointFile, OffsetCheckpoints}
@@ -266,8 +267,8 @@ class ReplicaManager(val config: KafkaConfig,
 
   val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
-  val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024)
-  val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024)
+  val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
@@ -1242,6 +1243,48 @@ class ReplicaManager(val config: KafkaConfig,
       // this is because while the delayed fetch operation is being created, new requests
       // may arrive and hence make this operation completable.
       delayedFetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys)
+    }
+  }
+
+  /**
+   * A Wrapper of [[readFromLocalLogV2]] which acquire memory permits from limiter.
+   */
+  def readFromLocalLogV2(
+                          params: FetchParams,
+                          readPartitionInfo: Seq[(TopicIdPartition, PartitionData)],
+                          quota: ReplicaQuota,
+                          readFromPurgatory: Boolean,
+                          limiter: Limiter = NoopLimiter.INSTANCE,
+                          timeoutMs: Option[Long] = None): Seq[(TopicIdPartition, LogReadResult)] = {
+
+    def bytesNeed(): Int = {
+      // sum the sizes of topics to fetch from fetchInfos
+      val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
+      math.min(bytesNeed, params.maxBytes)
+    }
+
+    def emptyResult(): Seq[(TopicIdPartition, LogReadResult)] = {
+      readPartitionInfo.map { case (tp, _) =>
+        tp -> createLogReadResult(null)
+      }
+    }
+
+    val handler: Handler = if (params.maxWaitMs <= 0) {
+      // If the max wait time is 0, then no need to check quota or linger.
+      limiter.acquire(bytesNeed())
+    } else {
+      limiter.acquire(bytesNeed(), timeoutMs.getOrElse(params.maxWaitMs))
+    }
+
+    if (handler == null) {
+      // handler maybe null if it timed out to acquire from limiter
+      emptyResult()
+    } else {
+      try {
+        readFromLocalLogV2(params, readPartitionInfo, quota, readFromPurgatory)
+      } finally {
+        handler.close()
+      }
     }
   }
 
