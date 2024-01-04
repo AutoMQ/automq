@@ -24,6 +24,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -129,6 +130,7 @@ public class ObjectReader implements AutoCloseable {
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf,
             S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
+            objectTailBuf = objectTailBuf.slice();
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + objectTailBuf.readableBytes() < s3ObjectMetadata.objectSize()) {
@@ -173,6 +175,30 @@ public class ObjectReader implements AutoCloseable {
             this.blocks = blocks;
             this.streamRanges = streamRanges;
             this.size = blocks.readableBytes() + streamRanges.readableBytes();
+        }
+
+        public Iterator<StreamDataBlock> iterator() {
+            ByteBuf blocks = this.blocks.slice();
+            ByteBuf ranges = this.streamRanges.slice();
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    return ranges.readableBytes() != 0;
+                }
+
+                @Override
+                public StreamDataBlock next() {
+                    long streamId = ranges.readLong();
+                    long startOffset = ranges.readLong();
+                    long endOffset = startOffset + ranges.readInt();
+                    int rangeBlockId = ranges.readInt();
+                    long blockPosition = blocks.getLong(rangeBlockId * 16);
+                    int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
+                    int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
+                    return new StreamDataBlock(streamId, startOffset, endOffset, rangeBlockId, s3ObjectMetadata.objectId(),
+                        blockPosition, blockSize, recordCount);
+                }
+            };
         }
 
         public ByteBuf blocks() {
