@@ -175,7 +175,12 @@ public class StreamObjectCompactor {
         long groupSize = 0;
         long groupNextOffset = -1L;
         List<S3ObjectMetadata> group = new LinkedList<>();
+        int partCount = 0;
         for (S3ObjectMetadata object : objects) {
+            int objectPartCount = (int) ((object.objectSize() + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
+            if (objectPartCount >= Writer.MAX_PART_COUNT) {
+                continue;
+            }
             if (groupNextOffset == -1L) {
                 groupNextOffset = object.startOffset();
             }
@@ -185,6 +190,7 @@ public class StreamObjectCompactor {
                 || (groupSize + object.objectSize() > maxStreamObjectSize && !group.isEmpty())
                 // object count in group is larger than MAX_OBJECT_GROUP_COUNT
                 || group.size() >= MAX_OBJECT_GROUP_COUNT
+                || partCount + objectPartCount > Writer.MAX_PART_COUNT
             ) {
                 objectGroups.add(group);
                 group = new LinkedList<>();
@@ -193,6 +199,7 @@ public class StreamObjectCompactor {
             group.add(object);
             groupSize += object.objectSize();
             groupNextOffset = object.endOffset();
+            partCount += objectPartCount;
         }
         if (!group.isEmpty()) {
             objectGroups.add(group);
