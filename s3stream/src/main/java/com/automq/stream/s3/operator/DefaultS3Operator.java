@@ -600,7 +600,7 @@ public class DefaultS3Operator implements S3Operator {
         String multipartPath = String.format("check_available_multipart/%d", System.nanoTime());
         try {
             // Check network and bucket
-            readS3Client.headBucket(b -> b.bucket(bucket)).get(3, TimeUnit.SECONDS);
+            readS3Client.getBucketAcl(b -> b.bucket(bucket)).get(3, TimeUnit.SECONDS);
 
             // Simple write/read/delete
             this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
@@ -619,7 +619,7 @@ public class DefaultS3Operator implements S3Operator {
             LOGGER.error("Failed to write/read/delete object on S3 ", e);
             String exceptionMsg = String.format("Failed to write/read/delete object on S3. You are using s3Context: %s.", s3Context);
 
-            Throwable cause = e.getCause();
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
             if (cause instanceof SdkClientException) {
                 if (cause.getMessage().contains("UnknownHostException")) {
                     Throwable rootCause = ExceptionUtils.getRootCause(cause);
