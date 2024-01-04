@@ -600,7 +600,7 @@ public class DefaultS3Operator implements S3Operator {
         String multipartPath = String.format("check_available_multipart/%d", System.nanoTime());
         try {
             // Check network and bucket
-            readS3Client.getBucketAcl(b -> b.bucket(bucket)).get(3, TimeUnit.SECONDS);
+//            readS3Client.getBucketAcl(b -> b.bucket(bucket)).get(3, TimeUnit.SECONDS);
 
             // Simple write/read/delete
             this.write(path, Unpooled.wrappedBuffer(content)).get(30, TimeUnit.SECONDS);
