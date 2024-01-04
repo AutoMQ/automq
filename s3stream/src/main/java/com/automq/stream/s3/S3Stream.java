@@ -50,13 +50,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.Function;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,8 +73,7 @@ public class S3Stream implements Stream {
     private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
-    private final Function<Long, Void> closeHook;
-    private final StreamObjectsCompactionTask streamObjectsCompactionTask;
+    private final Consumer<Long> closeHook;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -87,14 +85,12 @@ public class S3Stream implements Stream {
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager,
-        StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, compactionTaskBuilder, closeHook, null, null);
+        StreamManager streamManager, Consumer<Long> closeHook) {
+        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, closeHook, null, null);
     }
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager,
-        StreamObjectsCompactionTask.Builder compactionTaskBuilder, Function<Long, Void> closeHook,
+        StreamManager streamManager, Consumer<Long> closeHook,
         AsyncNetworkBandwidthLimiter networkInboundLimiter, AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
         this.streamId = streamId;
         this.epoch = epoch;
@@ -105,16 +101,9 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
-        this.streamObjectsCompactionTask = compactionTaskBuilder.withStream(this).build();
         this.closeHook = closeHook;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
-    }
-
-    public StreamObjectsCompactionTask.CompactionSummary triggerCompactionTask() throws ExecutionException, InterruptedException {
-        streamObjectsCompactionTask.prepare();
-        streamObjectsCompactionTask.doCompactions().get();
-        return streamObjectsCompactionTask.getCompactionsSummary();
     }
 
     public boolean isClosed() {
@@ -328,10 +317,9 @@ public class S3Stream implements Stream {
     }
 
     private CompletableFuture<Void> close0() {
-        streamObjectsCompactionTask.close();
         return storage.forceUpload(streamId)
             .thenCompose(nil -> streamManager.closeStream(streamId, epoch))
-            .whenComplete((nil, ex) -> closeHook.apply(streamId));
+            .whenComplete((nil, ex) -> closeHook.accept(streamId));
     }
 
     @Override
@@ -354,8 +342,7 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> destroy0() {
         status.markDestroy();
-        streamObjectsCompactionTask.close();
-        closeHook.apply(streamId);
+        closeHook.accept(streamId);
         startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);
     }

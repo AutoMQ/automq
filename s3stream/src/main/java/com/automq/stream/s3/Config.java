@@ -44,7 +44,6 @@ public class Config {
     private long blockCacheSize = 100 * 1024 * 1024;
     private int streamObjectCompactionIntervalMinutes = 60;
     private long streamObjectCompactionMaxSizeBytes = 10737418240L;
-    private int streamObjectCompactionLivingTimeMinutes = 60;
     private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
     private long controllerRequestRetryBaseDelayMs = 500;
     private long nodeEpoch = 0L;
@@ -154,10 +153,6 @@ public class Config {
 
     public long streamObjectCompactionMaxSizeBytes() {
         return streamObjectCompactionMaxSizeBytes;
-    }
-
-    public int streamObjectCompactionLivingTimeMinutes() {
-        return streamObjectCompactionLivingTimeMinutes;
     }
 
     public int controllerRequestRetryMaxCount() {
@@ -340,11 +335,6 @@ public class Config {
 
     public Config streamObjectCompactionMaxSizeBytes(long s3StreamObjectCompactionMaxSizeBytes) {
         this.streamObjectCompactionMaxSizeBytes = s3StreamObjectCompactionMaxSizeBytes;
-        return this;
-    }
-
-    public Config streamObjectCompactionLivingTimeMinutes(int s3StreamObjectCompactionLivingTimeMinutes) {
-        this.streamObjectCompactionLivingTimeMinutes = s3StreamObjectCompactionLivingTimeMinutes;
         return this;
     }
 
