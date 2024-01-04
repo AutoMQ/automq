@@ -103,6 +103,18 @@ public class MultiPartWriter implements Writer {
 
     @Override
     public void copyWrite(String sourcePath, long start, long end) {
+        long nextStart = start;
+        for (; ; ) {
+            long currentEnd = Math.min(nextStart + Writer.MAX_PART_SIZE, end);
+            copyWrite0(sourcePath, nextStart, currentEnd);
+            nextStart = currentEnd;
+            if (currentEnd == end) {
+                break;
+            }
+        }
+    }
+
+    public void copyWrite0(String sourcePath, long start, long end) {
         long targetSize = end - start;
         if (objectPart == null) {
             if (targetSize < minPartSize) {
