@@ -46,6 +46,9 @@ class DelayedFetch(
   fetchPartitionStatus: Seq[(TopicIdPartition, FetchPartitionStatus)],
   replicaManager: ReplicaManager,
   quota: ReplicaQuota,
+  // AutoMQ for Kafka inject start
+  limiter: Limiter = NoopLimiter.INSTANCE,
+  // AutoMQ for Kafka inject end
   responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit
 ) extends DelayedOperation(params.maxWaitMs) {
 
@@ -168,7 +171,8 @@ class DelayedFetch(
       params,
       fetchInfos,
       quota,
-      readFromPurgatory = true
+      readFromPurgatory = true,
+      limiter = limiter,
     )
     ReadHint.clear()
     // AutoMQ for Kafka inject end
@@ -189,4 +193,3 @@ object DelayedFetchMetrics extends KafkaMetricsGroup {
   val followerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "follower"))
   val consumerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "consumer"))
 }
-
