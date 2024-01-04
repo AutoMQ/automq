@@ -47,7 +47,6 @@ public class ConfigUtils {
                 .blockCacheSize(s.s3BlockCacheSize())
                 .streamObjectCompactionIntervalMinutes(s.s3StreamObjectCompactionTaskIntervalMinutes())
                 .streamObjectCompactionMaxSizeBytes(s.s3StreamObjectCompactionMaxSizeBytes())
-                .streamObjectCompactionLivingTimeMinutes(s.s3StreamObjectCompactionLivingTimeMinutes())
                 .controllerRequestRetryMaxCount(s.s3ControllerRequestRetryMaxCount())
                 .controllerRequestRetryBaseDelayMs(s.s3ControllerRequestRetryBaseDelayMs())
                 .streamSetObjectCompactionInterval(s.s3StreamSetObjectCompactionInterval())
