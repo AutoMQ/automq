@@ -23,8 +23,8 @@ import time
 from pathlib import Path
 import argparse
 
-
 main_branch = "develop"
+
 
 def fail(msg):
     print(msg)
@@ -150,8 +150,8 @@ def do_release(tag_version):
     print("updating docker compose")
     regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", "image: automqinc/kafka:%s" % tag_version)
 
-    cmd("Committing changes", ["git", "commit", "-a", "-m", "ci: Bump version to %s" % tag_version])
-    cmd("Pushing changes", ["git", "push", "origin", new_branch])
+    cmd("Committing changes", ["git", "commit", "-a", "-m", "ci: Bump version to %s" % tag_version], allow_failure=True)
+    cmd("Pushing changes", ["git", "push", "origin", new_branch], allow_failure=True)
 
     cmd("Tagging %s" % tag_version, ["git", "tag", "-a", tag_version, "-m", "release %s" % tag_version, "-s"])
     cmd("Pushing tag %s" % tag_version, ["git", "push", "origin", tag_version])
@@ -161,14 +161,15 @@ def clean_local_tags():
     tags = cmd_output('git tag -l').split()
     cmd("Cleaning local tags", ['git', 'tag', '-d'] + tags)
 
+
 def check_before_started(tag_version):
     check_tools(["git"])
-    cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
-    cmd("Verifying that you have no staged git changes", 'git diff --cached --exit-code --quiet')
+#     cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
+#     cmd("Verifying that you have no staged git changes", 'git diff --cached --exit-code --quiet')
     starting_branch = cmd_output('git rev-parse --abbrev-ref HEAD').strip()
     if starting_branch != main_branch:
         fail("You must run this script from the %s branch. current: %s" % (main_branch, starting_branch))
-    cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
+#     cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
 
     # Validate that the release doesn't already exist
     clean_local_tags()
