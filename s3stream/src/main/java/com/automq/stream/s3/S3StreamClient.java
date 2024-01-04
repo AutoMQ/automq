@@ -169,6 +169,7 @@ public class S3StreamClient implements StreamClient {
                 LOGGER.warn("await streamObjectCompactionExecutor timeout 10s");
             }
         } catch (InterruptedException e) {
+            streamObjectCompactionScheduler.shutdownNow();
             LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
         }
 
