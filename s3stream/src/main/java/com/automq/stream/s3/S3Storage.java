@@ -258,6 +258,14 @@ public class S3Storage implements Storage {
         }
         deltaWAL.shutdownGracefully();
         backgroundExecutor.shutdown();
+        try {
+            if (backgroundExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                LOGGER.warn("await backgroundExecutor timeout 10s");
+            }
+        } catch (InterruptedException e) {
+            backgroundExecutor.shutdownNow();
+            LOGGER.warn("await backgroundExecutor close fail", e);
+        }
     }
 
     @Override
