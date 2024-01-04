@@ -48,8 +48,8 @@ public class S3StreamTest {
     public void setup() {
         storage = mock(Storage.class);
         streamManager = mock(StreamManager.class);
-        StreamObjectsCompactionTask.Builder builder = new StreamObjectsCompactionTask.Builder(null, null);
-        stream = new S3Stream(233, 1, 100, 233, storage, streamManager, builder, v -> null);
+        stream = new S3Stream(233, 1, 100, 233, storage, streamManager, v -> {
+        });
     }
 
     @Test
