@@ -60,7 +60,7 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         this.objectId = objectId;
         this.nodeId = nodeId;
         streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
-        streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::getStreamId));
+        streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::streamId));
         this.ranges = encode(streamOffsetRanges);
         this.dataTimeInMs = dataTimeInMs;
     }
@@ -151,9 +151,9 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         }
         ByteBuf rangesBuf = Unpooled.buffer(streamOffsetRanges.size() * 20);
         streamOffsetRanges.forEach(r -> {
-            rangesBuf.writeLong(r.getStreamId());
-            rangesBuf.writeLong(r.getStartOffset());
-            rangesBuf.writeInt((int) (r.getEndOffset() - r.getStartOffset()));
+            rangesBuf.writeLong(r.streamId());
+            rangesBuf.writeLong(r.startOffset());
+            rangesBuf.writeInt((int) (r.endOffset() - r.startOffset()));
         });
         byte[] compressedBytes;
         if (compressed) {

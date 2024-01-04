@@ -421,8 +421,8 @@ public class StreamControlManager {
         streamMetadata.streamObjects().entrySet().stream().forEach(it -> {
             Long objectId = it.getKey();
             S3StreamObject streamObject = it.getValue();
-            long streamStartOffset = streamObject.streamOffsetRange().getStartOffset();
-            long streamEndOffset = streamObject.streamOffsetRange().getEndOffset();
+            long streamStartOffset = streamObject.streamOffsetRange().startOffset();
+            long streamEndOffset = streamObject.streamOffsetRange().endOffset();
             if (newStartOffset <= streamStartOffset) {
                 return;
             }
@@ -843,31 +843,31 @@ public class StreamControlManager {
         }
         for (StreamOffsetRange range : ranges) {
             // verify stream exist
-            if (!this.streamsMetadata.containsKey(range.getStreamId())) {
-                log.warn("[streamAdvanceCheck]: streamId={} not exist", range.getStreamId());
+            if (!this.streamsMetadata.containsKey(range.streamId())) {
+                log.warn("[streamAdvanceCheck]: streamId={} not exist", range.streamId());
                 return Errors.STREAM_NOT_EXIST;
             }
             // check if this stream open
-            if (this.streamsMetadata.get(range.getStreamId()).currentState() != StreamState.OPENED) {
-                log.warn("[streamAdvanceCheck]: streamId={} not opened", range.getStreamId());
+            if (this.streamsMetadata.get(range.streamId()).currentState() != StreamState.OPENED) {
+                log.warn("[streamAdvanceCheck]: streamId={} not opened", range.streamId());
                 return Errors.STREAM_NOT_OPENED;
             }
-            RangeMetadata rangeMetadata = this.streamsMetadata.get(range.getStreamId()).currentRangeMetadata();
+            RangeMetadata rangeMetadata = this.streamsMetadata.get(range.streamId()).currentRangeMetadata();
             if (rangeMetadata == null) {
                 // should not happen
                 log.error("[streamAdvanceCheck]: streamId={}'s current range={} not exist when stream has been ",
-                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex());
+                        range.streamId(), this.streamsMetadata.get(range.streamId()).currentRangeIndex());
                 return Errors.STREAM_INNER_ERROR;
             } else if (rangeMetadata.nodeId() != nodeId) {
                 // should not happen
                 log.error("[streamAdvanceCheck]: streamId={}'s current range node id not match expected nodeId={} but nodeId={}",
-                        range.getStreamId(), rangeMetadata.nodeId(), nodeId);
+                        range.streamId(), rangeMetadata.nodeId(), nodeId);
                 return Errors.STREAM_INNER_ERROR;
             }
-            if (rangeMetadata.endOffset() != range.getStartOffset()) {
+            if (rangeMetadata.endOffset() != range.startOffset()) {
                 log.warn("[streamAdvanceCheck]: streamId={}'s current range={}'s end offset {} is not equal to request start offset {}",
-                        range.getStreamId(), this.streamsMetadata.get(range.getStreamId()).currentRangeIndex(),
-                        rangeMetadata.endOffset(), range.getStartOffset());
+                        range.streamId(), this.streamsMetadata.get(range.streamId()).currentRangeIndex(),
+                        rangeMetadata.endOffset(), range.startOffset());
                 return Errors.OFFSET_NOT_MATCHED;
             }
         }

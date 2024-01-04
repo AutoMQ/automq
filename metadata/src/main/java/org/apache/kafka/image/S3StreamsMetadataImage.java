@@ -126,8 +126,8 @@ public final class S3StreamsMetadataImage {
             return Collections.emptyList();
         }
         return streamObjectsMetadata.values().stream().filter(obj -> {
-            long objectStartOffset = obj.streamOffsetRange().getStartOffset();
-            long objectEndOffset = obj.streamOffsetRange().getEndOffset();
+            long objectStartOffset = obj.streamOffsetRange().startOffset();
+            long objectEndOffset = obj.streamOffsetRange().endOffset();
             return objectStartOffset < endOffset && objectEndOffset > startOffset;
         }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).limit(limit).collect(Collectors.toCollection(ArrayList::new));
     }
@@ -189,14 +189,14 @@ public final class S3StreamsMetadataImage {
                     continue;
                 }
                 StreamOffsetRange range = ranges.get(index);
-                if (range.getStartOffset() >= endOffset || range.getEndOffset() < startOffset) {
+                if (range.startOffset() >= endOffset || range.endOffset() < startOffset) {
                     continue;
                 }
                 S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
                         obj.objectId(), obj.objectType(), ranges, obj.dataTimeInMs(),
                         obj.orderId());
-                s3ObjectMetadataList.add(new S3ObjectMetadataWrapper(s3ObjectMetadata, range.getStartOffset(), range.getEndOffset()));
-                if (range.getEndOffset() >= endOffset) {
+                s3ObjectMetadataList.add(new S3ObjectMetadataWrapper(s3ObjectMetadata, range.startOffset(), range.endOffset()));
+                if (range.endOffset() >= endOffset) {
                     break;
                 }
             }
@@ -209,12 +209,12 @@ public final class S3StreamsMetadataImage {
             // TODO: refactor to make stream objects in order
             if (streamObjectsMetadata != null && !streamObjectsMetadata.isEmpty()) {
                 return streamObjectsMetadata.values().stream().filter(obj -> {
-                    long objectStartOffset = obj.streamOffsetRange().getStartOffset();
-                    long objectEndOffset = obj.streamOffsetRange().getEndOffset();
+                    long objectStartOffset = obj.streamOffsetRange().startOffset();
+                    long objectEndOffset = obj.streamOffsetRange().endOffset();
                     return objectStartOffset < endOffset && objectEndOffset > startOffset;
                 }).sorted(Comparator.comparing(S3StreamObject::streamOffsetRange)).map(obj -> {
-                    long startOffset = obj.streamOffsetRange().getStartOffset();
-                    long endOffset = obj.streamOffsetRange().getEndOffset();
+                    long startOffset = obj.streamOffsetRange().startOffset();
+                    long endOffset = obj.streamOffsetRange().endOffset();
                     S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(
                             obj.objectId(), obj.objectType(), List.of(obj.streamOffsetRange()), obj.dataTimeInMs());
                     return new S3ObjectMetadataWrapper(s3ObjectMetadata, startOffset, endOffset);
@@ -359,12 +359,12 @@ public final class S3StreamsMetadataImage {
             return new ComparableItem<>() {
                 @Override
                 public boolean isLessThan(Long o) {
-                    return range.getStreamId() < o;
+                    return range.streamId() < o;
                 }
 
                 @Override
                 public boolean isGreaterThan(Long o) {
-                    return range.getStreamId() > o;
+                    return range.streamId() > o;
                 }
             };
         }
