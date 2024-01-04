@@ -725,8 +725,8 @@ public class StreamControlManagerTest {
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
         assertEquals(object0DataTs, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).dataTimeInMs());
         assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
-        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getStartOffset());
-        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().getEndOffset());
+        assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().startOffset());
+        assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().endOffset());
     }
 
     private void mockData0() {

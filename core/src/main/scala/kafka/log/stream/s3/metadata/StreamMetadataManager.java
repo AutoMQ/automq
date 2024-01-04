@@ -132,8 +132,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         }
         List<GetObjectsTask> retryTasks = new ArrayList<>();
         pendingStreamsOffsetRange.forEach(offsetRange -> {
-            long streamId = offsetRange.getStreamId();
-            long endOffset = offsetRange.getEndOffset();
+            long streamId = offsetRange.streamId();
+            long endOffset = offsetRange.endOffset();
             Map<Long, List<GetObjectsTask>> tasks = StreamMetadataManager.this.pendingGetObjectsTasks.get(streamId);
             if (tasks == null || tasks.isEmpty()) {
                 return;
@@ -170,8 +170,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         if (offsetRange == null || offsetRange == StreamOffsetRange.INVALID) {
             return CompletableFuture.completedFuture(InRangeObjects.INVALID);
         }
-        long streamStartOffset = offsetRange.getStartOffset();
-        long streamEndOffset = offsetRange.getEndOffset();
+        long streamStartOffset = offsetRange.startOffset();
+        long streamEndOffset = offsetRange.endOffset();
         if (startOffset < streamStartOffset) {
             LOGGER.warn(
                     "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and startOffset < streamStartOffset: {}",

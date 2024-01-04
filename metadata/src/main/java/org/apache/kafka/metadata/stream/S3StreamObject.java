@@ -55,9 +55,9 @@ public class S3StreamObject {
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
-            .setStreamId(streamOffsetRange.getStreamId())
-            .setStartOffset(streamOffsetRange.getStartOffset())
-            .setEndOffset(streamOffsetRange.getEndOffset())
+            .setStreamId(streamOffsetRange.streamId())
+            .setStartOffset(streamOffsetRange.startOffset())
+            .setEndOffset(streamOffsetRange.endOffset())
             .setDataTimeInMs(dataTimeInMs), (short) 0);
     }
 
