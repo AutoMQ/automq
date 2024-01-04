@@ -164,12 +164,12 @@ def clean_local_tags():
 
 def check_before_started(tag_version):
     check_tools(["git"])
-#     cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
-#     cmd("Verifying that you have no staged git changes", 'git diff --cached --exit-code --quiet')
+    cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
+    cmd("Verifying that you have no staged git changes", 'git diff --cached --exit-code --quiet')
     starting_branch = cmd_output('git rev-parse --abbrev-ref HEAD').strip()
     if starting_branch != main_branch:
         fail("You must run this script from the %s branch. current: %s" % (main_branch, starting_branch))
-#     cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
+    cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
 
     # Validate that the release doesn't already exist
     clean_local_tags()
