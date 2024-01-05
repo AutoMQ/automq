@@ -228,7 +228,9 @@ public class AlwaysSuccessClient implements Client {
         @Override
         public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
             return stream.append(context, recordBatch).whenComplete((rst, ex) -> {
-                LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
+                if (ex != null) {
+                    LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
+                }
             });
         }
 
