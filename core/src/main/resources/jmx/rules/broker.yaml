@@ -1,7 +1,7 @@
 ---
 rules:
   # Broker Topic Metrics
-  - bean: kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec,topic=*
     metricAttribute:
       direction: const(in)
       topic: param(topic)
@@ -12,7 +12,7 @@ rules:
         desc: The number of messages received by the broker
         unit: "{messages}"
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       direction: const(int)
@@ -23,7 +23,7 @@ rules:
         desc: The bytes received or sent by the broker
         unit: By
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       direction: const(out)
@@ -34,7 +34,7 @@ rules:
         desc: The bytes received or sent by the broker
         unit: By
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestsPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestsPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       type: const(fetch)
@@ -45,7 +45,7 @@ rules:
         desc: The number of requests received by the broker
         unit: "{requests}"
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestsPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestsPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       type: const(produce)
@@ -56,7 +56,7 @@ rules:
         desc: The number of requests received by the broker
         unit: "{requests}"
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestsPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestsPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       type: const(fetch)
@@ -67,7 +67,7 @@ rules:
         desc: The number of requests to the broker resulting in a failure
         unit: "{requests}"
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=FailedProduceRequestsPerSec,*
+  - bean: kafka.server:type=BrokerTopicMetrics,name=FailedProduceRequestsPerSec,topic=*
     metricAttribute:
       topic: param(topic)
       type: const(produce)
