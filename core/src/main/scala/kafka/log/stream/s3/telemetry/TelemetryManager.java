@@ -67,6 +67,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -130,7 +131,10 @@ public class TelemetryManager {
             }
         }
         if (kafkaConfig.s3TracerEnable()) {
-            openTelemetrySdkBuilder.setTracerProvider(getTraceProvider(resource));
+            SdkTracerProvider sdkTracerProvider = getTraceProvider(resource);
+            if (sdkTracerProvider != null) {
+                openTelemetrySdkBuilder.setTracerProvider(sdkTracerProvider);
+            }
         }
 
         openTelemetrySdk = openTelemetrySdkBuilder
@@ -208,8 +212,16 @@ public class TelemetryManager {
     }
 
     private SdkTracerProvider getTraceProvider(Resource resource) {
+        Optional<String> otlpEndpointOpt = getOTLPEndpoint(kafkaConfig.s3TraceExporterOTLPEndpoint());
+        if (otlpEndpointOpt.isEmpty()) {
+            otlpEndpointOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
+        }
+        if (otlpEndpointOpt.isEmpty()) {
+            return null;
+        }
+        String otlpEndpoint = otlpEndpointOpt.get();
         OtlpGrpcSpanExporter spanExporter = OtlpGrpcSpanExporter.builder()
-                .setEndpoint(kafkaConfig.s3ExporterOTLPEndpoint())
+                .setEndpoint(otlpEndpoint)
                 .setTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build();
 
@@ -255,14 +267,12 @@ public class TelemetryManager {
     }
 
     private void initOTLPExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
-        String otlpExporterHost = kafkaConfig.s3ExporterOTLPEndpoint();
-        if (StringUtils.isBlank(otlpExporterHost)) {
-            LOGGER.error("illegal OTLP collector endpoint: {}", otlpExporterHost);
+        Optional<String> otlpExporterHostOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
+        if (otlpExporterHostOpt.isEmpty()) {
             return;
         }
-        if (!otlpExporterHost.startsWith("http://")) {
-            otlpExporterHost = "https://" + otlpExporterHost;
-        }
+        String otlpExporterHost = otlpExporterHostOpt.get();
+
         OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
                 .setEndpoint(otlpExporterHost)
                 .setTimeout(Duration.ofMillis(30000));
@@ -300,6 +310,17 @@ public class TelemetryManager {
                 .build();
         sdkMeterProviderBuilder.registerMetricReader(prometheusHttpServer);
         LOGGER.info("Prometheus exporter registered, host: {}, port: {}", promExporterHost, promExporterPort);
+    }
+
+    private Optional<String> getOTLPEndpoint(String endpoint) {
+        if (StringUtils.isBlank(endpoint)) {
+            LOGGER.error("illegal OTLP collector endpoint: {}", endpoint);
+            return Optional.empty();
+        }
+        if (!endpoint.startsWith("http://")) {
+            endpoint = "https://" + endpoint;
+        }
+        return Optional.of(endpoint);
     }
 
     public void shutdown() {

@@ -727,6 +727,7 @@ object KafkaConfig {
   val S3MetricsEnableProp = "s3.telemetry.metrics.enable"
   val S3TracerEnableProp = "s3.telemetry.tracer.enable"
   val S3ExporterOTLPEndpointProp = "s3.telemetry.exporter.otlp.endpoint"
+  val S3TraceExporterOTLPEndpointProp = "s3.telemetry.trace.exporter.otlp.endpoint"
   val S3ExporterReportIntervalMsProp = "s3.telemetry.exporter.report.interval.ms"
   val S3MetricsLevelProp = "s3.telemetry.metrics.level"
   val S3MetricsExporterTypeProp = "s3.telemetry.metrics.exporter.type"
@@ -776,6 +777,7 @@ object KafkaConfig {
   val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
   val S3MetricsLevelDoc = "The metrics level, supported value: INFO, DEBUG"
   val S3MetricsExporterTypeDoc = "The enabled S3 metrics exporters type, seperated by comma. Supported type: otlp, prometheus, log"
+  val S3TraceExporterOTLPEndpointDoc = "The endpoint of OTLP collector for traces"
   val S3ExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
   val S3ExporterReportIntervalMsDoc = "The interval in milliseconds to report telemetry"
   val S3MetricsExporterPromHostDoc = "The host address of Prometheus http server to expose the metrics"
@@ -1622,6 +1624,7 @@ object KafkaConfig {
       .define(S3MetricsLevelProp, STRING, "INFO", MEDIUM, S3MetricsLevelDoc)
       .define(S3MetricsExporterTypeProp, STRING, null, MEDIUM, S3MetricsExporterTypeDoc)
       .define(S3ExporterOTLPEndpointProp, STRING, null, MEDIUM, S3ExporterOTLPEndpointDoc)
+      .define(S3TraceExporterOTLPEndpointProp, STRING, null, MEDIUM, S3TraceExporterOTLPEndpointDoc)
       .define(S3MetricsExporterPromHostProp, STRING, null, MEDIUM, S3MetricsExporterPromHostDoc)
       .define(S3MetricsExporterPromPortProp, INT, 0, MEDIUM, S3MetricsExporterPromPortDoc)
       .define(S3ExporterReportIntervalMsProp, INT, Defaults.S3MetricsExporterReportIntervalMs, MEDIUM, S3ExporterReportIntervalMsDoc)
@@ -2204,6 +2207,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3MetricsLevel = getString(KafkaConfig.S3MetricsLevelProp)
   val s3MetricsExporterType = getString(KafkaConfig.S3MetricsExporterTypeProp)
   val s3ExporterOTLPEndpoint = getString(KafkaConfig.S3ExporterOTLPEndpointProp)
+  val s3TraceExporterOTLPEndpoint = getString(KafkaConfig.S3TraceExporterOTLPEndpointProp)
   val s3ExporterReportIntervalMs = getInt(KafkaConfig.S3ExporterReportIntervalMsProp)
   val s3MetricsExporterPromHost = getString(KafkaConfig.S3MetricsExporterPromHostProp)
   val s3MetricsExporterPromPort = getInt(KafkaConfig.S3MetricsExporterPromPortProp)
