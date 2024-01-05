@@ -11,7 +11,8 @@ to observe and monitor AutoMQ for Kafka.
      - Logs: Metrics can be directly logged to file system (logs/s3stream-metrics.log)
    - Traces: Traces are only supported to be exported via OTLP protocol to OTel Collector.
 2. The original JMX metrics from Apache Kafka remain unchanged, you can observe them via JMX exporter or JConsole.
-We are actively working on transforming them into OpenTelemetry metrics for exportation
+In addition, we also provide the ability to transform selected JMX metrics to OTLP protocol, which can be exported via the above methods.
+Supported transformed JMX metrics can be found at `core/src/main/resources/jmx/rules`.
 3. The deployment configuration contained in this module is only meant for preview purpose, and should not be used in production environment
 due to performance and security concerns.
 
