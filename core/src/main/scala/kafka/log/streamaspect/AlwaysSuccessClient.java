@@ -66,16 +66,12 @@ public class AlwaysSuccessClient implements Client {
             ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
     private final ScheduledExecutorService appendRetryScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("append-retry-scheduler-%d", true));
-    private final ScheduledExecutorService fetchRetryScheduler = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
     private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
     private final ExecutorService appendCallbackExecutors = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
-    private final ExecutorService fetchCallbackExecutors = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private final Client innerClient;
     private final StreamClient streamClient;
     private final KVClient kvClient;
@@ -122,11 +118,9 @@ public class AlwaysSuccessClient implements Client {
         streamManagerRetryScheduler.shutdownNow();
         streamManagerCallbackExecutors.shutdownNow();
         appendRetryScheduler.shutdownNow();
-        fetchRetryScheduler.shutdownNow();
         generalRetryScheduler.shutdownNow();
         generalCallbackExecutors.shutdownNow();
         appendCallbackExecutors.shutdownNow();
-        fetchCallbackExecutors.shutdownNow();
     }
 
     /**
@@ -298,12 +292,8 @@ public class AlwaysSuccessClient implements Client {
         public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             Timeout timeout = fetchTimeout.newTimeout(t -> LOGGER.warn("fetch timeout, stream[{}] [{}, {})", streamId(), startOffset, endOffset), 1, TimeUnit.MINUTES);
-            fetch0(context, startOffset, endOffset, maxBytesHint, cf);
-            return cf.whenComplete((rst, ex) -> timeout.cancel());
-        }
-
-        private void fetch0(FetchContext context, long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
-            stream.fetch(context, startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, e) -> FutureUtil.suppress(() -> {
+            stream.fetch(context, startOffset, endOffset, maxBytesHint).whenComplete((rst, e) -> FutureUtil.suppress(() -> {
+                timeout.cancel();
                 Throwable ex = FutureUtil.cause(e);
                 if (ex != null) {
                     if (!(ex instanceof FastReadFailFastException)) {
@@ -313,7 +303,8 @@ public class AlwaysSuccessClient implements Client {
                 } else {
                     cf.complete(rst);
                 }
-            }, LOGGER), fetchCallbackExecutors);
+            }, LOGGER));
+            return cf;
         }
 
         @Override
