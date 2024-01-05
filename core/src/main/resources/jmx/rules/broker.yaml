@@ -196,3 +196,19 @@ rules:
         type: updowncounter
         desc: The number of partitions on the broker that are being reassigned
         unit: "{partitions}"
+
+  # Log metrics
+  - bean: kafka.log:type=LogFlushStats,name=LogFlushRateAndTimeMs
+    unit: ms
+    type: gauge
+    prefix: kafka.logs.flush.
+    mapping:
+      Count:
+        type: counter
+        desc: Log flush count
+      50thPercentile:
+        metric: time.50p
+        desc: Log flush time - 50th percentile
+      99thPercentile:
+        metric: time.99p
+        desc: Log flush time - 99th percentile
