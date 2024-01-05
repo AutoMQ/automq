@@ -16,8 +16,6 @@
  */
 package kafka.cluster
 
-import com.yammer.metrics.core.Histogram
-
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
@@ -49,7 +47,6 @@ import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 import org.slf4j.LoggerFactory
 
-import java.util.concurrent.atomic.AtomicLong
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
 trait AlterPartitionListener {
@@ -1099,14 +1096,11 @@ class Partition(val topicPartition: TopicPartition,
   private def handleLeaderConfirmOffsetMove(): Unit = {
     log match {
       case Some(leaderLog) =>
-        val incrementLeaderStartNanos = System.nanoTime()
         if (maybeIncrementLeaderHW(leaderLog)) {
-          val tryCompleteDelayRequestStartNanos = System.nanoTime()
           tryCompleteDelayedRequests()
         }
       case None => logger.warn("try to handle leader confirm offset move, but leader log is not exist")
     }
-    val now = System.currentTimeMillis()
   }
   // AutoMQ for Kafka inject end
 

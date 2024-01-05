@@ -145,7 +145,7 @@ class ElasticLogSegmentManager(val metaStream: MetaStream, val streamManager: El
             if (metaStream.isFenced) {
               debug(s"${logIdent}meta stream is closed, skip persisting log meta")
             } else {
-              persistLogMeta()
+              asyncPersistLogMeta()
             }
           }
         case ElasticLogSegmentEvent.SEGMENT_UPDATE =>
