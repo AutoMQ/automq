@@ -23,9 +23,9 @@ import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 public class Convertor {
     public static S3StreamSetObjectRecord.StreamIndex to(StreamOffsetRange s) {
         return new S3StreamSetObjectRecord.StreamIndex()
-                .setStreamId(s.getStreamId())
-                .setStartOffset(s.getStartOffset())
-                .setEndOffset(s.getEndOffset());
+                .setStreamId(s.streamId())
+                .setStartOffset(s.startOffset())
+                .setEndOffset(s.endOffset());
     }
 
     public static StreamOffsetRange to(S3StreamSetObjectRecord.StreamIndex s) {

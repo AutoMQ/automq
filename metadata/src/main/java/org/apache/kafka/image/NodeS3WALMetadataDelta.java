@@ -59,12 +59,12 @@ public class NodeS3WALMetadataDelta {
     }
 
     public NodeS3StreamSetObjectMetadataImage apply() {
-        Map<Long, S3StreamSetObject> newS3StreamSetObjects = new HashMap<>(image.getObjects());
+        DeltaMap<Long, S3StreamSetObject> streamSetObjects = image.getObjects().copy();
         // add all changed stream set objects
-        newS3StreamSetObjects.putAll(addedS3StreamSetObjects);
+        streamSetObjects.putAll(addedS3StreamSetObjects);
         // remove all removed stream set objects
-        removedS3StreamSetObjects.forEach(newS3StreamSetObjects::remove);
-        return new NodeS3StreamSetObjectMetadataImage(this.nodeId, this.nodeEpoch, newS3StreamSetObjects);
+        streamSetObjects.removeAll(removedS3StreamSetObjects);
+        return new NodeS3StreamSetObjectMetadataImage(this.nodeId, this.nodeEpoch, streamSetObjects);
     }
 
 }

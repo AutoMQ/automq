@@ -17,7 +17,9 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
@@ -31,6 +33,9 @@ import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporterBuilder;
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
+import io.opentelemetry.instrumentation.jmx.engine.JmxMetricInsight;
+import io.opentelemetry.instrumentation.jmx.engine.MetricConfiguration;
+import io.opentelemetry.instrumentation.jmx.yaml.RuleParser;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.Cpu;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.GarbageCollector;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.MemoryPools;
@@ -55,11 +60,14 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
 import scala.collection.immutable.Set;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -101,14 +109,15 @@ public class TelemetryManager {
     }
 
     private void init() {
+        String nodeType = getNodeType();
         Resource resource = Resource.getDefault().toBuilder()
                 .put(ResourceAttributes.SERVICE_NAMESPACE, clusterId)
-                .put(ResourceAttributes.SERVICE_NAME, getNodeType())
+                .put(ResourceAttributes.SERVICE_NAME, nodeType)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
                 .build();
 
         labelMap.put(AttributeKey.stringKey("cluster_id"), clusterId);
-        labelMap.put(AttributeKey.stringKey("node_type"), getNodeType());
+        labelMap.put(AttributeKey.stringKey("node_type"), nodeType);
         labelMap.put(AttributeKey.stringKey("node_id"), String.valueOf(kafkaConfig.nodeId()));
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
@@ -122,7 +131,10 @@ public class TelemetryManager {
             }
         }
         if (kafkaConfig.s3TracerEnable()) {
-            openTelemetrySdkBuilder.setTracerProvider(getTraceProvider(resource));
+            SdkTracerProvider sdkTracerProvider = getTraceProvider(resource);
+            if (sdkTracerProvider != null) {
+                openTelemetrySdkBuilder.setTracerProvider(sdkTracerProvider);
+            }
         }
 
         openTelemetrySdk = openTelemetrySdkBuilder
@@ -131,35 +143,85 @@ public class TelemetryManager {
                 .build();
 
         if (kafkaConfig.s3MetricsEnable()) {
-            // set JVM metrics opt-in to prevent metrics conflict.
-            System.setProperty("otel.semconv-stability.opt-in", "jvm");
-            // JVM metrics
-            autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
-            autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
-            autoCloseables.addAll(GarbageCollector.registerObservers(openTelemetrySdk));
+            addJmxMetrics(openTelemetrySdk);
+            addJvmMetrics();
 
+            // initialize S3Stream metrics
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
+            S3StreamMetricsManager.setMetricsLevel(metricsLevel());
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
             S3StreamMetricsManager.initAttributesBuilder(() -> {
-                //TODO: cache and reuse attributes
-                //TODO: support metrics level
                 AttributesBuilder builder = attributesBuilderSupplier.get();
                 labelMap.forEach(builder::put);
                 return builder;
             });
         }
 
-        LOGGER.info("Instrument manager initialized with metrics: {}, trace: {} report interval: {}",
-                kafkaConfig.s3MetricsEnable(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
+        LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",
+                kafkaConfig.s3MetricsEnable(), kafkaConfig.s3MetricsLevel(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
     }
 
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
         return openTelemetrySdk;
     }
 
+    private void addJmxMetrics(OpenTelemetry ot) {
+        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(ot, kafkaConfig.s3ExporterReportIntervalMs());
+        MetricConfiguration conf = new MetricConfiguration();
+
+        Set<KafkaRaftServer.ProcessRole> roles = kafkaConfig.processRoles();
+        if (roles.contains(KafkaRaftServer.BrokerRole$.MODULE$)) {
+            buildMetricConfiguration(conf, TelemetryConstants.BROKER_JMX_YAML_CONFIG_PATH);
+        }
+        if (roles.contains(KafkaRaftServer.ControllerRole$.MODULE$)) {
+            buildMetricConfiguration(conf, TelemetryConstants.CONTROLLER_JMX_YAML_CONFIG_PATH);
+        }
+        jmxMetricInsight.start(conf);
+    }
+
+    private void buildMetricConfiguration(MetricConfiguration conf, String path) {
+        try (InputStream ins = this.getClass().getResourceAsStream(path)) {
+            RuleParser parser = RuleParser.get();
+            parser.addMetricDefsTo(conf, ins, path);
+        } catch (Exception e) {
+            LOGGER.error("Failed to parse JMX config file: {}", path, e);
+        }
+    }
+
+    private void addJvmMetrics() {
+        // set JVM metrics opt-in to prevent metrics conflict.
+        System.setProperty("otel.semconv-stability.opt-in", "jvm");
+        // JVM metrics
+        autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
+        autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
+        autoCloseables.addAll(GarbageCollector.registerObservers(openTelemetrySdk));
+    }
+
+    private MetricsLevel metricsLevel() {
+        String levelStr = kafkaConfig.s3MetricsLevel();
+        if (StringUtils.isBlank(levelStr)) {
+            return MetricsLevel.INFO;
+        }
+        try {
+            String up = levelStr.toUpperCase(Locale.ENGLISH);
+            return MetricsLevel.valueOf(up);
+        } catch (Exception e) {
+            LOGGER.error("illegal metrics level: {}", levelStr);
+            return MetricsLevel.INFO;
+        }
+    }
+
     private SdkTracerProvider getTraceProvider(Resource resource) {
+        Optional<String> otlpEndpointOpt = getOTLPEndpoint(kafkaConfig.s3TraceExporterOTLPEndpoint());
+        if (otlpEndpointOpt.isEmpty()) {
+            otlpEndpointOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
+        }
+        if (otlpEndpointOpt.isEmpty()) {
+            return null;
+        }
+        String otlpEndpoint = otlpEndpointOpt.get();
         OtlpGrpcSpanExporter spanExporter = OtlpGrpcSpanExporter.builder()
-                .setEndpoint(kafkaConfig.s3ExporterOTLPEndpoint())
+                .setEndpoint(otlpEndpoint)
                 .setTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .build();
 
@@ -185,6 +247,7 @@ public class TelemetryManager {
         }
         String[] exporterTypeArray = exporterTypes.split(",");
         for (String exporterType : exporterTypeArray) {
+            exporterType = exporterType.trim();
             switch (exporterType) {
                 case "otlp":
                     initOTLPExporter(sdkMeterProviderBuilder, kafkaConfig);
@@ -204,14 +267,12 @@ public class TelemetryManager {
     }
 
     private void initOTLPExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
-        String otlpExporterHost = kafkaConfig.s3ExporterOTLPEndpoint();
-        if (StringUtils.isBlank(otlpExporterHost)) {
-            LOGGER.error("illegal OTLP collector endpoint: {}", otlpExporterHost);
+        Optional<String> otlpExporterHostOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
+        if (otlpExporterHostOpt.isEmpty()) {
             return;
         }
-        if (!otlpExporterHost.startsWith("http://")) {
-            otlpExporterHost = "https://" + otlpExporterHost;
-        }
+        String otlpExporterHost = otlpExporterHostOpt.get();
+
         OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
                 .setEndpoint(otlpExporterHost)
                 .setTimeout(Duration.ofMillis(30000));
@@ -249,6 +310,17 @@ public class TelemetryManager {
                 .build();
         sdkMeterProviderBuilder.registerMetricReader(prometheusHttpServer);
         LOGGER.info("Prometheus exporter registered, host: {}, port: {}", promExporterHost, promExporterPort);
+    }
+
+    private Optional<String> getOTLPEndpoint(String endpoint) {
+        if (StringUtils.isBlank(endpoint)) {
+            LOGGER.error("illegal OTLP collector endpoint: {}", endpoint);
+            return Optional.empty();
+        }
+        if (!endpoint.startsWith("http://")) {
+            endpoint = "https://" + endpoint;
+        }
+        return Optional.of(endpoint);
     }
 
     public void shutdown() {

@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.log.stream.s3.telemetry.TelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.KafkaRaftServer.{BrokerRole, ControllerRole}
 import kafka.server.Server.MetricsPrefix
@@ -100,6 +101,7 @@ class SharedServer(
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
+  @volatile var telemetryManager: TelemetryManager = _
   // AutoMQ for Kafka injection end
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
@@ -220,6 +222,7 @@ class SharedServer(
         if (sharedServerConfig.processRoles.contains(ControllerRole)) {
           controllerMetrics = new QuorumControllerMetrics(KafkaYammerMetrics.defaultRegistry(), time)
         }
+        telemetryManager = new TelemetryManager(sharedServerConfig, metaProps.clusterId)
         raftManager = new KafkaRaftManager[ApiMessageAndVersion](
           metaProps,
           sharedServerConfig,
@@ -319,6 +322,10 @@ class SharedServer(
       if (metrics != null) {
         CoreUtils.swallow(metrics.close(), this)
         metrics = null
+      }
+      if (telemetryManager != null) {
+        CoreUtils.swallow(telemetryManager.shutdown(), this)
+        telemetryManager = null
       }
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false

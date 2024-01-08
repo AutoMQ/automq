@@ -110,14 +110,14 @@ public class StreamMetadataManagerTest {
                 0L, new S3StreamObject(0L, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 1L, StreamState.OPENED, 0, 10L, ranges, streamObjects);
 
-        NodeS3StreamSetObjectMetadataImage walMetadataImage0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Map.of(
+        NodeS3StreamSetObjectMetadataImage walMetadataImage0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, DeltaMap.of(
                 1L, new S3StreamSetObject(1L, BROKER0, List.of(
                         new StreamOffsetRange(STREAM1, 0L, 100L)), 1L),
                 2L, new S3StreamSetObject(2L, BROKER0, List.of(
                         new StreamOffsetRange(STREAM2, 0L, 100L)), 2L)));
 
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, walMetadataImage0));
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, walMetadataImage0));
         image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
 
         ranges = new HashMap<>(ranges);
@@ -125,8 +125,8 @@ public class StreamMetadataManagerTest {
         streamObjects = new HashMap<>(streamObjects);
         streamObjects.put(1L, new S3StreamObject(1L, STREAM0, 100L, 150L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 1, 10L, ranges, streamObjects);
-        streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
+        streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
         image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
 
         ranges = new HashMap<>(ranges);
@@ -134,8 +134,8 @@ public class StreamMetadataManagerTest {
         streamObjects = new HashMap<>(streamObjects);
         streamObjects.put(2L, new S3StreamObject(2L, STREAM0, 150L, 200L, S3StreamConstant.INVALID_TS));
         streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 2, 10L, ranges, streamObjects);
-        streamsImage = new S3StreamsMetadataImage(STREAM0, Map.of(STREAM0, streamImage),
-                Map.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
+        streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
         image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
     }
 

@@ -16,18 +16,15 @@
  */
 package kafka.cluster
 
-import com.yammer.metrics.core.Histogram
-
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
 import kafka.api.LeaderAndIsr
-import kafka.cluster.Partition.{LAST_RECORD_TIMESTAMP, TRY_COMPLETE_TIME_HIST, UPDATE_WATERMARK_TIME_HIST}
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
 import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
-import kafka.metrics.{KafkaMetricsGroup, KafkaMetricsUtil}
+import kafka.metrics.KafkaMetricsGroup
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
 import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
@@ -50,7 +47,6 @@ import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 import org.slf4j.LoggerFactory
 
-import java.util.concurrent.atomic.AtomicLong
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
 trait AlterPartitionListener {
@@ -88,9 +84,6 @@ class DelayedOperations(topicPartition: TopicPartition,
 object Partition extends KafkaMetricsGroup {
   // AutoMQ for Kafka inject start
   val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
-  val UPDATE_WATERMARK_TIME_HIST: Histogram = newHistogram("UpdateWatermarkTimeNanos")
-  val TRY_COMPLETE_TIME_HIST: Histogram = newHistogram("TryCompleteTimeNanos")
-  val LAST_RECORD_TIMESTAMP = new AtomicLong()
   // AutoMQ for Kafka inject end
 
   def apply(topicPartition: TopicPartition,
@@ -1103,22 +1096,10 @@ class Partition(val topicPartition: TopicPartition,
   private def handleLeaderConfirmOffsetMove(): Unit = {
     log match {
       case Some(leaderLog) =>
-        val incrementLeaderStartNanos = System.nanoTime()
         if (maybeIncrementLeaderHW(leaderLog)) {
-          val tryCompleteDelayRequestStartNanos = System.nanoTime()
-          UPDATE_WATERMARK_TIME_HIST.update(tryCompleteDelayRequestStartNanos - incrementLeaderStartNanos)
           tryCompleteDelayedRequests()
-          TRY_COMPLETE_TIME_HIST.update(System.nanoTime() - tryCompleteDelayRequestStartNanos)
         }
       case None => logger.warn("try to handle leader confirm offset move, but leader log is not exist")
-    }
-    val lastRecordTimestamp = LAST_RECORD_TIMESTAMP.get()
-    val now = System.currentTimeMillis()
-    if (now - lastRecordTimestamp > 10000 && LAST_RECORD_TIMESTAMP.compareAndSet(lastRecordTimestamp, now)) {
-      logger.trace(s"handle offset move cost, maybeIncrementLeaderHW=${KafkaMetricsUtil.histToString(UPDATE_WATERMARK_TIME_HIST)}," +
-        s" tryCompleteDelayedRequests=${KafkaMetricsUtil.histToString(TRY_COMPLETE_TIME_HIST)}")
-      UPDATE_WATERMARK_TIME_HIST.clear()
-      TRY_COMPLETE_TIME_HIST.clear()
     }
   }
   // AutoMQ for Kafka inject end

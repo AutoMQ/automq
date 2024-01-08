@@ -709,7 +709,6 @@ object KafkaConfig {
   val S3BlockCacheSizeProp = "s3.block.cache.size"
   val S3StreamObjectCompactionIntervalMinutesProp = "s3.stream.object.compaction.interval.minutes"
   val S3StreamObjectCompactionMaxSizeBytesProp = "s3.stream.object.compaction.max.size.bytes"
-  val S3StreamObjectCompactionLivingTimeMinutesProp = "s3.stream.object.compaction.living.time.minutes"
   val S3ControllerRequestRetryMaxCountProp = "s3.controller.request.retry.max.count"
   val S3ControllerRequestRetryBaseDelayMsProp = "s3.controller.request.retry.base.delay.ms"
   val S3StreamSetObjectCompactionIntervalProp = "s3.stream.set.object.compaction.interval.minutes"
@@ -728,7 +727,9 @@ object KafkaConfig {
   val S3MetricsEnableProp = "s3.telemetry.metrics.enable"
   val S3TracerEnableProp = "s3.telemetry.tracer.enable"
   val S3ExporterOTLPEndpointProp = "s3.telemetry.exporter.otlp.endpoint"
+  val S3TraceExporterOTLPEndpointProp = "s3.telemetry.trace.exporter.otlp.endpoint"
   val S3ExporterReportIntervalMsProp = "s3.telemetry.exporter.report.interval.ms"
+  val S3MetricsLevelProp = "s3.telemetry.metrics.level"
   val S3MetricsExporterTypeProp = "s3.telemetry.metrics.exporter.type"
   val S3MetricsExporterPromHostProp = "s3.metrics.exporter.prom.host"
   val S3MetricsExporterPromPortProp = "s3.metrics.exporter.prom.port"
@@ -757,7 +758,6 @@ object KafkaConfig {
   val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
   val S3StreamObjectCompactionIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
   val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
-  val S3StreamObjectCompactionLivingTimeMinutesDoc = "The S3 stream object compaction living time threshold in minutes."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
   val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
   val S3StreamSetObjectCompactionIntervalDoc = "The execution interval of stream set object compaction in minutes."
@@ -775,7 +775,9 @@ object KafkaConfig {
   val S3FailoverEnableDoc = "Failover mode: if enable, the controller will scan failed node and failover the failed node"
   val S3MetricsEnableDoc = "Whether to enable metrics exporter for s3stream."
   val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
+  val S3MetricsLevelDoc = "The metrics level, supported value: INFO, DEBUG"
   val S3MetricsExporterTypeDoc = "The enabled S3 metrics exporters type, seperated by comma. Supported type: otlp, prometheus, log"
+  val S3TraceExporterOTLPEndpointDoc = "The endpoint of OTLP collector for traces"
   val S3ExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
   val S3ExporterReportIntervalMsDoc = "The interval in milliseconds to report telemetry"
   val S3MetricsExporterPromHostDoc = "The host address of Prometheus http server to expose the metrics"
@@ -1602,7 +1604,6 @@ object KafkaConfig {
       .define(S3BlockCacheSizeProp, LONG, 104857600L, MEDIUM, S3BlockCacheSizeDoc)
       .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 10737418240L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
-      .define(S3StreamObjectCompactionLivingTimeMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionLivingTimeMinutesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
       .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
       .define(S3StreamSetObjectCompactionIntervalProp, INT, Defaults.S3StreamSetObjectCompactionInterval, MEDIUM, S3StreamSetObjectCompactionIntervalDoc)
@@ -1620,8 +1621,10 @@ object KafkaConfig {
       .define(S3FailoverEnableProp, BOOLEAN, false, MEDIUM, S3FailoverEnableDoc)
       .define(S3MetricsEnableProp, BOOLEAN, true, MEDIUM, S3MetricsEnableDoc)
       .define(S3TracerEnableProp, BOOLEAN, false, MEDIUM, S3TracerEnableDoc)
+      .define(S3MetricsLevelProp, STRING, "INFO", MEDIUM, S3MetricsLevelDoc)
       .define(S3MetricsExporterTypeProp, STRING, null, MEDIUM, S3MetricsExporterTypeDoc)
       .define(S3ExporterOTLPEndpointProp, STRING, null, MEDIUM, S3ExporterOTLPEndpointDoc)
+      .define(S3TraceExporterOTLPEndpointProp, STRING, null, MEDIUM, S3TraceExporterOTLPEndpointDoc)
       .define(S3MetricsExporterPromHostProp, STRING, null, MEDIUM, S3MetricsExporterPromHostDoc)
       .define(S3MetricsExporterPromPortProp, INT, 0, MEDIUM, S3MetricsExporterPromPortDoc)
       .define(S3ExporterReportIntervalMsProp, INT, Defaults.S3MetricsExporterReportIntervalMs, MEDIUM, S3ExporterReportIntervalMsDoc)
@@ -2182,7 +2185,6 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
-  val s3StreamObjectCompactionLivingTimeMinutes = getInt(KafkaConfig.S3StreamObjectCompactionLivingTimeMinutesProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
   val s3ControllerRequestRetryBaseDelayMs = getLong(KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp)
   // TODO: ensure incremental epoch => Store epoch in disk, if timestamp flip back, we could use disk epoch to keep the incremental epoch.
@@ -2202,8 +2204,10 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3FailoverEnable = getBoolean(KafkaConfig.S3FailoverEnableProp)
   val s3MetricsEnable = getBoolean(KafkaConfig.S3MetricsEnableProp)
   val s3TracerEnable = getBoolean(KafkaConfig.S3TracerEnableProp)
+  val s3MetricsLevel = getString(KafkaConfig.S3MetricsLevelProp)
   val s3MetricsExporterType = getString(KafkaConfig.S3MetricsExporterTypeProp)
   val s3ExporterOTLPEndpoint = getString(KafkaConfig.S3ExporterOTLPEndpointProp)
+  val s3TraceExporterOTLPEndpoint = getString(KafkaConfig.S3TraceExporterOTLPEndpointProp)
   val s3ExporterReportIntervalMs = getInt(KafkaConfig.S3ExporterReportIntervalMsProp)
   val s3MetricsExporterPromHost = getString(KafkaConfig.S3MetricsExporterPromHostProp)
   val s3MetricsExporterPromPort = getInt(KafkaConfig.S3MetricsExporterPromPortProp)

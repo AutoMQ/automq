@@ -18,42 +18,30 @@
 
 package org.apache.kafka.image;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.SortedMap;
-import java.util.TreeMap;
-
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-public class NodeS3StreamSetObjectMetadataImage {
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 
+public class NodeS3StreamSetObjectMetadataImage {
     public static final NodeS3StreamSetObjectMetadataImage EMPTY = new NodeS3StreamSetObjectMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
-        S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
+            S3StreamConstant.INVALID_BROKER_EPOCH, new DeltaMap<>(new int[]{100}));
     private final int nodeId;
     private final long nodeEpoch;
-    private final Map<Long/*objectId*/, S3StreamSetObject> s3Objects;
-    private final SortedMap<Long/*orderId*/, S3StreamSetObject> orderIndex;
+    private final DeltaMap<Long/*objectId*/, S3StreamSetObject> s3Objects;
+    private List<S3StreamSetObject> orderIndex;
 
-    public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, Map<Long, S3StreamSetObject> streamSetObjects) {
+    public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, DeltaMap<Long, S3StreamSetObject> streamSetObjects) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
-        this.s3Objects = new HashMap<>(streamSetObjects);
-        // build order index
-        if (s3Objects.isEmpty()) {
-            this.orderIndex = Collections.emptySortedMap();
-        } else {
-            this.orderIndex = new TreeMap<>();
-            s3Objects.values().forEach(obj -> orderIndex.put(obj.orderId(), obj));
-        }
+        this.s3Objects = streamSetObjects;
     }
 
     @Override
@@ -75,23 +63,23 @@ public class NodeS3StreamSetObjectMetadataImage {
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
-            .setNodeId(nodeId)
-            .setNodeEpoch(nodeEpoch), (short) 0));
-        s3Objects.values().forEach(wal -> {
-            writer.write(wal.toRecord());
-        });
+                .setNodeId(nodeId)
+                .setNodeEpoch(nodeEpoch), (short) 0));
+        s3Objects.forEach((k, v) -> writer.write(v.toRecord()));
     }
 
-    public Map<Long, S3StreamSetObject> getObjects() {
+    public DeltaMap<Long, S3StreamSetObject> getObjects() {
         return s3Objects;
     }
 
-    public SortedMap<Long, S3StreamSetObject> getOrderIndex() {
-        return orderIndex;
-    }
-
     public List<S3StreamSetObject> orderList() {
-        return new ArrayList<>(orderIndex.values());
+        if (orderIndex == null) {
+            List<S3StreamSetObject> objects = new ArrayList<>();
+            s3Objects.forEach((k, v) -> objects.add(v));
+            objects.sort(Comparator.comparingLong(S3StreamSetObject::orderId));
+            orderIndex = objects;
+        }
+        return orderIndex;
     }
 
     public int getNodeId() {
@@ -105,9 +93,9 @@ public class NodeS3StreamSetObjectMetadataImage {
     @Override
     public String toString() {
         return "NodeS3WALMetadataImage{" +
-            "nodeId=" + nodeId +
-            ", nodeEpoch=" + nodeEpoch +
-            ", objects=" + s3Objects +
-            '}';
+                "nodeId=" + nodeId +
+                ", nodeEpoch=" + nodeEpoch +
+                ", objects=" + s3Objects +
+                '}';
     }
 }

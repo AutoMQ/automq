@@ -17,13 +17,6 @@
 
 package org.apache.kafka.image;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -38,6 +31,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 @Timeout(value = 40)
 @Tag("S3Unit")
 public class NodeMetadataImageTest {
@@ -50,7 +48,7 @@ public class NodeMetadataImageTest {
 
     @Test
     public void testS3Objects() {
-        NodeS3StreamSetObjectMetadataImage image0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, Collections.emptyMap());
+        NodeS3StreamSetObjectMetadataImage image0 = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH, new DeltaMap<>());
         List<ApiMessageAndVersion> delta0Records = new ArrayList<>();
         NodeS3WALMetadataDelta delta0 = new NodeS3WALMetadataDelta(image0);
         // 1. create StreamSetObject0 and StreamSetObject1
@@ -82,7 +80,7 @@ public class NodeMetadataImageTest {
         RecordTestUtils.replayAll(delta0, delta0Records);
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image1 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 1,
-            Map.of(
+            DeltaMap.of(
                 0L, new S3StreamSetObject(0L, BROKER0, List.of(
                     new StreamOffsetRange(STREAM0, 0L, 100L),
                     new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
@@ -109,7 +107,7 @@ public class NodeMetadataImageTest {
         RecordTestUtils.replayAll(delta1, delta1Records);
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image2 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 2,
-            Map.of(
+            DeltaMap.of(
                 0L, new S3StreamSetObject(0L, BROKER0, List.of(
                     new StreamOffsetRange(STREAM1, 0L, 200L)), 0L),
                 1L, new S3StreamSetObject(1L, BROKER0, List.of(
@@ -125,7 +123,7 @@ public class NodeMetadataImageTest {
         RecordTestUtils.replayAll(delta2, delta2Records);
         // verify delta and check image's write
         NodeS3StreamSetObjectMetadataImage image3 = new NodeS3StreamSetObjectMetadataImage(BROKER0, 2,
-            Map.of(
+            DeltaMap.of(
                 0L, new S3StreamSetObject(0L, BROKER0, List.of(
                     new StreamOffsetRange(STREAM1, 0L, 200L)), 0L)));
         assertEquals(image3, delta2.apply());

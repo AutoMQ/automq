@@ -510,7 +510,7 @@ object ElasticLog extends Logging {
 
       val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
       logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), config.replicationFactor, leaderEpoch)
-      val streamSliceManager = new ElasticStreamSliceManager(logStreamManager, executorService)
+      val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
 
       val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent = logIdent)
 

@@ -1,0 +1,49 @@
+---
+rules:
+  - bean: kafka.controller:type=KafkaController,name=ActiveControllerCount
+    mapping:
+      Value:
+        metric: kafka.controller.active.count
+        type: updowncounter
+        desc: The number of controllers active on the broker
+        unit: "{controllers}"
+
+  - bean: kafka.controller:type=KafkaController,name=ActiveBrokerCount
+    mapping:
+      Value:
+        metric: kafka.active.broker.count
+        type: updowncounter
+        desc: The number of active brokers
+        unit: "{brokers}"
+
+  - bean: kafka.controller:type=KafkaController,name=FencedBrokerCount
+    mapping:
+      Value:
+        metric: kafka.fenced.broker.count
+        type: updowncounter
+        desc: The number of fenced brokers
+        unit: "{brokers}"
+
+  - bean: kafka.controller:type=KafkaController,name=GlobalTopicCount
+    mapping:
+      Value:
+        metric: kafka.topic.count
+        type: updowncounter
+        desc: The total number of topics
+        unit: "{topics}"
+
+  - bean: kafka.controller:type=KafkaController,name=GlobalPartitionCount
+    mapping:
+      Value:
+        metric: kafka.partition.total.count
+        type: updowncounter
+        desc: The total number of partitions
+        unit: "{partitions}"
+
+  - bean: kafka.controller:type=KafkaController,name=OfflinePartitionsCount
+    mapping:
+      Value:
+        metric: kafka.partition.offline.count
+        type: updowncounter
+        desc: The number of partitions offline
+        unit: "{partitions}"

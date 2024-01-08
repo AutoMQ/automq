@@ -78,7 +78,7 @@ public final class S3ObjectsDelta {
         // put all new changed objects
         newObjectsMetadata.putAll(changedObjects);
         // remove all removed objects
-        newObjectsMetadata.deleteAll(removedObjectIds);
+        newObjectsMetadata.removeAll(removedObjectIds);
         return new S3ObjectsImage(currentAssignedObjectId, newObjectsMetadata);
     }
 

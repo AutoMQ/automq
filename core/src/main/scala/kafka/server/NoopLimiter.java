@@ -15,17 +15,28 @@
  * limitations under the License.
  */
 
-package kafka.log.streamaspect.client.memory;
+package kafka.server;
 
-import kafka.log.streamaspect.AlwaysSuccessClient;
-import kafka.log.streamaspect.MemoryClient;
-import com.automq.stream.api.Client;
-import kafka.log.streamaspect.client.Context;
+/**
+ * A limiter that does nothing.
+ */
+public class NoopLimiter implements Limiter {
 
-public class ClientFactory {
+    public static final NoopLimiter INSTANCE = new NoopLimiter();
 
-    public static Client get(Context context) {
-        return new AlwaysSuccessClient(new MemoryClient());
+    @Override
+    public Handler acquire(int permit) throws InterruptedException {
+        return new NoopHandler();
     }
 
+    @Override
+    public Handler acquire(int permit, long timeoutMs) throws InterruptedException {
+        return new NoopHandler();
+    }
+
+    public static class NoopHandler implements Handler {
+        @Override
+        public void close() {
+        }
+    }
 }
