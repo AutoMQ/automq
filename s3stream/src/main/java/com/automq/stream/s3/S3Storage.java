@@ -789,7 +789,7 @@ public class S3Storage implements Storage {
                 return Collections.emptyList();
             }
 
-            List<WalWriteRequest> rst = new ArrayList<>();
+            LinkedList<WalWriteRequest> rst = new LinkedList<>();
             WalWriteRequest poll = streamRequests.poll();
             assert poll == peek;
             rst.add(poll);
@@ -801,6 +801,7 @@ public class S3Storage implements Storage {
                 }
                 poll = streamRequests.poll();
                 assert poll == peek;
+                assert poll.record.getBaseOffset() == rst.getLast().record.getLastOffset();
                 rst.add(poll);
             }
 
