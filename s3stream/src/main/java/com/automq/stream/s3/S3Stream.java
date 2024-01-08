@@ -54,6 +54,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -77,6 +78,7 @@ public class S3Stream implements Stream {
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    private final ReentrantLock appendLock = new ReentrantLock();
     private final Set<CompletableFuture<?>> pendingAppends = ConcurrentHashMap.newKeySet();
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
@@ -134,14 +136,19 @@ public class S3Stream implements Stream {
     @WithSpan
     public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         TimerUtil timerUtil = new TimerUtil();
-        writeLock.lock();
+        readLock.lock();
         S3StreamMetricsManager.recordOperationLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM_WRITE_LOCK);
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
                 }
-                return append0(context, recordBatch);
+                appendLock.lock();
+                try {
+                    return append0(context, recordBatch);
+                } finally {
+                    appendLock.unlock();
+                }
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
@@ -150,7 +157,7 @@ public class S3Stream implements Stream {
             });
             return cf;
         } finally {
-            writeLock.unlock();
+            readLock.unlock();
         }
     }
 
