@@ -31,7 +31,6 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
@@ -45,12 +44,8 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
      */
     private long nextOffset;
     private boolean sealed = false;
-    /**
-     * executor service for async operations.
-     */
-    private final ExecutorService executorService;
 
-    public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange, ExecutorService executorService) {
+    public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange) {
         this.stream = stream;
         long streamNextOffset = stream.nextOffset();
         if (sliceRange.start() == Offsets.NOOP_OFFSET) {
@@ -68,7 +63,6 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
             this.nextOffset = sliceRange.end() - startOffsetInStream;
             this.sealed = true;
         }
-        this.executorService = executorService;
     }
 
     @Override
@@ -84,7 +78,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
         long fixedStartOffset = Utils.max(startOffset, 0);
         return stream.fetch(context, startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint)
-                .thenApplyAsync(FetchResultWrapper::new, executorService);
+                .thenApply(FetchResultWrapper::new);
     }
 
     @Override

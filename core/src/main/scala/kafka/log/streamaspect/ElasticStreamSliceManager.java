@@ -23,7 +23,6 @@ import com.automq.stream.utils.Arguments;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 
 /**
  * Elastic log dimension stream segment manager.
@@ -31,11 +30,9 @@ import java.util.concurrent.ExecutorService;
 public class ElasticStreamSliceManager {
     private final Map<String, ElasticStreamSlice> lastSlices = new ConcurrentHashMap<>();
     private final ElasticLogStreamManager streamManager;
-    private final ExecutorService executorService;
 
-    public ElasticStreamSliceManager(ElasticLogStreamManager streamManager, ExecutorService executorService) {
+    public ElasticStreamSliceManager(ElasticLogStreamManager streamManager) {
         this.streamManager = streamManager;
-        this.executorService = executorService;
     }
 
     public ElasticLogStreamManager getStreamManager() {
@@ -49,7 +46,7 @@ public class ElasticStreamSliceManager {
             lastSlice.seal();
         }
         Stream stream = streamManager.getStream(streamName);
-        ElasticStreamSlice streamSlice = new DefaultElasticStreamSlice(stream, SliceRange.of(Offsets.NOOP_OFFSET, Offsets.NOOP_OFFSET), executorService);
+        ElasticStreamSlice streamSlice = new DefaultElasticStreamSlice(stream, SliceRange.of(Offsets.NOOP_OFFSET, Offsets.NOOP_OFFSET));
         lastSlices.put(streamName, streamSlice);
         return streamSlice;
     }
@@ -65,6 +62,6 @@ public class ElasticStreamSliceManager {
         if (sliceRange.start() == Offsets.NOOP_OFFSET) {
             return newSlice(streamName);
         }
-        return new DefaultElasticStreamSlice(streamManager.getStream(streamName), sliceRange, executorService);
+        return new DefaultElasticStreamSlice(streamManager.getStream(streamName), sliceRange);
     }
 }
