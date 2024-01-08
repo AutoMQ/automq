@@ -40,11 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -64,41 +62,21 @@ public class AlwaysSuccessClient implements Client {
             ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
             ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
-    private final ScheduledExecutorService appendRetryScheduler = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("append-retry-scheduler-%d", true));
-    private final ScheduledExecutorService fetchRetryScheduler = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("fetch-retry-scheduler-%d", true));
     private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
             ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
-    private final ExecutorService appendCallbackExecutors = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("append-callback-scheduler-%d", true));
-    private final ExecutorService fetchCallbackExecutors = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("fetch-callback-scheduler-%d", true));
     private final Client innerClient;
     private final StreamClient streamClient;
     private final KVClient kvClient;
-    /**
-     * The flag to indicate if the callback of append is async.
-     * It is generally true, but for test cases, it is set to false. In test cases, we aim to ensure that
-     * the committed offset is promptly updated right after appending. Otherwise, the subsequent fetch request may fail
-     * due to the delay in updating the committed offset.
-     */
-    private final boolean appendCallbackAsync;
     private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
             ThreadUtils.createThreadFactory("fetch-timeout-%d", true),
             1, TimeUnit.SECONDS, 512);
 
     public AlwaysSuccessClient(Client client) {
-        this(client, true);
-    }
-
-    public AlwaysSuccessClient(Client client, boolean appendCallbackAsync) {
         this.innerClient = client;
         this.streamClient = new StreamClientImpl(client.streamClient());
         this.kvClient = client.kvClient();
-        this.appendCallbackAsync = appendCallbackAsync;
     }
 
     @Override
@@ -121,12 +99,8 @@ public class AlwaysSuccessClient implements Client {
         innerClient.shutdown();
         streamManagerRetryScheduler.shutdownNow();
         streamManagerCallbackExecutors.shutdownNow();
-        appendRetryScheduler.shutdownNow();
-        fetchRetryScheduler.shutdownNow();
         generalRetryScheduler.shutdownNow();
         generalCallbackExecutors.shutdownNow();
-        appendCallbackExecutors.shutdownNow();
-        fetchCallbackExecutors.shutdownNow();
     }
 
     /**
@@ -225,9 +199,7 @@ public class AlwaysSuccessClient implements Client {
     }
 
     private class StreamImpl implements Stream {
-
         private final Stream stream;
-        private final Map<String, CompletableFuture<FetchResult>> holdUpFetchingFutureMap = new ConcurrentHashMap<>();
 
         public StreamImpl(Stream stream) {
             this.stream = stream;
@@ -255,55 +227,19 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
-            CompletableFuture<AppendResult> cf = new CompletableFuture<>();
-            if (appendCallbackAsync) {
-                append0(context, recordBatch, cf);
-            } else {
-                append0WithSyncCallback(context, recordBatch, cf);
-            }
-            return cf;
-        }
-
-        private void append0(AppendContext context, RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
-            stream.append(context, recordBatch).whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
+            return stream.append(context, recordBatch).whenComplete((rst, ex) -> {
                 if (ex != null) {
-                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                        LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
-                        appendRetryScheduler.schedule(() -> append0(context, recordBatch, cf), 3, TimeUnit.SECONDS);
-                    }
-                } else {
-                    cf.complete(rst);
+                    LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
                 }
-            }, LOGGER), appendCallbackExecutors);
-        }
-
-        /**
-         * Append to stream without using async callback threadPools.
-         * <strong> Used for tests only.</strong>
-         */
-        private void append0WithSyncCallback(AppendContext context, RecordBatch recordBatch, CompletableFuture<AppendResult> cf) {
-            stream.append(context, recordBatch).whenComplete((rst, ex) -> FutureUtil.suppress(() -> {
-                if (ex != null) {
-                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                        LOGGER.error("Appending to stream[{}] failed, retry later", streamId(), ex);
-                        appendRetryScheduler.schedule(() -> append0(context, recordBatch, cf), 3, TimeUnit.SECONDS);
-                    }
-                } else {
-                    cf.complete(rst);
-                }
-            }, LOGGER));
+            });
         }
 
         @Override
         public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             Timeout timeout = fetchTimeout.newTimeout(t -> LOGGER.warn("fetch timeout, stream[{}] [{}, {})", streamId(), startOffset, endOffset), 1, TimeUnit.MINUTES);
-            fetch0(context, startOffset, endOffset, maxBytesHint, cf);
-            return cf.whenComplete((rst, ex) -> timeout.cancel());
-        }
-
-        private void fetch0(FetchContext context, long startOffset, long endOffset, int maxBytesHint, CompletableFuture<FetchResult> cf) {
-            stream.fetch(context, startOffset, endOffset, maxBytesHint).whenCompleteAsync((rst, e) -> FutureUtil.suppress(() -> {
+            stream.fetch(context, startOffset, endOffset, maxBytesHint).whenComplete((rst, e) -> FutureUtil.suppress(() -> {
+                timeout.cancel();
                 Throwable ex = FutureUtil.cause(e);
                 if (ex != null) {
                     if (!(ex instanceof FastReadFailFastException)) {
@@ -313,7 +249,8 @@ public class AlwaysSuccessClient implements Client {
                 } else {
                     cf.complete(rst);
                 }
-            }, LOGGER), fetchCallbackExecutors);
+            }, LOGGER));
+            return cf;
         }
 
         @Override
