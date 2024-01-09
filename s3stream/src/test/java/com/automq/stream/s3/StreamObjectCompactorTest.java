@@ -154,7 +154,7 @@ class StreamObjectCompactorTest {
         // verify compacted object record
         {
             ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), s3Operator);
-            assertEquals(3, objectReader.basicObjectInfo().get().blockCount());
+            assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(3, rst.streamDataBlocks().size());
             ObjectReader.DataBlock dataBlock1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
@@ -182,7 +182,7 @@ class StreamObjectCompactorTest {
         }
         {
             ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), s3Operator);
-            assertEquals(3, objectReader.basicObjectInfo().get().blockCount());
+            assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 30L, 33L).get();
             assertEquals(3, rst.streamDataBlocks().size());
             ObjectReader.DataBlock dataBlock1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();

@@ -200,33 +200,15 @@ public interface ObjectWriter {
 
             public IndexBlock() {
                 long nextPosition = 0;
-                int indexBlockSize = 4 + (8 + 4 + 4 + 8 + 8 + 4 + 4) * completedBlocks.size();
+                int indexBlockSize = DataBlockIndex.BLOCK_INDEX_SIZE * completedBlocks.size();
                 buf = DirectByteBufAlloc.byteBuffer(indexBlockSize, "write_index_block");
-                buf.writeInt(completedBlocks.size()); // block count
-                // block index
                 for (DataBlock block : completedBlocks) {
-                    // start position in the object
-                    buf.writeLong(nextPosition);
-                    // byte size of the block
-                    buf.writeInt(block.size());
-                    // how many ranges in the block
-                    buf.writeInt(block.recordCount());
+                    ObjectStreamRange streamRange = block.getStreamRange();
+                    new DataBlockIndex(streamRange.getStreamId(), streamRange.getStartOffset(), (int) (streamRange.getEndOffset() - streamRange.getStartOffset()),
+                        block.recordCount(), nextPosition, block.size()).encode(buf);
                     nextPosition += block.size();
                 }
                 position = nextPosition;
-                // object stream range
-                for (int blockIndex = 0; blockIndex < completedBlocks.size(); blockIndex++) {
-                    DataBlock block = completedBlocks.get(blockIndex);
-                    ObjectStreamRange range = block.getStreamRange();
-                    // stream id of this range
-                    buf.writeLong(range.getStreamId());
-                    // start offset of the related stream
-                    buf.writeLong(range.getStartOffset());
-                    // record count of the related stream in this range
-                    buf.writeInt((int) (range.getEndOffset() - range.getStartOffset()));
-                    // the index of block where this range is in
-                    buf.writeInt(blockIndex);
-                }
             }
 
             public ByteBuf buffer() {
@@ -244,7 +226,7 @@ public interface ObjectWriter {
     }
 
     class DataBlock {
-        public static final int BLOCK_HEADER_SIZE = 2;
+        public static final int BLOCK_HEADER_SIZE = 1 /* magic */ + 1/* flag */ + 4 /* record count*/ + 4 /* data length */;
         private final CompositeByteBuf encodedBuf;
         private final ObjectStreamRange streamRange;
         private final int recordCount;
@@ -256,9 +238,12 @@ public interface ObjectWriter {
             ByteBuf header = DirectByteBufAlloc.byteBuffer(BLOCK_HEADER_SIZE);
             header.writeByte(DATA_BLOCK_MAGIC);
             header.writeByte(DATA_BLOCK_DEFAULT_FLAG);
+            header.writeInt(recordCount);
+            header.writeInt(0); // data length
             encodedBuf.addComponent(true, header);
             records.forEach(r -> encodedBuf.addComponent(true, r.encoded().retain()));
             this.size = encodedBuf.readableBytes();
+            encodedBuf.setInt(BLOCK_HEADER_SIZE - 4, size - BLOCK_HEADER_SIZE);
             this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset(), size);
         }
 

@@ -18,7 +18,7 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -76,14 +76,14 @@ public class CompactionManagerTest extends CompactionTestBase {
     private Config config;
 
     private static Map<Long, List<StreamDataBlock>> getStreamDataBlockMap() {
-        StreamDataBlock block1 = new StreamDataBlock(STREAM_0, 0, 15, OBJECT_0, new ObjectReader.DataBlockIndex(0, 0, 15, 15));
-        StreamDataBlock block2 = new StreamDataBlock(STREAM_1, 0, 20, OBJECT_0, new ObjectReader.DataBlockIndex(1, 15, 50, 20));
+        StreamDataBlock block1 = new StreamDataBlock(OBJECT_0, new DataBlockIndex(0, 0, 15, 15, 0, 15));
+        StreamDataBlock block2 = new StreamDataBlock(OBJECT_0, new DataBlockIndex(1, 0, 20, 20, 15, 50));
 
-        StreamDataBlock block3 = new StreamDataBlock(STREAM_0, 15, 27, OBJECT_1, new ObjectReader.DataBlockIndex(0, 0, 20, 12));
-        StreamDataBlock block4 = new StreamDataBlock(STREAM_1, 20, 45, OBJECT_1, new ObjectReader.DataBlockIndex(1, 20, 60, 25));
+        StreamDataBlock block3 = new StreamDataBlock(OBJECT_1, new DataBlockIndex(0, 15, 12, 12, 0, 20));
+        StreamDataBlock block4 = new StreamDataBlock(OBJECT_1, new DataBlockIndex(1, 20, 25, 25, 20, 60));
 
-        StreamDataBlock block5 = new StreamDataBlock(STREAM_0, 27, 40, OBJECT_2, new ObjectReader.DataBlockIndex(0, 0, 20, 20));
-        StreamDataBlock block6 = new StreamDataBlock(STREAM_3, 0, 30, OBJECT_2, new ObjectReader.DataBlockIndex(1, 20, 30, 30));
+        StreamDataBlock block5 = new StreamDataBlock(OBJECT_2, new DataBlockIndex(0, 27, 13, 20, 0, 20));
+        StreamDataBlock block6 = new StreamDataBlock(OBJECT_2, new DataBlockIndex(3, 0, 30, 30, 20, 30));
         return Map.of(
             OBJECT_0, List.of(
                 block1,
@@ -418,7 +418,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void testCompactWithLimit() {
         when(config.streamSetObjectCompactionStreamSplitSize()).thenReturn(70L);
         when(config.maxStreamNumPerStreamSetObject()).thenReturn(MAX_STREAM_NUM_IN_WAL);
-        when(config.maxStreamObjectNumPerCommit()).thenReturn(2);
+        when(config.maxStreamObjectNumPerCommit()).thenReturn(4);
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();

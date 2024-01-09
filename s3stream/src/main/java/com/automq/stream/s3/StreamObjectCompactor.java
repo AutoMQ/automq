@@ -26,7 +26,6 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.Unpooled;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -114,52 +113,38 @@ public class StreamObjectCompactor {
                 return Optional.empty();
             }
             long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
-            int blockId = 0;
             long nextBlockPosition = 0;
             long objectSize = 0;
             long compactedStartOffset = objectGroup.get(0).startOffset();
             long compactedEndOffset = objectGroup.get(objectGroup.size() - 1).endOffset();
             List<Long> compactedObjectIds = new LinkedList<>();
-            CompositeByteBuf blocksOfIndex = DirectByteBufAlloc.compositeByteBuffer();
-            CompositeByteBuf rangesOfIndex = DirectByteBufAlloc.compositeByteBuffer();
+            CompositeByteBuf indexes = DirectByteBufAlloc.compositeByteBuffer();
             Writer writer = s3Operator.writer(ObjectUtils.genKey(0, objectId), ThrottleStrategy.THROTTLE_2);
             for (S3ObjectMetadata object : objectGroup) {
                 try (ObjectReader reader = new ObjectReader(object, s3Operator)) {
                     ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().get();
-                    ByteBuf subBlocks = DirectByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().blocks().readableBytes());
-                    ByteBuf subRanges = DirectByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().streamRanges().readableBytes());
-                    Iterator<StreamDataBlock> it = basicObjectInfo.indexBlock().iterator();
+                    ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().count() * DataBlockIndex.BLOCK_INDEX_SIZE);
+                    Iterator<DataBlockIndex> it = basicObjectInfo.indexBlock().iterator();
                     long validDataBlockStartPosition = 0;
                     while (it.hasNext()) {
-                        StreamDataBlock dataBlock = it.next();
-                        if (dataBlock.getEndOffset() <= startOffset) {
-                            validDataBlockStartPosition = dataBlock.getBlockEndPosition();
-                            compactedStartOffset = dataBlock.getEndOffset();
+                        DataBlockIndex dataBlock = it.next();
+                        if (dataBlock.endOffset() <= startOffset) {
+                            validDataBlockStartPosition = dataBlock.endPosition();
+                            compactedStartOffset = dataBlock.endOffset();
                             continue;
                         }
-                        subBlocks.writeLong(nextBlockPosition);
-                        subBlocks.writeInt(dataBlock.getBlockSize());
-                        subBlocks.writeInt(dataBlock.getRecordCount());
-                        subRanges.writeLong(dataBlock.getStreamId());
-                        subRanges.writeLong(dataBlock.getStartOffset());
-                        subRanges.writeInt((int) (dataBlock.getEndOffset() - dataBlock.getStartOffset()));
-                        subRanges.writeInt(blockId);
-                        blockId += 1;
-                        nextBlockPosition += dataBlock.getBlockSize();
+                        new DataBlockIndex(streamId, dataBlock.startOffset(), dataBlock.endOffsetDelta(),
+                            dataBlock.recordCount(), nextBlockPosition, dataBlock.size()).encode(subIndexes);
+                        nextBlockPosition += dataBlock.size();
                     }
                     writer.copyWrite(ObjectUtils.genKey(0, object.objectId()), validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
                     objectSize += basicObjectInfo.dataBlockSize() - validDataBlockStartPosition;
-                    blocksOfIndex.addComponent(true, subBlocks);
-                    rangesOfIndex.addComponent(true, subRanges);
+                    indexes.addComponent(true, subIndexes);
                     compactedObjectIds.add(object.objectId());
                 }
             }
             CompositeByteBuf indexBlockAndFooter = DirectByteBufAlloc.compositeByteBuffer();
-            ByteBuf blockCount = Unpooled.buffer(4);
-            blockCount.writeInt(blockId);
-            indexBlockAndFooter.addComponent(true, blockCount);
-            indexBlockAndFooter.addComponent(true, blocksOfIndex);
-            indexBlockAndFooter.addComponent(true, rangesOfIndex);
+            indexBlockAndFooter.addComponent(true, indexes);
             indexBlockAndFooter.addComponent(true, new ObjectWriter.Footer(nextBlockPosition, indexBlockAndFooter.readableBytes()).buffer());
 
             objectSize += indexBlockAndFooter.readableBytes();

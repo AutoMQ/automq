@@ -17,47 +17,42 @@
 
 package com.automq.stream.utils.biniarysearch;
 
-import io.netty.buffer.ByteBuf;
+import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.ObjectReader;
 
 public class IndexBlockOrderedBytes extends AbstractOrderedCollection<IndexBlockOrderedBytes.TargetStreamOffset> {
-    private final ByteBuf byteBuf;
+    private final ObjectReader.IndexBlock indexBlock;
 
-    public IndexBlockOrderedBytes(ByteBuf byteBuf) {
-        this.byteBuf = byteBuf;
+    public IndexBlockOrderedBytes(ObjectReader.IndexBlock indexBlock) {
+        this.indexBlock = indexBlock;
     }
 
     @Override
     protected int size() {
-        return this.byteBuf.readableBytes() / ComparableStreamRange.SIZE;
+        return this.indexBlock.count();
     }
 
     @Override
     protected ComparableItem<TargetStreamOffset> get(int index) {
-        int start = index * ComparableStreamRange.SIZE;
-        long streamId = this.byteBuf.getLong(start);
-        long startOffset = this.byteBuf.getLong(start + 8);
-        int recordCount = this.byteBuf.getInt(start + 16);
-        int blockId = this.byteBuf.getInt(start + 20);
-        return new ComparableStreamRange(streamId, startOffset, recordCount, blockId);
+        return new ComparableStreamRange(indexBlock.get(index));
     }
 
     public record TargetStreamOffset(long streamId, long offset) {
 
     }
 
-    private record ComparableStreamRange(long streamId, long startOffset, int recordCount, int blockIndex)
+    private record ComparableStreamRange(DataBlockIndex index)
         implements ComparableItem<TargetStreamOffset> {
-        private static final int SIZE = 8 + 8 + 4 + 4;
 
         public long endOffset() {
-            return startOffset + recordCount;
+            return index.endOffset();
         }
 
         @Override
         public boolean isLessThan(TargetStreamOffset value) {
-            if (this.streamId < value.streamId) {
+            if (this.index().streamId() < value.streamId) {
                 return true;
-            } else if (this.streamId > value.streamId) {
+            } else if (this.index().streamId() > value.streamId) {
                 return false;
             } else {
                 return this.endOffset() <= value.offset;
@@ -66,12 +61,12 @@ public class IndexBlockOrderedBytes extends AbstractOrderedCollection<IndexBlock
 
         @Override
         public boolean isGreaterThan(TargetStreamOffset value) {
-            if (this.streamId > value.streamId) {
+            if (this.index().streamId() > value.streamId) {
                 return true;
-            } else if (this.streamId < value.streamId) {
+            } else if (this.index().streamId() < value.streamId) {
                 return false;
             } else {
-                return this.startOffset > value.offset;
+                return this.index().startOffset() > value.offset;
             }
         }
     }
