@@ -50,11 +50,9 @@ import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamSetObjectRecord.StreamIndex;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
-import org.apache.kafka.metadata.stream.Convertor;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
@@ -592,16 +590,8 @@ public class StreamControlManager {
                 .collect(Collectors.toList());
         if (objectId != NOOP_OBJECT_ID) {
             // generate node's stream set object record
-            List<StreamIndex> streamIndexes = indexes.stream()
-                    .map(Convertor::to)
-                    .collect(Collectors.toList());
-            S3StreamSetObjectRecord S3StreamSetObjectRecord = new S3StreamSetObjectRecord()
-                    .setObjectId(objectId)
-                    .setDataTimeInMs(dataTs)
-                    .setOrderId(orderId)
-                    .setNodeId(nodeId)
-                    .setStreamsIndex(streamIndexes);
-            records.add(new ApiMessageAndVersion(S3StreamSetObjectRecord, (short) 0));
+            S3StreamSetObject s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, indexes, orderId, dataTs);
+            records.add(s3StreamSetObject.toRecord());
         }
         // commit stream objects
         if (streamObjects != null && !streamObjects.isEmpty()) {
@@ -967,20 +957,17 @@ public class StreamControlManager {
         int nodeId = record.nodeId();
         long orderId = record.orderId();
         long dataTs = record.dataTimeInMs();
-        List<StreamIndex> streamIndexes = record.streamsIndex();
         NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeMetadata == null) {
             // should not happen
             log.error("nodeId={} not exist when replay stream set object record {}", nodeId, record);
             return;
         }
-
-        // create stream set object
-        List<StreamOffsetRange> ranges = streamIndexes.stream().map(Convertor::to).collect(Collectors.toList());
-        nodeMetadata.streamSetObjects().put(objectId, new S3StreamSetObject(objectId, nodeId, ranges, orderId, dataTs));
+        S3StreamSetObject s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, record.ranges(), orderId, dataTs);
+        nodeMetadata.streamSetObjects().put(objectId, s3StreamSetObject);
 
         // update range
-        record.streamsIndex().forEach(index -> {
+        s3StreamSetObject.offsetRangeList().forEach(index -> {
             long streamId = index.streamId();
             S3StreamMetadata metadata = this.streamsMetadata.get(streamId);
             if (metadata == null) {
