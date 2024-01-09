@@ -68,9 +68,9 @@ public class ObjectReader implements AutoCloseable {
         return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
-    public CompletableFuture<DataBlock> read(DataBlockIndex block) {
+    public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
         CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.THROTTLE_1);
-        return rangeReadCf.thenApply(DataBlock::new);
+        return rangeReadCf.thenApply(DataBlockGroup::new);
     }
 
     void asyncGetBasicObjectInfo() {
@@ -275,11 +275,11 @@ public class ObjectReader implements AutoCloseable {
 
     }
 
-    public static class DataBlock implements AutoCloseable {
+    public static class DataBlockGroup implements AutoCloseable {
         private final ByteBuf buf;
         private final int recordCount;
 
-        public DataBlock(ByteBuf buf) {
+        public DataBlockGroup(ByteBuf buf) {
             this.buf = buf.duplicate();
             this.recordCount = check(buf);
         }

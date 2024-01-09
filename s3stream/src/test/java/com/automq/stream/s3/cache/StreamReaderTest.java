@@ -143,7 +143,7 @@ public class StreamReaderTest {
                 new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup1 = Mockito.mock(ObjectReader.DataBlockGroup.class);
         StreamRecordBatch record1 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
         record1.release();
         StreamRecordBatch record2 = new StreamRecordBatch(233L, 0, 64, 64, TestUtils.random(128));
@@ -152,7 +152,7 @@ public class StreamReaderTest {
         AtomicInteger remaining = new AtomicInteger(0);
         Assertions.assertEquals(1, record1.getPayload().refCnt());
         Assertions.assertEquals(1, record2.getPayload().refCnt());
-        Mockito.when(dataBlock1.iterator()).thenReturn(new CloseableIterator<>() {
+        Mockito.when(dataBlockGroup1.iterator()).thenReturn(new CloseableIterator<>() {
             @Override
             public void close() {
             }
@@ -170,7 +170,7 @@ public class StreamReaderTest {
                 return records.get(remaining.getAndIncrement());
             }
         });
-        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
+        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
             999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
@@ -202,7 +202,7 @@ public class StreamReaderTest {
                 new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup1 = Mockito.mock(ObjectReader.DataBlockGroup.class);
         StreamRecordBatch record1 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
         record1.release();
         StreamRecordBatch record2 = new StreamRecordBatch(233L, 0, 64, 64, TestUtils.random(128));
@@ -211,7 +211,7 @@ public class StreamReaderTest {
         AtomicInteger remaining = new AtomicInteger(0);
         Assertions.assertEquals(1, record1.getPayload().refCnt());
         Assertions.assertEquals(1, record2.getPayload().refCnt());
-        Mockito.when(dataBlock1.iterator()).thenReturn(new CloseableIterator<>() {
+        Mockito.when(dataBlockGroup1.iterator()).thenReturn(new CloseableIterator<>() {
             @Override
             public void close() {
             }
@@ -229,7 +229,7 @@ public class StreamReaderTest {
                 return records.get(remaining.getAndIncrement());
             }
         });
-        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
+        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         ReadAheadTaskKey key = new ReadAheadTaskKey(233L, startOffset);
         context.taskKeySet.add(key);
@@ -265,7 +265,7 @@ public class StreamReaderTest {
                 new StreamDataBlock(1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup1 = Mockito.mock(ObjectReader.DataBlockGroup.class);
         StreamRecordBatch record1 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
         record1.release();
         StreamRecordBatch record2 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
@@ -274,7 +274,7 @@ public class StreamReaderTest {
         AtomicInteger remaining = new AtomicInteger(records.size());
         Assertions.assertEquals(1, record1.getPayload().refCnt());
         Assertions.assertEquals(1, record2.getPayload().refCnt());
-        Mockito.when(dataBlock1.iterator()).thenReturn(new CloseableIterator<>() {
+        Mockito.when(dataBlockGroup1.iterator()).thenReturn(new CloseableIterator<>() {
             @Override
             public void close() {
             }
@@ -292,7 +292,7 @@ public class StreamReaderTest {
                 return records.get(remaining.get());
             }
         });
-        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
+        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
@@ -330,7 +330,7 @@ public class StreamReaderTest {
                 new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup1 = Mockito.mock(ObjectReader.DataBlockGroup.class);
         StreamRecordBatch record1 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
         record1.release();
         StreamRecordBatch record2 = new StreamRecordBatch(233L, 0, 64, 64, TestUtils.random(128));
@@ -339,7 +339,7 @@ public class StreamReaderTest {
         AtomicInteger remaining = new AtomicInteger(0);
         Assertions.assertEquals(1, record1.getPayload().refCnt());
         Assertions.assertEquals(1, record2.getPayload().refCnt());
-        Mockito.when(dataBlock1.iterator()).thenReturn(new CloseableIterator<>() {
+        Mockito.when(dataBlockGroup1.iterator()).thenReturn(new CloseableIterator<>() {
             @Override
             public void close() {
             }
@@ -357,7 +357,7 @@ public class StreamReaderTest {
                 return records.get(remaining.getAndIncrement());
             }
         });
-        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
+        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
 
         CompletableFuture<Void> cf = streamReader.handleAsyncReadAhead(233L, 0, 999, 1024, Mockito.mock(ReadAheadAgent.class), new TimerUtil(), context);
@@ -387,7 +387,7 @@ public class StreamReaderTest {
                 new StreamDataBlock(1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup1 = Mockito.mock(ObjectReader.DataBlockGroup.class);
         StreamRecordBatch record1 = new StreamRecordBatch(233L, 0, 0, 64, TestUtils.random(128));
         record1.release();
         StreamRecordBatch record2 = new StreamRecordBatch(233L, 0, 64, 64, TestUtils.random(128));
@@ -396,7 +396,7 @@ public class StreamReaderTest {
         AtomicInteger remaining = new AtomicInteger(0);
         Assertions.assertEquals(1, record1.getPayload().refCnt());
         Assertions.assertEquals(1, record2.getPayload().refCnt());
-        Mockito.when(dataBlock1.iterator()).thenReturn(new CloseableIterator<>() {
+        Mockito.when(dataBlockGroup1.iterator()).thenReturn(new CloseableIterator<>() {
             @Override
             public void close() {
             }
@@ -414,7 +414,7 @@ public class StreamReaderTest {
                 return records.get(remaining.getAndIncrement());
             }
         });
-        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlock1));
+        Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
 

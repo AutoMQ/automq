@@ -30,8 +30,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-// TODO: memory optimization
-
 /**
  * Write stream records to a single object.
  */

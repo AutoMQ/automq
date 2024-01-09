@@ -46,20 +46,23 @@ public class StreamObjectCompactor {
      */
     private static final int MAX_OBJECT_GROUP_COUNT = Math.min(5000, Writer.MAX_PART_COUNT / 2);
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectCompactor.class);
+    public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
     private final S3Stream stream;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
+    private final int dataBlockGroupSizeThreshold;
 
     private StreamObjectCompactor(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
-        long maxStreamObjectSize) {
+        long maxStreamObjectSize, int dataBlockGroupSizeThreshold) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
         this.stream = stream;
         this.maxStreamObjectSize = Math.min(maxStreamObjectSize, Writer.MAX_OBJECT_SIZE);
         String logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
+        this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
     }
 
     public void compact() {
@@ -75,7 +78,13 @@ public class StreamObjectCompactor {
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
-            Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, startOffset, objectGroup, objectManager, s3Operator).compact();
+            // the object group is single object and there is no data block need to be removed.
+            if (objectGroup.size() == 1 && objectGroup.get(0).startOffset() >= startOffset) {
+                continue;
+            }
+            long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
+            Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, startOffset,
+                objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
             if (requestOpt.isPresent()) {
                 CompactStreamObjectRequest request = requestOpt.get();
                 objectManager.compactStreamObject(request).get();
@@ -95,24 +104,22 @@ public class StreamObjectCompactor {
         private final List<S3ObjectMetadata> objectGroup;
         private final long streamId;
         private final long startOffset;
-        private final ObjectManager objectManager;
+        // compact object group to the new object
+        private final long objectId;
         private final S3Operator s3Operator;
+        private final int dataBlockGroupSizeThreshold;
 
         public StreamObjectGroupCompactor(long streamId, long startOffset, List<S3ObjectMetadata> objectGroup,
-            ObjectManager objectManager, S3Operator s3Operator) {
+            long objectId, int dataBlockGroupSizeThreshold, S3Operator s3Operator) {
             this.streamId = streamId;
             this.startOffset = startOffset;
             this.objectGroup = objectGroup;
-            this.objectManager = objectManager;
+            this.objectId = objectId;
+            this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
             this.s3Operator = s3Operator;
         }
 
         public Optional<CompactStreamObjectRequest> compact() throws ExecutionException, InterruptedException {
-            // the object group is single object and there is no data block need to be removed.
-            if (objectGroup.size() == 1 && objectGroup.get(0).startOffset() >= startOffset) {
-                return Optional.empty();
-            }
-            long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
             long nextBlockPosition = 0;
             long objectSize = 0;
             long compactedStartOffset = objectGroup.get(0).startOffset();
@@ -120,6 +127,11 @@ public class StreamObjectCompactor {
             List<Long> compactedObjectIds = new LinkedList<>();
             CompositeByteBuf indexes = DirectByteBufAlloc.compositeByteBuffer();
             Writer writer = s3Operator.writer(ObjectUtils.genKey(0, objectId), ThrottleStrategy.THROTTLE_2);
+            long groupStartOffset = -1L;
+            long groupStartPosition = -1L;
+            int groupSize = 0;
+            int groupRecordCount = 0;
+            DataBlockIndex lastIndex = null;
             for (S3ObjectMetadata object : objectGroup) {
                 try (ObjectReader reader = new ObjectReader(object, s3Operator)) {
                     ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().get();
@@ -133,9 +145,23 @@ public class StreamObjectCompactor {
                             compactedStartOffset = dataBlock.endOffset();
                             continue;
                         }
-                        new DataBlockIndex(streamId, dataBlock.startOffset(), dataBlock.endOffsetDelta(),
-                            dataBlock.recordCount(), nextBlockPosition, dataBlock.size()).encode(subIndexes);
+                        if (groupSize == 0 // the first data block
+                            || (long) groupSize + dataBlock.size() > dataBlockGroupSizeThreshold
+                            || (long) groupRecordCount + dataBlock.recordCount() > Integer.MAX_VALUE
+                            || dataBlock.endOffset() - groupStartOffset > Integer.MAX_VALUE) {
+                            if (groupSize != 0) {
+                                new DataBlockIndex(streamId, groupStartOffset, (int) (lastIndex.endOffset() - groupStartOffset),
+                                    groupRecordCount, groupStartPosition, groupSize).encode(subIndexes);
+                            }
+                            groupStartOffset = dataBlock.startOffset();
+                            groupStartPosition = nextBlockPosition;
+                            groupSize = 0;
+                            groupRecordCount = 0;
+                        }
+                        groupSize += dataBlock.size();
+                        groupRecordCount += dataBlock.recordCount();
                         nextBlockPosition += dataBlock.size();
+                        lastIndex = dataBlock;
                     }
                     writer.copyWrite(ObjectUtils.genKey(0, object.objectId()), validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
                     objectSize += basicObjectInfo.dataBlockSize() - validDataBlockStartPosition;
@@ -143,6 +169,13 @@ public class StreamObjectCompactor {
                     compactedObjectIds.add(object.objectId());
                 }
             }
+            if (lastIndex != null) {
+                ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(DataBlockIndex.BLOCK_INDEX_SIZE);
+                new DataBlockIndex(streamId, groupStartOffset, (int) (lastIndex.endOffset() - groupStartOffset),
+                    groupRecordCount, groupStartPosition, groupSize).encode(subIndexes);
+                indexes.addComponent(true, subIndexes);
+            }
+
             CompositeByteBuf indexBlockAndFooter = DirectByteBufAlloc.compositeByteBuffer();
             indexBlockAndFooter.addComponent(true, indexes);
             indexBlockAndFooter.addComponent(true, new ObjectWriter.Footer(nextBlockPosition, indexBlockAndFooter.readableBytes()).buffer());
@@ -205,6 +238,7 @@ public class StreamObjectCompactor {
         private S3Operator s3Operator;
         private S3Stream stream;
         private long maxStreamObjectSize;
+        private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
 
         public Builder objectManager(ObjectManager objectManager) {
             this.objectManager = objectManager;
@@ -234,8 +268,13 @@ public class StreamObjectCompactor {
             return this;
         }
 
+        public Builder dataBlockGroupSizeThreshold(int dataBlockGroupSizeThreshold) {
+            this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
+            return this;
+        }
+
         public StreamObjectCompactor build() {
-            return new StreamObjectCompactor(objectManager, s3Operator, stream, maxStreamObjectSize);
+            return new StreamObjectCompactor(objectManager, s3Operator, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold);
         }
     }
 }
