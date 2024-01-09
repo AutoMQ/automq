@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.compact.operator;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.ObjectUtils;
@@ -152,28 +153,16 @@ public class DataBlockWriter {
         public IndexBlock() {
             position = nextDataBlockPosition;
             buf = DirectByteBufAlloc.byteBuffer(calculateIndexBlockSize(), "write_index_block");
-            buf.writeInt(completedBlocks.size()); // block count
             long nextPosition = 0;
-            // block index
             for (StreamDataBlock block : completedBlocks) {
-                buf.writeLong(nextPosition);
-                buf.writeInt(block.getBlockSize());
-                buf.writeInt(block.getRecordCount());
+                new DataBlockIndex(block.getStreamId(), block.getStartOffset(), (int) (block.getEndOffset() - block.getStartOffset()),
+                    block.dataBlockIndex().recordCount(), nextPosition, block.getBlockSize()).encode(buf);
                 nextPosition += block.getBlockSize();
-            }
-
-            // object stream range
-            for (int blockIndex = 0; blockIndex < completedBlocks.size(); blockIndex++) {
-                StreamDataBlock block = completedBlocks.get(blockIndex);
-                buf.writeLong(block.getStreamId());
-                buf.writeLong(block.getStartOffset());
-                buf.writeInt((int) (block.getEndOffset() - block.getStartOffset()));
-                buf.writeInt(blockIndex);
             }
         }
 
         private int calculateIndexBlockSize() {
-            return 4 + completedBlocks.size() * 40;
+            return completedBlocks.size() * DataBlockIndex.BLOCK_INDEX_SIZE;
         }
 
         public ByteBuf buffer() {

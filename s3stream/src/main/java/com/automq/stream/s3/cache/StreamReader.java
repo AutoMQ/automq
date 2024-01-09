@@ -180,10 +180,10 @@ public class StreamReader {
                 StreamDataBlock streamDataBlock = pair.getRight();
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("[S3BlockCache] sync ra, stream={}, {}-{}, read data block {} from {} [{}, {}), size={}",
-                        streamId, startOffset, endOffset, streamDataBlock.getBlockId(), objectReader.objectKey(),
+                        streamId, startOffset, endOffset, streamDataBlock, objectReader.objectKey(),
                         streamDataBlock.getBlockStartPosition(), streamDataBlock.getBlockEndPosition(), streamDataBlock.getBlockSize());
                 }
-                String dataBlockKey = streamDataBlock.getObjectId() + "-" + streamDataBlock.getBlockId();
+                String dataBlockKey = streamDataBlock.getObjectId() + "-" + streamDataBlock.getBlockStartPosition();
                 sortedDataBlockKeyList.add(dataBlockKey);
                 DataBlockReadAccumulator.ReserveResult reserveResult = reserveResults.get(i);
                 DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
@@ -327,7 +327,7 @@ public class StreamReader {
             StreamDataBlock streamDataBlock = pair.getRight();
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[S3BlockCache] async ra, stream={}, {}-{}, read data block {} from {} [{}, {}), size={}",
-                    streamId, startOffset, endOffset, streamDataBlock.getBlockId(), objectReader.objectKey(),
+                    streamId, startOffset, endOffset, streamDataBlock, objectReader.objectKey(),
                     streamDataBlock.getBlockStartPosition(), streamDataBlock.getBlockEndPosition(), streamDataBlock.getBlockSize());
             }
             UUID uuid = UUID.randomUUID();

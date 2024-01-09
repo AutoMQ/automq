@@ -95,7 +95,7 @@ public class ObjectWriterTest {
 
         streamDataBlocks = objectReader.find(234, 1, 2).get().streamDataBlocks();
         assertEquals(1, streamDataBlocks.size());
-        assertEquals(2, streamDataBlocks.get(0).getBlockId());
+        assertEquals(0, streamDataBlocks.get(0).getStartOffset());
         {
             Iterator<StreamRecordBatch> it = objectReader.read(streamDataBlocks.get(0).dataBlockIndex()).get().iterator();
             StreamRecordBatch r = it.next();
