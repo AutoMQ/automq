@@ -19,9 +19,8 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
@@ -353,7 +352,7 @@ public class SlidingWindowService {
             walChannel.write(block.data(), position);
         }
         walChannel.flush();
-        S3StreamMetricsManager.recordStageLatency(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_WRITE);
+        StorageOperationStats.getInstance().appendWALWriteStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
@@ -532,7 +531,7 @@ public class SlidingWindowService {
 
         @Override
         public void run() {
-            S3StreamMetricsManager.recordStageLatency(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_AWAIT);
+            StorageOperationStats.getInstance().appendWALAwaitStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
             writeBlock(this.blocks);
         }
 
@@ -556,7 +555,7 @@ public class SlidingWindowService {
                         return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                     }
                 });
-                S3StreamMetricsManager.recordStageLatency(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_AFTER);
+                StorageOperationStats.getInstance().appendWALAfterStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
             } catch (Exception e) {
                 FutureUtil.completeExceptionally(blocks.futures(), e);
                 LOGGER.error(String.format("failed to write blocks, startOffset: %s", blocks.startOffset()), e);

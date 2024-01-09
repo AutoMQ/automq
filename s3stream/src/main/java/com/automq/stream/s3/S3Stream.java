@@ -31,9 +31,8 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.streams.StreamManager;
@@ -137,7 +136,6 @@ public class S3Stream implements Stream {
     public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
-        S3StreamMetricsManager.recordOperationLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM_WRITE_LOCK);
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
@@ -152,7 +150,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             cf.whenComplete((nil, ex) -> {
-                S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STREAM);
+                StreamOperationStats.getInstance().appendStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 pendingAppends.remove(cf);
             });
             return cf;
@@ -194,12 +192,11 @@ public class S3Stream implements Stream {
         @SpanAttribute int maxBytes) {
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
-        S3StreamMetricsManager.recordOperationLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM_READ_LOCK);
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), LOGGER, "fetch");
             pendingFetches.add(cf);
             cf.whenComplete((rs, ex) -> {
-                S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.FETCH_STREAM);
+                StreamOperationStats.getInstance().fetchStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
                     if (!(cause instanceof FastReadFailFastException)) {
@@ -263,7 +260,7 @@ public class S3Stream implements Stream {
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
                 cf.whenComplete((nil, ex) -> {
-                    S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.TRIM_STREAM);
+                    StreamOperationStats.getInstance().trimStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 });
                 return cf;
             }, LOGGER, "trim");
@@ -294,6 +291,7 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<Void> close() {
+        TimerUtil timerUtil = new TimerUtil();
         writeLock.lock();
         try {
             status.markClosed();
@@ -312,8 +310,10 @@ public class S3Stream implements Stream {
             closeCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
                     LOGGER.error("{} close fail", logIdent, ex);
+                    StreamOperationStats.getInstance().closeStreamStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 } else {
                     LOGGER.info("{} closed", logIdent);
+                    StreamOperationStats.getInstance().closeStreamStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 }
             });
 

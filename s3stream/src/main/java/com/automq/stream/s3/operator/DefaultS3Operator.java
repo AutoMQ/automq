@@ -21,7 +21,9 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.NetworkStats;
+import com.automq.stream.s3.metrics.stats.S3ObjectStats;
+import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
@@ -207,7 +209,8 @@ public class DefaultS3Operator implements S3Operator {
         if (networkInboundBandwidthLimiter != null) {
             TimerUtil timerUtil = new TimerUtil();
             networkInboundBandwidthLimiter.consume(throttleStrategy, end - start).whenCompleteAsync((v, ex) -> {
-                S3StreamMetricsManager.recordNetworkLimiterQueueTime(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), AsyncNetworkBandwidthLimiter.Type.INBOUND);
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND)
+                    .record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
@@ -302,7 +305,7 @@ public class DefaultS3Operator implements S3Operator {
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
-                S3StreamMetricsManager.recordObjectDownloadSize(MetricsLevel.INFO, size);
+                S3ObjectStats.getInstance().objectDownloadSizeStats.record(MetricsLevel.INFO, size);
                 CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
                 responsePublisher.subscribe((bytes) -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
@@ -312,13 +315,13 @@ public class DefaultS3Operator implements S3Operator {
                         LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
                             path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                     }
-                    S3StreamMetricsManager.recordS3DownloadSize(MetricsLevel.INFO, size);
-                    S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size);
+                    S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
+                    S3OperationStats.getInstance().getObjectStats(size, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                     cf.complete(buf);
                 });
             })
             .exceptionally(ex -> {
-                S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.GET_OBJECT, size, false);
+                S3OperationStats.getInstance().getObjectStats(size, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 if (isUnrecoverable(ex)) {
                     LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                     cf.completeExceptionally(ex);
@@ -340,7 +343,8 @@ public class DefaultS3Operator implements S3Operator {
         if (networkOutboundBandwidthLimiter != null) {
             TimerUtil timerUtil = new TimerUtil();
             networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
-                S3StreamMetricsManager.recordNetworkLimiterQueueTime(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND)
+                    .record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
@@ -359,13 +363,13 @@ public class DefaultS3Operator implements S3Operator {
         PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
-            S3StreamMetricsManager.recordS3UploadSize(MetricsLevel.INFO, objectSize);
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT, objectSize);
+            S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
+            S3OperationStats.getInstance().putObjectStats(objectSize, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(null);
             data.release();
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.PUT_OBJECT, objectSize, false);
+            S3OperationStats.getInstance().putObjectStats(objectSize, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -388,10 +392,10 @@ public class DefaultS3Operator implements S3Operator {
         TimerUtil timerUtil = new TimerUtil();
         DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(bucket).key(path).build();
         return writeS3Client.deleteObject(request).thenAccept(deleteObjectResponse -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECT);
+            S3OperationStats.getInstance().deleteObjectStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             LOGGER.info("[ControllerS3Operator]: Delete object finished, path: {}, cost: {}", path, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECT, false);
+            S3OperationStats.getInstance().deleteObjectsStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             LOGGER.info("[ControllerS3Operator]: Delete object failed, path: {}, cost: {}, ex: {}", path, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             return null;
         });
@@ -411,11 +415,11 @@ public class DefaultS3Operator implements S3Operator {
             .build();
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
         return this.writeS3Client.deleteObjects(request).thenApply(resp -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECTS);
+            S3OperationStats.getInstance().deleteObjectsStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.DELETE_OBJECTS, false);
+            S3OperationStats.getInstance().deleteObjectsStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             return Collections.emptyList();
         });
@@ -436,10 +440,10 @@ public class DefaultS3Operator implements S3Operator {
         TimerUtil timerUtil = new TimerUtil();
         CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).build();
         writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_MULTI_PART_UPLOAD);
+            S3OperationStats.getInstance().createMultiPartUploadStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             cf.complete(createMultipartUploadResponse.uploadId());
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_MULTI_PART_UPLOAD, false);
+            S3OperationStats.getInstance().createMultiPartUploadStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
@@ -483,12 +487,12 @@ public class DefaultS3Operator implements S3Operator {
             .partNumber(partNumber).build();
         CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
         uploadPartCf.thenAccept(uploadPartResponse -> {
-            S3StreamMetricsManager.recordS3UploadSize(MetricsLevel.INFO, size);
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART, size);
+            S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
+            S3OperationStats.getInstance().uploadPartStats(size, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART, size, false);
+            S3OperationStats.getInstance().uploadPartStats(size, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
                 cf.completeExceptionally(ex);
@@ -519,12 +523,12 @@ public class DefaultS3Operator implements S3Operator {
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
             .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
         writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY);
+            S3OperationStats.getInstance().uploadPartCopyStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber)
                 .eTag(uploadPartCopyResponse.copyPartResult().eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.UPLOAD_PART_COPY, false);
+            S3OperationStats.getInstance().uploadPartCopyStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.warn("UploadPartCopy for object {}-{} fail", path, partNumber, ex);
                 cf.completeExceptionally(ex);
@@ -554,10 +558,10 @@ public class DefaultS3Operator implements S3Operator {
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
 
         writeS3Client.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.COMPLETE_MULTI_PART_UPLOAD);
+            S3OperationStats.getInstance().completeMultiPartUploadStats(true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             cf.complete(null);
         }).exceptionally(ex -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.COMPLETE_MULTI_PART_UPLOAD, false);
+            S3OperationStats.getInstance().completeMultiPartUploadStats(false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);

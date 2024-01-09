@@ -103,4 +103,11 @@ public class S3StreamMetricsConstant {
     public static final AttributeKey<String> LABEL_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
     public static final AttributeKey<String> LABEL_ALLOCATE_BYTE_BUF_SOURCE = AttributeKey.stringKey("source");
+    public static final String LABEL_STATUS_SUCCESS = "success";
+    public static final String LABEL_STATUS_FAILED = "failed";
+    public static final String LABEL_STATUS_HIT = "hit";
+    public static final String LABEL_STATUS_MISS = "miss";
+    public static final String LABEL_STATUS_SYNC = "sync";
+    public static final String LABEL_STATUS_ASYNC = "async";
+
 }

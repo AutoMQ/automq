@@ -22,9 +22,8 @@ import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -81,7 +80,7 @@ public class S3StreamClient implements StreamClient {
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
         TimerUtil timerUtil = new TimerUtil();
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.CREATE_STREAM);
+            StreamOperationStats.getInstance().createStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return openStream0(streamId, options.epoch());
         }), LOGGER, "createAndOpenStream");
     }
@@ -114,7 +113,6 @@ public class S3StreamClient implements StreamClient {
         TimerUtil timerUtil = new TimerUtil();
         return streamManager.openStream(streamId, epoch).
             thenApply(metadata -> {
-                S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.OPEN_STREAM);
                 StreamObjectCompactor.Builder builder = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
                     .maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes());
                 S3Stream stream = new S3Stream(
@@ -122,6 +120,7 @@ public class S3StreamClient implements StreamClient {
                     metadata.startOffset(), metadata.endOffset(),
                     storage, streamManager, openedStreams::remove, networkInboundBucket, networkOutboundBucket);
                 openedStreams.put(streamId, stream);
+                StreamOperationStats.getInstance().openStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return stream;
             });
     }
