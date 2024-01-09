@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     public static final byte MAGIC = 0x01;
@@ -52,16 +51,18 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
 
     // Only used for testing
     public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId) {
-        this(objectId, nodeId, streamOffsetRanges, orderId, S3StreamConstant.INVALID_TS);
+        this(objectId, nodeId, sortAndEncode(streamOffsetRanges), orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3StreamSetObject(long objectId, int nodeId, List<StreamOffsetRange> streamOffsetRanges, long orderId, long dataTimeInMs) {
+    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId, long dateTimeInMs) {
+        this(objectId, nodeId, sortAndEncode(streamOffsetRanges), orderId, dateTimeInMs);
+    }
+
+    public S3StreamSetObject(long objectId, int nodeId, byte[] ranges, long orderId, long dataTimeInMs) {
         this.orderId = orderId;
         this.objectId = objectId;
         this.nodeId = nodeId;
-        streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
-        streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::streamId));
-        this.ranges = encode(streamOffsetRanges);
+        this.ranges = ranges;
         this.dataTimeInMs = dataTimeInMs;
     }
 
@@ -70,25 +71,17 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     }
 
     public ApiMessageAndVersion toRecord() {
-        // TODO: S3StreamSetObjectRecord also use raw data
-        List<StreamOffsetRange> rangesList = decode(ranges);
         return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
                 .setObjectId(objectId)
                 .setNodeId(nodeId)
                 .setOrderId(orderId)
                 .setDataTimeInMs(dataTimeInMs)
-                .setStreamsIndex(
-                        rangesList
-                                .stream()
-                                .map(Convertor::to)
-                                .collect(Collectors.toList())), (short) 0);
+                .setRanges(ranges), (short) 0);
     }
 
     public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
-        List<StreamOffsetRange> offsetRanges = record.streamsIndex()
-                .stream().map(index -> new StreamOffsetRange(index.streamId(), index.startOffset(), index.endOffset())).collect(Collectors.toList());
         return new S3StreamSetObject(record.objectId(), record.nodeId(),
-                offsetRanges, record.orderId(), record.dataTimeInMs());
+                record.ranges(), record.orderId(), record.dataTimeInMs());
     }
 
     public Integer nodeId() {
@@ -141,6 +134,12 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     @Override
     public int compareTo(S3StreamSetObject o) {
         return Long.compare(this.orderId, o.orderId);
+    }
+
+    public static byte[] sortAndEncode(List<StreamOffsetRange> streamOffsetRanges) {
+        streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
+        streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::streamId));
+        return encode(streamOffsetRanges);
     }
 
     public static byte[] encode(List<StreamOffsetRange> streamOffsetRanges) {

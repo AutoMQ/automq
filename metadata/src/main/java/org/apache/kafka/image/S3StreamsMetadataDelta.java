@@ -17,10 +17,6 @@
 
 package org.apache.kafka.image;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 import org.apache.kafka.common.metadata.AdvanceRangeRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -30,9 +26,15 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public final class S3StreamsMetadataDelta {
 
@@ -93,8 +95,8 @@ public final class S3StreamsMetadataDelta {
     public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
         getOrCreateStreamMetadataDelta(record.streamId()).replay(new AdvanceRangeRecord()
-            .setStartOffset(record.startOffset())
-            .setEndOffset(record.endOffset()));
+                .setStartOffset(record.startOffset())
+                .setEndOffset(record.endOffset()));
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {
@@ -103,11 +105,12 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
-        record.streamsIndex().forEach(index -> {
-            getOrCreateStreamMetadataDelta(index.streamId()).replay(new AdvanceRangeRecord()
-                .setStartOffset(index.startOffset())
-                .setEndOffset(index.endOffset()));
-        });
+        S3StreamSetObject.decode(record.ranges()).forEach(index ->
+                getOrCreateStreamMetadataDelta(index.streamId())
+                        .replay(
+                                new AdvanceRangeRecord().setStartOffset(index.startOffset()).setEndOffset(index.endOffset())
+                        )
+        );
     }
 
     public void replay(RemoveStreamSetObjectRecord record) {
@@ -127,8 +130,8 @@ public final class S3StreamsMetadataDelta {
         NodeS3WALMetadataDelta delta = changedNodes.get(nodeId);
         if (delta == null) {
             delta = new NodeS3WALMetadataDelta(
-                image.nodeWALMetadata().
-                    getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
+                    image.nodeWALMetadata().
+                            getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
             changedNodes.put(nodeId, delta);
         }
         return delta;
@@ -150,12 +153,12 @@ public final class S3StreamsMetadataDelta {
     @Override
     public String toString() {
         return "S3StreamsMetadataDelta{" +
-            "image=" + image +
-            ", currentAssignedStreamId=" + currentAssignedStreamId +
-            ", changedStreams=" + changedStreams +
-            ", changedNodes=" + changedNodes +
-            ", deletedStreams=" + deletedStreams +
-            ", deletedNodes=" + deletedNodes +
-            '}';
+                "image=" + image +
+                ", currentAssignedStreamId=" + currentAssignedStreamId +
+                ", changedStreams=" + changedStreams +
+                ", changedNodes=" + changedNodes +
+                ", deletedStreams=" + deletedStreams +
+                ", deletedNodes=" + deletedNodes +
+                '}';
     }
 }
