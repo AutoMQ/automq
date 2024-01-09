@@ -21,6 +21,8 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.tools.automq.model.AuthMethod;
+import org.apache.kafka.tools.automq.model.EndpointProtocol;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
@@ -47,49 +49,6 @@ public class GenerateS3UrlCmd {
 
     public GenerateS3UrlCmd(Parameter parameter) {
         this.parameter = parameter;
-    }
-
-    enum EndpointProtocol {
-
-        HTTP("http"),
-        HTTPS("https");
-
-        EndpointProtocol(String key) {
-            this.name = key;
-        }
-
-        final String name;
-
-        public static EndpointProtocol getByName(String protocolName) {
-            for (EndpointProtocol protocol : EndpointProtocol.values()) {
-                if (protocol.name.equals(protocolName)) {
-                    return protocol;
-                }
-            }
-            throw new IllegalArgumentException("Invalid protocol: " + protocolName);
-        }
-    }
-
-    enum AuthMethod {
-        KEY_FROM_ENV("key-from-env"),
-
-        KEY_FROM_ARGS("key-from-args"),
-        ROLE("role");
-
-        AuthMethod(String key) {
-            this.key = key;
-        }
-
-        final String key;
-
-        public static AuthMethod getByName(String methodName) {
-            for (AuthMethod method : AuthMethod.values()) {
-                if (method.key.equals(methodName)) {
-                    return method;
-                }
-            }
-            throw new IllegalArgumentException("Invalid auth method: " + methodName);
-        }
     }
 
     static class Parameter {
@@ -201,14 +160,14 @@ public class GenerateS3UrlCmd {
 
         //precheck
         var context = S3Utils.S3Context.builder()
-            .setEndpoint(parameter.endpointProtocol.name + "://" + parameter.s3Endpoint)
+            .setEndpoint(parameter.endpointProtocol.name() + "://" + parameter.s3Endpoint)
             .setAccessKey(parameter.s3AccessKey)
             .setSecretKey(parameter.s3SecretKey)
             .setBucketName(parameter.s3DataBucket)
             .setRegion(parameter.s3Region)
             .setForcePathStyle(false)
             .build();
-//        S3Utils.checkS3Access(context);
+        S3Utils.checkS3Access(context);
 
         String s3Url = buildS3Url();
         System.out.println("####################################  S3 URL RESULT #################################");
@@ -221,25 +180,23 @@ public class GenerateS3UrlCmd {
         System.out.println("[BASIC USAGE]");
         System.out.println("Basic usage to generate all config properties for 2c16g instance with 120MB/s bandwidth");
         System.out.println("------------------------ COPY ME ------------------");
-        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ \n"
-                + "--s3-url=%s  \\ \n"
-                + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ \n"
-                + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092   \n"
-            , AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ %n"
+            + "--s3-url=%s  \\ %n"
+            + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ %n"
+            + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
         ));
 
         System.out.println();
         System.out.println("[ADVANCED USAGE]");
         System.out.println("Advanced usage to generate all config properties for custom instance type");
         System.out.println("------------------------ COPY ME ------------------");
-        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ \n"
-                + "--s3-url=%s  \\ \n"
-                + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ \n"
-                + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092  \\ \n"
-                + "--cpu-core-count=8  \\ \n"
-                + "--memory-size-gb=32  \\ \n"
-                + "--network-baseline-bandwith-bytes=1000   \n"
-            , AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ %n"
+            + "--s3-url=%s  \\ %n"
+            + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ %n"
+            + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092  \\ %n"
+            + "--cpu-core-count=8  \\ %n"
+            + "--memory-size-gb=32  \\ %n"
+            + "--network-baseline-bandwith-bytes=1000  %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
         ));
 
         System.out.println("TIPS: Replace the controller-ip-list and broker-ip-list with your real ip list.");
@@ -255,8 +212,8 @@ public class GenerateS3UrlCmd {
             .append("?").append("s3-access-key=").append(parameter.s3AccessKey)
             .append("&").append("s3-secret-key=").append(parameter.s3SecretKey)
             .append("&").append("s3-region=").append(parameter.s3Region)
-            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.key)
-            .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.name)
+            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.name())
+            .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.name())
             .append("&").append("s3-data-bucket=").append(parameter.s3DataBucket)
             .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
             .append("&").append("cluster-id=").append(Uuid.randomUuid());

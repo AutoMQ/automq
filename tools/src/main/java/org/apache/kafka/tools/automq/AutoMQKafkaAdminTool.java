@@ -20,12 +20,8 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.utils.Exit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class AutoMQKafkaAdminTool {
-    private static final Logger log = LoggerFactory.getLogger(AutoMQKafkaAdminTool.class);
-
     public static void main(String[] args) {
         ArgumentParser parser = AutoMQAdminCmd.argumentParser();
         if (args.length == 0) {
@@ -33,13 +29,12 @@ public class AutoMQKafkaAdminTool {
             parser.printHelp();
             Exit.exit(0);
         }
-//        String[] subCmdArgs = Arrays.copyOfRange(args, 1, args.length);
         switch (args[0]) {
-            case "generate-s3-url":
+            case AutoMQAdminCmd.GENERATE_S3_URL_CMD:
                 processGenerateS3UrlCmd(args);
                 break;
-            case "config-file":
-                processConfigFileCmd(args);
+            case AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD:
+                processGenConfigPropertiesCmd(args);
                 break;
             default:
                 System.out.println(String.format("Not supported command %s. Check usage first.", args[0]));
@@ -84,7 +79,33 @@ public class AutoMQKafkaAdminTool {
         }
     }
 
-    private static void processConfigFileCmd(String[] args) {
+    private static void processGenConfigPropertiesCmd(String[] args) {
+        Namespace res = null;
+        ArgumentParser parser = GenerateConfigFileCmd.argumentParser();
+        try {
+            res = parser.parseArgs(args);
+        } catch (ArgumentParserException e) {
+            if (args.length == 1) {
+                parser.printHelp();
+                Exit.exit(0);
+            } else {
+                parser.handleError(e);
+                Exit.exit(1);
+            }
+        }
+
+        if (res == null) {
+            parser.handleError(new ArgumentParserException("GenerateConfigFileCmd's namespace is null", parser));
+            Exit.exit(1);
+        } else {
+            try {
+                new GenerateConfigFileCmd(new GenerateConfigFileCmd.Parameter(res)).run();
+            } catch (Throwable t) {
+                System.out.printf("FAILED: Caught exception %s%n%n", t.getMessage());
+                t.printStackTrace();
+                Exit.exit(1);
+            }
+        }
 
     }
 
