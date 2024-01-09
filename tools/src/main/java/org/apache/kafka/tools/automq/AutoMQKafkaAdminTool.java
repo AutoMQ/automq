@@ -47,7 +47,6 @@ public class AutoMQKafkaAdminTool {
                 Exit.exit(0);
         }
 
-        System.out.println("SUCCESS.");
         Exit.exit(0);
 
     }

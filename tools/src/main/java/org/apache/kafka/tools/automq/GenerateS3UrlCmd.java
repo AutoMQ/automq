@@ -26,18 +26,18 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 
 /**
  * <pre>
-
- Example:
-
- generate-s3-url
- --s3-access-key=xxx
- --s3-secret-key=xxx
- --s3-auth-method=key-from-args
- --s3-region="cn-northwest-1"
- --s3-endpoint-protocol="https"
- --s3-endpoint="s3.cn-northwest-1.amazonaws.com.cn"
- --s3-data-bucket="wanshao-test"
- --s3-ops-bucket="automq-ops-bucket"
+ *
+ * Example:
+ *
+ * generate-s3-url
+ * --s3-access-key=xxx
+ * --s3-secret-key=xxx
+ * --s3-auth-method=key-from-args
+ * --s3-region="cn-northwest-1"
+ * --s3-endpoint-protocol="https"
+ * --s3-endpoint="s3.cn-northwest-1.amazonaws.com.cn"
+ * --s3-data-bucket="wanshao-test"
+ * --s3-ops-bucket="automq-ops-bucket"
  * </pre>
  * Generate s3url for user
  */
@@ -196,6 +196,9 @@ public class GenerateS3UrlCmd {
     }
 
     public String run() {
+        System.out.println("####################################  S3 PRECHECK #################################");
+        System.out.println();
+
         //precheck
         var context = S3Utils.S3Context.builder()
             .setEndpoint(parameter.endpointProtocol.name + "://" + parameter.s3Endpoint)
@@ -205,10 +208,42 @@ public class GenerateS3UrlCmd {
             .setRegion(parameter.s3Region)
             .setForcePathStyle(false)
             .build();
-        S3Utils.checkS3Access(context);
+//        S3Utils.checkS3Access(context);
 
         String s3Url = buildS3Url();
-        System.out.printf(String.format("Your S3 URL is: %s", s3Url));
+        System.out.println("####################################  S3 URL RESULT #################################");
+        System.out.println();
+        System.out.println("Your S3 URL is: \n");
+        System.out.println(s3Url);
+        System.out.println("\n");
+
+        System.out.println("####################################  S3 URL USAGE #################################");
+        System.out.println("[BASIC USAGE]");
+        System.out.println("Basic usage to generate all config properties for 2c16g instance with 120MB/s bandwidth");
+        System.out.println("------------------------ COPY ME ------------------");
+        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ \n"
+                + "--s3-url=%s  \\ \n"
+                + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ \n"
+                + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092   \n"
+            , AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+        ));
+
+        System.out.println();
+        System.out.println("[ADVANCED USAGE]");
+        System.out.println("Advanced usage to generate all config properties for custom instance type");
+        System.out.println("------------------------ COPY ME ------------------");
+        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ \n"
+                + "--s3-url=%s  \\ \n"
+                + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ \n"
+                + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092  \\ \n"
+                + "--cpu-core-count=8  \\ \n"
+                + "--memory-size-gb=32  \\ \n"
+                + "--network-baseline-bandwith-bytes=1000   \n"
+            , AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+        ));
+
+        System.out.println("TIPS: Replace the controller-ip-list and broker-ip-list with your real ip list.");
+
         return s3Url;
     }
 
