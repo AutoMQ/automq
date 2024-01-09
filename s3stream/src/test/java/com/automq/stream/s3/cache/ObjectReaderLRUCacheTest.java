@@ -58,9 +58,9 @@ public class ObjectReaderLRUCacheTest {
         ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET), s3Operator);
         ObjectReader objectReader2 = new ObjectReader(new S3ObjectMetadata(234L, objectWriter2.size(), S3ObjectType.STREAM_SET), s3Operator);
         ObjectReader objectReader3 = new ObjectReader(new S3ObjectMetadata(235L, objectWriter3.size(), S3ObjectType.STREAM_SET), s3Operator);
-        Assertions.assertEquals(40000, objectReader.basicObjectInfo().get().size());
-        Assertions.assertEquals(80000, objectReader2.basicObjectInfo().get().size());
-        Assertions.assertEquals(120000, objectReader3.basicObjectInfo().get().size());
+        Assertions.assertEquals(36000, objectReader.basicObjectInfo().get().size());
+        Assertions.assertEquals(72000, objectReader2.basicObjectInfo().get().size());
+        Assertions.assertEquals(108000, objectReader3.basicObjectInfo().get().size());
 
         ObjectReaderLRUCache cache = new ObjectReaderLRUCache(100000);
         cache.put(235L, objectReader3);

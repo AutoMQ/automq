@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import java.util.ArrayList;
@@ -34,15 +35,15 @@ import org.slf4j.LoggerFactory;
  */
 public class DataBlockReadAccumulator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReadAccumulator.class);
-    private final Map<Pair<String, Integer>, DataBlockRecords> inflightDataBlockReads = new ConcurrentHashMap<>();
+    private final Map<Pair<String, Long>, DataBlockRecords> inflightDataBlockReads = new ConcurrentHashMap<>();
 
     public List<ReserveResult> reserveDataBlock(List<Pair<ObjectReader, StreamDataBlock>> dataBlockPairList) {
         List<ReserveResult> reserveResults = new ArrayList<>();
         synchronized (inflightDataBlockReads) {
             for (Pair<ObjectReader, StreamDataBlock> pair : dataBlockPairList) {
                 ObjectReader reader = pair.getLeft();
-                ObjectReader.DataBlockIndex blockIndex = pair.getRight().dataBlockIndex();
-                Pair<String, Integer> key = Pair.of(reader.objectKey(), blockIndex.blockId());
+                DataBlockIndex blockIndex = pair.getRight().dataBlockIndex();
+                Pair<String, Long> key = Pair.of(reader.objectKey(), blockIndex.startPosition());
                 DataBlockRecords records = inflightDataBlockReads.get(key);
                 CompletableFuture<DataBlockRecords> cf = new CompletableFuture<>();
                 BiConsumer<DataBlockRecords, Throwable> listener = (rst, ex) -> {
@@ -69,8 +70,8 @@ public class DataBlockReadAccumulator {
         return reserveResults;
     }
 
-    public void readDataBlock(ObjectReader reader, ObjectReader.DataBlockIndex blockIndex) {
-        Pair<String, Integer> key = Pair.of(reader.objectKey(), blockIndex.blockId());
+    public void readDataBlock(ObjectReader reader, DataBlockIndex blockIndex) {
+        Pair<String, Long> key = Pair.of(reader.objectKey(), blockIndex.startPosition());
         synchronized (inflightDataBlockReads) {
             DataBlockRecords records = inflightDataBlockReads.get(key);
             if (records != null) {

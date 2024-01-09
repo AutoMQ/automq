@@ -27,52 +27,35 @@ public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);
     public static final Comparator<StreamDataBlock> BLOCK_POSITION_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getBlockStartPosition);
     private final long objectId;
-
-    // Stream attributes
-    private final long streamId;
-    private final long startOffset;
-    private final long endOffset;
-
-    private final ObjectReader.DataBlockIndex dataBlockIndex;
+    private final DataBlockIndex dataBlockIndex;
     private final CompletableFuture<ByteBuf> dataCf = new CompletableFuture<>();
     private final AtomicInteger refCount = new AtomicInteger(1);
 
-    public StreamDataBlock(long streamId, long startOffset, long endOffset, long objectId,
-        ObjectReader.DataBlockIndex dataBlockIndex) {
-        this.streamId = streamId;
-        this.startOffset = startOffset;
-        this.endOffset = endOffset;
+    public StreamDataBlock(long objectId, DataBlockIndex dataBlockIndex) {
         this.dataBlockIndex = dataBlockIndex;
         this.objectId = objectId;
     }
 
-    public StreamDataBlock(long streamId, long startOffset, long endOffset, int blockId,
+    public StreamDataBlock(long streamId, long startOffset, long endOffset,
         long objectId, long blockPosition, int blockSize, int recordCount) {
-        this.streamId = streamId;
-        this.startOffset = startOffset;
-        this.endOffset = endOffset;
         this.objectId = objectId;
-        this.dataBlockIndex = new ObjectReader.DataBlockIndex(blockId, blockPosition, blockSize, recordCount);
+        this.dataBlockIndex = new DataBlockIndex(streamId, startOffset, (int) (endOffset - startOffset), recordCount, blockPosition, blockSize);
     }
 
     public long getStreamId() {
-        return streamId;
+        return dataBlockIndex.streamId();
     }
 
     public long getStartOffset() {
-        return startOffset;
+        return dataBlockIndex.startOffset();
     }
 
     public long getEndOffset() {
-        return endOffset;
+        return dataBlockIndex.endOffset();
     }
 
     public long getStreamRangeSize() {
-        return endOffset - startOffset;
-    }
-
-    public int getBlockId() {
-        return dataBlockIndex.blockId();
+        return dataBlockIndex.endOffsetDelta();
     }
 
     public long getObjectId() {
@@ -91,11 +74,7 @@ public class StreamDataBlock {
         return dataBlockIndex.size();
     }
 
-    public int getRecordCount() {
-        return dataBlockIndex.recordCount();
-    }
-
-    public ObjectReader.DataBlockIndex dataBlockIndex() {
+    public DataBlockIndex dataBlockIndex() {
         return dataBlockIndex;
     }
 
@@ -121,9 +100,6 @@ public class StreamDataBlock {
     public String toString() {
         return "StreamDataBlock{" +
             "objectId=" + objectId +
-            ", streamId=" + streamId +
-            ", startOffset=" + startOffset +
-            ", endOffset=" + endOffset +
             ", dataBlockIndex=" + dataBlockIndex +
             '}';
     }
@@ -135,13 +111,12 @@ public class StreamDataBlock {
         if (o == null || getClass() != o.getClass())
             return false;
         StreamDataBlock that = (StreamDataBlock) o;
-        return streamId == that.streamId && startOffset == that.startOffset && endOffset == that.endOffset
-            && objectId == that.objectId && dataBlockIndex.equals(that.dataBlockIndex);
+        return objectId == that.objectId && dataBlockIndex.equals(that.dataBlockIndex);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, startOffset, endOffset, objectId, dataBlockIndex);
+        return Objects.hash(objectId, dataBlockIndex);
     }
 
 }

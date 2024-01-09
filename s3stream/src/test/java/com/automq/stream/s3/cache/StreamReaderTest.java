@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
@@ -109,10 +110,10 @@ public class StreamReaderTest {
             .when(objectManager).getObjects(eq(streamId), eq(startOffset), anyLong(), anyInt());
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 64, 128, 128, 0, 256);
         doReturn(reader).when(streamReader).getObjectReader(metadata);
         doAnswer(invocation -> CompletableFuture.completedFuture(new ObjectReader.FindIndexResult(true, -1, -1,
-            List.of(new StreamDataBlock(streamId, 64, 128, objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
+            List.of(new StreamDataBlock(objectId, index1))))).when(reader).find(eq(streamId), eq(startOffset), anyLong(), eq(maxBytes));
         doReturn(new CompletableFuture<>()).when(reader).read(index1);
 
         streamReader.syncReadAhead(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID());
@@ -136,10 +137,10 @@ public class StreamReaderTest {
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, new HashMap<>(), new InflightReadThrottle());
 
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 256);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 0, 128, 128, 0, 256);
         context.streamDataBlocksPair = List.of(
             new ImmutablePair<>(1L, List.of(
-                new StreamDataBlock(233L, 0, 128, 1, index1))));
+                new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -195,10 +196,10 @@ public class StreamReaderTest {
 
         long startOffset = 32;
         StreamReader.ReadContext context = new StreamReader.ReadContext(startOffset, 256);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 0, 128, 128, 0, 256);
         context.streamDataBlocksPair = List.of(
             new ImmutablePair<>(1L, List.of(
-                new StreamDataBlock(233L, 0, 128, 1, index1))));
+                new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -256,12 +257,12 @@ public class StreamReaderTest {
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, new HashMap<>(), new InflightReadThrottle());
 
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 512);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
-        ObjectReader.DataBlockIndex index2 = new ObjectReader.DataBlockIndex(1, 256, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 0, 128, 128, 0, 256);
+        DataBlockIndex index2 = new DataBlockIndex(1, 128, 236, 128, 256, 256);
         context.streamDataBlocksPair = List.of(
             new ImmutablePair<>(1L, List.of(
-                new StreamDataBlock(233L, 0, 128, 1, index1),
-                new StreamDataBlock(233L, 128, 256, 1, index2))));
+                new StreamDataBlock(1, index1),
+                new StreamDataBlock(1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -323,10 +324,10 @@ public class StreamReaderTest {
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, new HashMap<>(), new InflightReadThrottle());
 
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 256);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 0, 128, 128, 0, 256);
         context.streamDataBlocksPair = List.of(
             new ImmutablePair<>(1L, List.of(
-                new StreamDataBlock(233L, 0, 128, 1, index1))));
+                new StreamDataBlock(1, index1))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);
@@ -378,12 +379,12 @@ public class StreamReaderTest {
         StreamReader streamReader = new StreamReader(s3Operator, objectManager, blockCache, cache, accumulator, new HashMap<>(), new InflightReadThrottle());
 
         StreamReader.ReadContext context = new StreamReader.ReadContext(0, 256);
-        ObjectReader.DataBlockIndex index1 = new ObjectReader.DataBlockIndex(0, 0, 256, 128);
-        ObjectReader.DataBlockIndex index2 = new ObjectReader.DataBlockIndex(1, 256, 256, 128);
+        DataBlockIndex index1 = new DataBlockIndex(0, 0, 128, 128, 0, 256);
+        DataBlockIndex index2 = new DataBlockIndex(1, 128, 256, 128, 256, 256);
         context.streamDataBlocksPair = List.of(
             new ImmutablePair<>(1L, List.of(
-                new StreamDataBlock(233L, 0, 128, 1, index1),
-                new StreamDataBlock(233L, 128, 256, 1, index2))));
+                new StreamDataBlock(1, index1),
+                new StreamDataBlock(1, index2))));
 
         ObjectReader reader = Mockito.mock(ObjectReader.class);
         ObjectReader.DataBlock dataBlock1 = Mockito.mock(ObjectReader.DataBlock.class);

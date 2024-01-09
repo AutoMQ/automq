@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -76,10 +77,10 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 15, TestUtils.random(10));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 25, 5, TestUtils.random(10));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(30));
-            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_2, 0, 30, 30, TestUtils.random(30));
+            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 15, TestUtils.random(2));
+            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 25, 5, TestUtils.random(2));
+            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(22));
+            StreamRecordBatch r4 = new StreamRecordBatch(STREAM_2, 0, 30, 30, TestUtils.random(22));
             objectWriter.write(STREAM_0, List.of(r1));
             objectWriter.write(STREAM_1, List.of(r2));
             objectWriter.write(STREAM_1, List.of(r3));
@@ -101,8 +102,8 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
-            StreamRecordBatch r5 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(5));
-            StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(60));
+            StreamRecordBatch r5 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(1));
+            StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(52));
             objectWriter.write(STREAM_0, List.of(r5));
             objectWriter.write(STREAM_1, List.of(r6));
             objectWriter.close().join();
@@ -120,8 +121,8 @@ public class CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_2, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, s3Operator, 1024, 1024);
-            StreamRecordBatch r8 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(100));
-            StreamRecordBatch r9 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(40));
+            StreamRecordBatch r8 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(92));
+            StreamRecordBatch r9 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(32));
             objectWriter.write(STREAM_1, List.of(r8));
             objectWriter.write(STREAM_2, List.of(r9));
             objectWriter.close().join();
@@ -145,7 +146,7 @@ public class CompactionTestBase {
         boolean attr = block1.getStreamId() == block2.getStreamId() &&
             block1.getStartOffset() == block2.getStartOffset() &&
             block1.getEndOffset() == block2.getEndOffset() &&
-            block1.getRecordCount() == block2.getRecordCount();
+            block1.dataBlockIndex().recordCount() == block2.dataBlockIndex().recordCount();
         if (!attr) {
             return false;
         }
@@ -204,8 +205,8 @@ public class CompactionTestBase {
 
     protected long calculateObjectSize(List<StreamDataBlock> streamDataBlocks) {
         long bodySize = streamDataBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
-        long indexBlockSize = 4 + 40L * streamDataBlocks.size();
-        long tailSize = 48;
+        int indexBlockSize = DataBlockIndex.BLOCK_INDEX_SIZE * streamDataBlocks.size();
+        long tailSize = ObjectWriter.Footer.FOOTER_SIZE;
         return bodySize + indexBlockSize + tailSize;
     }
 }

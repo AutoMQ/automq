@@ -17,7 +17,9 @@
 
 package com.automq.stream.s3.compact.operator;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
@@ -28,6 +30,7 @@ import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -69,24 +72,21 @@ public class DataBlockReader {
     }
 
     public void parseDataBlockIndex() {
-        parseDataBlockIndex(Math.max(0, metadata.objectSize() - 1024 * 1024));
-    }
-
-    public void parseDataBlockIndex(long startPosition) {
-        s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize(), ThrottleStrategy.THROTTLE_2)
-            .thenAccept(buf -> {
-                try {
-                    indexBlockCf.complete(IndexBlock.parse(buf, metadata.objectSize(), metadata.objectId()));
-                } catch (IndexBlockParseException ex) {
-                    parseDataBlockIndex(ex.indexBlockPosition);
-                }
-            }).exceptionally(ex -> {
-                // unrecoverable error, possibly read on a deleted object
-                LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
-                indexBlockCf.completeExceptionally(ex);
-                return null;
-            });
-
+        // TODO: throttle level
+        @SuppressWarnings("resource") ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
+        objectReader.basicObjectInfo().thenAccept(info -> {
+            List<StreamDataBlock> blocks = new ArrayList<>(info.indexBlock().count());
+            Iterator<DataBlockIndex> it = info.indexBlock().iterator();
+            while (it.hasNext()) {
+                blocks.add(new StreamDataBlock(metadata.objectId(), it.next()));
+            }
+            indexBlockCf.complete(blocks);
+        }).exceptionally(ex -> {
+            // unrecoverable error, possibly read on a deleted object
+            LOGGER.warn("object {} index parse fail", objectKey, ex);
+            indexBlockCf.completeExceptionally(ex);
+            return null;
+        }).whenComplete((nil, ex) -> objectReader.release());
     }
 
     public void readBlocks(List<StreamDataBlock> streamDataBlocks) {
@@ -228,49 +228,5 @@ public class DataBlockReader {
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
             streamDataBlock.getDataCf().completeExceptionally(ex);
         }
-    }
-
-    static class IndexBlock {
-        static List<StreamDataBlock> parse(ByteBuf objectTailBuf, long objectSize,
-            long objectId) throws IndexBlockParseException {
-            try {
-                long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - 48);
-                int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
-                if (indexBlockPosition + objectTailBuf.readableBytes() < objectSize) {
-                    throw new IndexBlockParseException(indexBlockPosition);
-                } else {
-                    int indexRelativePosition = objectTailBuf.readableBytes() - (int) (objectSize - indexBlockPosition);
-                    ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
-                    int blockCount = indexBlockBuf.readInt();
-                    ByteBuf blocks = indexBlockBuf.slice(indexBlockBuf.readerIndex(), blockCount * 16);
-                    indexBlockBuf.skipBytes(blockCount * 16);
-                    ByteBuf streamRanges = indexBlockBuf.slice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
-                    List<StreamDataBlock> streamDataBlocks = new ArrayList<>();
-                    for (int i = 0; i < blockCount; i++) {
-                        long blockPosition = blocks.readLong();
-                        int blockSize = blocks.readInt();
-                        int recordCount = blocks.readInt();
-                        long streamId = streamRanges.readLong();
-                        long startOffset = streamRanges.readLong();
-                        int rangeSize = streamRanges.readInt();
-                        int blockIndex = streamRanges.readInt();
-                        streamDataBlocks.add(new StreamDataBlock(streamId, startOffset, startOffset + rangeSize,
-                            blockIndex, objectId, blockPosition, blockSize, recordCount));
-                    }
-                    return streamDataBlocks;
-                }
-            } finally {
-                objectTailBuf.release();
-            }
-        }
-    }
-
-    static class IndexBlockParseException extends Exception {
-        long indexBlockPosition;
-
-        public IndexBlockParseException(long indexBlockPosition) {
-            this.indexBlockPosition = indexBlockPosition;
-        }
-
     }
 }

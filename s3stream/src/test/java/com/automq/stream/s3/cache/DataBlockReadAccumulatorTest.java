@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -51,8 +52,8 @@ public class DataBlockReadAccumulatorTest {
         DataBlockReadAccumulator accumulator = new DataBlockReadAccumulator();
 
         ObjectReader reader = mock(ObjectReader.class);
-        ObjectReader.DataBlockIndex dataBlockIndex = new ObjectReader.DataBlockIndex(10, 10, 100, 2);
-        StreamDataBlock streamDataBlock = new StreamDataBlock(233L, 0, 12, 1, dataBlockIndex);
+        DataBlockIndex dataBlockIndex = new DataBlockIndex(10, 0, 12, 2, 10, 100);
+        StreamDataBlock streamDataBlock = new StreamDataBlock(1, dataBlockIndex);
         CompletableFuture<ObjectReader.DataBlock> readerCf = new CompletableFuture<>();
         when(reader.read(eq(dataBlockIndex))).thenReturn(readerCf);
 

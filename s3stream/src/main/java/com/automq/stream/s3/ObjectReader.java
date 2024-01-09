@@ -70,7 +70,7 @@ public class ObjectReader implements AutoCloseable {
 
     public CompletableFuture<DataBlock> read(DataBlockIndex block) {
         CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.THROTTLE_1);
-        return rangeReadCf.thenApply(buf -> new DataBlock(buf, block.recordCount()));
+        return rangeReadCf.thenApply(DataBlock::new);
     }
 
     void asyncGetBasicObjectInfo() {
@@ -121,12 +121,10 @@ public class ObjectReader implements AutoCloseable {
     }
 
     /**
-     * @param dataBlockSize  The total size of the data blocks, which equals to index start position.
-     * @param indexBlock     raw index data.
-     * @param blockCount     The number of data blocks in the object.
-     * @param indexBlockSize The size of the index blocks.
+     * @param dataBlockSize The total size of the data blocks, which equals to index start position.
+     * @param indexBlock    raw index data.
      */
-    public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock, int blockCount, int indexBlockSize) {
+    public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock) {
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf,
             S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
@@ -145,13 +143,7 @@ public class ObjectReader implements AutoCloseable {
                 indexBlockBuf.readBytes(copy, indexBlockBuf.readableBytes());
                 objectTailBuf.release();
                 indexBlockBuf = copy;
-
-                int blockCount = indexBlockBuf.readInt();
-                ByteBuf blocks = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), blockCount * 16);
-                indexBlockBuf.skipBytes(blockCount * 16);
-                ByteBuf streamRanges = indexBlockBuf.retainedSlice(indexBlockBuf.readerIndex(), indexBlockBuf.readableBytes());
-                indexBlockBuf.release();
-                return new BasicObjectInfo(indexBlockPosition, new IndexBlock(s3ObjectMetadata, blocks, streamRanges), blockCount, indexBlockSize);
+                return new BasicObjectInfo(indexBlockPosition, new IndexBlock(s3ObjectMetadata, indexBlockBuf));
             }
         }
 
@@ -165,48 +157,47 @@ public class ObjectReader implements AutoCloseable {
     }
 
     public static class IndexBlock {
+        public static final int INDEX_BLOCK_UNIT_SIZE = 8/* streamId */ + 8 /* startOffset */ + 4 /* endOffset delta */
+            + 4 /* record count */ + 8 /* block position */ + 4 /* block size */;
         private final S3ObjectMetadata s3ObjectMetadata;
-        private final ByteBuf blocks;
-        private final ByteBuf streamRanges;
+        private final ByteBuf buf;
         private final int size;
+        private final int count;
 
-        public IndexBlock(S3ObjectMetadata s3ObjectMetadata, ByteBuf blocks, ByteBuf streamRanges) {
+        public IndexBlock(S3ObjectMetadata s3ObjectMetadata, ByteBuf buf) {
             this.s3ObjectMetadata = s3ObjectMetadata;
-            this.blocks = blocks;
-            this.streamRanges = streamRanges;
-            this.size = blocks.readableBytes() + streamRanges.readableBytes();
+            this.buf = buf;
+            this.size = buf.readableBytes();
+            this.count = buf.readableBytes() / INDEX_BLOCK_UNIT_SIZE;
         }
 
-        public Iterator<StreamDataBlock> iterator() {
-            ByteBuf blocks = this.blocks.slice();
-            ByteBuf ranges = this.streamRanges.slice();
+        public Iterator<DataBlockIndex> iterator() {
+            AtomicInteger getIndex = new AtomicInteger(0);
             return new Iterator<>() {
                 @Override
                 public boolean hasNext() {
-                    return ranges.readableBytes() != 0;
+                    return getIndex.get() < count;
                 }
 
                 @Override
-                public StreamDataBlock next() {
-                    long streamId = ranges.readLong();
-                    long startOffset = ranges.readLong();
-                    long endOffset = startOffset + ranges.readInt();
-                    int rangeBlockId = ranges.readInt();
-                    long blockPosition = blocks.getLong(rangeBlockId * 16);
-                    int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
-                    int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
-                    return new StreamDataBlock(streamId, startOffset, endOffset, rangeBlockId, s3ObjectMetadata.objectId(),
-                        blockPosition, blockSize, recordCount);
+                public DataBlockIndex next() {
+                    return get(getIndex.getAndIncrement());
                 }
             };
         }
 
-        public ByteBuf blocks() {
-            return blocks.slice();
-        }
-
-        public ByteBuf streamRanges() {
-            return streamRanges.slice();
+        public DataBlockIndex get(int index) {
+            if (index < 0 || index >= count) {
+                throw new IllegalArgumentException("index" + index + " is out of range [0, " + count + ")");
+            }
+            int base = index * INDEX_BLOCK_UNIT_SIZE;
+            long streamId = buf.getLong(base);
+            long startOffset = buf.getLong(base + 8);
+            int endOffsetDelta = buf.getInt(base + 16);
+            int recordCount = buf.getInt(base + 20);
+            long blockPosition = buf.getLong(base + 24);
+            int blockSize = buf.getInt(base + 32);
+            return new DataBlockIndex(streamId, startOffset, endOffsetDelta, recordCount, blockPosition, blockSize);
         }
 
         public FindIndexResult find(long streamId, long startOffset, long endOffset) {
@@ -219,37 +210,30 @@ public class ObjectReader implements AutoCloseable {
             boolean matched = false;
             boolean isFulfilled = false;
             List<StreamDataBlock> rst = new LinkedList<>();
-            IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(streamRanges);
+            IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(this);
             int startIndex = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, startOffset));
             if (startIndex == -1) {
                 // mismatched
                 return new FindIndexResult(false, nextStartOffset, nextMaxBytes, rst);
             }
-            for (int i = startIndex * 24; i < streamRanges.readableBytes(); i += 24) {
-                long rangeStreamId = streamRanges.getLong(i);
-                long rangeStartOffset = streamRanges.getLong(i + 8);
-                long rangeEndOffset = rangeStartOffset + streamRanges.getInt(i + 16);
-                int rangeBlockId = streamRanges.getInt(i + 20);
-                if (rangeStreamId == streamId) {
-                    if (nextStartOffset < rangeStartOffset) {
+            for (int i = startIndex; i < count(); i++) {
+                DataBlockIndex index = get(i);
+                if (index.streamId() == streamId) {
+                    if (nextStartOffset < index.startOffset()) {
                         break;
                     }
-                    if (rangeEndOffset <= nextStartOffset) {
+                    if (index.endOffset() <= nextStartOffset) {
                         continue;
                     }
-                    matched = nextStartOffset == rangeStartOffset;
-                    nextStartOffset = rangeEndOffset;
-                    long blockPosition = blocks.getLong(rangeBlockId * 16);
-                    int blockSize = blocks.getInt(rangeBlockId * 16 + 8);
-                    int recordCount = blocks.getInt(rangeBlockId * 16 + 12);
-                    rst.add(new StreamDataBlock(streamId, rangeStartOffset, rangeEndOffset, s3ObjectMetadata.objectId(),
-                        new DataBlockIndex(rangeBlockId, blockPosition, blockSize, recordCount)));
+                    matched = nextStartOffset == index.startOffset();
+                    nextStartOffset = index.endOffset();
+                    rst.add(new StreamDataBlock(s3ObjectMetadata.objectId(), index));
 
                     // we consider first block as not matched because we do not know exactly how many bytes are within
                     // the range in first block, as a result we may read one more block than expected.
                     if (matched) {
-                        int recordPayloadSize = blockSize
-                            - recordCount * StreamRecordBatchCodec.HEADER_SIZE // sum of encoded record header size
+                        int recordPayloadSize = index.size()
+                            - index.recordCount() * StreamRecordBatchCodec.HEADER_SIZE // sum of encoded record header size
                             - ObjectWriter.DataBlock.BLOCK_HEADER_SIZE; // block header size
                         nextMaxBytes -= Math.min(nextMaxBytes, recordPayloadSize);
                     }
@@ -264,13 +248,16 @@ public class ObjectReader implements AutoCloseable {
             return new FindIndexResult(isFulfilled, nextStartOffset, nextMaxBytes, rst);
         }
 
-        int size() {
+        public int size() {
             return size;
         }
 
+        public int count() {
+            return count;
+        }
+
         void close() {
-            blocks.release();
-            streamRanges.release();
+            buf.release();
         }
     }
 
@@ -288,45 +275,36 @@ public class ObjectReader implements AutoCloseable {
 
     }
 
-    public record DataBlockIndex(int blockId, long startPosition, int size, int recordCount) {
-        public static final int BLOCK_INDEX_SIZE = 8 + 4 + 4;
-
-        public long endPosition() {
-            return startPosition + size;
-        }
-
-        @Override
-        public String toString() {
-            return "DataBlockIndex{" +
-                "blockId=" + blockId +
-                ", startPosition=" + startPosition +
-                ", size=" + size +
-                ", recordCount=" + recordCount +
-                '}';
-        }
-    }
-
     public static class DataBlock implements AutoCloseable {
         private final ByteBuf buf;
         private final int recordCount;
 
-        public DataBlock(ByteBuf buf, int recordCount) {
-            this.buf = buf;
-            this.recordCount = recordCount;
+        public DataBlock(ByteBuf buf) {
+            this.buf = buf.duplicate();
+            this.recordCount = check(buf);
+        }
+
+        private static int check(ByteBuf buf) {
+            buf = buf.duplicate();
+            int recordCount = 0;
+            while (buf.readableBytes() > 0) {
+                byte magicCode = buf.readByte();
+                if (magicCode != ObjectWriter.DATA_BLOCK_MAGIC) {
+                    LOGGER.error("magic code mismatch, expected {}, actual {}", ObjectWriter.DATA_BLOCK_MAGIC, magicCode);
+                    throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted");
+                }
+                buf.readByte(); // flag
+                recordCount += buf.readInt();
+                int dataLength = buf.readInt();
+                buf.skipBytes(dataLength);
+            }
+            return recordCount;
         }
 
         public CloseableIterator<StreamRecordBatch> iterator() {
             ByteBuf buf = this.buf.duplicate();
+            AtomicInteger currentBlockRecordCount = new AtomicInteger(0);
             AtomicInteger remainingRecordCount = new AtomicInteger(recordCount);
-            // skip magic and flag
-            byte magicCode = buf.readByte();
-            buf.readByte();
-
-            if (magicCode != ObjectWriter.DATA_BLOCK_MAGIC) {
-                LOGGER.error("magic code mismatch, expected {}, actual {}", ObjectWriter.DATA_BLOCK_MAGIC, magicCode);
-                throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted");
-            }
-            // TODO: check flag, use uncompressed stream or compressed stream.
             return new CloseableIterator<>() {
                 @Override
                 public boolean hasNext() {
@@ -339,6 +317,12 @@ public class ObjectReader implements AutoCloseable {
                     if (remainingRecordCount.decrementAndGet() < 0) {
                         throw new NoSuchElementException();
                     }
+                    if (currentBlockRecordCount.get() == 0) {
+                        buf.skipBytes(1 /* magic */ + 1 /* flag */);
+                        currentBlockRecordCount.set(buf.readInt());
+                        buf.skipBytes(4);
+                    }
+                    currentBlockRecordCount.decrementAndGet();
                     return StreamRecordBatchCodec.duplicateDecode(buf);
                 }
 

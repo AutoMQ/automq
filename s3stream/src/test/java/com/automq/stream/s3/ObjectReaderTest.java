@@ -17,6 +17,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -24,6 +25,7 @@ import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Tag;
@@ -56,54 +58,20 @@ public class ObjectReaderTest {
         int blockSize3 = recordCntToBlockSize(recordCnt3, bodySize);
         long streamId1 = 1;
         long streamId2 = 2;
-        ByteBuf blocks = Unpooled.buffer(3 * ObjectReader.DataBlockIndex.BLOCK_INDEX_SIZE);
-        blocks.writeLong(0);
-        blocks.writeInt(blockSize1);
-        blocks.writeInt(recordCnt1);
+        ByteBuf indexBuf = Unpooled.buffer(3 * DataBlockIndex.BLOCK_INDEX_SIZE);
+        new DataBlockIndex(streamId1, 0, recordCnt1, recordCnt1, 0, blockSize1).encode(indexBuf);
+        new DataBlockIndex(streamId1, recordCnt1, recordCnt2, recordCnt2, blockSize1, blockSize2).encode(indexBuf);
+        new DataBlockIndex(streamId1, recordCnt1 + recordCnt2, recordCnt3, recordCnt3, blockSize1 + blockSize2, blockSize3).encode(indexBuf);
+        new DataBlockIndex(streamId2, 110, recordCnt3, recordCnt3, blockSize1 + blockSize2 + blockSize3, blockSize3).encode(indexBuf);
 
-        blocks.writeLong(blockSize1);
-        blocks.writeInt(blockSize2);
-        blocks.writeInt(recordCnt2);
-
-        blocks.writeLong((long) blockSize1 + blockSize2);
-        blocks.writeInt(blockSize2);
-        blocks.writeInt(recordCnt2);
-
-        blocks.writeLong((long) blockSize1 + blockSize2 + blockSize2);
-        blocks.writeInt(blockSize3);
-        blocks.writeInt(recordCnt3);
-
-        ByteBuf streamRanges = Unpooled.buffer(3 * (8 + 8 + 4 + 4));
-        streamRanges.writeLong(streamId1);
-        streamRanges.writeLong(0);
-        streamRanges.writeInt(recordCnt1);
-        streamRanges.writeInt(0);
-
-        streamRanges.writeLong(streamId1);
-        streamRanges.writeLong(recordCnt1);
-        streamRanges.writeInt(recordCnt2);
-        streamRanges.writeInt(1);
-
-        streamRanges.writeLong(streamId1);
-        streamRanges.writeLong(recordCnt1 + recordCnt2);
-        streamRanges.writeInt(recordCnt2);
-        streamRanges.writeInt(2);
-
-        streamRanges.writeLong(streamId2);
-        streamRanges.writeLong(110);
-        streamRanges.writeInt(recordCnt3);
-        streamRanges.writeInt(3);
-
-        ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(Mockito.mock(S3ObjectMetadata.class), blocks, streamRanges);
+        ObjectReader.IndexBlock indexBlock = new ObjectReader.IndexBlock(Mockito.mock(S3ObjectMetadata.class), indexBuf);
 
         ObjectReader.FindIndexResult rst = indexBlock.find(1, 10, 150, 100000);
         assertTrue(rst.isFulfilled());
         List<StreamDataBlock> streamDataBlocks = rst.streamDataBlocks();
         assertEquals(2, streamDataBlocks.size());
-        assertEquals(0, streamDataBlocks.get(0).getBlockId());
         assertEquals(0, streamDataBlocks.get(0).getBlockStartPosition());
         assertEquals(blockSize1, streamDataBlocks.get(0).getBlockEndPosition());
-        assertEquals(1, streamDataBlocks.get(1).getBlockId());
         assertEquals(blockSize1, streamDataBlocks.get(1).getBlockStartPosition());
         assertEquals((long) blockSize1 + blockSize2, streamDataBlocks.get(1).getBlockEndPosition());
 
@@ -138,7 +106,38 @@ public class ObjectReaderTest {
         S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET);
         try (ObjectReader objectReader = new ObjectReader(metadata, s3Operator)) {
             ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
-            assertEquals(streamCount, info.blockCount());
+            assertEquals(streamCount, info.indexBlock().count());
+        }
+    }
+
+    @Test
+    public void testReadBlockGroup() throws ExecutionException, InterruptedException {
+        S3Operator s3Operator = new MemoryS3Operator();
+        ByteBuf buf = DirectByteBufAlloc.byteBuffer(0);
+        buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
+            new StreamRecordBatch(233L, 0, 10, 1, TestUtils.random(100)),
+            new StreamRecordBatch(233L, 0, 11, 2, TestUtils.random(100))
+        )).buffer());
+        buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
+            new StreamRecordBatch(233L, 0, 13, 1, TestUtils.random(100))
+        )).buffer());
+        int indexPosition = buf.readableBytes();
+        new DataBlockIndex(233L, 10, 4, 3, 0, buf.readableBytes()).encode(buf);
+        int indexSize = buf.readableBytes() - indexPosition;
+        buf.writeBytes(new ObjectWriter.Footer(indexPosition, indexSize).buffer());
+        int objectSize = buf.readableBytes();
+        s3Operator.write(ObjectUtils.genKey(0, 1L), buf);
+        buf.release();
+        try (ObjectReader reader = new ObjectReader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), s3Operator)) {
+            ObjectReader.FindIndexResult rst = reader.find(233L, 10L, 14L, 1024).get();
+            assertEquals(1, rst.streamDataBlocks().size());
+            try (ObjectReader.DataBlock dataBlock = reader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get()) {
+                assertEquals(3, dataBlock.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlock.iterator();
+                assertEquals(10, it.next().getBaseOffset());
+                assertEquals(11, it.next().getBaseOffset());
+                assertEquals(13, it.next().getBaseOffset());
+            }
         }
     }
 
