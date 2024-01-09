@@ -23,7 +23,7 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.CompactionStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import io.github.bucket4j.Bucket;
@@ -189,7 +189,7 @@ public class DataBlockReader {
 
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
         return rangeRead0(start, end).whenComplete((ret, ex) ->
-            S3StreamMetricsManager.recordCompactionReadSizeIn(MetricsLevel.INFO, ret.readableBytes()));
+                CompactionStats.getInstance().compactionReadSizeStats.add(MetricsLevel.INFO, ret.readableBytes()));
     }
 
     private CompletableFuture<ByteBuf> rangeRead0(long start, long end) {

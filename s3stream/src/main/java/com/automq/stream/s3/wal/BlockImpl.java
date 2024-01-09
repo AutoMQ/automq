@@ -19,9 +19,9 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.stats.ByteBufStats;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -113,10 +113,10 @@ public class BlockImpl implements Block {
         data = DirectByteBufAlloc.compositeByteBuffer();
         for (Supplier<ByteBuf> supplier : records) {
             ByteBuf record = supplier.get();
-            S3StreamMetricsManager.recordAllocateByteBufSize(MetricsLevel.DEBUG, record.readableBytes(), "wal_record");
+            ByteBufStats.getInstance().allocateByteBufSizeStats("wal_record").record(MetricsLevel.DEBUG, record.readableBytes());
             data.addComponent(true, record);
         }
-        S3StreamMetricsManager.recordAllocateByteBufSize(MetricsLevel.DEBUG, data.readableBytes(), "wal_block");
+        ByteBufStats.getInstance().allocateByteBufSizeStats("wal_block").record(MetricsLevel.DEBUG, data.readableBytes());
         return data;
     }
 
@@ -127,6 +127,6 @@ public class BlockImpl implements Block {
 
     @Override
     public void polled() {
-        S3StreamMetricsManager.recordStageLatency(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_BLOCK_POLLED);
+        StorageOperationStats.getInstance().appendWALBlockPolledStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 }

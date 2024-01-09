@@ -17,18 +17,24 @@
 
 package com.automq.stream.s3.metrics;
 
+import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.ConfigListener;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 
 public class S3StreamMetricsManager {
+    private static final List<ConfigListener> BASE_ATTRIBUTES_LISTENERS = new ArrayList<>();
     private static LongCounter s3DownloadSizeInTotal = new NoopLongCounter();
     private static LongCounter s3UploadSizeInTotal = new NoopLongCounter();
     private static LongHistogram operationLatency = new NoopLongHistogram();
@@ -68,18 +74,19 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> availableInflightS3ReadQuotaSupplier = () -> 0;
     private static Supplier<Integer> availableInflightS3WriteQuotaSupplier = () -> 0;
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
-    private static MetricsLevel metricsLevel = MetricsLevel.INFO;
+    private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
 
-    public static void initAttributesBuilder(Supplier<AttributesBuilder> attributesBuilderSupplier) {
-        AttributesCache.INSTANCE.setDefaultAttributes(attributesBuilderSupplier.get().build());
+    public static void configure(MetricsConfig metricsConfig) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            S3StreamMetricsManager.metricsConfig = metricsConfig;
+            for (ConfigListener listener : BASE_ATTRIBUTES_LISTENERS) {
+                listener.onConfigChange(metricsConfig);
+            }
+        }
     }
 
     public static void initMetrics(Meter meter) {
         initMetrics(meter, "");
-    }
-
-    public static void setMetricsLevel(MetricsLevel level) {
-        metricsLevel = level;
     }
 
     public static void initMetrics(Meter meter, String prefix) {
@@ -129,8 +136,8 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsLevel)) {
-                    result.record(networkInboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(networkInboundAvailableBandwidthSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         networkOutboundAvailableBandwidth = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME)
@@ -138,24 +145,24 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsLevel)) {
-                    result.record(networkOutboundAvailableBandwidthSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(networkOutboundAvailableBandwidthSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         networkInboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
             .setDescription("Network inbound limiter queue size")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) networkInboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) networkInboundLimiterQueueSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         networkOutboundLimiterQueueSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME)
             .setDescription("Network outbound limiter queue size")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         networkInboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
@@ -184,16 +191,16 @@ public class S3StreamMetricsManager {
             .setDescription("Delta WAL start offset")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record(deltaWalStartOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(deltaWalStartOffsetSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         deltaWalTrimmedOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_TRIMMED_OFFSET)
             .setDescription("Delta WAL trimmed offset")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record(deltaWalTrimmedOffsetSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(deltaWalTrimmedOffsetSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         deltaWalCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.DELTA_WAL_CACHE_SIZE)
@@ -201,8 +208,8 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record(deltaWALCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(deltaWALCacheSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         blockCacheSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BLOCK_CACHE_SIZE)
@@ -210,8 +217,8 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record(blockCacheSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(blockCacheSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         availableInflightReadAheadSize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_INFLIGHT_READ_AHEAD_SIZE_METRIC_NAME)
@@ -219,32 +226,32 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) availableInflightReadAheadSizeSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) availableInflightReadAheadSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         availableInflightS3ReadQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_READ_QUOTA_METRIC_NAME)
             .setDescription("Available inflight S3 read quota")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) availableInflightS3ReadQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) availableInflightS3ReadQuotaSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         availableInflightS3WriteQuota = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.AVAILABLE_S3_INFLIGHT_WRITE_QUOTA_METRIC_NAME)
             .setDescription("Available inflight S3 write quota")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) availableInflightS3WriteQuotaSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) availableInflightS3WriteQuotaSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         inflightWALUploadTasksCount = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME)
             .setDescription("Inflight upload WAL tasks count")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsLevel)) {
-                    result.record((long) inflightWALUploadTasksCountSupplier.get(), AttributesCache.INSTANCE.defaultAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record((long) inflightWALUploadTasksCountSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
         compactionReadSizeInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.COMPACTION_READ_SIZE_METRIC_NAME)
@@ -304,126 +311,149 @@ public class S3StreamMetricsManager {
         S3StreamMetricsManager.inflightWALUploadTasksCountSupplier = inflightWALUploadTasksCountSupplier;
     }
 
-    public static void recordS3UploadSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            s3UploadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildS3UploadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, s3UploadSizeInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordS3DownloadSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            s3DownloadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildS3DownloadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, s3DownloadSizeInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation) {
-        recordOperationLatency(level, value, operation, 0, true);
-    }
-
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation,
-        boolean isSuccess) {
-        recordOperationLatency(level, value, operation, 0, isSuccess);
-    }
-
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation, long size) {
-        recordOperationLatency(level, value, operation, size, true);
-    }
-
-    public static void recordOperationLatency(MetricsLevel level, long value, S3Operation operation, long size,
-        boolean isSuccess) {
-        if (level.isWithin(metricsLevel)) {
-            operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, size, isSuccess));
+    public static HistogramMetric buildStageOperationMetric(S3Stage stage) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(stage), operationLatency);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordStageLatency(MetricsLevel level, long value, S3Stage stage) {
-        if (level.isWithin(metricsLevel)) {
-            operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(stage));
+    public static HistogramMetric buildOperationMetric(S3Operation operation) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation), operationLatency);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordReadCacheLatency(MetricsLevel level, long value, S3Operation operation,
-        boolean isCacheHit) {
-        if (level.isWithin(metricsLevel)) {
-            operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, isCacheHit ? "hit" : "miss"));
+    public static HistogramMetric buildOperationMetric(S3Operation operation, String status, String sizeLabelName) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation,
+                status, sizeLabelName), operationLatency);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordReadAheadLatency(MetricsLevel level, long value, S3Operation operation, boolean isSync) {
-        if (level.isWithin(metricsLevel)) {
-            operationLatency.record(value, AttributesCache.INSTANCE.getAttributes(operation, isSync ? "sync" : "async"));
+    public static HistogramMetric buildOperationMetric(S3Operation operation, String status) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation, status), operationLatency);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordObjectNum(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            objectNumInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildObjectNumMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, objectNumInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordObjectStageCost(MetricsLevel level, long value, S3ObjectStage stage) {
-        if (level.isWithin(metricsLevel)) {
-            objectStageCost.record(value, AttributesCache.INSTANCE.getAttributes(stage));
+    public static HistogramMetric buildObjectStageCostMetric(S3ObjectStage stage) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(stage), objectStageCost);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordObjectUploadSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            objectUploadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static HistogramMetric buildObjectUploadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, objectUploadSize);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordObjectDownloadSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            objectDownloadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static HistogramMetric buildObjectDownloadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, objectDownloadSize);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordNetworkInboundUsage(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            networkInboundUsageInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildNetworkInboundUsageMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, networkInboundUsageInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordNetworkOutboundUsage(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            networkOutboundUsageInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildNetworkOutboundUsageMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, networkOutboundUsageInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordNetworkLimiterQueueTime(MetricsLevel level, long value,
-        AsyncNetworkBandwidthLimiter.Type type) {
-        if (level.isWithin(metricsLevel)) {
-            switch (type) {
-                case INBOUND ->
-                    networkInboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
-                case OUTBOUND ->
-                    networkOutboundLimiterQueueTime.record(value, AttributesCache.INSTANCE.defaultAttributes());
-            }
+    public static HistogramMetric buildNetworkInboundLimiterQueueTimeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, networkInboundLimiterQueueTime);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordAllocateByteBufSize(MetricsLevel level, long value, String source) {
-        if (level.isWithin(metricsLevel)) {
-            allocateByteBufSize.record(value, AttributesCache.INSTANCE.getAttributes(source));
+    public static HistogramMetric buildNetworkOutboundLimiterQueueTimeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, networkOutboundLimiterQueueTime);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordReadAheadSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            readAheadSize.record(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static HistogramMetric buildAllocateByteBufSizeMetric(String source) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(source), allocateByteBufSize);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordCompactionReadSizeIn(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            compactionReadSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static HistogramMetric buildReadAheadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, readAheadSize);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
+        }
+
+    }
+
+    public static CounterMetric buildCompactionReadSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, compactionReadSizeInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 
-    public static void recordCompactionWriteSize(MetricsLevel level, long value) {
-        if (level.isWithin(metricsLevel)) {
-            compactionWriteSizeInTotal.add(value, AttributesCache.INSTANCE.defaultAttributes());
+    public static CounterMetric buildCompactionWriteSizeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, compactionWriteSizeInTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
         }
     }
 }

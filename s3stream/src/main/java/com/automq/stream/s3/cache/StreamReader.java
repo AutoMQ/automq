@@ -21,9 +21,8 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
@@ -138,7 +137,7 @@ public class StreamReader {
                     completeInflightTask0(key, ex);
                 }
                 context.taskKeySet.clear();
-                S3StreamMetricsManager.recordReadAheadLatency(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.BLOCK_CACHE_READ_AHEAD, true);
+                StorageOperationStats.getInstance().blockCacheReadAheadStats(true).record(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS));
             });
     }
 
@@ -301,7 +300,7 @@ public class StreamReader {
                     completeInflightTask0(key, ex);
                 }
                 context.taskKeySet.clear();
-                S3StreamMetricsManager.recordReadAheadLatency(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.BLOCK_CACHE_READ_AHEAD, false);
+                StorageOperationStats.getInstance().blockCacheReadAheadStats(false).record(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS));
             });
     }
 

@@ -19,9 +19,8 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3ObjectStage;
+import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
@@ -152,14 +151,14 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.READY_CLOSE);
+        S3ObjectStats.getInstance().objectStageReadyCloseStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.TOTAL);
-            S3StreamMetricsManager.recordObjectNum(MetricsLevel.DEBUG, 1);
-            S3StreamMetricsManager.recordObjectUploadSize(MetricsLevel.DEBUG, totalWriteSize.get());
+            S3ObjectStats.getInstance().objectStageTotalStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
+            S3ObjectStats.getInstance().objectUploadSizeStats.record(MetricsLevel.DEBUG, totalWriteSize.get());
         });
         return closeCf;
     }
@@ -237,7 +236,7 @@ public class MultiPartWriter implements Writer {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> {
-                S3StreamMetricsManager.recordObjectStageCost(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3ObjectStage.UPLOAD_PART);
+                S3ObjectStats.getInstance().objectStageUploadPartStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             });
         }
 
