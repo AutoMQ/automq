@@ -17,13 +17,12 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
-import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -63,13 +62,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 
 public class TelemetryManager {
@@ -80,8 +76,6 @@ public class TelemetryManager {
     private static boolean traceEnable = false;
     private final KafkaConfig kafkaConfig;
     private final String clusterId;
-    private final Map<AttributeKey<String>, String> labelMap;
-    private final Supplier<AttributesBuilder> attributesBuilderSupplier;
     private final List<MetricReader> metricReaderList;
     private final List<AutoCloseable> autoCloseables;
     private PrometheusHttpServer prometheusHttpServer;
@@ -89,10 +83,8 @@ public class TelemetryManager {
     public TelemetryManager(KafkaConfig kafkaConfig, String clusterId) {
         this.kafkaConfig = kafkaConfig;
         this.clusterId = clusterId;
-        this.labelMap = new HashMap<>();
         this.metricReaderList = new ArrayList<>();
         this.autoCloseables = new ArrayList<>();
-        this.attributesBuilderSupplier = Attributes::builder;
         init();
     }
 
@@ -110,15 +102,11 @@ public class TelemetryManager {
 
     private void init() {
         String nodeType = getNodeType();
-        Resource resource = Resource.getDefault().toBuilder()
+        Resource resource = Resource.empty().toBuilder()
                 .put(ResourceAttributes.SERVICE_NAMESPACE, clusterId)
                 .put(ResourceAttributes.SERVICE_NAME, nodeType)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
                 .build();
-
-        labelMap.put(AttributeKey.stringKey("cluster_id"), clusterId);
-        labelMap.put(AttributeKey.stringKey("node_type"), nodeType);
-        labelMap.put(AttributeKey.stringKey("node_id"), String.valueOf(kafkaConfig.nodeId()));
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
 
@@ -148,13 +136,8 @@ public class TelemetryManager {
 
             // initialize S3Stream metrics
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
-            S3StreamMetricsManager.setMetricsLevel(metricsLevel());
+            S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty()));
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
-            S3StreamMetricsManager.initAttributesBuilder(() -> {
-                AttributesBuilder builder = attributesBuilderSupplier.get();
-                labelMap.forEach(builder::put);
-                return builder;
-            });
         }
 
         LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",
@@ -217,6 +200,7 @@ public class TelemetryManager {
             otlpEndpointOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
         }
         if (otlpEndpointOpt.isEmpty()) {
+            LOGGER.error("No valid OTLP endpoint found for tracer");
             return null;
         }
         String otlpEndpoint = otlpEndpointOpt.get();
@@ -269,6 +253,7 @@ public class TelemetryManager {
     private void initOTLPExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
         Optional<String> otlpExporterHostOpt = getOTLPEndpoint(kafkaConfig.s3ExporterOTLPEndpoint());
         if (otlpExporterHostOpt.isEmpty()) {
+            LOGGER.error("No valid OTLP endpoint found for metrics");
             return;
         }
         String otlpExporterHost = otlpExporterHostOpt.get();
@@ -314,7 +299,6 @@ public class TelemetryManager {
 
     private Optional<String> getOTLPEndpoint(String endpoint) {
         if (StringUtils.isBlank(endpoint)) {
-            LOGGER.error("illegal OTLP collector endpoint: {}", endpoint);
             return Optional.empty();
         }
         if (!endpoint.startsWith("http://")) {
