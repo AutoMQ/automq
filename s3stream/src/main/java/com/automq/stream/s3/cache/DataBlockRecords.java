@@ -40,10 +40,10 @@ public class DataBlockRecords {
         listeners.add(listener);
     }
 
-    public void complete(ObjectReader.DataBlock dataBlock, Throwable ex) {
+    public void complete(ObjectReader.DataBlockGroup dataBlockGroup, Throwable ex) {
         if (ex == null) {
-            records = new ArrayList<>(dataBlock.recordCount());
-            try (CloseableIterator<StreamRecordBatch> it = dataBlock.iterator()) {
+            records = new ArrayList<>(dataBlockGroup.recordCount());
+            try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator()) {
                 while (it.hasNext()) {
                     records.add(it.next());
                 }
