@@ -11,7 +11,7 @@ rules:
   - bean: kafka.controller:type=KafkaController,name=ActiveBrokerCount
     mapping:
       Value:
-        metric: kafka.active.broker.count
+        metric: kafka.broker.active.count
         type: updowncounter
         desc: The number of active brokers
         unit: "{brokers}"
@@ -19,7 +19,7 @@ rules:
   - bean: kafka.controller:type=KafkaController,name=FencedBrokerCount
     mapping:
       Value:
-        metric: kafka.fenced.broker.count
+        metric: kafka.broker.fenced.count
         type: updowncounter
         desc: The number of fenced brokers
         unit: "{brokers}"
