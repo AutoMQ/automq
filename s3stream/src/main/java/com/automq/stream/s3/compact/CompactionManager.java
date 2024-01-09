@@ -23,6 +23,8 @@ import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
+import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -338,7 +340,7 @@ public class CompactionManager {
     Collection<CompletableFuture<StreamObject>> groupAndSplitStreamDataBlocks(S3ObjectMetadata objectMetadata,
         List<StreamDataBlock> streamDataBlocks) {
         List<Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>>> groupedDataBlocks = new ArrayList<>();
-        List<List<StreamDataBlock>> groupedStreamDataBlocks = CompactionUtils.groupStreamDataBlocks(streamDataBlocks);
+        List<List<StreamDataBlock>> groupedStreamDataBlocks = CompactionUtils.groupStreamDataBlocks(streamDataBlocks, new GroupByOffsetPredicate());
         for (List<StreamDataBlock> group : groupedStreamDataBlocks) {
             groupedDataBlocks.add(new ImmutablePair<>(group, new CompletableFuture<>()));
         }
@@ -611,7 +613,8 @@ public class CompactionManager {
                 }).join();
             streamObjectCfList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
         }
-        List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRange(sortedStreamDataBlocks);
+        List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRangeFromGroup(
+            CompactionUtils.groupStreamDataBlocks(sortedStreamDataBlocks, new GroupByOffsetPredicate()));
         objectStreamRanges.forEach(request::addStreamRange);
         request.setObjectId(uploader.getStreamSetObjectId());
         // set stream set object id to be the first object id of compacted objects
