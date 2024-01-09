@@ -22,8 +22,7 @@ import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -293,7 +292,14 @@ public class BlockWALService implements WriteAheadLog {
 
         started.set(true);
 
-        S3StreamMetricsManager.registerDeltaWalOffsetSupplier(this::getCurrentStartOffset, () -> walHeader.getFlushedTrimOffset());
+        S3StreamMetricsManager.registerDeltaWalOffsetSupplier(() -> {
+            try {
+                return this.getCurrentStartOffset();
+            } catch (Exception e) {
+                LOGGER.error("failed to get current start offset", e);
+                return 0L;
+            }
+        }, () -> walHeader.getFlushedTrimOffset());
 
         LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
         return this;
@@ -395,7 +401,7 @@ public class BlockWALService implements WriteAheadLog {
             return result;
         } catch (OverCapacityException ex) {
             buf.release();
-            S3StreamMetricsManager.recordOperationLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Operation.APPEND_STORAGE_WAL_FULL);
+            StorageOperationStats.getInstance().appendWALFullStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             TraceUtils.endSpan(scope, ex);
             throw ex;
         }
@@ -427,8 +433,8 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> S3StreamMetricsManager.recordStageLatency(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_COMPLETE));
-        S3StreamMetricsManager.recordStageLatency(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS), S3Stage.APPEND_WAL_BEFORE);
+        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        StorageOperationStats.getInstance().appendWALBeforeStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         return appendResult;
     }
 

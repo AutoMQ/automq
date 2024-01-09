@@ -18,11 +18,15 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * If object data size is less than ObjectWriter.MAX_UPLOAD_SIZE, we should use single upload to upload it.
@@ -120,6 +124,7 @@ class ProxyWriter implements Writer {
         static final long MAX_UPLOAD_SIZE = 32L * 1024 * 1024;
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompositeByteBuf data = DirectByteBufAlloc.compositeByteBuffer();
+        TimerUtil timerUtil = new TimerUtil();
 
         @Override
         public CompletableFuture<Void> write(ByteBuf part) {
@@ -151,7 +156,14 @@ class ProxyWriter implements Writer {
 
         @Override
         public CompletableFuture<Void> close() {
+            S3ObjectStats.getInstance().objectStageReadyCloseStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            int size = data.readableBytes();
             FutureUtil.propagate(operator.write(path, data, throttleStrategy), cf);
+            cf.whenComplete((nil, e) -> {
+                S3ObjectStats.getInstance().objectStageTotalStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
+                S3ObjectStats.getInstance().objectUploadSizeStats.record(MetricsLevel.DEBUG, size);
+            });
             return cf;
         }
 

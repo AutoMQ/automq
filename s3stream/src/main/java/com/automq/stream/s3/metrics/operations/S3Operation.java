@@ -22,9 +22,7 @@ public enum S3Operation {
     CREATE_STREAM(S3MetricsType.S3Stream, "create"),
     OPEN_STREAM(S3MetricsType.S3Stream, "open"),
     APPEND_STREAM(S3MetricsType.S3Stream, "append"),
-    APPEND_STREAM_WRITE_LOCK(S3MetricsType.S3Stream, "append_write_lock"),
     FETCH_STREAM(S3MetricsType.S3Stream, "fetch"),
-    FETCH_STREAM_READ_LOCK(S3MetricsType.S3Stream, "fetch_read_lock"),
     TRIM_STREAM(S3MetricsType.S3Stream, "trim"),
     CLOSE_STREAM(S3MetricsType.S3Stream, "close"),
     /* S3 stream operations end */

@@ -19,6 +19,7 @@ package com.automq.stream.s3.network;
 
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.NetworkStats;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.Objects;
 import java.util.PriorityQueue;
@@ -148,11 +149,7 @@ public class AsyncNetworkBandwidthLimiter {
     }
 
     private void logMetrics(long size) {
-        if (type == Type.INBOUND) {
-            S3StreamMetricsManager.recordNetworkInboundUsage(MetricsLevel.INFO, size);
-        } else {
-            S3StreamMetricsManager.recordNetworkOutboundUsage(MetricsLevel.INFO, size);
-        }
+        NetworkStats.getInstance().networkUsageStats(type).add(MetricsLevel.INFO, size);
     }
 
     public enum Type {
