@@ -27,13 +27,39 @@ public class AutoMQKafkaAdminTool {
     private static final Logger log = LoggerFactory.getLogger(AutoMQKafkaAdminTool.class);
 
     public static void main(String[] args) {
+        ArgumentParser parser = AutoMQAdminCmd.argumentParser();
+        if (args.length == 0) {
+            System.out.println("Please pass valid arguments. Check usage first.");
+            parser.printHelp();
+            Exit.exit(0);
+        }
+//        String[] subCmdArgs = Arrays.copyOfRange(args, 1, args.length);
+        switch (args[0]) {
+            case "generate-s3-url":
+                processGenerateS3UrlCmd(args);
+                break;
+            case "config-file":
+                processConfigFileCmd(args);
+                break;
+            default:
+                System.out.println(String.format("Not supported command %s. Check usage first.", args[0]));
+                parser.printHelp();
+                Exit.exit(0);
+        }
+
+        System.out.println("SUCCESS.");
+        Exit.exit(0);
+
+    }
+
+    private static void processGenerateS3UrlCmd(String[] args) {
 
         Namespace res = null;
         ArgumentParser genS3UrlParser = GenerateS3UrlCmd.argumentParser();
         try {
             res = genS3UrlParser.parseArgs(args);
         } catch (ArgumentParserException e) {
-            if (args.length == 0) {
+            if (args.length == 1) {
                 genS3UrlParser.printHelp();
                 Exit.exit(0);
             } else {
@@ -57,8 +83,10 @@ public class AutoMQKafkaAdminTool {
             t.printStackTrace();
             Exit.exit(1);
         }
-        System.out.println("SUCCESS.");
-        Exit.exit(0);
+    }
+
+    private static void processConfigFileCmd(String[] args) {
 
     }
+
 }
