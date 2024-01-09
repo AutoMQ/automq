@@ -23,6 +23,8 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
+import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.memory.MemoryMetadataManager;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -74,19 +76,21 @@ public class CompactionUploaderTest extends CompactionTestBase {
         uploader.forceUploadStreamSetObject().join();
         long walObjectSize = uploader.complete();
         System.out.printf("write size: %d%n", walObjectSize);
-        assertEquals(walObjectSize, calculateObjectSize(streamDataBlocks));
+
+        List<StreamDataBlock> group = mergeStreamDataBlocksForGroup(CompactionUtils.groupStreamDataBlocks(streamDataBlocks, new GroupByOffsetPredicate()));
+        assertEquals(walObjectSize, calculateObjectSize(group));
 
         //check s3 object
         DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.STREAM_SET), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
-        assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        assertEquals(streamDataBlocksFromS3.size(), group.size());
         reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
-        for (int i = 0; i < streamDataBlocks.size(); i++) {
+        for (int i = 0; i < group.size(); i++) {
             assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
-            compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
+            compare(streamDataBlocksFromS3.get(i), group.get(i));
         }
     }
 
@@ -122,19 +126,20 @@ public class CompactionUploaderTest extends CompactionTestBase {
 
         List<StreamDataBlock> expectedDataBlocks = new ArrayList<>(streamDataBlocks1);
         expectedDataBlocks.addAll(streamDataBlocks2);
-        assertEquals(walObjectSize, calculateObjectSize(expectedDataBlocks));
+        List<StreamDataBlock> group = mergeStreamDataBlocksForGroup(CompactionUtils.groupStreamDataBlocks(expectedDataBlocks, new GroupByOffsetPredicate()));
+        assertEquals(walObjectSize, calculateObjectSize(group));
 
         //check s3 object
         DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, walObjectSize, S3ObjectType.STREAM_SET), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
-        assertEquals(streamDataBlocksFromS3.size(), expectedDataBlocks.size());
+        assertEquals(streamDataBlocksFromS3.size(), group.size());
         reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
-        for (int i = 0; i < expectedDataBlocks.size(); i++) {
+        for (int i = 0; i < group.size(); i++) {
             assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
-            compare(streamDataBlocksFromS3.get(i), expectedDataBlocks.get(i));
+            compare(streamDataBlocksFromS3.get(i), group.get(i));
         }
     }
 
@@ -151,19 +156,20 @@ public class CompactionUploaderTest extends CompactionTestBase {
             streamDataBlock.getDataCf().complete(TestUtils.random((int) streamDataBlock.getStreamRangeSize()));
         }
         StreamObject streamObject = cf.join();
-        assertEquals(streamObject.getObjectSize(), calculateObjectSize(streamDataBlocks));
+        List<StreamDataBlock> group = mergeStreamDataBlocksForGroup(CompactionUtils.groupStreamDataBlocks(streamDataBlocks, new GroupByOffsetPredicate()));
+        assertEquals(streamObject.getObjectSize(), calculateObjectSize(group));
 
         //check s3 object
         DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(OBJECT_0, streamObject.getObjectSize(), S3ObjectType.STREAM), s3Operator);
         reader.parseDataBlockIndex();
         List<StreamDataBlock> streamDataBlocksFromS3 = reader.getDataBlockIndex().join();
-        assertEquals(streamDataBlocksFromS3.size(), streamDataBlocks.size());
+        assertEquals(streamDataBlocksFromS3.size(), group.size());
         reader.readBlocks(streamDataBlocksFromS3);
         long expectedBlockPosition = 0;
-        for (int i = 0; i < streamDataBlocks.size(); i++) {
+        for (int i = 0; i < group.size(); i++) {
             assertEquals(expectedBlockPosition, streamDataBlocksFromS3.get(i).getBlockStartPosition());
             expectedBlockPosition += streamDataBlocksFromS3.get(i).getBlockSize();
-            compare(streamDataBlocksFromS3.get(i), streamDataBlocks.get(i));
+            compare(streamDataBlocksFromS3.get(i), group.get(i));
         }
     }
 }

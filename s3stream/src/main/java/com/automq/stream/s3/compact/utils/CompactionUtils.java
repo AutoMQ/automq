@@ -15,8 +15,9 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.compact;
+package com.automq.stream.s3.compact.utils;
 
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
@@ -31,8 +32,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 
@@ -110,31 +113,86 @@ public class CompactionUtils {
     }
 
     /**
-     * Group stream data blocks by stream id and offset.
+     * Sort stream data blocks by stream id and start offset.
+     *
+     * @param streamDataBlocksMap streamDataBlocksMap stream data blocks map, key: object id, value: stream data blocks
+     * @return                   sorted stream data blocks
      */
-    public static List<List<StreamDataBlock>> groupStreamDataBlocks(List<StreamDataBlock> streamDataBlocks) {
+    public static List<StreamDataBlock> sortStreamRangePositions(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
+        //TODO: use merge sort
+        Map<Long, List<StreamDataBlock>> sortedStreamObjectMap = new TreeMap<>();
+        for (List<StreamDataBlock> streamDataBlocks : streamDataBlocksMap.values()) {
+            streamDataBlocks.forEach(e -> sortedStreamObjectMap.computeIfAbsent(e.getStreamId(), k -> new ArrayList<>()).add(e));
+        }
+        return sortedStreamObjectMap.values().stream().flatMap(list -> {
+            list.sort(StreamDataBlock.STREAM_OFFSET_COMPARATOR);
+            return list.stream();
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * Group stream data blocks by certain conditions.
+     *
+     * @param streamDataBlocks stream data blocks to be grouped
+     * @param predicate        the predicate to check whether a stream data block should be grouped with the previous one
+     * @return                 grouped stream data blocks
+     */
+    public static List<List<StreamDataBlock>> groupStreamDataBlocks(List<StreamDataBlock> streamDataBlocks,
+        Predicate<StreamDataBlock> predicate) {
         List<List<StreamDataBlock>> groupedStreamDataBlocks = new ArrayList<>();
         List<StreamDataBlock> currGroup = new ArrayList<>();
-        StreamDataBlock currStreamDataBlock = null;
         for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            if (currGroup.isEmpty() || currStreamDataBlock == null) {
+            if (predicate.test(streamDataBlock)) {
                 currGroup.add(streamDataBlock);
-            } else {
-                if (currStreamDataBlock.getStreamId() == streamDataBlock.getStreamId()
-                    && currStreamDataBlock.getEndOffset() == streamDataBlock.getStartOffset()) {
-                    currGroup.add(streamDataBlock);
-                } else {
-                    groupedStreamDataBlocks.add(currGroup);
-                    currGroup = new ArrayList<>();
-                    currGroup.add(streamDataBlock);
-                }
+            } else if (!currGroup.isEmpty()) {
+                groupedStreamDataBlocks.add(currGroup);
+                currGroup = new ArrayList<>();
+                currGroup.add(streamDataBlock);
             }
-            currStreamDataBlock = streamDataBlock;
         }
         if (!currGroup.isEmpty()) {
             groupedStreamDataBlocks.add(currGroup);
         }
         return groupedStreamDataBlocks;
+    }
+
+    public static List<ObjectStreamRange> buildObjectStreamRangeFromGroup(List<List<StreamDataBlock>> streamDataBlockGroup) {
+        List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
+
+        for (List<StreamDataBlock> streamDataBlocks : streamDataBlockGroup) {
+            if (streamDataBlocks.isEmpty()) {
+                continue;
+            }
+            objectStreamRanges.add(new ObjectStreamRange(
+                streamDataBlocks.get(0).getStreamId(),
+                -1L,
+                streamDataBlocks.get(0).getStartOffset(),
+                streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset(),
+                streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum()));
+        }
+
+        return objectStreamRanges;
+    }
+
+    public static List<DataBlockIndex> buildDataBlockIndicesFromGroup(List<List<StreamDataBlock>> streamDataBlockGroup) {
+        List<DataBlockIndex> dataBlockIndices = new ArrayList<>();
+
+        long blockStartPosition = 0;
+        for (List<StreamDataBlock> streamDataBlocks : streamDataBlockGroup) {
+            if (streamDataBlocks.isEmpty()) {
+                continue;
+            }
+            dataBlockIndices.add(new DataBlockIndex(
+                streamDataBlocks.get(0).getStreamId(),
+                streamDataBlocks.get(0).getStartOffset(),
+                (int) (streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset() - streamDataBlocks.get(0).getStartOffset()),
+                streamDataBlocks.stream().map(StreamDataBlock::dataBlockIndex).mapToInt(DataBlockIndex::recordCount).sum(),
+                blockStartPosition,
+                streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum()));
+            blockStartPosition += streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum();
+        }
+
+        return dataBlockIndices;
     }
 
     public static int getTotalObjectStats(CompactedObjectBuilder o, Map<Long, Integer> objectStatsMap) {

@@ -22,6 +22,7 @@ import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.S3Operator;

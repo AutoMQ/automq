@@ -20,6 +20,8 @@ package com.automq.stream.s3.compact.operator;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
+import com.automq.stream.s3.compact.utils.GroupByLimitPredicate;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.CompactionStats;
@@ -147,22 +149,19 @@ public class DataBlockWriter {
     }
 
     class IndexBlock {
+        private static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
         private final ByteBuf buf;
         private final long position;
 
         public IndexBlock() {
             position = nextDataBlockPosition;
-            buf = DirectByteBufAlloc.byteBuffer(calculateIndexBlockSize(), "write_index_block");
-            long nextPosition = 0;
-            for (StreamDataBlock block : completedBlocks) {
-                new DataBlockIndex(block.getStreamId(), block.getStartOffset(), (int) (block.getEndOffset() - block.getStartOffset()),
-                    block.dataBlockIndex().recordCount(), nextPosition, block.getBlockSize()).encode(buf);
-                nextPosition += block.getBlockSize();
-            }
-        }
 
-        private int calculateIndexBlockSize() {
-            return completedBlocks.size() * DataBlockIndex.BLOCK_INDEX_SIZE;
+            List<DataBlockIndex> dataBlockIndices = CompactionUtils.buildDataBlockIndicesFromGroup(
+                CompactionUtils.groupStreamDataBlocks(completedBlocks, new GroupByLimitPredicate(DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD)));
+            buf = DirectByteBufAlloc.byteBuffer(dataBlockIndices.size() * DataBlockIndex.BLOCK_INDEX_SIZE, "write_index_block");
+            for (DataBlockIndex dataBlockIndex : dataBlockIndices) {
+                dataBlockIndex.encode(buf);
+            }
         }
 
         public ByteBuf buffer() {

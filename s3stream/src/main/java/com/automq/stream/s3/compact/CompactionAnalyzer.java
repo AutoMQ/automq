@@ -21,6 +21,7 @@ import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.CompactionType;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.utils.LogContext;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -31,7 +32,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -87,7 +87,7 @@ public class CompactionAnalyzer {
      */
     List<CompactedObjectBuilder> groupObjectWithLimits(Map<Long, List<StreamDataBlock>> streamDataBlockMap,
         Set<Long> excludedObjectIds) {
-        List<StreamDataBlock> sortedStreamDataBlocks = sortStreamRangePositions(streamDataBlockMap);
+        List<StreamDataBlock> sortedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(streamDataBlockMap);
         List<CompactedObjectBuilder> compactedObjectBuilders = new ArrayList<>();
         CompactionStats stats = null;
         int streamNumInStreamSet = -1;
@@ -352,24 +352,6 @@ public class CompactionAnalyzer {
         compactedObjectBuilders.add(splitBuilder);
         builder = new CompactedObjectBuilder();
         return builder;
-    }
-
-    /**
-     * Sort stream data blocks by stream id and {@code startOffset).
-     *
-     * @param streamDataBlocksMap stream data blocks map, key: object id, value: stream data blocks
-     * @return sorted stream data blocks
-     */
-    List<StreamDataBlock> sortStreamRangePositions(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
-        //TODO: use merge sort
-        Map<Long, List<StreamDataBlock>> sortedStreamObjectMap = new TreeMap<>();
-        for (List<StreamDataBlock> streamDataBlocks : streamDataBlocksMap.values()) {
-            streamDataBlocks.forEach(e -> sortedStreamObjectMap.computeIfAbsent(e.getStreamId(), k -> new ArrayList<>()).add(e));
-        }
-        return sortedStreamObjectMap.values().stream().flatMap(list -> {
-            list.sort(StreamDataBlock.STREAM_OFFSET_COMPARATOR);
-            return list.stream();
-        }).collect(Collectors.toList());
     }
 
     private static abstract class AbstractCompactedObjectComparator implements Comparator<CompactedObjectBuilder> {

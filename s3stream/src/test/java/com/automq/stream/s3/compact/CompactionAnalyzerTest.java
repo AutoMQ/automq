@@ -21,6 +21,7 @@ import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.CompactionType;
+import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamMetadata;
@@ -152,7 +153,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
         CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, s3Operator);
-        List<StreamDataBlock> sortedStreamDataBlocks = compactionAnalyzer.sortStreamRangePositions(streamDataBlocksMap);
+        List<StreamDataBlock> sortedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(streamDataBlocksMap);
         List<StreamDataBlock> expectedBlocks = List.of(
             new StreamDataBlock(STREAM_0, 0, 15, OBJECT_0, -1, -1, 1),
             new StreamDataBlock(STREAM_0, 15, 20, OBJECT_1, -1, -1, 1),

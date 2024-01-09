@@ -18,6 +18,7 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -32,6 +33,8 @@ import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -203,10 +206,35 @@ public class CompactionTestBase {
         return compare(compactedObject1.streamDataBlocks(), compactedObject2.streamDataBlocks());
     }
 
-    protected long calculateObjectSize(List<StreamDataBlock> streamDataBlocks) {
-        long bodySize = streamDataBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
-        int indexBlockSize = DataBlockIndex.BLOCK_INDEX_SIZE * streamDataBlocks.size();
+    protected long calculateObjectSize(List<StreamDataBlock> streamDataBlocksGroups) {
+        long bodySize = streamDataBlocksGroups.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
+        int indexBlockSize = DataBlockIndex.BLOCK_INDEX_SIZE * streamDataBlocksGroups.size();
         long tailSize = ObjectWriter.Footer.FOOTER_SIZE;
         return bodySize + indexBlockSize + tailSize;
+    }
+
+    protected List<StreamDataBlock> mergeStreamDataBlocksForGroup(List<List<StreamDataBlock>> streamDataBlockGroups) {
+        List<StreamDataBlock> mergedStreamDataBlocks = new ArrayList<>();
+        for (List<StreamDataBlock> streamDataBlocks : streamDataBlockGroups) {
+            StreamDataBlock mergedBlock = new StreamDataBlock(
+                streamDataBlocks.get(0).getStreamId(),
+                streamDataBlocks.get(0).getStartOffset(),
+                streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset(),
+                streamDataBlocks.get(0).getObjectId(),
+                streamDataBlocks.get(0).getBlockStartPosition(),
+                streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum(),
+                streamDataBlocks.stream().map(StreamDataBlock::dataBlockIndex).mapToInt(DataBlockIndex::recordCount).sum());
+            mergedBlock.getDataCf().complete(mergeStreamDataBlocksData(streamDataBlocks));
+            mergedStreamDataBlocks.add(mergedBlock);
+        }
+        return mergedStreamDataBlocks;
+    }
+
+    private ByteBuf mergeStreamDataBlocksData(List<StreamDataBlock> streamDataBlocks) {
+        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+        for (StreamDataBlock block : streamDataBlocks) {
+            buf.addComponent(true, block.getDataCf().join());
+        }
+        return buf;
     }
 }
