@@ -131,9 +131,9 @@ public class ObjectReaderTest {
         try (ObjectReader reader = new ObjectReader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), s3Operator)) {
             ObjectReader.FindIndexResult rst = reader.find(233L, 10L, 14L, 1024).get();
             assertEquals(1, rst.streamDataBlocks().size());
-            try (ObjectReader.DataBlock dataBlock = reader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get()) {
-                assertEquals(3, dataBlock.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock.iterator();
+            try (ObjectReader.DataBlockGroup dataBlockGroup = reader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get()) {
+                assertEquals(3, dataBlockGroup.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup.iterator();
                 assertEquals(10, it.next().getBaseOffset());
                 assertEquals(11, it.next().getBaseOffset());
                 assertEquals(13, it.next().getBaseOffset());

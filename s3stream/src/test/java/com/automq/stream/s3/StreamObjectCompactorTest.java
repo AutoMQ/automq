@@ -62,8 +62,7 @@ class StreamObjectCompactorTest {
         stream = Mockito.mock(S3Stream.class);
     }
 
-    @Test
-    public void testCompact() throws ExecutionException, InterruptedException {
+    List<S3ObjectMetadata> prepareData() throws ExecutionException, InterruptedException {
         // prepare object
         List<S3ObjectMetadata> objects = new LinkedList<>();
         {
@@ -119,6 +118,12 @@ class StreamObjectCompactorTest {
             objects.add(new S3ObjectMetadata(4, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 31, 33)),
                 System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 4));
         }
+        return objects;
+    }
+
+    @Test
+    public void testCompact() throws ExecutionException, InterruptedException {
+        List<S3ObjectMetadata> objects = prepareData();
         when(objectManager.getStreamObjects(eq(streamId), eq(14L), eq(32L), eq(Integer.MAX_VALUE)))
             .thenReturn(CompletableFuture.completedFuture(objects));
         AtomicLong nextObjectId = new AtomicLong(5);
@@ -129,7 +134,7 @@ class StreamObjectCompactorTest {
         when(stream.confirmOffset()).thenReturn(32L);
 
         StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
-            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).build();
+            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact();
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
@@ -157,25 +162,25 @@ class StreamObjectCompactorTest {
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(3, rst.streamDataBlocks().size());
-            ObjectReader.DataBlock dataBlock1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
-            try (dataBlock1) {
-                assertEquals(3, dataBlock1.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock1.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
+            try (dataBlockGroup1) {
+                assertEquals(3, dataBlockGroup1.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup1.iterator();
                 assertEquals(13L, it.next().getBaseOffset());
                 assertEquals(14L, it.next().getBaseOffset());
                 assertEquals(15L, it.next().getBaseOffset());
                 assertFalse(it.hasNext());
             }
-            ObjectReader.DataBlock dataBlock2 = objectReader.read(rst.streamDataBlocks().get(1).dataBlockIndex()).get();
-            try (dataBlock2) {
-                assertEquals(1, dataBlock2.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock2.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup2 = objectReader.read(rst.streamDataBlocks().get(1).dataBlockIndex()).get();
+            try (dataBlockGroup2) {
+                assertEquals(1, dataBlockGroup2.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup2.iterator();
                 assertEquals(16L, it.next().getBaseOffset());
             }
-            ObjectReader.DataBlock dataBlock3 = objectReader.read(rst.streamDataBlocks().get(2).dataBlockIndex()).get();
-            try (dataBlock3) {
-                assertEquals(1, dataBlock3.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock3.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup3 = objectReader.read(rst.streamDataBlocks().get(2).dataBlockIndex()).get();
+            try (dataBlockGroup3) {
+                assertEquals(1, dataBlockGroup3.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup3.iterator();
                 assertEquals(17L, it.next().getBaseOffset());
             }
             objectReader.close();
@@ -185,24 +190,65 @@ class StreamObjectCompactorTest {
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 30L, 33L).get();
             assertEquals(3, rst.streamDataBlocks().size());
-            ObjectReader.DataBlock dataBlock1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
-            try (dataBlock1) {
-                assertEquals(1, dataBlock1.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock1.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
+            try (dataBlockGroup1) {
+                assertEquals(1, dataBlockGroup1.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup1.iterator();
                 assertEquals(30L, it.next().getBaseOffset());
                 assertFalse(it.hasNext());
             }
-            ObjectReader.DataBlock dataBlock2 = objectReader.read(rst.streamDataBlocks().get(1).dataBlockIndex()).get();
-            try (dataBlock2) {
-                assertEquals(1, dataBlock2.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock2.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup2 = objectReader.read(rst.streamDataBlocks().get(1).dataBlockIndex()).get();
+            try (dataBlockGroup2) {
+                assertEquals(1, dataBlockGroup2.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup2.iterator();
                 assertEquals(31L, it.next().getBaseOffset());
             }
-            ObjectReader.DataBlock dataBlock3 = objectReader.read(rst.streamDataBlocks().get(2).dataBlockIndex()).get();
-            try (dataBlock3) {
-                assertEquals(1, dataBlock3.recordCount());
-                Iterator<StreamRecordBatch> it = dataBlock3.iterator();
+            ObjectReader.DataBlockGroup dataBlockGroup3 = objectReader.read(rst.streamDataBlocks().get(2).dataBlockIndex()).get();
+            try (dataBlockGroup3) {
+                assertEquals(1, dataBlockGroup3.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup3.iterator();
                 assertEquals(32L, it.next().getBaseOffset());
+            }
+            objectReader.close();
+        }
+    }
+
+    @Test
+    public void testCompact_groupBlocks() throws ExecutionException, InterruptedException {
+        List<S3ObjectMetadata> objects = prepareData();
+
+        CompactStreamObjectRequest req = new StreamObjectCompactor.StreamObjectGroupCompactor(streamId, 14L,
+            objects.subList(0, 2), 5, 5000, s3Operator).compact().get();
+        // verify compact request
+        assertEquals(5, req.getObjectId());
+        assertEquals(233L, req.getStreamId());
+        assertEquals(13L, req.getStartOffset());
+        assertEquals(18L, req.getEndOffset());
+        assertEquals(List.of(1L, 2L), req.getSourceObjectIds());
+
+        // verify compacted object record, expect [13,16) + [16, 17) compact to one data block group.
+        {
+            ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            assertEquals(2, objectReader.basicObjectInfo().get().indexBlock().count());
+            ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
+            assertEquals(2, rst.streamDataBlocks().size());
+            ObjectReader.DataBlockGroup dataBlockGroup1 = objectReader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get();
+            try (dataBlockGroup1) {
+                assertEquals(4, dataBlockGroup1.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup1.iterator();
+                assertEquals(13L, it.next().getBaseOffset());
+                assertEquals(14L, it.next().getBaseOffset());
+                assertEquals(15L, it.next().getBaseOffset());
+                assertEquals(16L, it.next().getBaseOffset());
+                assertFalse(it.hasNext());
+            }
+            ObjectReader.DataBlockGroup dataBlockGroup2 = objectReader.read(rst.streamDataBlocks().get(1).dataBlockIndex()).get();
+            try (dataBlockGroup2) {
+                assertEquals(1, dataBlockGroup2.recordCount());
+                Iterator<StreamRecordBatch> it = dataBlockGroup2.iterator();
+                StreamRecordBatch record = it.next();
+                assertEquals(17L, record.getBaseOffset());
+                assertEquals(18L, record.getLastOffset());
             }
             objectReader.close();
         }

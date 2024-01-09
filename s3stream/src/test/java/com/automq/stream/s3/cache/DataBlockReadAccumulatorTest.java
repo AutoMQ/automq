@@ -54,7 +54,7 @@ public class DataBlockReadAccumulatorTest {
         ObjectReader reader = mock(ObjectReader.class);
         DataBlockIndex dataBlockIndex = new DataBlockIndex(10, 0, 12, 2, 10, 100);
         StreamDataBlock streamDataBlock = new StreamDataBlock(1, dataBlockIndex);
-        CompletableFuture<ObjectReader.DataBlock> readerCf = new CompletableFuture<>();
+        CompletableFuture<ObjectReader.DataBlockGroup> readerCf = new CompletableFuture<>();
         when(reader.read(eq(dataBlockIndex))).thenReturn(readerCf);
 
         List<DataBlockReadAccumulator.ReserveResult> reserveResults = accumulator.reserveDataBlock(List.of(new ImmutablePair<>(reader, streamDataBlock)));
@@ -67,13 +67,13 @@ public class DataBlockReadAccumulatorTest {
 
         accumulator.readDataBlock(reader, dataBlockIndex);
 
-        ObjectReader.DataBlock dataBlock = mock(ObjectReader.DataBlock.class);
+        ObjectReader.DataBlockGroup dataBlockGroup = mock(ObjectReader.DataBlockGroup.class);
         List<StreamRecordBatch> records = List.of(
             newRecord(10, 10, 2, 1),
             newRecord(10, 12, 2, 1)
         );
-        when(dataBlock.recordCount()).thenReturn(2);
-        when(dataBlock.iterator()).thenAnswer(args -> {
+        when(dataBlockGroup.recordCount()).thenReturn(2);
+        when(dataBlockGroup.iterator()).thenAnswer(args -> {
             Iterator<StreamRecordBatch> it = records.iterator();
             return new CloseableIterator<StreamRecordBatch>() {
 
@@ -93,8 +93,8 @@ public class DataBlockReadAccumulatorTest {
                 }
             };
         });
-        when(dataBlock.recordCount()).thenReturn(2);
-        readerCf.complete(dataBlock);
+        when(dataBlockGroup.recordCount()).thenReturn(2);
+        readerCf.complete(dataBlockGroup);
 
         verify(reader, times(1)).read(any());
 
