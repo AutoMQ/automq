@@ -79,8 +79,7 @@ rules:
         unit: "{requests}"
 
   # Request Metrics
-  - beans:
-      - kafka.network:type=RequestMetrics,name=RequestsPerSec,request=*,version=*
+  - bean: kafka.network:type=RequestMetrics,name=RequestsPerSec,request=*,version=*
     metricAttribute:
       type: param(request)
     mapping:
@@ -90,9 +89,7 @@ rules:
         desc: The total number of requests received by the broker
         unit: "{requests}"
 
-  - beans:
-      - kafka.network:type=RequestMetrics,name=TotalTimeMs,request=Produce
-      - kafka.network:type=RequestMetrics,name=TotalTimeMs,request=Fetch
+  - bean: kafka.network:type=RequestMetrics,name=TotalTimeMs,request=*
     metricAttribute:
       type: param(request)
     unit: ms
@@ -101,6 +98,10 @@ rules:
         metric: kafka.request.time.total
         type: counter
         desc: The total time the broker has taken to service requests
+      Mean:
+        metric: kafka.request.time.mean
+        type: gauge
+        desc: The mean time the broker has taken to service requests
       50thPercentile:
         metric: kafka.request.time.50p
         type: gauge
@@ -110,9 +111,7 @@ rules:
         type: gauge
         desc: The 99th percentile time the broker has taken to service requests
 
-  - beans:
-      - kafka.network:type=RequestMetrics,name=RequestQueueTimeMs,request=Produce
-      - kafka.network:type=RequestMetrics,name=RequestQueueTimeMs,request=Fetch
+  - bean: kafka.network:type=RequestMetrics,name=RequestQueueTimeMs,request=*
     metricAttribute:
       type: param(request)
     unit: ms
@@ -121,6 +120,10 @@ rules:
         metric: kafka.request.queue.time.total
         type: counter
         desc: The total time the broker has taken to dequeue requests
+      Mean:
+        metric: kafka.request.queue.time.mean
+        type: gauge
+        desc: The mean time the broker has taken to dequeue requests
       50thPercentile:
         metric: kafka.request.queue.time.50p
         type: gauge
@@ -130,9 +133,7 @@ rules:
         type: gauge
         desc: The 99th percentile time the broker has taken to dequeue requests
 
-  - beans:
-      - kafka.network:type=RequestMetrics,name=ResponseQueueTimeMs,request=Produce
-      - kafka.network:type=RequestMetrics,name=ResponseQueueTimeMs,request=Fetch
+  - bean: kafka.network:type=RequestMetrics,name=ResponseQueueTimeMs,request=*
     metricAttribute:
       type: param(request)
     unit: ms
@@ -141,6 +142,10 @@ rules:
         metric: kafka.response.queue.time.total
         type: counter
         desc: The total time the broker has taken to dequeue responses
+      Mean:
+        metric: kafka.response.queue.time.mean
+        type: gauge
+        desc: The mean time the broker has taken to dequeue responses
       50thPercentile:
         metric: kafka.response.queue.time.50p
         type: gauge
