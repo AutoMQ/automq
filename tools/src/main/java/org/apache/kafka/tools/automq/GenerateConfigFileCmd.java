@@ -121,10 +121,10 @@ public class GenerateConfigFileCmd {
         List<String> controllerPropFileNameList;
         ServerGroupConfig controllerGroupConfig;
         if (parameter.controllerOnlyMode) {
-            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList, parameter.controllerOnlyMode);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, CONTROLLER_PROPS_PATH, "controller", s3Url);
         } else {
-            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList, parameter.controllerOnlyMode);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
         }
         List<String> brokerPropsFileNameList;

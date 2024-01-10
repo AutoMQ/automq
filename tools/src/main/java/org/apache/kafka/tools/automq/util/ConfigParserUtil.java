@@ -24,7 +24,7 @@ import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 
 public class ConfigParserUtil {
 
-    public static ServerGroupConfig genControllerConfig(String ipPortList) {
+    public static ServerGroupConfig genControllerConfig(String ipPortList, boolean isControllerOnlyMode) {
         String[] ipPortPairs = ipPortList.split(";");
         List<Integer> nodeIdList = new ArrayList<>();
         StringBuilder quorumVoters = new StringBuilder();
@@ -38,8 +38,12 @@ public class ConfigParserUtil {
             }
             quorumVoters.append(i).append("@").append(ipPortPairs[i]);
 
-            //use index as node id
-            listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i]);
+            if (isControllerOnlyMode) {
+                listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i]);
+            } else {
+                // server force to listen 9092 by default
+                listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i].split(":")[0] + ":9092" + "," + "CONTROLLER://" + ipPortPairs[i]);
+            }
         }
 
         return new ServerGroupConfig(nodeIdList, quorumVoters.toString(), listenerMap);

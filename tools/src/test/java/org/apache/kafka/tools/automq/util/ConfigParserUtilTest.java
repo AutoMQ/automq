@@ -28,7 +28,7 @@ class ConfigParserUtilTest {
 
     @Test
     void generatedServerConfig() {
-        ServerGroupConfig config = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9094;192.168.0.3:9095");
+        ServerGroupConfig config = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9094;192.168.0.3:9095", false);
         assertEquals(3, config.getNodeIdList().size());
         assertEquals("0@192.168.0.1:9093,1@192.168.0.2:9094,2@192.168.0.3:9095", config.getQuorumVoters());
         List<String> listenerList = Arrays.asList("PLAINTEXT://192.168.0.1:9093", "PLAINTEXT://192.168.0.2:9094", "PLAINTEXT://192.168.0.3:9095");
@@ -40,7 +40,12 @@ class ConfigParserUtilTest {
 
     @Test
     void genBrokerConfig() {
-        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9094;192.168.0.3:9095");
+        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9094;192.168.0.3:9095", false);
+        List<String> controllerListeners = Arrays.asList("PLAINTEXT://192.168.0.1:9092,CONTROLLER://192.168.0.1:9093", "PLAINTEXT://192.168.0.2:9092,CONTROLLER://192.168.0.2:9094", "PLAINTEXT://192.168.0.3:9092,CONTROLLER://192.168.0.3:9095");
+        for (int i = 0; i < controllerGroupConfig.getListenerMap().size(); i++) {
+            int nodeId = controllerGroupConfig.getNodeIdList().get(i);
+            assertEquals(controllerListeners.get(i), controllerGroupConfig.getListenerMap().get(nodeId));
+        }
 
         ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig("192.168.0.4:9092;192.168.0.5:9092;192.168.0.6:9092", controllerGroupConfig);
 
