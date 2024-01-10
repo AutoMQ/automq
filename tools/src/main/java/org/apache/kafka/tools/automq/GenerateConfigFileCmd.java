@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.tools.automq;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
@@ -127,7 +128,7 @@ public class GenerateConfigFileCmd {
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, CONTROLLER_PROPS_PATH, "controller", s3Url);
         } else {
             ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
-            brokerPropsFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
+            controllerPropFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
         }
         System.out.println("####################################  GENERATED PROPERTIES #################################");
 
@@ -203,7 +204,14 @@ public class GenerateConfigFileCmd {
     }
 
     public void persist(Properties props, String fileName) throws IOException {
-        PrintWriter pw = new PrintWriter(fileName, Charset.forName("utf-8"));
+        File directory = new File("generated");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("Can't create directory " + directory.getAbsolutePath());
+        }
+
+        String targetPath = "generated/" + fileName;
+        File file = new File(targetPath);
+        PrintWriter pw = new PrintWriter(file, Charset.forName("utf-8"));
         for (Enumeration e = props.propertyNames(); e.hasMoreElements(); ) {
             String key = (String) e.nextElement();
             pw.println(key + "=" + props.getProperty(key));
