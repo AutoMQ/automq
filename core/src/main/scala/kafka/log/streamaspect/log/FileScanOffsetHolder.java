@@ -15,9 +15,14 @@ public class FileScanOffsetHolder implements ScanOffsetHolder {
     private static final Logger LOGGER = LoggerFactory.getLogger(FileScanOffsetHolder.class);
     private static final String TMP_FILE_NAME = "offset.tmp";
     private static final String OFFSET_FILE_NAME = "offset";
+    private static final String CLEAN_SHUTDOWN_SYMBOL_FILE = "clean-shutdown";
+    public static final String STORE_INDEX = "_storeIndex:";
     private final Map<String, Long> offsetMap = new ConcurrentHashMap<>();
+    private long storeIndex;
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
     private final File workDir;
+
+    private final boolean cleanShutdown;
 
     public FileScanOffsetHolder(String workPath) {
         this.workDir = new File(workPath);
@@ -40,16 +45,24 @@ public class FileScanOffsetHolder implements ScanOffsetHolder {
                 for (String line : value.split("\n")) {
                     String[] split = line.split(":");
                     if (split.length == 2) {
-                        offsetMap.put(split[0], Long.parseLong(split[1]));
+                        String key = split[0];
+                        if (STORE_INDEX.equals(key)) {
+                            storeIndex = Long.parseLong(split[1]);
+                        } else {
+                            offsetMap.put(key, Long.parseLong(split[1]));
+                        }
                     }
                 }
             }
         }
-        scheduledExecutorService.scheduleAtFixedRate(this::flush, 5, 10, TimeUnit.SECONDS);
+        File file = new File(workDir, CLEAN_SHUTDOWN_SYMBOL_FILE);
+        cleanShutdown = file.exists();
+        FileUtils.deleteQuietly(file);
+        scheduledExecutorService.scheduleAtFixedRate(() -> flush(false), 5, 10, TimeUnit.SECONDS);
     }
 
     @Override
-    public void flush() {
+    public void flush(boolean shutdown) {
         String content = getContent();
         File offsetFile = new File(workDir, OFFSET_FILE_NAME);
         File tempFile = new File(workDir, TMP_FILE_NAME);
@@ -59,6 +72,13 @@ public class FileScanOffsetHolder implements ScanOffsetHolder {
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
+        if (shutdown) {
+            try {
+                new File(workDir, CLEAN_SHUTDOWN_SYMBOL_FILE).createNewFile();
+            } catch (IOException e) {
+                LOGGER.error(e.getMessage(), e);
+            }
+        }
     }
 
     @Override
@@ -66,8 +86,19 @@ public class FileScanOffsetHolder implements ScanOffsetHolder {
         return offsetMap.getOrDefault(name, 0L);
     }
 
+    @Override
+    public long getStoreIndex() {
+        return storeIndex;
+    }
+
+    @Override
+    public void setStoreIndex(long storeIndex) {
+        this.storeIndex = storeIndex;
+    }
+
     private String getContent() {
         StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(STORE_INDEX).append(storeIndex).append("\n");
         for (Map.Entry<String, Long> entry : offsetMap.entrySet()) {
             stringBuilder.append(entry.getKey()).append(":").append(entry.getValue()).append("\n");
         }
@@ -77,6 +108,11 @@ public class FileScanOffsetHolder implements ScanOffsetHolder {
     @Override
     public void saveOffset(String name, long offset) {
         offsetMap.put(name, offset);
+    }
+
+    @Override
+    public boolean isCleanShutdown() {
+        return cleanShutdown;
     }
 
 }

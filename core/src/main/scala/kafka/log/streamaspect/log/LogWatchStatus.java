@@ -25,6 +25,7 @@ public class LogWatchStatus {
             randomAccessFile = new RandomAccessFile(file, "r");
         } catch (FileNotFoundException e) {
             LOGGER.warn(String.format("file not found: %s", file.getAbsolutePath()), e);
+            saveOffset(0);
         } catch (Exception e) {
             LOGGER.error(String.format("open file error: %s", file.getAbsolutePath()), e);
         }
@@ -33,6 +34,11 @@ public class LogWatchStatus {
             closeInternal(origin);
         }
         return randomAccessFile;
+    }
+
+    public RandomAccessFile reset() {
+        saveOffset(0);
+        return reopen();
     }
 
     public RandomAccessFile getRandomAccessFile() {
