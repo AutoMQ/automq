@@ -161,7 +161,6 @@ final class ControllerMetricsManager {
             case ASSIGNED_S3_OBJECT_ID_RECORD:
             case NODE_WALMETADATA_RECORD:
             case REMOVE_NODE_WALMETADATA_RECORD:
-            case ADVANCE_RANGE_RECORD:
             case KVRECORD:
             case REMOVE_KVRECORD:
             case UPDATE_NEXT_NODE_ID_RECORD:

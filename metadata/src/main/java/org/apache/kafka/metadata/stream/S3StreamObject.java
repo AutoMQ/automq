@@ -17,8 +17,10 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.List;
 import java.util.Objects;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
@@ -28,16 +30,32 @@ public class S3StreamObject {
 
     private final long objectId;
     private final long dataTimeInMs;
-    private final StreamOffsetRange streamOffsetRange;
+    private final long streamId;
+    private final long startOffset;
+    private final long endOffset;
 
     public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset, long dataTimeInMs) {
         this.objectId = objectId;
-        this.streamOffsetRange = new StreamOffsetRange(streamId, startOffset, endOffset);
+        this.streamId = streamId;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
         this.dataTimeInMs = dataTimeInMs;
     }
 
     public StreamOffsetRange streamOffsetRange() {
-        return streamOffsetRange;
+        return new StreamOffsetRange(streamId, startOffset, endOffset);
+    }
+
+    public long streamId() {
+        return streamId;
+    }
+
+    public long startOffset() {
+        return startOffset;
+    }
+
+    public long endOffset() {
+        return endOffset;
     }
 
     public long objectId() {
@@ -55,10 +73,14 @@ public class S3StreamObject {
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
-            .setStreamId(streamOffsetRange.streamId())
-            .setStartOffset(streamOffsetRange.startOffset())
-            .setEndOffset(streamOffsetRange.endOffset())
+            .setStreamId(streamId)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset)
             .setDataTimeInMs(dataTimeInMs), (short) 0);
+    }
+
+    public S3ObjectMetadata toMetadata() {
+        return new S3ObjectMetadata(objectId, S3ObjectType.STREAM, List.of(streamOffsetRange()), dataTimeInMs);
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {

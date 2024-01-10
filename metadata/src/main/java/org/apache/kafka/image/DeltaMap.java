@@ -209,6 +209,6 @@ public class DeltaMap<K, V> {
 
     @Override
     public int hashCode() {
-        return super.hashCode();
+        return compact().hashCode();
     }
 }

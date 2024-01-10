@@ -249,6 +249,14 @@ public class StreamControlManager {
             // means that the new range is not the first range in stream, get the last range's end offset
             RangeMetadata lastRangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             startOffset = lastRangeMetadata.endOffset();
+            // the RangeMetadata in S3StreamMetadataImage is only update when create, rollToNext and trim
+            records.add(new ApiMessageAndVersion(new RangeRecord()
+                    .setStreamId(streamId)
+                    .setNodeId(lastRangeMetadata.nodeId())
+                    .setStartOffset(lastRangeMetadata.startOffset())
+                    .setEndOffset(lastRangeMetadata.endOffset())
+                    .setEpoch(lastRangeMetadata.epoch())
+                    .setRangeIndex(lastRangeMetadata.rangeIndex()), (short) 0));
         }
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()

@@ -24,18 +24,18 @@ import java.util.Objects;
 
 public class InRangeObjects {
 
-    public static final InRangeObjects INVALID = new InRangeObjects(-1, -1, -1, List.of());
+    public static final InRangeObjects INVALID = new InRangeObjects(-1, List.of());
 
     private final long streamId;
     private final long startOffset;
     private final long endOffset;
     private final List<S3ObjectMetadata> objects;
 
-    public InRangeObjects(long streamId, long startOffset, long endOffset, List<S3ObjectMetadata> objects) {
+    public InRangeObjects(long streamId, List<S3ObjectMetadata> objects) {
         this.streamId = streamId;
-        this.startOffset = startOffset;
-        this.endOffset = endOffset;
         this.objects = objects;
+        this.startOffset = objects.isEmpty() ? -1L : objects.get(0).startOffset();
+        this.endOffset = objects.isEmpty() ? -1L : objects.get(objects.size() - 1).endOffset();
     }
 
     public long streamId() {
@@ -57,11 +57,11 @@ public class InRangeObjects {
     @Override
     public String toString() {
         return "InRangeObjects{" +
-            "streamId=" + streamId +
-            ", startOffset=" + startOffset +
-            ", endOffset=" + endOffset +
-            ", objects=" + objects +
-            '}';
+                "streamId=" + streamId +
+                ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                ", objects=" + objects +
+                '}';
     }
 
     @Override
@@ -74,9 +74,9 @@ public class InRangeObjects {
         }
         InRangeObjects that = (InRangeObjects) o;
         return streamId == that.streamId
-            && startOffset == that.startOffset
-            && endOffset == that.endOffset
-            && objects.equals(that.objects);
+                && startOffset == that.startOffset
+                && endOffset == that.endOffset
+                && objects.equals(that.objects);
     }
 
     @Override
