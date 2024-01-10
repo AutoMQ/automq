@@ -117,30 +117,33 @@ public class GenerateConfigFileCmd {
 
     public String run() throws IOException {
         S3Url s3Url = S3Url.parse(parameter.s3Url);
-        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.brokerIpList);
-        processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
 
-        List<String> controllerPropFileNameList = new ArrayList<>();
-        List<String> brokerPropsFileNameList = new ArrayList<>();
-
+        List<String> controllerPropFileNameList;
+        ServerGroupConfig controllerGroupConfig;
         if (parameter.controllerOnlyMode) {
-            ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, CONTROLLER_PROPS_PATH, "controller", s3Url);
         } else {
-            ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
         }
+        List<String> brokerPropsFileNameList;
+        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerIpList, controllerGroupConfig);
+        brokerPropsFileNameList = processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
+
         System.out.println("####################################  GENERATED PROPERTIES #################################");
 
-        System.out.println("Generated controller or server properties under current directory: \n");
+        System.out.println("Generated controller or server properties under current directory:");
         for (String propFileName : controllerPropFileNameList) {
             System.out.println(propFileName);
         }
+        System.out.println();
 
-        System.out.println("Generated broker under current directory: \n");
+        System.out.println("Generated broker under current directory:");
         for (String propFileName : brokerPropsFileNameList) {
             System.out.println(propFileName);
         }
+        System.out.println();
 
         System.out.println("####################################  USAGE #################################");
         System.out.println("You can copy the properties to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");
