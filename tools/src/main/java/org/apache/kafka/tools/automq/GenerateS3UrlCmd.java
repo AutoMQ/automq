@@ -160,7 +160,7 @@ public class GenerateS3UrlCmd {
 
         //precheck
         var context = S3Utils.S3Context.builder()
-            .setEndpoint(parameter.endpointProtocol.name() + "://" + parameter.s3Endpoint)
+            .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
             .setAccessKey(parameter.s3AccessKey)
             .setSecretKey(parameter.s3SecretKey)
             .setBucketName(parameter.s3DataBucket)
