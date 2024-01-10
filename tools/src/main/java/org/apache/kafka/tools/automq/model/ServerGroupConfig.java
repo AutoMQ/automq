@@ -16,27 +16,37 @@
  */
 package org.apache.kafka.tools.automq.model;
 
-public enum EndpointProtocol {
+import java.util.List;
+import java.util.Map;
 
-    HTTP("http"),
-    HTTPS("https");
+/**
+ * Contain several server's config
+ */
+public class ServerGroupConfig {
+    final private List<Integer> nodeIdList;
 
-    EndpointProtocol(String key) {
-        this.name = key;
+    final private String quorumVoters;
+
+    /**
+     * Key is allocated node id and value is listener info
+     */
+    final private Map<Integer, String> listenerMap;
+
+    public ServerGroupConfig(List<Integer> nodeIdList, String quorumVoters, Map<Integer, String> listenerMap) {
+        this.nodeIdList = nodeIdList;
+        this.quorumVoters = quorumVoters;
+        this.listenerMap = listenerMap;
     }
 
-    private final String name;
-
-    public String getName() {
-        return name;
+    public List<Integer> getNodeIdList() {
+        return nodeIdList;
     }
 
-    public static EndpointProtocol getByName(String protocolName) {
-        for (EndpointProtocol protocol : EndpointProtocol.values()) {
-            if (protocol.getName().equals(protocolName)) {
-                return protocol;
-            }
-        }
-        throw new IllegalArgumentException("Invalid protocol: " + protocolName);
+    public String getQuorumVoters() {
+        return quorumVoters;
+    }
+
+    public Map<Integer, String> getListenerMap() {
+        return listenerMap;
     }
 }

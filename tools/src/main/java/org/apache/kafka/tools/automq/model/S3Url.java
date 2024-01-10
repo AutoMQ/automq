@@ -51,6 +51,9 @@ public class S3Url {
     }
 
     public static S3Url parse(String s3Url) throws IllegalArgumentException {
+        // skip the first prefix "s3://"
+        String s3Endpoint = s3Url.substring(5, s3Url.indexOf('?'));
+
         String paramsPart = s3Url.substring(s3Url.indexOf('?') + 1);
         String[] params = paramsPart.split("&");
 
@@ -59,7 +62,6 @@ public class S3Url {
         AuthMethod authMethod = null;
         String region = null;
         EndpointProtocol protocol = null;
-        String endpoint = null;
         String dataBucket = null;
         String opsBucket = null;
         String clusterId = null;
@@ -81,16 +83,13 @@ public class S3Url {
                     secretKey = value;
                     break;
                 case "s3-auth-method":
-                    authMethod = AuthMethod.getByName(key);
+                    authMethod = AuthMethod.getByName(value);
                     break;
                 case "s3-region":
                     region = value;
                     break;
                 case "s3-endpoint-protocol":
-                    protocol = EndpointProtocol.getByName(key);
-                    break;
-                case "s3-endpoint":
-                    endpoint = value;
+                    protocol = EndpointProtocol.getByName(value);
                     break;
                 case "s3-data-bucket":
                     dataBucket = value;
@@ -106,7 +105,7 @@ public class S3Url {
             }
         }
 
-        return new S3Url(accessKey, secretKey, authMethod, region, protocol, endpoint, dataBucket, opsBucket, clusterId);
+        return new S3Url(accessKey, secretKey, authMethod, region, protocol, s3Endpoint, dataBucket, opsBucket, clusterId);
     }
 
     public String getS3AccessKey() {

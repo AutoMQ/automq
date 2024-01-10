@@ -29,8 +29,8 @@ class S3UrlTest {
         assertEquals("xxx", s3UrlObj.getS3AccessKey());
         assertEquals("yyy", s3UrlObj.getS3SecretKey());
         assertEquals("cn-northwest-1", s3UrlObj.getS3Region());
-        assertEquals("key-from-args", s3UrlObj.getS3AuthMethod().name());
-        assertEquals("https", s3UrlObj.getEndpointProtocol().name());
+        assertEquals("key-from-args", s3UrlObj.getS3AuthMethod().getKeyName());
+        assertEquals("https", s3UrlObj.getEndpointProtocol().getName());
         assertEquals("s3.cn-northwest-1.amazonaws.com.cn", s3UrlObj.getS3Endpoint());
         assertEquals("wanshao-test", s3UrlObj.getS3DataBucket());
         assertEquals("automq-ops-bucket", s3UrlObj.getS3OpsBucket());

@@ -1861,6 +1861,8 @@ project(':tools') {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
+    implementation libs.commonio
+
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output

@@ -22,15 +22,19 @@ public enum AuthMethod {
     KEY_FROM_ARGS("key-from-args"),
     ROLE("role");
 
-    AuthMethod(String key) {
-        this.key = key;
+    AuthMethod(String keyName) {
+        this.keyName = keyName;
     }
 
-    final String key;
+    private final String keyName;
+
+    public String getKeyName() {
+        return keyName;
+    }
 
     public static AuthMethod getByName(String methodName) {
         for (AuthMethod method : AuthMethod.values()) {
-            if (method.key.equals(methodName)) {
+            if (method.getKeyName().equals(methodName)) {
                 return method;
             }
         }

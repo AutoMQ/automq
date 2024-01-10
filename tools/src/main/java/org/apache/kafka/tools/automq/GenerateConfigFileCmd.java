@@ -16,9 +16,20 @@
  */
 package org.apache.kafka.tools.automq;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Properties;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.tools.automq.constant.ServerConfigKey;
+import org.apache.kafka.tools.automq.model.S3Url;
+import org.apache.kafka.tools.automq.model.ServerGroupConfig;
+import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
@@ -27,6 +38,10 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
  */
 public class GenerateConfigFileCmd {
     private final Parameter parameter;
+
+    protected static final String BROKER_PROPS_PATH = "template/broker.properties";
+    protected static final String CONTROLLER_PROPS_PATH = "template/controller.properties";
+    protected static final String SERVER_PROPS_PATH = "template/server.properties";
 
     public GenerateConfigFileCmd(GenerateConfigFileCmd.Parameter parameter) {
         this.parameter = parameter;
@@ -38,19 +53,16 @@ public class GenerateConfigFileCmd {
 
         final String brokerIpList;
 
-        final String cpuCoreCount;
-
-        final String memorySizeGB;
-
         final String networkBaselineBandwidthMB;
+
+        final boolean controllerOnlyMode;
 
         Parameter(Namespace res) {
             this.s3Url = res.getString("s3-url");
             this.brokerIpList = res.getString("broker-ip-list");
             this.controllerIpList = res.getString("controller-ip-list");
-            this.cpuCoreCount = res.getString("cpu-core-count");
-            this.memorySizeGB = res.getString("memory-size-gb");
             this.networkBaselineBandwidthMB = res.getString("network-baseline-bandwidth-mb");
+            this.controllerOnlyMode = res.getBoolean("controller-only-mode");
         }
     }
 
@@ -68,7 +80,7 @@ public class GenerateConfigFileCmd {
             .type(String.class)
             .dest("s3-url")
             .metavar("S3-URL")
-            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd '/bin/automq-kafka-admin.sh %s'", AutoMQAdminCmd.GENERATE_S3_URL_CMD));
+            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", AutoMQAdminCmd.GENERATE_S3_URL_CMD));
         parser.addArgument("--controller-ip-list")
             .action(store())
             .required(true)
@@ -83,25 +95,18 @@ public class GenerateConfigFileCmd {
             .dest("broker-ip-list")
             .metavar("BROKER-IP-LIST")
             .help("Your broker ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
-        parser.addArgument("--cpu-core-count")
+        parser.addArgument("--controller-only-mode")
             .action(store())
-            .required(true)
-            .type(String.class)
-            .dest("cpu-core-count")
-            .metavar("CPU-CORE-COUNT")
-            .help("CPU core count of your machine to run broker or controller");
-        parser.addArgument("--memory-size-gb")
-            .action(store())
-            .required(true)
-            .setDefault("https")
-            .type(String.class)
-            .dest("memory-size-gb")
-            .metavar("MEMORY-SIZE-GB")
-            .help("Memory size of your machine to run broker or controller");
+            .required(false)
+            .type(Boolean.class)
+            .dest("controller-only-mode")
+            .setDefault(false)
+            .metavar("CONTROLLER-ONLY-MODE")
+            .help("If this is set to true, all controllers is also seen as broker. If you want to run controller only, set this to true. Default is false.");
         parser.addArgument("--network-baseline-bandwidth-mb")
             .action(store())
-            .required(true)
-            .type(String.class)
+            .required(false)
+            .type(Integer.class)
             .dest("network-baseline-bandwidth-mb")
             .metavar("NETWORK-BASELINE-BANDWIDTH-MB")
             .help("Network baseline bandwidth of your machine to run broker or controller. Usually you can get it from your cloud provider's official instance document. Example: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/memory-optimized-instances.html");
@@ -109,7 +114,101 @@ public class GenerateConfigFileCmd {
         return parser;
     }
 
-    public String run() {
+    public String run() throws IOException {
+        S3Url s3Url = S3Url.parse(parameter.s3Url);
+        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.brokerIpList);
+        processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
+
+        List<String> controllerPropFileNameList = new ArrayList<>();
+        List<String> brokerPropsFileNameList = new ArrayList<>();
+
+        if (parameter.controllerOnlyMode) {
+            ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            controllerPropFileNameList = processGroupConfig(controllerGroupConfig, CONTROLLER_PROPS_PATH, "controller", s3Url);
+        } else {
+            ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList);
+            brokerPropsFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
+        }
+        System.out.println("####################################  GENERATED PROPERTIES #################################");
+
+        System.out.println("Generated controller or server properties under current directory: \n");
+        for (String propFileName : controllerPropFileNameList) {
+            System.out.println(propFileName);
+        }
+
+        System.out.println("Generated broker under current directory: \n");
+        for (String propFileName : brokerPropsFileNameList) {
+            System.out.println(propFileName);
+        }
+
+        System.out.println("####################################  USAGE #################################");
+        System.out.println("You can copy the properties to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");
+        System.out.println("Ensure that your compute instance already have JDK17 installed. Execute 'java -version' to check.");
+        System.out.println("------------------------ COPY ME ①  ------------------");
+        System.out.println(String.format("export KAFKA_S3_ACCESS_KEY=%s", s3Url.getS3AccessKey()));
+        System.out.println(String.format("export KAFKA_S3_ACCESS_KEY=%s", s3Url.getS3SecretKey()));
+        System.out.println();
+
+        System.out.println("------------------------ COPY ME ②  ------------------");
+        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "controller-${NODE_ID}.properties"));
+        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "broker-${NODE_ID}.properties"));
+        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "server-${NODE_ID}.properties"));
+        System.out.println();
+        System.out.println("------------------------ COPY ME ③  ------------------");
+        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/controller-${NODE_ID}.properties %n"));
+        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/broker-${NODE_ID}.properties %n"));
+        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/server-${NODE_ID}.properties %n"));
+        System.out.println("TIPS: Start controllers first and then the brokers.");
+        System.out.println("TIPS: Replace the placeholder ${NODE_ID} in the command to specify your real properties file name.");
+        System.out.println("TIPS: Replace the placeholder ${PROPERTIES_LOCATE_DIR} in the command to specify your real properties path.");
+        System.out.println();
         return "";
     }
+
+    public List<String> processGroupConfig(ServerGroupConfig groupConfig, String propFilePath,
+        String outputFilePrefix, S3Url s3Url) throws IOException {
+        List<String> propFileNameList = new ArrayList<>();
+        for (int i = 0; i < groupConfig.getNodeIdList().size(); i++) {
+            int nodeId = groupConfig.getNodeIdList().get(i);
+            Properties groupProps = loadTemplateProps(propFilePath);
+            groupProps.put(ServerConfigKey.NODE_ID.getKeyName(), String.valueOf(nodeId));
+            groupProps.put(ServerConfigKey.CONTROLLER_QUORUM_VOTERS.getKeyName(), groupConfig.getQuorumVoters());
+            groupProps.put(ServerConfigKey.LISTENERS.getKeyName(), groupConfig.getListenerMap().get(nodeId));
+            // use same value as listeners by default
+            groupProps.put(ServerConfigKey.ADVERTISED_LISTENERS.getKeyName(), groupConfig.getListenerMap().get(nodeId));
+            groupProps.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
+            groupProps.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
+
+            String fileName = String.format("%s-%s.properties", outputFilePrefix, nodeId);
+            flushProps(groupProps, fileName);
+            propFileNameList.add(fileName);
+        }
+        return propFileNameList;
+    }
+
+    protected Properties loadTemplateProps(String propsPath) throws IOException {
+        try (var in = this.getClass().getClassLoader().getResourceAsStream(propsPath)) {
+            if (in != null) {
+                Properties props = new Properties();
+                props.load(in);
+                return props;
+            } else {
+                throw new IOException(String.format("Can not find resource file under path: %s", propsPath));
+            }
+        }
+    }
+
+    protected void flushProps(Properties props, String fileName) throws IOException {
+        persist(props, fileName);
+    }
+
+    public void persist(Properties props, String fileName) throws IOException {
+        PrintWriter pw = new PrintWriter(fileName, Charset.forName("utf-8"));
+        for (Enumeration e = props.propertyNames(); e.hasMoreElements(); ) {
+            String key = (String) e.nextElement();
+            pw.println(key + "=" + props.getProperty(key));
+        }
+        pw.close();
+    }
+
 }

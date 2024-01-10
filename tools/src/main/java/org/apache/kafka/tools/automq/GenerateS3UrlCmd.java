@@ -109,7 +109,7 @@ public class GenerateS3UrlCmd {
             .help("Your secretKey that used to access S3");
         parser.addArgument("--s3-auth-method")
             .action(store())
-            .required(true)
+            .required(false)
             .type(String.class)
             .dest("s3-auth-method")
             .metavar("S3-AUTH-METHOD")
@@ -145,7 +145,7 @@ public class GenerateS3UrlCmd {
             .help("The bucket name of S3 that used to store kafka's stream data");
         parser.addArgument("--s3-ops-bucket")
             .action(store())
-            .required(true)
+            .required(false)
             .type(String.class)
             .dest("s3-ops-bucket")
             .metavar("S3-OPS-BUCKET")
@@ -180,25 +180,12 @@ public class GenerateS3UrlCmd {
         System.out.println("[BASIC USAGE]");
         System.out.println("Basic usage to generate all config properties for 2c16g instance with 120MB/s bandwidth");
         System.out.println("------------------------ COPY ME ------------------");
-        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ %n"
-            + "--s3-url=%s  \\ %n"
-            + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ %n"
-            + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+        //tips: Not add whitespace after \\
+        System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
+            + "--s3-url=\"%s\" \\%n"
+            + "--controller-ip-list=\"192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092\"  \\%n"
+            + "--broker-ip-list=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
         ));
-
-        System.out.println();
-        System.out.println("[ADVANCED USAGE]");
-        System.out.println("Advanced usage to generate all config properties for custom instance type");
-        System.out.println("------------------------ COPY ME ------------------");
-        System.out.println(String.format("/bin/automq-kafka-admin.sh %s \\ %n"
-            + "--s3-url=%s  \\ %n"
-            + "--controller-ip-list=192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092  \\ %n"
-            + "--broker-ip-list=192.168.0.4:9092;192.168.0.5:9092  \\ %n"
-            + "--cpu-core-count=8  \\ %n"
-            + "--memory-size-gb=32  \\ %n"
-            + "--network-baseline-bandwith-bytes=1000  %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
-        ));
-
         System.out.println("TIPS: Replace the controller-ip-list and broker-ip-list with your real ip list.");
 
         return s3Url;
@@ -212,10 +199,11 @@ public class GenerateS3UrlCmd {
             .append("?").append("s3-access-key=").append(parameter.s3AccessKey)
             .append("&").append("s3-secret-key=").append(parameter.s3SecretKey)
             .append("&").append("s3-region=").append(parameter.s3Region)
-            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.name())
-            .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.name())
+            //todo open option when kafka shell is supported
+//            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.name())
+            .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.getName())
             .append("&").append("s3-data-bucket=").append(parameter.s3DataBucket)
-            .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
+//            .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
             .append("&").append("cluster-id=").append(Uuid.randomUuid());
         return s3UrlBuilder.toString();
     }

@@ -51,11 +51,11 @@ public class AutoMQAdminCmd {
             .type(String.class)
             .metavar("generate-local-start-command")
             .help(String.format("This cmd is used to generate config file and local start command. Execute '%s -h' to check its usage.", GENERATE_LOCAL_START_COMMAND_CMD));
-        parser.addArgument("generate-config-properties")
+        parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
             .action(store())
             .required(false)
             .type(String.class)
-            .metavar("generate-config-properties")
+            .metavar(GENERATE_CONFIG_PROPERTIES_CMD)
             .help(String.format("This cmd is used to generate multi config properties depend on your arguments. Execute '%s -h' to check its usage.", GENERATE_CONFIG_PROPERTIES_CMD));
         return parser;
     }
