@@ -150,7 +150,7 @@ public class GenerateConfigFileCmd {
         System.out.println("Ensure that your compute instance already have JDK17 installed. Execute 'java -version' to check.");
         System.out.println("------------------------ COPY ME ①  ------------------");
         System.out.println(String.format("export KAFKA_S3_ACCESS_KEY=%s", s3Url.getS3AccessKey()));
-        System.out.println(String.format("export KAFKA_S3_ACCESS_KEY=%s", s3Url.getS3SecretKey()));
+        System.out.println(String.format("export KAFKA_S3_SECRET_KEY=%s", s3Url.getS3SecretKey()));
         System.out.println();
 
         System.out.println("------------------------ COPY ME ②  ------------------");
