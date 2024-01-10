@@ -154,23 +154,34 @@ public class GenerateConfigFileCmd {
         System.out.println();
 
         System.out.println("------------------------ COPY ME ②  ------------------");
-        if (parameter.controllerOnlyMode) {
-            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "controller-${NODE_ID}.properties"));
-        } else {
-            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "server-${NODE_ID}.properties"));
+        for (int controllerNodeId : controllerGroupConfig.getNodeIdList()) {
+            if (parameter.controllerOnlyMode) {
+                System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/controller-%s.properties", s3Url.getClusterId(), controllerNodeId));
+            } else {
+                System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/server-%s.properties", s3Url.getClusterId(), controllerNodeId));
+            }
         }
-        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "broker-${NODE_ID}.properties"));
+
+        for (int brokerNodeId : brokerGroupConfig.getNodeIdList()) {
+            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/broker-%s.properties", s3Url.getClusterId(), brokerNodeId));
+        }
 
         System.out.println();
         System.out.println("------------------------ COPY ME ③  ------------------");
-        if (parameter.controllerOnlyMode) {
-            System.out.println(String.format("bin/kafka-server-start.sh generated/controller-${NODE_ID}.properties %n"));
-        } else {
-            System.out.println(String.format("bin/kafka-server-start.sh generated/server-${NODE_ID}.properties %n"));
+
+        for (int controllerNodeId : controllerGroupConfig.getNodeIdList()) {
+            if (parameter.controllerOnlyMode) {
+                System.out.println(String.format("bin/kafka-server-start.sh generated/controller-%s.properties", controllerNodeId));
+            } else {
+                System.out.println(String.format("bin/kafka-server-start.sh generated/server-%s.properties", controllerNodeId));
+            }
         }
-        System.out.println(String.format("bin/kafka-server-start.sh generated/broker-${NODE_ID}.properties %n"));
+
+        for (int brokerNodeId : brokerGroupConfig.getNodeIdList()) {
+            System.out.println(String.format("bin/kafka-server-start.sh generated/broker-%s.properties", brokerNodeId));
+        }
+        System.out.println();
         System.out.println("TIPS: Start controllers first and then the brokers.");
-        System.out.println("TIPS: Replace the placeholder ${NODE_ID} in the command to specify your real properties file name.");
         System.out.println();
         return "";
     }
