@@ -196,7 +196,7 @@ public class GenerateConfigFileCmd {
             groupProps.put(ServerConfigKey.CONTROLLER_QUORUM_VOTERS.getKeyName(), groupConfig.getQuorumVoters());
             groupProps.put(ServerConfigKey.LISTENERS.getKeyName(), groupConfig.getListenerMap().get(nodeId));
             // use same value as listeners by default
-            groupProps.put(ServerConfigKey.ADVERTISED_LISTENERS.getKeyName(), groupConfig.getListenerMap().get(nodeId));
+            groupProps.put(ServerConfigKey.ADVERTISED_LISTENERS.getKeyName(), groupConfig.getAdvertisedListenerMap().get(nodeId));
             groupProps.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
             groupProps.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
 

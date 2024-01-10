@@ -29,6 +29,7 @@ public class ConfigParserUtil {
         List<Integer> nodeIdList = new ArrayList<>();
         StringBuilder quorumVoters = new StringBuilder();
         Map<Integer, String> listenerMap = new HashMap<>();
+        Map<Integer, String> advertisedListenerMap = new HashMap<>();
 
         for (int i = 0; i < ipPortPairs.length; i++) {
             nodeIdList.add(i);
@@ -41,12 +42,18 @@ public class ConfigParserUtil {
             if (isControllerOnlyMode) {
                 listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i]);
             } else {
+                if ("9092".equals(ipPortPairs[i].split(":")[1])) {
+                    throw new UnsupportedOperationException("Controller port can not be 9092 in server mode,because it will conflict with broker port");
+                }
+
                 // server force to listen 9092 by default
-                listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i].split(":")[0] + ":9092" + "," + "CONTROLLER://" + ipPortPairs[i]);
+                String advertisedListener = "PLAINTEXT://" + ipPortPairs[i].split(":")[0] + ":9092";
+                listenerMap.put(i, advertisedListener + "," + "CONTROLLER://" + ipPortPairs[i]);
+                advertisedListenerMap.put(i, advertisedListener);
             }
         }
 
-        return new ServerGroupConfig(nodeIdList, quorumVoters.toString(), listenerMap);
+        return new ServerGroupConfig(nodeIdList, quorumVoters.toString(), listenerMap, advertisedListenerMap);
     }
 
     public static ServerGroupConfig genBrokerConfig(String ipPortList,
@@ -63,7 +70,7 @@ public class ConfigParserUtil {
         return new ServerGroupConfig(
             nodeIdList,
             controllerGroupConfig.getQuorumVoters(),
-            listenerMap);
+            listenerMap, listenerMap);
 
     }
 }

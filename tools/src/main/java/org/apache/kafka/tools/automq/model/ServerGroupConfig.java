@@ -32,10 +32,14 @@ public class ServerGroupConfig {
      */
     final private Map<Integer, String> listenerMap;
 
-    public ServerGroupConfig(List<Integer> nodeIdList, String quorumVoters, Map<Integer, String> listenerMap) {
+    final private Map<Integer, String> advertisedListenerMap;
+
+    public ServerGroupConfig(List<Integer> nodeIdList, String quorumVoters, Map<Integer, String> listenerMap,
+        Map<Integer, String> advertisedListenerMap) {
         this.nodeIdList = nodeIdList;
         this.quorumVoters = quorumVoters;
         this.listenerMap = listenerMap;
+        this.advertisedListenerMap = advertisedListenerMap;
     }
 
     public List<Integer> getNodeIdList() {
@@ -48,5 +52,9 @@ public class ServerGroupConfig {
 
     public Map<Integer, String> getListenerMap() {
         return listenerMap;
+    }
+
+    public Map<Integer, String> getAdvertisedListenerMap() {
+        return advertisedListenerMap;
     }
 }
