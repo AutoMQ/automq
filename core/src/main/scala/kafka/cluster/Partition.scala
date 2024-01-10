@@ -1069,9 +1069,9 @@ class Partition(val topicPartition: TopicPartition,
     // move high watermark based on log confirm offset to prevent ack inflight record.
     leaderLog match {
       case elasticLog: ElasticUnifiedLog =>
-        val cOffset = elasticLog.confirmOffset()
-        newHighWatermark = cOffset
-        confirmOffset = Some(cOffset.messageOffset)
+        val confirmOffset = elasticLog.confirmOffset()
+        newHighWatermark = confirmOffset
+        this.confirmOffset = Some(confirmOffset.messageOffset)
       case _ =>
     }
     // AutoMQ for Kafka inject end
