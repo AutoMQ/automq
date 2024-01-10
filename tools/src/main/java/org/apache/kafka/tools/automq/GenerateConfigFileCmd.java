@@ -159,12 +159,11 @@ public class GenerateConfigFileCmd {
         System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "server-${NODE_ID}.properties"));
         System.out.println();
         System.out.println("------------------------ COPY ME ③  ------------------");
-        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/controller-${NODE_ID}.properties %n"));
-        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/broker-${NODE_ID}.properties %n"));
-        System.out.println(String.format("bin/kafka-server-start.sh ${PROPERTIES_LOCATE_DIR}/server-${NODE_ID}.properties %n"));
+        System.out.println(String.format("bin/kafka-server-start.sh generated/controller-${NODE_ID}.properties %n"));
+        System.out.println(String.format("bin/kafka-server-start.sh generated/broker-${NODE_ID}.properties %n"));
+        System.out.println(String.format("bin/kafka-server-start.sh generated/server-${NODE_ID}.properties %n"));
         System.out.println("TIPS: Start controllers first and then the brokers.");
         System.out.println("TIPS: Replace the placeholder ${NODE_ID} in the command to specify your real properties file name.");
-        System.out.println("TIPS: Replace the placeholder ${PROPERTIES_LOCATE_DIR} in the command to specify your real properties path.");
         System.out.println();
         return "";
     }
