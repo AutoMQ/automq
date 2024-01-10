@@ -27,7 +27,9 @@ public enum ServerConfigKey {
 
     S3_ENDPOINT("s3.endpoint"),
 
-    S3_REGION("s3.region");
+    S3_REGION("s3.region"),
+
+    S3_BUCKET("s3.bucket");
 
     ServerConfigKey(String keyName) {
         this.keyName = keyName;
