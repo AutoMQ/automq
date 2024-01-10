@@ -155,11 +155,11 @@ public class GenerateConfigFileCmd {
 
         System.out.println("------------------------ COPY ME ②  ------------------");
         if (parameter.controllerOnlyMode) {
-            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "controller-${NODE_ID}.properties"));
+            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "controller-${NODE_ID}.properties"));
         } else {
-            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "server-${NODE_ID}.properties"));
+            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "server-${NODE_ID}.properties"));
         }
-        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=%s", s3Url.getClusterId(), "broker-${NODE_ID}.properties"));
+        System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/%s", s3Url.getClusterId(), "broker-${NODE_ID}.properties"));
 
         System.out.println();
         System.out.println("------------------------ COPY ME ③  ------------------");
