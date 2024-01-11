@@ -161,5 +161,6 @@
     <allow pkg="org.apache.directory" />
     <allow pkg="org.mockito" />
     <allow pkg="kafka.s3shell" />
+    <allow pkg="kafka.tools" />
   </subpackage>
 </import-control>

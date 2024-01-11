@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.tools.automq.model;
 
+import com.automq.s3shell.sdk.model.S3Url;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

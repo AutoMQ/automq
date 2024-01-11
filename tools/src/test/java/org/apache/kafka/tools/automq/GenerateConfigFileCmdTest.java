@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.tools.automq;
 
+import com.automq.s3shell.sdk.model.S3Url;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -23,7 +24,6 @@ import java.util.Map;
 import java.util.Properties;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.commons.io.FileUtils;
-import org.apache.kafka.tools.automq.model.S3Url;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 import org.junit.jupiter.api.Assertions;

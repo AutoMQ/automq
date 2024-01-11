@@ -18,12 +18,9 @@ package org.apache.kafka.tools.automq;
 
 import com.automq.s3shell.sdk.constant.ServerConfigKey;
 import com.automq.s3shell.sdk.model.S3Url;
-import java.io.File;
+import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Properties;
 import net.sourceforge.argparse4j.ArgumentParsers;
@@ -146,39 +143,41 @@ public class GenerateConfigFileCmd {
         System.out.println();
 
         System.out.println("####################################  USAGE #################################");
+        System.out.println("[ START BY PROPERTIES FILE ]");
         System.out.println("You can copy the properties to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");
         System.out.println("Ensure that your compute instance already have JDK17 installed. Execute 'java -version' to check.");
-        System.out.println("------------------------ COPY ME ①  ------------------");
-        System.out.println(String.format("export KAFKA_S3_ACCESS_KEY=%s", s3Url.getS3AccessKey()));
-        System.out.println(String.format("export KAFKA_S3_SECRET_KEY=%s", s3Url.getS3SecretKey()));
         System.out.println();
-
-        System.out.println("------------------------ COPY ME ②  ------------------");
-        for (int controllerNodeId : controllerGroupConfig.getNodeIdList()) {
-            if (parameter.controllerOnlyMode) {
-                System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/controller-%s.properties", s3Url.getClusterId(), controllerNodeId));
-            } else {
-                System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/server-%s.properties", s3Url.getClusterId(), controllerNodeId));
-            }
-        }
-
-        for (int brokerNodeId : brokerGroupConfig.getNodeIdList()) {
-            System.out.println(String.format("bin/kafka-storage.sh format -t %s -c=generated/broker-%s.properties", s3Url.getClusterId(), brokerNodeId));
-        }
-
-        System.out.println();
-        System.out.println("------------------------ COPY ME ③  ------------------");
+        System.out.println("------------------------ COPY ME  ------------------");
 
         for (int controllerNodeId : controllerGroupConfig.getNodeIdList()) {
             if (parameter.controllerOnlyMode) {
-                System.out.println(String.format("bin/kafka-server-start.sh generated/controller-%s.properties", controllerNodeId));
+                System.out.println(String.format("bin/kafka-server-start.sh "
+                    + "--s3-url=\"%s\" "
+                    + "--config=config/kraft/controller.properties "
+                    + "--override node.id=%s "
+                    + "--override controller.quorum.voters=%s "
+                    + "--override listeners=%s ", parameter.s3Url, controllerNodeId, controllerGroupConfig.getQuorumVoters(), controllerGroupConfig.getListenerMap().get(controllerNodeId)));
             } else {
-                System.out.println(String.format("bin/kafka-server-start.sh generated/server-%s.properties", controllerNodeId));
+                System.out.println(String.format("bin/kafka-server-start.sh "
+                    + "--s3-url=\"%s\" "
+                    + "--config=config/kraft/server.properties "
+                    + "--override node.id=%s "
+                    + "--override controller.quorum.voters=%s "
+                    + "--override listeners=%s "
+                    + "--override advertised.listeners=%s ", parameter.s3Url, controllerNodeId, controllerGroupConfig.getQuorumVoters(), controllerGroupConfig.getListenerMap().get(controllerNodeId), controllerGroupConfig.getAdvertisedListenerMap().get(controllerNodeId)));
             }
+            System.out.println();
         }
 
         for (int brokerNodeId : brokerGroupConfig.getNodeIdList()) {
-            System.out.println(String.format("bin/kafka-server-start.sh generated/broker-%s.properties", brokerNodeId));
+            System.out.println(String.format("bin/kafka-server-start.sh "
+                + "--s3-url=\"%s\" "
+                + "--config=config/kraft/server.properties "
+                + "--override node.id=%s "
+                + "--override controller.quorum.voters=%s "
+                + "--override listeners=%s "
+                + "--override advertised.listeners=%s ", parameter.s3Url, brokerNodeId, brokerGroupConfig.getQuorumVoters(), brokerGroupConfig.getListenerMap().get(brokerNodeId), brokerGroupConfig.getAdvertisedListenerMap().get(brokerNodeId)));
+            System.out.println();
         }
         System.out.println();
         System.out.println("TIPS: Start controllers first and then the brokers.");
@@ -222,23 +221,7 @@ public class GenerateConfigFileCmd {
     }
 
     protected void flushProps(Properties props, String fileName) throws IOException {
-        persist(props, fileName);
-    }
-
-    public void persist(Properties props, String fileName) throws IOException {
-        File directory = new File("generated");
-        if (!directory.exists() && !directory.mkdirs()) {
-            throw new IOException("Can't create directory " + directory.getAbsolutePath());
-        }
-
-        String targetPath = "generated/" + fileName;
-        File file = new File(targetPath);
-        try (PrintWriter pw = new PrintWriter(file, Charset.forName("utf-8"))) {
-            for (Enumeration e = props.propertyNames(); e.hasMoreElements(); ) {
-                String key = (String) e.nextElement();
-                pw.println(key + "=" + props.getProperty(key));
-            }
-        }
+        S3PropUtil.persist(props, fileName);
     }
 
 }

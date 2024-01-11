@@ -14,30 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.s3shell.model;
+package kafka.s3shell.util;
 
-public enum AuthMethod {
-    KEY_FROM_ENV("key-from-env"),
+import com.automq.s3shell.sdk.util.S3PropUtil;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Properties;
+import kafka.tools.StorageTool;
 
-    KEY_FROM_ARGS("key-from-args"),
-    ROLE("role");
+public class KafkaFormatUtil {
+    public static void formatStorage(String clusterId, Properties props) throws IOException {
+        String propFileName = String.format("automq-%s.properties", clusterId);
+        String propFilePath = "generated/" + propFileName;
+        String logDirPath = props.getProperty("log.dirs");
 
-    AuthMethod(String keyName) {
-        this.keyName = keyName;
-    }
-
-    private final String keyName;
-
-    public String getKeyName() {
-        return keyName;
-    }
-
-    public static AuthMethod getByName(String methodName) {
-        for (AuthMethod method : AuthMethod.values()) {
-            if (method.getKeyName().equals(methodName)) {
-                return method;
-            }
+        S3PropUtil.persist(props, propFileName);
+        if (!Files.isDirectory(Paths.get(logDirPath)) || !Files.exists(Paths.get(logDirPath, "meta.properties"))) {
+            StorageTool.main(new String[] {"format", "-t", clusterId, "-c=" + propFilePath});
         }
-        throw new IllegalArgumentException("Invalid auth method: " + methodName);
     }
 }

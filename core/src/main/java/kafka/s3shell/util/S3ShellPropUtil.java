@@ -16,14 +16,14 @@
  */
 package kafka.s3shell.util;
 
+import com.automq.s3shell.sdk.constant.ServerConfigKey;
+import com.automq.s3shell.sdk.model.S3Url;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
-import kafka.s3shell.constant.ServerConfigKey;
-import kafka.s3shell.model.S3Url;
 import kafka.utils.CommandLineUtils;
 import org.apache.kafka.common.internals.FatalExitError;
 import org.apache.kafka.common.utils.Utils;
@@ -86,18 +86,18 @@ public class S3ShellPropUtil {
     }
 
     private static void handleOption(OptionSet options, Properties props) {
+        S3Url s3Url = null;
         if (options.has("s3-url")) {
             String s3UrlStr = (String) options.valueOf("s3-url");
-            S3Url s3Url = S3Url.parse(s3UrlStr);
+            s3Url = S3Url.parse(s3UrlStr);
             props.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
             props.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
             props.put(ServerConfigKey.S3_BUCKET.getKeyName(), s3Url.getS3DataBucket());
-            props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), s3Url.isS3PathStyle());
+            props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), String.valueOf(s3Url.isS3PathStyle()));
 
             // override system env
-            System.setProperty(ACCESS_KEY_NAME, s3Url.getS3AccessKey());
-            System.setProperty(SECRET_KEY_NAME, s3Url.getS3SecretKey());
-
+            EnvUtil.setEnv(ACCESS_KEY_NAME, s3Url.getS3AccessKey());
+            EnvUtil.setEnv(SECRET_KEY_NAME, s3Url.getS3SecretKey());
         }
 
         if (options.has("override")) {
@@ -110,6 +110,15 @@ public class S3ShellPropUtil {
                 } else {
                     throw new IllegalArgumentException("Invalid override option format: " + option);
                 }
+            }
+        }
+
+        //format storage
+        if (s3Url != null) {
+            try {
+                KafkaFormatUtil.formatStorage(s3Url.getClusterId(), props);
+            } catch (IOException e) {
+                throw new RuntimeException(String.format("Format storage failed for cluster:%s", s3Url.getClusterId()), e);
             }
         }
     }
