@@ -1328,6 +1328,35 @@ class ReplicaManager(val config: KafkaConfig,
       partition
     }
 
+    /**
+     * Convert a [[LogReadInfo]] to [[LogReadResult]].
+     * This method is just a utility to avoid duplicated code.
+     */
+    def readInfoToReadResult(
+                              logReadInfo: LogReadInfo,
+                              followerLogStartOffset: Long,
+                              fetchTimeMs: Long,
+                              fetchDataInfo: FetchDataInfo = null,
+                              preferredReadReplica: Option[Int] = None,
+                              exception: Option[Throwable] = None): LogReadResult = {
+      val _fetchDataInfo = if (null == fetchDataInfo) {
+        logReadInfo.fetchedData
+      } else {
+        fetchDataInfo
+      }
+      LogReadResult(info = _fetchDataInfo,
+        divergingEpoch = logReadInfo.divergingEpoch,
+        highWatermark = logReadInfo.highWatermark,
+        leaderLogStartOffset = logReadInfo.logStartOffset,
+        leaderLogEndOffset = logReadInfo.logEndOffset,
+        followerLogStartOffset = followerLogStartOffset,
+        fetchTimeMs = fetchTimeMs,
+        lastStableOffset = Some(logReadInfo.lastStableOffset),
+        preferredReadReplica = preferredReadReplica,
+        exception = exception
+      )
+    }
+
     // AutoMQ for Kafka inject start
     def read(partition: Partition, tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): CompletableFuture[LogReadResult] = {
       def _exception2LogReadResult(e: Throwable): LogReadResult = {
@@ -1351,53 +1380,27 @@ class ReplicaManager(val config: KafkaConfig,
       // [[ReplicaManager.readFromLocalLog]], as we always have only one replica per partition.
       val preferredReadReplica = None
 
-      val logReadInfo = partition.checkFetchOffsetAndMaybeGetInfo(params, fetchInfo)
-      if (null != logReadInfo) {
-        // The fetch offset equals to the confirmed offset, no need to do a read.
-        CompletableFuture.completedFuture(LogReadResult(info = logReadInfo.fetchedData,
-          divergingEpoch = logReadInfo.divergingEpoch,
-          highWatermark = logReadInfo.highWatermark,
-          leaderLogStartOffset = logReadInfo.logStartOffset,
-          leaderLogEndOffset = logReadInfo.logEndOffset,
-          followerLogStartOffset = followerLogStartOffset,
-          fetchTimeMs = fetchTimeMs,
-          lastStableOffset = Some(logReadInfo.lastStableOffset),
-          preferredReadReplica = preferredReadReplica,
-          exception = None
-        ))
-      } else {
-        // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
-        partition.fetchRecordsAsync(
-          fetchParams = params,
-          fetchPartitionData = fetchInfo,
-          fetchTimeMs = fetchTimeMs,
-          maxBytes = adjustedMaxBytes,
-          minOneMessage = minOneMessage,
-          updateFetchState = !readFromPurgatory
-        ).thenApply(readInfo => {
-          val fetchDataInfo = if (params.isFromFollower && shouldLeaderThrottle(quota, partition, params.replicaId)) {
-            // If the partition is being throttled, simply return an empty set.
-            FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
-          } else if (!params.hardMaxBytesLimit && readInfo.fetchedData.firstEntryIncomplete) {
-            // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
-            // progress in such cases and don't need to report a `RecordTooLargeException`
-            FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
-          } else {
-            readInfo.fetchedData
-          }
-          LogReadResult(info = fetchDataInfo,
-            divergingEpoch = readInfo.divergingEpoch,
-            highWatermark = readInfo.highWatermark,
-            leaderLogStartOffset = readInfo.logStartOffset,
-            leaderLogEndOffset = readInfo.logEndOffset,
-            followerLogStartOffset = followerLogStartOffset,
-            fetchTimeMs = fetchTimeMs,
-            lastStableOffset = Some(readInfo.lastStableOffset),
-            preferredReadReplica = preferredReadReplica,
-            exception = None
-          )
-        }).exceptionally(e => _exception2LogReadResult(e)))
-      }
+      // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
+      partition.fetchRecordsAsync(
+        fetchParams = params,
+        fetchPartitionData = fetchInfo,
+        fetchTimeMs = fetchTimeMs,
+        maxBytes = adjustedMaxBytes,
+        minOneMessage = minOneMessage,
+        updateFetchState = !readFromPurgatory
+      ).thenApply(readInfo => {
+        val fetchDataInfo = if (params.isFromFollower && shouldLeaderThrottle(quota, partition, params.replicaId)) {
+          // If the partition is being throttled, simply return an empty set.
+          FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
+        } else if (!params.hardMaxBytesLimit && readInfo.fetchedData.firstEntryIncomplete) {
+          // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
+          // progress in such cases and don't need to report a `RecordTooLargeException`
+          FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
+        } else {
+          readInfo.fetchedData
+        }
+        readInfoToReadResult(readInfo, fetchInfo.logStartOffset, fetchTimeMs, fetchDataInfo, preferredReadReplica)
+      }).exceptionally(e => _exception2LogReadResult(e)))
     }
 
     val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)]
@@ -1433,22 +1436,40 @@ class ReplicaManager(val config: KafkaConfig,
 
     var partitionIndex = 0;
     while (remainingBytes.get() > 0 && partitionIndex < readPartitionInfo.size) {
+      // In each iteration, we read as many partitions as possible until we reach the maximum bytes limit.
       val readCfArray = new ArrayBuffer[CompletableFuture[Void]]
-      var assignedBytes = 0
-      val availableBytes = remainingBytes.get()
+      var assignedBytes = 0 // The total bytes we have assigned to the read requests.
+      val availableBytes = remainingBytes.get() // The remaining bytes we can assign to the read requests, used to control the following loop.
 
       while (assignedBytes < availableBytes && partitionIndex < readPartitionInfo.size) {
+        // Iterate over the partitions.
         val tp = readPartitionInfo(partitionIndex)._1
         val partitionData = readPartitionInfo(partitionIndex)._2
-        var readCf: CompletableFuture[LogReadResult] = null
-        Try {
+        try {
           val partition = getPartitionAndCheckTopicId(tp)
-          read(partition, tp, partitionData, partitionData.maxBytes, minOneMessage.get())
-        } match {
-          case Success(readCf) =>
-            readCfArray += readCf.thenAccept(handleReadResult(tp, _))
-            assignedBytes += partitionData.maxBytes
-          case Failure(e) =>
+
+          val logReadInfo = partition.checkFetchOffsetAndMaybeGetInfo(params, partitionData)
+          if (null != logReadInfo) {
+            // The fetch offset equals to the confirmed offset, no need to do a read.
+            val readResult = readInfoToReadResult(logReadInfo, partitionData.logStartOffset, time.milliseconds)
+            handleReadResult(tp, readResult)
+          } else {
+            // Read from the log.
+            val readCf = read(partition, tp, partitionData, partitionData.maxBytes, minOneMessage.get())
+            if (readCf.isDone) {
+              // If the read is done, we can handle the result immediately.
+              val readResult = readCf.get()
+              handleReadResult(tp, readResult)
+              // As the read is done, we can update the assignedBytes by the actual size of the read result.
+              assignedBytes += readResult.info.records.sizeInBytes
+            } else {
+              // Otherwise, we need to add it to the waiting list.
+              readCfArray += readCf.thenAccept(handleReadResult(tp, _))
+              assignedBytes += partitionData.maxBytes
+            }
+          }
+        } catch {
+          case e: Throwable =>
             val readResult = exception2LogReadResult(e, tp, partitionData, partitionData.maxBytes)
             handleReadResult(tp, readResult)
         }
