@@ -123,7 +123,7 @@ public class GenerateS3UrlCmd {
             .help("The region of S3");
         parser.addArgument("--s3-endpoint-protocol")
             .action(store())
-            .required(true)
+            .required(false)
             .setDefault("https")
             .type(String.class)
             .dest("s3-endpoint-protocol")
