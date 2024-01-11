@@ -17,11 +17,7 @@
 
 package org.apache.kafka.image;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import org.apache.kafka.common.metadata.AdvanceRangeRecord;
+import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -29,7 +25,15 @@ import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import com.automq.stream.s3.metadata.StreamState;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.TreeMap;
 
 public class S3StreamMetadataDelta {
 
@@ -39,7 +43,6 @@ public class S3StreamMetadataDelta {
     private long newStartOffset;
     private long newEpoch;
     private StreamState currentState;
-    private int currentRangeIndex;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
@@ -52,7 +55,6 @@ public class S3StreamMetadataDelta {
         this.streamId = image.getStreamId();
         this.newStartOffset = image.getStartOffset();
         this.currentState = image.state();
-        this.currentRangeIndex = image.rangeIndex();
     }
 
     public void replay(S3StreamRecord record) {
@@ -60,7 +62,6 @@ public class S3StreamMetadataDelta {
         this.newEpoch = record.epoch();
         this.newStartOffset = record.startOffset();
         this.currentState = StreamState.fromByte(record.streamState());
-        this.currentRangeIndex = record.rangeIndex();
     }
 
     public void replay(RangeRecord record) {
@@ -87,40 +88,29 @@ public class S3StreamMetadataDelta {
         changedS3StreamObjects.remove(record.objectId());
     }
 
-    public void replay(AdvanceRangeRecord record) {
-        long startOffset = record.startOffset();
-        long newEndOffset = record.endOffset();
-        // check current range
-        RangeMetadata metadata = this.changedRanges.get(currentRangeIndex);
-        if (metadata == null) {
-            metadata = this.image.getRanges().get(currentRangeIndex);
-        }
-        if (metadata == null) {
-            // ignore it
-            return;
-        }
-        if (startOffset != metadata.endOffset()) {
-            // ignore it
-            return;
-        }
-        // update the endOffset
-        this.changedRanges.put(currentRangeIndex, new RangeMetadata(
-            streamId, metadata.epoch(), metadata.rangeIndex(), metadata.startOffset(), newEndOffset, metadata.nodeId()
-        ));
-    }
-
     public S3StreamMetadataImage apply() {
-        Map<Integer, RangeMetadata> newRanges = new HashMap<>(image.getRanges());
-        // add all new changed ranges
-        newRanges.putAll(changedRanges);
-        // remove all removed ranges
-        removedRanges.forEach(newRanges::remove);
-        Map<Long, S3StreamObject> newS3StreamObjects = new HashMap<>(image.getStreamObjects());
-        // add all changed stream-objects
-        newS3StreamObjects.putAll(changedS3StreamObjects);
-        // remove all removed stream-objects
-        removedS3StreamObjectIds.forEach(newS3StreamObjects::remove);
-        return new S3StreamMetadataImage(streamId, newEpoch, currentState, currentRangeIndex, newStartOffset, newRanges, newS3StreamObjects);
+        List<RangeMetadata> newRanges;
+        if (changedRanges.isEmpty() && removedRanges.isEmpty()) {
+            newRanges = image.getRanges();
+        } else {
+            NavigableMap<Integer, RangeMetadata> ranges = new TreeMap<>();
+            image.getRanges().forEach(range -> ranges.put(range.rangeIndex(), range));
+            // add all new changed ranges
+            ranges.putAll(changedRanges);
+            // remove all removed ranges
+            removedRanges.forEach(ranges::remove);
+            newRanges = new ArrayList<>(ranges.values());
+        }
+
+        DeltaMap<Long, S3StreamObject> newS3StreamObjects;
+        if (changedS3StreamObjects.isEmpty() && removedS3StreamObjectIds.isEmpty()) {
+            newS3StreamObjects = image.streamObjectsMap;
+        } else {
+            newS3StreamObjects = image.streamObjectsMap.copy();
+            newS3StreamObjects.putAll(changedS3StreamObjects);
+            newS3StreamObjects.removeAll(removedS3StreamObjectIds);
+        }
+        return new S3StreamMetadataImage(streamId, newEpoch, currentState, newStartOffset, newRanges, newS3StreamObjects);
     }
 
 }

@@ -17,72 +17,158 @@
 
 package org.apache.kafka.image;
 
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-
 import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
-import com.automq.stream.s3.metadata.StreamState;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Objects;
+import java.util.TreeMap;
 
 public class S3StreamMetadataImage {
-
     public static final S3StreamMetadataImage EMPTY =
-        new S3StreamMetadataImage(S3StreamConstant.INVALID_STREAM_ID, S3StreamConstant.INIT_EPOCH, StreamState.CLOSED,
-            S3StreamConstant.INIT_RANGE_INDEX, S3StreamConstant.INIT_START_OFFSET, Map.of(), Map.of());
+            new S3StreamMetadataImage(S3StreamConstant.INVALID_STREAM_ID, S3StreamConstant.INIT_EPOCH, StreamState.CLOSED, S3StreamConstant.INIT_START_OFFSET, Collections.emptyList(), Collections.emptyList());
 
     private final long streamId;
 
     private final long epoch;
 
-    private final int rangeIndex;
-
     private final long startOffset;
 
     private final StreamState state;
 
-    private final Map<Integer/*rangeIndex*/, RangeMetadata> ranges;
+    private final List<RangeMetadata> ranges;
 
-    private final Map<Long/*objectId*/, S3StreamObject> streamObjects;
+    final DeltaMap<Long /* objectId */, S3StreamObject> streamObjectsMap;
+
+    private List<S3StreamObject> sortedStreamObjects;
+
+    private NavigableMap<Long /* stream object start offset */, Integer /* stream object index */> streamObjectOffsets;
 
     public S3StreamMetadataImage(
-        long streamId, long epoch, StreamState state,
-        int rangeIndex,
-        long startOffset,
-        Map<Integer, RangeMetadata> ranges,
-        Map<Long, S3StreamObject> streamObjects) {
+            long streamId, long epoch, StreamState state,
+            long startOffset,
+            List<RangeMetadata> ranges,
+            List<S3StreamObject> sortedStreamObjects) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.state = state;
-        this.rangeIndex = rangeIndex;
         this.startOffset = startOffset;
         this.ranges = ranges;
-        this.streamObjects = streamObjects;
+        DeltaMap<Long, S3StreamObject> streamObjectsMap = new DeltaMap<>(new int[]{10});
+        sortedStreamObjects.forEach(streamObject -> streamObjectsMap.put(streamObject.objectId(), streamObject));
+        this.streamObjectsMap = streamObjectsMap;
+        this.sortedStreamObjects = sortedStreamObjects;
+    }
+
+    public S3StreamMetadataImage(
+            long streamId, long epoch, StreamState state,
+            long startOffset,
+            List<RangeMetadata> ranges,
+            DeltaMap<Long, S3StreamObject> streamObjectsMap) {
+        this.streamId = streamId;
+        this.epoch = epoch;
+        this.state = state;
+        this.startOffset = startOffset;
+        this.ranges = ranges;
+        this.streamObjectsMap = streamObjectsMap;
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(0, new S3StreamRecord()
-            .setStreamId(streamId)
-            .setRangeIndex(rangeIndex)
-            .setStreamState(state.toByte())
-            .setEpoch(epoch)
-            .setStartOffset(startOffset));
-        ranges.values().forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
-        streamObjects.values().forEach(streamObject -> writer.write(streamObject.toRecord()));
+                .setStreamId(streamId)
+                .setRangeIndex(currentRangeIndex())
+                .setStreamState(state.toByte())
+                .setEpoch(epoch)
+                .setStartOffset(startOffset));
+        ranges.forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
+        streamObjectsMap.forEach((id, obj) -> writer.write(obj.toRecord()));
     }
 
 
-    public Map<Integer, RangeMetadata> getRanges() {
+    public List<RangeMetadata> getRanges() {
         return ranges;
     }
 
-    public Map<Long, S3StreamObject> getStreamObjects() {
+    public RangeMetadata lastRange() {
+        if (ranges.isEmpty()) {
+            return null;
+        }
+        return ranges.get(ranges.size() - 1);
+    }
+
+    public int currentRangeIndex() {
+        if (ranges.isEmpty()) {
+            return S3StreamConstant.INIT_RANGE_INDEX;
+        }
+        return lastRange().rangeIndex();
+    }
+
+    public int getRangeContainsOffset(long offset) {
+        int currentRangeIndex = currentRangeIndex();
+        return Collections.binarySearch(ranges, offset, (o1, o2) -> {
+            long startOffset;
+            long endOffset;
+            long offset1;
+            int revert = -1;
+            RangeMetadata range;
+            if (o1 instanceof RangeMetadata) {
+                range = (RangeMetadata) o1;
+                offset1 = (Long) o2;
+                revert = 1;
+            } else {
+                range = (RangeMetadata) o2;
+                offset1 = (Long) o1;
+            }
+            startOffset = range.startOffset();
+            endOffset = range.rangeIndex() == currentRangeIndex ? Long.MAX_VALUE : range.endOffset();
+
+            if (endOffset <= offset1) {
+                return -1 * revert;
+            } else if (startOffset > offset1) {
+                return revert;
+            } else {
+                return 0;
+            }
+        });
+    }
+
+    public List<S3StreamObject> getStreamObjects() {
+        if (sortedStreamObjects != null) {
+            return sortedStreamObjects;
+        }
+        List<S3StreamObject> streamObjects = new ArrayList<>();
+        streamObjectsMap.forEach((objectId, streamObject) -> streamObjects.add(streamObject));
+        streamObjects.sort(Comparator.comparingLong(S3StreamObject::startOffset));
+        this.sortedStreamObjects = streamObjects;
         return streamObjects;
+    }
+
+    public int floorStreamObjectIndex(long offset) {
+        List<S3StreamObject> sortedStreamObjects = getStreamObjects();
+        if (streamObjectOffsets == null) {
+            // TODO: optimize, get floor index without construct sorted map
+            NavigableMap<Long, Integer> streamObjectOffsets = new TreeMap<>();
+            for (int i = 0; i < sortedStreamObjects.size(); i++) {
+                S3StreamObject streamObject = sortedStreamObjects.get(i);
+                streamObjectOffsets.put(streamObject.streamOffsetRange().startOffset(), i);
+            }
+            this.streamObjectOffsets = streamObjectOffsets;
+        }
+        Map.Entry<Long, Integer> entry = streamObjectOffsets.floorEntry(offset);
+        if (entry == null) {
+            return -1;
+        }
+        return entry.getValue();
     }
 
     public long getEpoch() {
@@ -93,11 +179,6 @@ public class S3StreamMetadataImage {
         return startOffset;
     }
 
-    public long getEndOffset() {
-        RangeMetadata range = ranges.get(rangeIndex);
-        return range == null ? startOffset : range.endOffset();
-    }
-
     public long getStreamId() {
         return streamId;
     }
@@ -106,16 +187,8 @@ public class S3StreamMetadataImage {
         return startOffset;
     }
 
-    public int rangeIndex() {
-        return rangeIndex;
-    }
-
     public StreamState state() {
         return state;
-    }
-
-    public StreamOffsetRange offsetRange() {
-        return new StreamOffsetRange(streamId, startOffset, getEndOffset());
     }
 
     @Override
@@ -128,30 +201,27 @@ public class S3StreamMetadataImage {
         }
         S3StreamMetadataImage that = (S3StreamMetadataImage) o;
         return this.streamId == that.streamId &&
-            this.epoch == that.epoch &&
-            this.state == that.state &&
-            this.rangeIndex == that.rangeIndex &&
-            this.startOffset == that.startOffset &&
-            this.ranges.equals(that.ranges) &&
-            this.streamObjects.equals(that.streamObjects);
+                this.epoch == that.epoch &&
+                this.state == that.state &&
+                this.startOffset == that.startOffset &&
+                this.ranges.equals(that.ranges) &&
+                this.streamObjectsMap.equals(that.streamObjectsMap);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(streamId, epoch, state, rangeIndex, startOffset, ranges, streamObjects);
+        return Objects.hash(streamId, epoch, state, startOffset, ranges);
     }
 
     @Override
     public String toString() {
         return "S3StreamMetadataImage{" +
-            "streamId=" + streamId +
-            ", epoch=" + epoch +
-            ", rangeIndex=" + rangeIndex +
-            ", startOffset=" + startOffset +
-            ", state=" + state +
-            ", ranges=" + ranges +
-            ", streamObjects=" + streamObjects.entrySet().stream().
-            map(e -> e.getKey() + ":" + e.getValue()).collect(Collectors.joining(", ")) +
-            '}';
+                "streamId=" + streamId +
+                ", epoch=" + epoch +
+                ", startOffset=" + startOffset +
+                ", state=" + state +
+                ", ranges=" + ranges +
+                ", streamObjects=" + streamObjectsMap +
+                '}';
     }
 }

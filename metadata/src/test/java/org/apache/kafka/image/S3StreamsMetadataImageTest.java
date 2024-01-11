@@ -35,7 +35,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -114,17 +113,17 @@ public class S3StreamsMetadataImageTest {
                 broker0Objects);
         NodeS3StreamSetObjectMetadataImage broker1WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
                 broker1Objects);
-        Map<Integer, RangeMetadata> ranges = Map.of(
-                0, new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),
-                1, new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),
-                2, new RangeMetadata(STREAM0, 2L, 2, 180L, 420L, BROKER0),
-                3, new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
-                4, new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
-        Map<Long, S3StreamObject> streamObjects = Map.of(
-                8L, new S3StreamObject(8, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS),
-                9L, new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
-                10L, new S3StreamObject(10, STREAM0, 300L, 400L, S3StreamConstant.INVALID_TS));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 4, 10, ranges, streamObjects);
+        List<RangeMetadata> ranges = List.of(
+                new RangeMetadata(STREAM0, 0L, 0, 10L, 140L, BROKER0),
+                new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),
+                new RangeMetadata(STREAM0, 2L, 2, 180L, 420L, BROKER0),
+                new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
+                new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
+        List<S3StreamObject> streamObjects = List.of(
+                new S3StreamObject(8, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS),
+                new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
+                new S3StreamObject(10, STREAM0, 300L, 400L, S3StreamConstant.INVALID_TS));
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
                 DeltaMap.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage));
 
@@ -148,14 +147,14 @@ public class S3StreamsMetadataImageTest {
 
         // 4. search stream_0 in [20, 550)
         objects = streamsImage.getObjects(STREAM0, 20, 550, Integer.MAX_VALUE);
-        assertEquals(20, objects.startOffset());
+        assertEquals(10, objects.startOffset());
         assertEquals(600, objects.endOffset());
         assertEquals(11, objects.objects().size());
         assertEquals(expectedObjectIds, objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 5. search stream_0 in [20, 550) with limit 5
         objects = streamsImage.getObjects(STREAM0, 20, 550, 5);
-        assertEquals(20, objects.startOffset());
+        assertEquals(10, objects.startOffset());
         assertEquals(180, objects.endOffset());
         assertEquals(5, objects.objects().size());
         assertEquals(expectedObjectIds.subList(0, 5), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
@@ -169,14 +168,21 @@ public class S3StreamsMetadataImageTest {
 
         // 7. search stream_0 in [401, 519)
         objects = streamsImage.getObjects(STREAM0, 401, 519, Integer.MAX_VALUE);
-        assertEquals(401, objects.startOffset());
+        assertEquals(400, objects.startOffset());
         assertEquals(520, objects.endOffset());
         assertEquals(2, objects.objects().size());
         assertEquals(expectedObjectIds.subList(8, 10), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         // 8. search stream_0 in [399, 521)
         objects = streamsImage.getObjects(STREAM0, 399, 521, Integer.MAX_VALUE);
-        assertEquals(399, objects.startOffset());
+        assertEquals(300, objects.startOffset());
+        assertEquals(600, objects.endOffset());
+        assertEquals(4, objects.objects().size());
+        assertEquals(expectedObjectIds.subList(7, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+
+        // 9. search stream0 in [399, 1000)
+        objects = streamsImage.getObjects(STREAM0, 399, 1000, Integer.MAX_VALUE);
+        assertEquals(300, objects.startOffset());
         assertEquals(600, objects.endOffset());
         assertEquals(4, objects.objects().size());
         assertEquals(expectedObjectIds.subList(7, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));

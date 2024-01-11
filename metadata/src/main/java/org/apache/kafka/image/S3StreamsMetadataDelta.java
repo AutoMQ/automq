@@ -17,7 +17,6 @@
 
 package org.apache.kafka.image;
 
-import org.apache.kafka.common.metadata.AdvanceRangeRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
@@ -29,7 +28,6 @@ import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -94,9 +92,6 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
-        getOrCreateStreamMetadataDelta(record.streamId()).replay(new AdvanceRangeRecord()
-                .setStartOffset(record.startOffset())
-                .setEndOffset(record.endOffset()));
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {
@@ -105,12 +100,6 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
-        S3StreamSetObject.decode(record.ranges()).forEach(index ->
-                getOrCreateStreamMetadataDelta(index.streamId())
-                        .replay(
-                                new AdvanceRangeRecord().setStartOffset(index.startOffset()).setEndOffset(index.endOffset())
-                        )
-        );
     }
 
     public void replay(RemoveStreamSetObjectRecord record) {

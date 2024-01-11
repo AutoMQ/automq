@@ -41,6 +41,7 @@
   <allow pkg="software.amazon.awssdk" />
   <allow pkg="com.automq.stream" />
   <allow pkg="com.github.luben.zstd" />
+  <allow pkg="com.google.common.cache" />
 
   <!-- no one depends on the server -->
   <disallow pkg="kafka" />
