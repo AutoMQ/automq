@@ -64,7 +64,7 @@ public class S3StreamMetadataImage {
         this.state = state;
         this.startOffset = startOffset;
         this.ranges = ranges;
-        DeltaMap<Long, S3StreamObject> streamObjectsMap = new DeltaMap<>();
+        DeltaMap<Long, S3StreamObject> streamObjectsMap = new DeltaMap<>(new int[]{10});
         sortedStreamObjects.forEach(streamObject -> streamObjectsMap.put(streamObject.objectId(), streamObject));
         this.streamObjectsMap = streamObjectsMap;
         this.sortedStreamObjects = sortedStreamObjects;
@@ -114,6 +114,7 @@ public class S3StreamMetadataImage {
     }
 
     public int getRangeContainsOffset(long offset) {
+        int currentRangeIndex = currentRangeIndex();
         return Collections.binarySearch(ranges, offset, (o1, o2) -> {
             long startOffset;
             long endOffset;
@@ -129,7 +130,7 @@ public class S3StreamMetadataImage {
                 offset1 = (Long) o1;
             }
             startOffset = range.startOffset();
-            endOffset = range.rangeIndex() == currentRangeIndex() ? Long.MAX_VALUE : range.endOffset();
+            endOffset = range.rangeIndex() == currentRangeIndex ? Long.MAX_VALUE : range.endOffset();
 
             if (endOffset <= offset1) {
                 return -1 * revert;

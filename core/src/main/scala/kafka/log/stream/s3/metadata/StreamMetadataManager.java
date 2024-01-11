@@ -133,9 +133,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
             return CompletableFuture.completedFuture(rst);
         }
-        if (rst.endOffset() >= endOffset || rst.objects().size() >= limit) {
-            return CompletableFuture.completedFuture(rst);
-        }
         LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit);
         CompletableFuture<Void> pendingCf = pendingFetch();
         CompletableFuture<InRangeObjects> rstCf = new CompletableFuture<>();
