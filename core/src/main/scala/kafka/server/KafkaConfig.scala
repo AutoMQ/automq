@@ -313,15 +313,15 @@ object Defaults {
   /** ********* Kafka on S3 Configuration *********/
   val S3StreamSetObjectCompactionInterval: Int = 20 // 20min
   val S3StreamSetObjectCompactionCacheSize: Long = 200 * 1024 * 1024 // 200MB
-  val S3StreamSetObjectCompactionStreamSplitSize: Long = 16 * 1024 * 1024 // 16MB
+  val S3StreamSetObjectCompactionStreamSplitSize: Long = 8 * 1024 * 1024 // 8MB
   val S3StreamSetObjectCompactionForceSplitMinutes: Int = 120 // 120min
   val S3StreamSetObjectCompactionMaxObjectNum: Int = 500
   val S3MaxStreamNumPerStreamSetObject: Int = 10000
   val S3MaxStreamObjectNumPerCommit: Int = 10000
-  val S3ObjectRetentionMinutes: Long = 10 // 10min
+  val S3ObjectRetentionMinutes: Long = 30 // 30min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
   val S3RefillPeriodMs: Int = 1000 // 1s
-  val S3MetricsExporterReportIntervalMs = 60000 // 1min
+  val S3MetricsExporterReportIntervalMs = 30000 // 30s
   val S3SpanScheduledDelayMs = 1000 // 1s
   val S3SpanMaxQueueSize = 5120
   val S3SpanMaxBatchSize = 1024
@@ -1589,20 +1589,20 @@ object KafkaConfig {
       .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
-      .define(S3WALCacheSizeProp, LONG, 209715200L, MEDIUM, S3WALCacheSizeDoc)
-      .define(S3WALCapacityProp, LONG, 1073741824L, MEDIUM, S3WALCapacityDoc)
+      .define(S3WALCacheSizeProp, LONG, 2147483648L, MEDIUM, S3WALCacheSizeDoc)
+      .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
       .define(S3WALHeaderFlushIntervalSecondsProp, INT, 10, MEDIUM, S3WALHeaderFlushIntervalSecondsDoc)
       .define(S3WALThreadProp, INT, 8, MEDIUM, S3WALThreadDoc)
       .define(S3WALQueueProp, INT, 10000, MEDIUM, S3WALQueueDoc)
       .define(S3WALWindowInitialProp, LONG, 1048576L, MEDIUM, S3WALWindowInitialDoc)
       .define(S3WALWindowIncrementProp, LONG, 4194304L, MEDIUM, S3WALWindowIncrementDoc)
       .define(S3WALWindowMaxProp, LONG, 536870912L, MEDIUM, S3WALWindowMaxDoc)
-      .define(S3WALUploadThresholdProp, LONG, 104857600L, MEDIUM, S3WALUploadThresholdDoc)
-      .define(S3StreamSplitSizeProp, INT, 16777216, MEDIUM, S3StreamSplitSizeDoc)
+      .define(S3WALUploadThresholdProp, LONG, 524288000L, MEDIUM, S3WALUploadThresholdDoc)
+      .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3BlockCacheSizeProp, LONG, 104857600L, MEDIUM, S3BlockCacheSizeDoc)
-      .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 60, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
+      .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 10737418240L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
       .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
