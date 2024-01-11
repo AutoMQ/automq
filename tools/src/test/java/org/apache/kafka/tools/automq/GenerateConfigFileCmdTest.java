@@ -43,9 +43,9 @@ class GenerateConfigFileCmdTest {
             Map.of(
                 "s3-url", "myak",
 
-                "broker-ip-list", "mysk",
+                "broker-address", "mysk",
 
-                "controller-ip-list", "key-from-args",
+                "controller-address", "192.168.0.1:9093",
 
                 "network-baseline-bandwidth-mb", 100,
 
@@ -102,8 +102,8 @@ class GenerateConfigFileCmdTest {
         }
         Assertions.assertNotNull(props);
 
-        File propFile = new File("broker.properties");
-        Properties propsFromFile = null;
+        File propFile = new File("generated/broker.properties");
+        Properties propsFromFile;
         try {
             propsFromFile = new Properties();
             propsFromFile.load(FileUtils.openInputStream(propFile));
@@ -120,7 +120,7 @@ class GenerateConfigFileCmdTest {
 
         String s3UrlStr = "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xxx&s3-secret-key=yyy&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&cluster-id=HvxKzNetT1GOCUkqCG5eyQ";
         S3Url s3Url = S3Url.parse(s3UrlStr);
-        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig("192.168.0.1:9092;192.168.0.2:9092;192.168.0.3:9092", false);
+        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093", false);
 
         ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig("192.168.0.4:9092;192.168.0.5:9092", controllerGroupConfig);
         try {

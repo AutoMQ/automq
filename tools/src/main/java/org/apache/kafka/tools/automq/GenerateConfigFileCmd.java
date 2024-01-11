@@ -50,9 +50,9 @@ public class GenerateConfigFileCmd {
 
     static class Parameter {
         final String s3Url;
-        final String controllerIpList;
+        final String controllerAddress;
 
-        final String brokerIpList;
+        final String brokerAddress;
 
         final String networkBaselineBandwidthMB;
 
@@ -60,8 +60,8 @@ public class GenerateConfigFileCmd {
 
         Parameter(Namespace res) {
             this.s3Url = res.getString("s3-url");
-            this.brokerIpList = res.getString("broker-ip-list");
-            this.controllerIpList = res.getString("controller-ip-list");
+            this.brokerAddress = res.getString("broker-address");
+            this.controllerAddress = res.getString("controller-address");
             this.networkBaselineBandwidthMB = res.getString("network-baseline-bandwidth-mb");
             this.controllerOnlyMode = res.getBoolean("controller-only-mode");
         }
@@ -82,19 +82,19 @@ public class GenerateConfigFileCmd {
             .dest("s3-url")
             .metavar("S3-URL")
             .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", AutoMQAdminCmd.GENERATE_S3_URL_CMD));
-        parser.addArgument("--controller-ip-list")
+        parser.addArgument("--controller-address")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("controller-ip-list")
-            .metavar("CONTROLLER-IP-LIST")
+            .dest("controller-address")
+            .metavar("CONTROLLER-ADDRESS")
             .help("Your controller ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
-        parser.addArgument("--broker-ip-list")
+        parser.addArgument("--broker-address")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("broker-ip-list")
-            .metavar("BROKER-IP-LIST")
+            .dest("broker-address")
+            .metavar("BROKER-ADDRESS")
             .help("Your broker ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
         parser.addArgument("--controller-only-mode")
             .action(store())
@@ -121,14 +121,14 @@ public class GenerateConfigFileCmd {
         List<String> controllerPropFileNameList;
         ServerGroupConfig controllerGroupConfig;
         if (parameter.controllerOnlyMode) {
-            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList, parameter.controllerOnlyMode);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerAddress, parameter.controllerOnlyMode);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, CONTROLLER_PROPS_PATH, "controller", s3Url);
         } else {
-            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerIpList, parameter.controllerOnlyMode);
+            controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerAddress, parameter.controllerOnlyMode);
             controllerPropFileNameList = processGroupConfig(controllerGroupConfig, SERVER_PROPS_PATH, "server", s3Url);
         }
         List<String> brokerPropsFileNameList;
-        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerIpList, controllerGroupConfig);
+        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerAddress, controllerGroupConfig);
         brokerPropsFileNameList = processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
 
         System.out.println("####################################  GENERATED PROPERTIES #################################");
@@ -232,12 +232,12 @@ public class GenerateConfigFileCmd {
 
         String targetPath = "generated/" + fileName;
         File file = new File(targetPath);
-        PrintWriter pw = new PrintWriter(file, Charset.forName("utf-8"));
-        for (Enumeration e = props.propertyNames(); e.hasMoreElements(); ) {
-            String key = (String) e.nextElement();
-            pw.println(key + "=" + props.getProperty(key));
+        try (PrintWriter pw = new PrintWriter(file, Charset.forName("utf-8"))) {
+            for (Enumeration e = props.propertyNames(); e.hasMoreElements(); ) {
+                String key = (String) e.nextElement();
+                pw.println(key + "=" + props.getProperty(key));
+            }
         }
-        pw.close();
     }
 
 }

@@ -183,10 +183,10 @@ public class GenerateS3UrlCmd {
         //tips: Not add whitespace after \\
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
             + "--s3-url=\"%s\" \\%n"
-            + "--controller-ip-list=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
-            + "--broker-ip-list=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+            + "--controller-address=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
+            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
         ));
-        System.out.println("TIPS: Replace the controller-ip-list and broker-ip-list with your real ip list.");
+        System.out.println("TIPS: Replace the controller-address and broker-address with your real ip list.");
 
         return s3Url;
     }
