@@ -35,9 +35,11 @@ public class S3Url {
 
     final String clusterId;
 
+    final boolean s3PathStyle;
+
     public S3Url(String s3AccessKey, String s3SecretKey, AuthMethod s3AuthMethod, String s3Region,
-        EndpointProtocol endpointProtocol, String s3Endpoint, String s3DataBucket, String s3OpsBucket,
-        String clusterId) {
+        EndpointProtocol endpointProtocol, String s3Endpoint, String s3DataBucket, String s3OpsBucket, String clusterId,
+        boolean s3PathStyle) {
         this.s3AccessKey = s3AccessKey;
         this.s3SecretKey = s3SecretKey;
         this.s3AuthMethod = s3AuthMethod;
@@ -47,7 +49,7 @@ public class S3Url {
         this.s3DataBucket = s3DataBucket;
         this.s3OpsBucket = s3OpsBucket;
         this.clusterId = clusterId;
-
+        this.s3PathStyle = s3PathStyle;
     }
 
     public static S3Url parse(String s3Url) throws IllegalArgumentException {
@@ -65,6 +67,7 @@ public class S3Url {
         String dataBucket = null;
         String opsBucket = null;
         String clusterId = null;
+        boolean s3PathStyle = false;
 
         for (String param : params) {
             String[] keyValue = param.split("=");
@@ -100,12 +103,15 @@ public class S3Url {
                 case "cluster-id":
                     clusterId = value;
                     break;
+                case "s3-path-style":
+                    s3PathStyle = Boolean.valueOf(value);
+                    break;
                 default:
                     throw new IllegalArgumentException("Unknown parameter: " + key);
             }
         }
 
-        return new S3Url(accessKey, secretKey, authMethod, region, protocol, s3Endpoint, dataBucket, opsBucket, clusterId);
+        return new S3Url(accessKey, secretKey, authMethod, region, protocol, s3Endpoint, dataBucket, opsBucket, clusterId, s3PathStyle);
     }
 
     public String getS3AccessKey() {
@@ -142,5 +148,9 @@ public class S3Url {
 
     public String getClusterId() {
         return clusterId;
+    }
+
+    public boolean isS3PathStyle() {
+        return s3PathStyle;
     }
 }

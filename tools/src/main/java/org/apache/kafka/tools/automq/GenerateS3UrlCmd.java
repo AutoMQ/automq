@@ -67,6 +67,8 @@ public class GenerateS3UrlCmd {
 
         final String s3OpsBucket;
 
+        final boolean s3PathStyle;
+
         Parameter(Namespace res) {
             this.s3AccessKey = res.getString("s3-access-key");
             this.s3SecretKey = res.getString("s3-secret-key");
@@ -82,6 +84,7 @@ public class GenerateS3UrlCmd {
             this.s3Endpoint = res.getString("s3-endpoint");
             this.s3DataBucket = res.getString("s3-data-bucket");
             this.s3OpsBucket = res.getString("s3-ops-bucket");
+            this.s3PathStyle = res.getBoolean("s3-path-style");
         }
     }
 
@@ -150,6 +153,14 @@ public class GenerateS3UrlCmd {
             .dest("s3-ops-bucket")
             .metavar("S3-OPS-BUCKET")
             .help("The bucket name of S3 that used to store operation data like metric,log,naming service info etc. Use different bucket to store data and ops data is recommended");
+        parser.addArgument("--s3-path-style")
+            .action(store())
+            .required(false)
+            .setDefault(false)
+            .type(String.class)
+            .dest("s3-path-style")
+            .metavar("S3-PATH-STYLE")
+            .help("Enable s3 path style. If you are using minio, you need set it to true, default value is false.");
 
         return parser;
     }
@@ -203,6 +214,7 @@ public class GenerateS3UrlCmd {
 //            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.name())
             .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.getName())
             .append("&").append("s3-data-bucket=").append(parameter.s3DataBucket)
+            .append("&").append("s3-path-style=").append(parameter.s3PathStyle)
 //            .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
             .append("&").append("cluster-id=").append(Uuid.randomUuid());
         return s3UrlBuilder.toString();

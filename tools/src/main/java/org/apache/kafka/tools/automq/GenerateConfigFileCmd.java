@@ -200,6 +200,7 @@ public class GenerateConfigFileCmd {
             groupProps.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
             groupProps.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
             groupProps.put(ServerConfigKey.S3_BUCKET.getKeyName(), s3Url.getS3DataBucket());
+            groupProps.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), s3Url.isS3PathStyle());
 
             String fileName = String.format("%s-%s.properties", outputFilePrefix, nodeId);
             flushProps(groupProps, fileName);
