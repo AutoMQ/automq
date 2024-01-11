@@ -1353,37 +1353,53 @@ class ReplicaManager(val config: KafkaConfig,
               preferredReadReplica = preferredReadReplica,
               exception = None))
           } else {
-            // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
-            partition.fetchRecordsAsync(
-              fetchParams = params,
-              fetchPartitionData = fetchInfo,
-              fetchTimeMs = fetchTimeMs,
-              maxBytes = adjustedMaxBytes,
-              minOneMessage = minOneMessage,
-              updateFetchState = !readFromPurgatory
-            ).thenApply(readInfo => {
-              val fetchDataInfo = if (params.isFromFollower && shouldLeaderThrottle(quota, partition, params.replicaId)) {
-                // If the partition is being throttled, simply return an empty set.
-                FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
-              } else if (!params.hardMaxBytesLimit && readInfo.fetchedData.firstEntryIncomplete) {
-                // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
-                // progress in such cases and don't need to report a `RecordTooLargeException`
-                FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
-              } else {
-                readInfo.fetchedData
-              }
-              LogReadResult(info = fetchDataInfo,
-                divergingEpoch = readInfo.divergingEpoch,
-                highWatermark = readInfo.highWatermark,
-                leaderLogStartOffset = readInfo.logStartOffset,
-                leaderLogEndOffset = readInfo.logEndOffset,
+            val logReadInfo = partition.checkFetchOffsetAndMaybeGetInfo(params, fetchInfo)
+            if (null != logReadInfo) {
+              // The fetch offset equals to the confirmed offset, no need to do a read.
+              CompletableFuture.completedFuture(LogReadResult(info = logReadInfo.fetchedData,
+                divergingEpoch = logReadInfo.divergingEpoch,
+                highWatermark = logReadInfo.highWatermark,
+                leaderLogStartOffset = logReadInfo.logStartOffset,
+                leaderLogEndOffset = logReadInfo.logEndOffset,
                 followerLogStartOffset = followerLogStartOffset,
                 fetchTimeMs = fetchTimeMs,
-                lastStableOffset = Some(readInfo.lastStableOffset),
+                lastStableOffset = Some(logReadInfo.lastStableOffset),
                 preferredReadReplica = preferredReadReplica,
                 exception = None
-              )
-            }).exceptionally(e => exception2LogReadResult(FutureUtil.cause(e)))
+              ))
+            } else {
+              // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
+              partition.fetchRecordsAsync(
+                fetchParams = params,
+                fetchPartitionData = fetchInfo,
+                fetchTimeMs = fetchTimeMs,
+                maxBytes = adjustedMaxBytes,
+                minOneMessage = minOneMessage,
+                updateFetchState = !readFromPurgatory
+              ).thenApply(readInfo => {
+                val fetchDataInfo = if (params.isFromFollower && shouldLeaderThrottle(quota, partition, params.replicaId)) {
+                  // If the partition is being throttled, simply return an empty set.
+                  FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
+                } else if (!params.hardMaxBytesLimit && readInfo.fetchedData.firstEntryIncomplete) {
+                  // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
+                  // progress in such cases and don't need to report a `RecordTooLargeException`
+                  FetchDataInfo(readInfo.fetchedData.fetchOffsetMetadata, MemoryRecords.EMPTY)
+                } else {
+                  readInfo.fetchedData
+                }
+                LogReadResult(info = fetchDataInfo,
+                  divergingEpoch = readInfo.divergingEpoch,
+                  highWatermark = readInfo.highWatermark,
+                  leaderLogStartOffset = readInfo.logStartOffset,
+                  leaderLogEndOffset = readInfo.logEndOffset,
+                  followerLogStartOffset = followerLogStartOffset,
+                  fetchTimeMs = fetchTimeMs,
+                  lastStableOffset = Some(readInfo.lastStableOffset),
+                  preferredReadReplica = preferredReadReplica,
+                  exception = None
+                )
+              }).exceptionally(e => exception2LogReadResult(FutureUtil.cause(e)))
+            }
           }
         }
       } catch {
