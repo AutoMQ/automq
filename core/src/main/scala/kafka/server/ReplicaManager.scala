@@ -35,6 +35,7 @@ import kafka.server.metadata.ZkMetadataCache
 import kafka.utils.Implicits._
 import kafka.utils._
 import kafka.zk.KafkaZkClient
+import org.apache.kafka.common._
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -56,7 +57,6 @@ import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
-import org.apache.kafka.common._
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common.MetadataVersion._
@@ -73,7 +73,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
-import scala.util.{Failure, Success, Try, Using}
+import scala.util.Using
 
 /*
  * Result metadata of a log append operation on the log
@@ -1365,7 +1365,6 @@ class ReplicaManager(val config: KafkaConfig,
 
       val offset = fetchInfo.fetchOffset
       val partitionFetchSize = fetchInfo.maxBytes
-      val followerLogStartOffset = fetchInfo.logStartOffset
       val adjustedMaxBytes = math.min(fetchInfo.maxBytes, limitBytes)
 
       if (traceEnabled)
@@ -1400,7 +1399,7 @@ class ReplicaManager(val config: KafkaConfig,
           readInfo.fetchedData
         }
         readInfoToReadResult(readInfo, fetchInfo.logStartOffset, fetchTimeMs, fetchDataInfo, preferredReadReplica)
-      }).exceptionally(e => _exception2LogReadResult(e)))
+      }).exceptionally(e => _exception2LogReadResult(e))
     }
 
     val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)]
