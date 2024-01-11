@@ -302,7 +302,12 @@ class ElasticLog(val metaStream: MetaStream,
       // get LEO from super class
       val endOffsetMetadata = nextOffsetMetadata
       val endOffset = endOffsetMetadata.messageOffset
-      val segmentOpt = segments.floorSegment(startOffset)
+      val segmentOpt = segments.lastEntry
+        // firstly, check the last segment (with the largest base offset) to avoid call `floorSegment` method
+        .filter(entry => entry.getKey <= startOffset)
+        .map(entry => entry.getValue)
+        // if `startOffset` does not fall into the last segment, call `floorSegment` method to find the correct segment
+        .orElse(segments.floorSegment(startOffset))
 
       var finalSegmentOpt: Option[LogSegment] = None
 
