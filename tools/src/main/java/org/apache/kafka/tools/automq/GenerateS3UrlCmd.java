@@ -16,13 +16,13 @@
  */
 package org.apache.kafka.tools.automq;
 
+import com.automq.s3shell.sdk.model.AuthMethod;
+import com.automq.s3shell.sdk.model.EndpointProtocol;
 import com.automq.stream.utils.S3Utils;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.tools.automq.model.AuthMethod;
-import org.apache.kafka.tools.automq.model.EndpointProtocol;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 

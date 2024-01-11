@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -17,50 +17,17 @@
 
 package kafka
 
-import java.util.Properties
-
-import joptsimple.OptionParser
+import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
-import kafka.utils.Implicits._
-import kafka.utils.{CommandLineUtils, Exit, Logging}
-import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
+import kafka.utils.{Exit, Logging}
+import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time}
 
-import scala.jdk.CollectionConverters._
+import java.util.Properties
 
 object Kafka extends Logging {
 
   def getPropsFromArgs(args: Array[String]): Properties = {
-    val optionParser = new OptionParser(false)
-    val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
-      .withRequiredArg()
-      .ofType(classOf[String])
-    // This is just to make the parameter show up in the help output, we are not actually using this due the
-    // fact that this class ignores the first parameter which is interpreted as positional and mandatory
-    // but would not be mandatory if --version is specified
-    // This is a bit of an ugly crutch till we get a chance to rework the entire command line parsing
-    optionParser.accepts("version", "Print version information and exit.")
-
-    if (args.isEmpty || args.contains("--help")) {
-      CommandLineUtils.printUsageAndDie(optionParser,
-        "USAGE: java [options] %s server.properties [--override property=value]*".format(this.getClass.getCanonicalName.split('$').head))
-    }
-
-    if (args.contains("--version")) {
-      CommandLineUtils.printVersionAndDie()
-    }
-
-    val props = Utils.loadProps(args(0))
-
-    if (args.length > 1) {
-      val options = optionParser.parse(args.slice(1, args.length): _*)
-
-      if (options.nonOptionArguments().size() > 0) {
-        CommandLineUtils.printUsageAndDie(optionParser, "Found non argument parameters: " + options.nonOptionArguments().toArray.mkString(","))
-      }
-
-      props ++= CommandLineUtils.parseKeyValueArgs(options.valuesOf(overrideOpt).asScala)
-    }
-    props
+    S3ShellPropUtil.getPropsFromArgs(args)
   }
 
   // For Zk mode, the API forwarding is currently enabled only under migration flag. We can

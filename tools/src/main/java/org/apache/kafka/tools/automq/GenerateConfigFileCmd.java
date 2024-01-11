@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.tools.automq;
 
+import com.automq.s3shell.sdk.constant.ServerConfigKey;
+import com.automq.s3shell.sdk.model.S3Url;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -27,8 +29,6 @@ import java.util.Properties;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
-import org.apache.kafka.tools.automq.constant.ServerConfigKey;
-import org.apache.kafka.tools.automq.model.S3Url;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 

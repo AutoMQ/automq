@@ -146,4 +146,20 @@
     <allow pkg="org.apache.directory" />
     <allow pkg="org.mockito" />
   </subpackage>
+
+  <subpackage name="s3shell">
+    <allow pkg="org.apache.commons" />
+    <allow pkg="joptsimple" />
+    <allow pkg="kafka.log.stream.s3" />
+    <allow pkg="kafka.server" />
+    <allow pkg="com.automq.s3shell.sdk" />
+    <allow pkg="kafka.cluster" />
+    <allow pkg="kafka.metrics" />
+    <allow pkg="org.apache.kafka" />
+    <allow pkg="kafka.testkit" />
+    <allow pkg="kafka.test" />
+    <allow pkg="org.apache.directory" />
+    <allow pkg="org.mockito" />
+    <allow pkg="kafka.s3shell" />
+  </subpackage>
 </import-control>

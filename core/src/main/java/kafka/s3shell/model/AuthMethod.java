@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.tools.automq.model;
+package kafka.s3shell.model;
 
 public enum AuthMethod {
     KEY_FROM_ENV("key-from-env"),

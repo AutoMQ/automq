@@ -972,6 +972,8 @@ project(':core') {
     implementation libs.opentelemetryExporterOTLP
     implementation libs.opentelemetryJmx
 
+    implementation libs.s3shellSdk
+
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
     }
@@ -1862,6 +1864,7 @@ project(':tools') {
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
     implementation libs.commonio
+    implementation libs.s3shellSdk
 
 
     testImplementation project(':clients')

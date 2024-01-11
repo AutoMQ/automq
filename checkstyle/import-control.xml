@@ -41,6 +41,7 @@
   <allow pkg="software.amazon.awssdk" />
   <allow pkg="com.automq.stream" />
   <allow pkg="org.apache.kafka.tools.automq"/>
+  <allow pkg="com.automq.s3shell"/>
   <allow pkg="org.apache.commons.io"/>
 
   <allow pkg="com.github.luben.zstd" />

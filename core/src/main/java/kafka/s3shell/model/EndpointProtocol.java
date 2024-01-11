@@ -14,32 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.tools.automq.constant;
+package kafka.s3shell.model;
 
-public enum ServerConfigKey {
+public enum EndpointProtocol {
 
-    NODE_ID("node.id"),
-    CONTROLLER_QUORUM_VOTERS("controller.quorum.voters"),
+    HTTP("http"),
+    HTTPS("https");
 
-    LISTENERS("listeners"),
-
-    ADVERTISED_LISTENERS("advertised.listeners"),
-
-    S3_ENDPOINT("s3.endpoint"),
-
-    S3_REGION("s3.region"),
-
-    S3_BUCKET("s3.bucket"),
-
-    S3_PATH_STYLE("s3.path.style");
-
-    ServerConfigKey(String keyName) {
-        this.keyName = keyName;
+    EndpointProtocol(String key) {
+        this.name = key;
     }
 
-    private final String keyName;
+    private final String name;
 
-    public String getKeyName() {
-        return keyName;
+    public String getName() {
+        return name;
+    }
+
+    public static EndpointProtocol getByName(String protocolName) {
+        for (EndpointProtocol protocol : EndpointProtocol.values()) {
+            if (protocol.getName().equals(protocolName)) {
+                return protocol;
+            }
+        }
+        throw new IllegalArgumentException("Invalid protocol: " + protocolName);
     }
 }

@@ -14,10 +14,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.tools.automq;
+package com.automq.s3shell.sdk.model;
 
-/**
- * Generate scripts to start server without specify config files.
- */
-public class GenerateStartScriptsCmd {
+public enum AuthMethod {
+    KEY_FROM_ENV("key-from-env"),
+
+    KEY_FROM_ARGS("key-from-args"),
+    ROLE("role");
+
+    AuthMethod(String keyName) {
+        this.keyName = keyName;
+    }
+
+    private final String keyName;
+
+    public String getKeyName() {
+        return keyName;
+    }
+
+    public static AuthMethod getByName(String methodName) {
+        for (AuthMethod method : AuthMethod.values()) {
+            if (method.getKeyName().equals(methodName)) {
+                return method;
+            }
+        }
+        throw new IllegalArgumentException("Invalid auth method: " + methodName);
+    }
 }
