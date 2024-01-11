@@ -1419,7 +1419,7 @@ class ReplicaManager(val config: KafkaConfig,
       }
     }
 
-    val minOneMessage = !params.hardMaxBytesLimit
+    val minOneMessage = new AtomicBoolean(!params.hardMaxBytesLimit)
 
     val remainingBytes = new AtomicInteger(limitBytes)
     var partitionIndex = 0;
@@ -1431,12 +1431,15 @@ class ReplicaManager(val config: KafkaConfig,
       while (assignedBytes < availableBytes && partitionIndex < readPartitionInfo.size) {
         val tp = readPartitionInfo(partitionIndex)._1
         val partitionData = readPartitionInfo(partitionIndex)._2
-        val readCf = read(tp, partitionData, partitionData.maxBytes, minOneMessage)
+        val readCf = read(tp, partitionData, partitionData.maxBytes, minOneMessage.get())
         readCfArray += readCf.thenAccept(rst => {
           result.synchronized {
             result += (tp -> rst)
           }
-          remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
+          val recordBatchSize = rst.info.records.sizeInBytes
+          if (recordBatchSize > 0)
+            minOneMessage.set(false)
+          remainingBytes.getAndAdd(-recordBatchSize)
         })
         assignedBytes += partitionData.maxBytes
         partitionIndex += 1
@@ -1454,7 +1457,7 @@ class ReplicaManager(val config: KafkaConfig,
     while (partitionIndex < readPartitionInfo.size) {
       val tp = readPartitionInfo(partitionIndex)._1
       val partitionData = readPartitionInfo(partitionIndex)._2
-      val readCf = read(tp, partitionData, 0, minOneMessage)
+      val readCf = read(tp, partitionData, 0, minOneMessage.get())
       remainingCfArray += readCf.thenAccept(rst => {
         result.synchronized {
           result += (tp -> rst)
