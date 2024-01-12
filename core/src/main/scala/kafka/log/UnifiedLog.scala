@@ -1861,7 +1861,7 @@ object UnifiedLog extends Logging {
     }
     // AutoMQ for Kafka inject end
 
-    val segments = new LogSegments(topicPartition)
+    val segments = new CachedLogSegments(topicPartition)
     val producerStateManager = new ProducerStateManager(topicPartition, dir,
       maxTransactionTimeoutMs, producerStateManagerConfig, time)
     Files.createDirectories(dir.toPath)
