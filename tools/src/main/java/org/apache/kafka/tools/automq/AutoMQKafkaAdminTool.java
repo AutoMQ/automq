@@ -23,6 +23,8 @@ import org.apache.kafka.common.utils.Exit;
 
 public class AutoMQKafkaAdminTool {
     public static void main(String[] args) {
+        // suppress slf4j inner warning log
+        System.err.close();
         ArgumentParser parser = AutoMQAdminCmd.argumentParser();
         if (args.length == 0) {
             System.out.println("Please pass valid arguments. Check usage first.");
