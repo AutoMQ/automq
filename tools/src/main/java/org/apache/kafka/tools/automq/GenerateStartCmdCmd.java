@@ -17,13 +17,15 @@
 package org.apache.kafka.tools.automq;
 
 import java.io.IOException;
-import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
+import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
+import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_CONFIG_PROPERTIES_CMD;
+import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_S3_URL_CMD;
 
 public class GenerateStartCmdCmd {
     private final Parameter parameter;
@@ -51,12 +53,8 @@ public class GenerateStartCmdCmd {
         }
     }
 
-    static ArgumentParser argumentParser() {
-        ArgumentParser parser = ArgumentParsers
-            .newArgumentParser(AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD)
-            .defaultHelp(true)
-            .description("This cmd is used to generate multi config properties depend on your arguments.");
-        parser.addArgument(AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD)
+    public static ArgumentParser addArguments(Subparser parser) {
+        parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
             .action(store())
             .required(true);
         parser.addArgument("--s3-url")
@@ -65,7 +63,7 @@ public class GenerateStartCmdCmd {
             .type(String.class)
             .dest("s3-url")
             .metavar("S3-URL")
-            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", AutoMQAdminCmd.GENERATE_S3_URL_CMD));
+            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", GENERATE_S3_URL_CMD));
         parser.addArgument("--controller-address")
             .action(store())
             .required(true)

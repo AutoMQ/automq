@@ -19,12 +19,13 @@ package org.apache.kafka.tools.automq;
 import com.automq.s3shell.sdk.model.AuthMethod;
 import com.automq.s3shell.sdk.model.EndpointProtocol;
 import com.automq.stream.utils.S3Utils;
-import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
+import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.common.Uuid;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
+import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_START_COMMAND_CMD;
 
 /**
  * Generate s3url for user
@@ -74,11 +75,7 @@ public class GenerateS3UrlCmd {
         }
     }
 
-    static ArgumentParser argumentParser() {
-        ArgumentParser parser = ArgumentParsers
-            .newArgumentParser(AutoMQAdminCmd.GENERATE_S3_URL_CMD)
-            .defaultHelp(true)
-            .description("This cmd is used to generate s3url for AutoMQ that is used to connect to s3 or other cloud object storage service.");
+    public static ArgumentParser addArguments(Subparser parser) {
         parser.addArgument("generate-s3-url")
             .action(store())
             .required(true);
@@ -180,7 +177,7 @@ public class GenerateS3UrlCmd {
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
             + "--s3-url=\"%s\" \\%n"
             + "--controller-address=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
-            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_START_COMMAND_CMD, s3Url
+            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", GENERATE_START_COMMAND_CMD, s3Url
         ));
         System.out.println("TIPS: Replace the controller-address and broker-address with your real ip list.");
 

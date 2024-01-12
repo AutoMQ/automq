@@ -23,9 +23,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
+import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
@@ -33,14 +33,14 @@ import static com.automq.s3shell.sdk.util.S3PropUtil.BROKER_PROPS_PATH;
 import static com.automq.s3shell.sdk.util.S3PropUtil.CONTROLLER_PROPS_PATH;
 import static com.automq.s3shell.sdk.util.S3PropUtil.SERVER_PROPS_PATH;
 import static net.sourceforge.argparse4j.impl.Arguments.store;
+import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_CONFIG_PROPERTIES_CMD;
+import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_S3_URL_CMD;
 
 /**
  * Start kafka server by s3url
  */
 public class GenerateConfigFileCmd {
     private final Parameter parameter;
-
-
 
     public GenerateConfigFileCmd(GenerateConfigFileCmd.Parameter parameter) {
         this.parameter = parameter;
@@ -65,12 +65,8 @@ public class GenerateConfigFileCmd {
         }
     }
 
-    static ArgumentParser argumentParser() {
-        ArgumentParser parser = ArgumentParsers
-            .newArgumentParser(AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD)
-            .defaultHelp(true)
-            .description("This cmd is used to generate multi config properties depend on your arguments.");
-        parser.addArgument(AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD)
+    public static ArgumentParser addArguments(Subparser parser) {
+        parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
             .action(store())
             .required(true);
         parser.addArgument("--s3-url")
@@ -79,7 +75,7 @@ public class GenerateConfigFileCmd {
             .type(String.class)
             .dest("s3-url")
             .metavar("S3-URL")
-            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", AutoMQAdminCmd.GENERATE_S3_URL_CMD));
+            .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", GENERATE_S3_URL_CMD));
         parser.addArgument("--controller-address")
             .action(store())
             .required(true)
@@ -166,8 +162,6 @@ public class GenerateConfigFileCmd {
         }
         return propFileNameList;
     }
-
-
 
     protected void flushProps(Properties props, String fileName) throws IOException {
         S3PropUtil.persist(props, fileName);
