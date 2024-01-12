@@ -17,14 +17,15 @@
 
 package kafka
 
+import java.util.Properties
+
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{CommandLineUtils, Exit, Logging}
-import org.apache.kafka.common.utils._
+import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
 
-import java.util.Properties
 import scala.jdk.CollectionConverters._
 
 object Kafka extends Logging {
