@@ -325,7 +325,7 @@ class Partition(val topicPartition: TopicPartition,
    * Updated by [[ElasticUnifiedLog.confirmOffsetChangeListener]]
    * Used to return fast when fetching messages with `fetchOffset` equals to `confirmOffset` in [[checkFetchOffsetAndMaybeGetInfo]]
    */
-  private var confirmOffset: Option[Long] = None
+  private var confirmOffset: Long = -1L
   // AutoMQ for Kafka inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
@@ -1071,7 +1071,7 @@ class Partition(val topicPartition: TopicPartition,
       case elasticLog: ElasticUnifiedLog =>
         val confirmOffset = elasticLog.confirmOffset()
         newHighWatermark = confirmOffset
-        this.confirmOffset = Some(confirmOffset.messageOffset)
+        this.confirmOffset = confirmOffset.messageOffset
       case _ =>
     }
     // AutoMQ for Kafka inject end
@@ -1548,7 +1548,7 @@ class Partition(val topicPartition: TopicPartition,
    * This method could be called before [[fetchRecordsAsync]] to avoid unnecessary log read.
    */
   def checkFetchOffsetAndMaybeGetInfo(fetchParams: FetchParams, fetchPartitionData: FetchRequest.PartitionData): LogReadInfo = {
-    if (!confirmOffset.contains(fetchPartitionData.fetchOffset)) {
+    if (confirmOffset < 0 || confirmOffset != fetchPartitionData.fetchOffset) {
       return null
     }
 
