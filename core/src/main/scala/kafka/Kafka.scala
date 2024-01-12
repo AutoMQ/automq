@@ -30,6 +30,7 @@ import scala.jdk.CollectionConverters._
 object Kafka extends Logging {
 
     def getPropsFromArgs(args: Array[String]): Properties = {
+        // AutoMQ for Kafka inject start
         if (args.exists(_.contains("s3-url"))) {
             val roleInfo = args.find(_.startsWith("process.roles="))
             if (roleInfo.isEmpty) {
@@ -60,6 +61,7 @@ object Kafka extends Logging {
                     return S3ShellPropUtil.autoGenPropsByCmd(args, "broker,controller")
             }
         }
+        // AutoMQ for Kafka inject end
 
         val optionParser = new OptionParser(false)
         val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
