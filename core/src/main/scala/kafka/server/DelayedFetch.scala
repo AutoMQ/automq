@@ -79,7 +79,9 @@ class DelayedFetch(
         val fetchLeaderEpoch = fetchStatus.fetchInfo.currentLeaderEpoch
         try {
           if (fetchOffset != LogOffsetMetadata.UnknownOffsetMetadata) {
-            val partition = replicaManager.getPartitionOrException(topicIdPartition.topicPartition)
+            // AutoMQ for Kafka inject start
+            val partition = replicaManager.getPartitionOrExceptionV2(topicIdPartition.topicPartition)
+            // AutoMQ for Kafka inject end
             val offsetSnapshot = partition.fetchOffsetSnapshot(fetchLeaderEpoch, params.fetchOnlyLeader)
 
             val endOffset = params.isolation match {

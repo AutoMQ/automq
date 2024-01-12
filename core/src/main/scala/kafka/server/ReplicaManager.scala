@@ -584,6 +584,38 @@ class ReplicaManager(val config: KafkaConfig,
     allPartitions.values.iterator.count(_ == HostedPartition.Offline)
   }
 
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Remove the usage of [[Option]] in [[getPartition]] to avoid allocation
+   */
+  def getPartitionV2(topicPartition: TopicPartition): HostedPartition = {
+    val partition = allPartitions.get(topicPartition)
+    if (null == partition) {
+      HostedPartition.None
+    } else {
+      partition
+    }
+  }
+
+  /**
+   * Remove the usage of [[Either]] in [[getPartitionOrException]] to avoid allocation
+   */
+  def getPartitionOrExceptionV2(topicPartition: TopicPartition): Partition = {
+    getPartitionV2(topicPartition) match {
+      case HostedPartition.Online(partition) =>
+        partition
+      case HostedPartition.Offline =>
+        throw new KafkaStorageException(s"Partition $topicPartition is in an offline log directory")
+      case HostedPartition.None if metadataCache.contains(topicPartition) =>
+        throw Errors.NOT_LEADER_OR_FOLLOWER.exception(s"Error while fetching partition state for $topicPartition")
+      case HostedPartition.None =>
+        throw Errors.UNKNOWN_TOPIC_OR_PARTITION.exception(s"Error while fetching partition state for $topicPartition")
+    }
+  }
+
+  // AutoMQ for Kafka inject end
+
   def getPartitionOrException(topicPartition: TopicPartition): Partition = {
     getPartitionOrError(topicPartition) match {
       case Left(Errors.KAFKA_STORAGE_ERROR) =>
@@ -1320,7 +1352,7 @@ class ReplicaManager(val config: KafkaConfig,
      * Get the partition or throw an exception.
      */
     def getPartitionAndCheckTopicId(tp: TopicIdPartition): Partition = {
-      val partition = getPartitionOrException(tp.topicPartition)
+      val partition = getPartitionOrExceptionV2(tp.topicPartition)
 
       // Check if topic ID from the fetch request/session matches the ID in the log
       val topicId = if (tp.topicId == Uuid.ZERO_UUID) None else Some(tp.topicId)
