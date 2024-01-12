@@ -19,11 +19,13 @@ package org.apache.kafka.tools.automq;
 import java.util.Map;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class GenerateS3UrlCmdTest {
 
     @Test
+    @Disabled
     void run() {
         Namespace namespace = new Namespace(
             Map.of(

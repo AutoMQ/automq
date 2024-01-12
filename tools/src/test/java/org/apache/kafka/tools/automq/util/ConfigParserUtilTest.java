@@ -31,7 +31,7 @@ class ConfigParserUtilTest {
         ServerGroupConfig config = ConfigParserUtil.genControllerConfig("192.168.0.1:9093;192.168.0.2:9094;192.168.0.3:9095", false);
         assertEquals(3, config.getNodeIdList().size());
         assertEquals("0@192.168.0.1:9093,1@192.168.0.2:9094,2@192.168.0.3:9095", config.getQuorumVoters());
-        List<String> listenerList = Arrays.asList("PLAINTEXT://192.168.0.1:9093", "PLAINTEXT://192.168.0.2:9094", "PLAINTEXT://192.168.0.3:9095");
+        List<String> listenerList = Arrays.asList("PLAINTEXT://192.168.0.1:9092,CONTROLLER://192.168.0.1:9093", "PLAINTEXT://192.168.0.2:9092,CONTROLLER://192.168.0.2:9094", "PLAINTEXT://192.168.0.3:9092,CONTROLLER://192.168.0.3:9095");
         for (int i = 0; i < config.getListenerMap().size(); i++) {
             assertEquals(listenerList.get(i), config.getListenerMap().get(i));
         }

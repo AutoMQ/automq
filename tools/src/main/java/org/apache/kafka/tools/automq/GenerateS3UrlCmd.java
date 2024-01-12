@@ -70,7 +70,7 @@ public class GenerateS3UrlCmd {
             this.s3Endpoint = res.getString("s3-endpoint");
             this.s3DataBucket = res.getString("s3-data-bucket");
             this.s3OpsBucket = res.getString("s3-ops-bucket");
-            this.s3PathStyle = res.getBoolean("s3-path-style");
+            this.s3PathStyle = Boolean.valueOf(res.getString("s3-path-style"));
         }
     }
 
