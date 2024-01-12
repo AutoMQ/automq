@@ -1206,6 +1206,8 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
+  // AutoMQ for Kafka inject start
+
   /**
    * A Wrapper of [[readFromLocalLogV2]] which acquire memory permits from limiter.
    * It has the same behavior as [[readFromLocalLogV2]] using the default [[NoopLimiter]].
@@ -1357,7 +1359,6 @@ class ReplicaManager(val config: KafkaConfig,
       )
     }
 
-    // AutoMQ for Kafka inject start
     def read(partition: Partition, tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): CompletableFuture[LogReadResult] = {
       def _exception2LogReadResult(e: Throwable): LogReadResult = {
         exception2LogReadResult(e, tp, fetchInfo, limitBytes)
@@ -1506,6 +1507,8 @@ class ReplicaManager(val config: KafkaConfig,
     }
     result
   }
+
+  // AutoMQ for Kafka inject end
 
   /**
    * Read from multiple topic partitions at the given offset up to maxSize bytes

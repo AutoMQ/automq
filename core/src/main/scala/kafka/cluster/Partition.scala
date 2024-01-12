@@ -1537,6 +1537,9 @@ class Partition(val topicPartition: TopicPartition,
     )
   }
 
+
+  // AutoMQ for Kafka inject start
+
   /**
    * Check whether the fetch offset in the fetch request equals to the current confirmed offset.
    * If so, return empty response with necessary metadata, e.g., [[LogReadInfo.fetchedData.fetchOffsetMetadata]],
@@ -1636,6 +1639,8 @@ class Partition(val topicPartition: TopicPartition,
       )
     )
   }
+
+  // AutoMQ for Kafka inject end
 
   def fetchOffsetForTimestamp(timestamp: Long,
                               isolationLevel: Option[IsolationLevel],
