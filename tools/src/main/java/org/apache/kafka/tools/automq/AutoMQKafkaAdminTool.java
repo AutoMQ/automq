@@ -62,7 +62,7 @@ public class AutoMQKafkaAdminTool {
                 parser.handleError(e);
                 Exit.exit(1);
             }
-            return null; // 这行代码实际上不会被执行，但 Java 要求有返回值或抛出异常
+            return null;
         }
     }
 
