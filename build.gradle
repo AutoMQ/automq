@@ -925,7 +925,7 @@ project(':core') {
     implementation project(':metadata')
     implementation project(':raft')
     implementation project(':storage')
-
+    implementation project(':s3shell-kafka-sdk')
 
     implementation libs.argparse4j
     implementation libs.jacksonDatabind
@@ -971,8 +971,6 @@ project(':core') {
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
     implementation libs.opentelemetryJmx
-
-    implementation libs.s3shellKafkaSdk
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
@@ -1173,6 +1171,8 @@ project(':core') {
     from(project(':tools').configurations.runtimeClasspath) { into("libs/") }
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':s3shell-kafka-sdk').jar) { into("libs/") }
+    from(project(':s3shell-kafka-sdk').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
@@ -1844,6 +1844,10 @@ project(':storage') {
   }
 }
 
+project(':s3shell-kafka-sdk') {
+  archivesBaseName = "s3shell-kafka-sdk"
+}
+
 project(':tools') {
   archivesBaseName = "kafka-tools"
 
@@ -1857,6 +1861,8 @@ project(':tools') {
     implementation (project(':log4j-appender')){
       exclude group: 'org.slf4j', module: '*'
     }
+    implementation project(':s3shell-kafka-sdk')
+
     implementation libs.argparse4j
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
@@ -1872,7 +1878,6 @@ project(':tools') {
       exclude group: 'net.sourceforge.argparse4j', module: '*'
     }
     implementation libs.commonio
-    implementation libs.s3shellKafkaSdk
 
 
     testImplementation (project(':clients')){
