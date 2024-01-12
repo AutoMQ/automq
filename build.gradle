@@ -1846,6 +1846,10 @@ project(':storage') {
 
 project(':s3shell-kafka-sdk') {
   archivesBaseName = "s3shell-kafka-sdk"
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-automq.xml")
+  }
 }
 
 project(':tools') {
