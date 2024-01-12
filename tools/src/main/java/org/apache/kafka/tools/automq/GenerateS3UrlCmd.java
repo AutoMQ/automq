@@ -27,20 +27,6 @@ import org.apache.kafka.common.Uuid;
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
 /**
- * <pre>
- *
- * Example:
- *
- * generate-s3-url
- * --s3-access-key=xxx
- * --s3-secret-key=xxx
- * --s3-auth-method=key-from-args
- * --s3-region="cn-northwest-1"
- * --s3-endpoint-protocol="https"
- * --s3-endpoint="s3.cn-northwest-1.amazonaws.com.cn"
- * --s3-data-bucket="wanshao-test"
- * --s3-ops-bucket="automq-ops-bucket"
- * </pre>
  * Generate s3url for user
  */
 public class GenerateS3UrlCmd {

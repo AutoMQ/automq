@@ -130,7 +130,7 @@ versions += [
   commonLang: "3.12.0",
   commonio: "2.15.1",
   s3stream: "0.16.0-SNAPSHOT",
-  s3shellSdk: "0.0.1-SNAPSHOT",
+  s3shellKafkaSdk: "0.0.1-SNAPSHOT",
   opentelemetry: "1.32.0",
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7"
@@ -230,7 +230,7 @@ libs += [
   commonio          : "commons-io:commons-io:$versions.commonio",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   s3stream: "com.automq.elasticstream:s3stream:$versions.s3stream",
-  s3shellSdk:"com.automq.s3shell:s3shell-sdk:$versions.s3shellSdk",
+  s3shellKafkaSdk:"com.automq.s3shell:s3shell-kafka-sdk:$versions.s3shellKafkaSdk",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",

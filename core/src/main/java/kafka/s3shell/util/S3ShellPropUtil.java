@@ -48,12 +48,10 @@ public class S3ShellPropUtil {
         return optionParser;
     }
 
-    public static Properties getPropsFromArgs(String[] args) throws IOException {
-
-        OptionParser optionParser = acceptOption();
+    public static Properties autoGenPropsByCmd(String[] args, String processRole) throws IOException {
         if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-            CommandLineUtils.printUsageAndDie(optionParser,
-                String.format("USAGE: java [options] %s [--config server.properties] [--override property=value]* [--s3-url url]",
+            CommandLineUtils.printUsageAndDie(acceptOption(),
+                String.format("USAGE: java [options] %s server.properties [--override property=value]*",
                     S3ShellPropUtil.class.getCanonicalName().split("\\$")[0]));
         }
 
@@ -61,25 +59,29 @@ public class S3ShellPropUtil {
             CommandLineUtils.printVersionAndDie();
         }
 
-        OptionSet options = optionParser.parse(args);
-        Properties props = new Properties();
-
-        List<?> nonOptionArgs = options.nonOptionArguments();
-        if (nonOptionArgs.size() > 1) {
+        if (args.length < 1) {
             throw new FatalExitError(1);
         }
 
-        String configPath = null;
-        if (options.has("config")) {
-            configPath = (String) options.valueOf("config");
-        } else if (!nonOptionArgs.isEmpty()) {
-            configPath = (String) nonOptionArgs.get(0);
+        Properties props = new Properties();
+        switch (processRole) {
+            case "broker":
+                props.putAll(Utils.loadProps("config/kraft/broker.properties"));
+                break;
+            case "controller":
+                props.putAll(Utils.loadProps("config/kraft/controller.properties"));
+                break;
+            case "broker,controller":
+            case "controller,broker":
+                props.putAll(Utils.loadProps("config/kraft/server.properties"));
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid process role:" + processRole);
         }
 
-        if (configPath != null) {
-            props.putAll(Utils.loadProps(configPath));
-        }
-
+        // Handle --override options
+        OptionParser optionParser = acceptOption();
+        OptionSet options = optionParser.parse(args);
         handleOption(options, props);
 
         return props;

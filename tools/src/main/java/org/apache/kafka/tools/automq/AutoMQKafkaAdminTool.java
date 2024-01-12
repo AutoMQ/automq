@@ -33,8 +33,8 @@ public class AutoMQKafkaAdminTool {
             case AutoMQAdminCmd.GENERATE_S3_URL_CMD:
                 processGenerateS3UrlCmd(args);
                 break;
-            case AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD:
-                processGenConfigPropertiesCmd(args);
+            case AutoMQAdminCmd.GENERATE_START_COMMAND_CMD:
+                processGenerateStartCmd(args);
                 break;
             default:
                 System.out.println(String.format("Not supported command %s. Check usage first.", args[0]));
@@ -46,44 +46,9 @@ public class AutoMQKafkaAdminTool {
 
     }
 
-    private static void processGenerateS3UrlCmd(String[] args) {
-
-        Namespace res = null;
-        ArgumentParser genS3UrlParser = GenerateS3UrlCmd.argumentParser();
+    private static Namespace parseArguments(ArgumentParser parser, String[] args) {
         try {
-            res = genS3UrlParser.parseArgs(args);
-        } catch (ArgumentParserException e) {
-            if (args.length == 1) {
-                genS3UrlParser.printHelp();
-                Exit.exit(0);
-            } else {
-                genS3UrlParser.handleError(e);
-                Exit.exit(1);
-            }
-        }
-
-        if (res == null) {
-            genS3UrlParser.handleError(new ArgumentParserException("GenerateS3UrlCmd's namespace is null", genS3UrlParser));
-            Exit.exit(1);
-        }
-
-        GenerateS3UrlCmd.Parameter parameter = new GenerateS3UrlCmd.Parameter(res);
-
-        GenerateS3UrlCmd generateS3UrlCmd = new GenerateS3UrlCmd(parameter);
-        try {
-            generateS3UrlCmd.run();
-        } catch (Throwable t) {
-            System.out.printf("FAILED: Caught exception %s%n%n", t.getMessage());
-            t.printStackTrace();
-            Exit.exit(1);
-        }
-    }
-
-    private static void processGenConfigPropertiesCmd(String[] args) {
-        Namespace res = null;
-        ArgumentParser parser = GenerateConfigFileCmd.argumentParser();
-        try {
-            res = parser.parseArgs(args);
+            return parser.parseArgs(args);
         } catch (ArgumentParserException e) {
             if (args.length == 1) {
                 parser.printHelp();
@@ -92,21 +57,46 @@ public class AutoMQKafkaAdminTool {
                 parser.handleError(e);
                 Exit.exit(1);
             }
+            return null; // 这行代码实际上不会被执行，但 Java 要求有返回值或抛出异常
         }
+    }
 
+    private static void runCommandWithParameter(ArgumentParser parser, Namespace res, Command command) {
         if (res == null) {
-            parser.handleError(new ArgumentParserException("GenerateConfigFileCmd's namespace is null", parser));
+            parser.handleError(new ArgumentParserException("Namespace is null", parser));
             Exit.exit(1);
         } else {
             try {
-                new GenerateConfigFileCmd(new GenerateConfigFileCmd.Parameter(res)).run();
-            } catch (Throwable t) {
-                System.out.printf("FAILED: Caught exception %s%n%n", t.getMessage());
-                t.printStackTrace();
+                command.run();
+            } catch (Exception e) {
+                System.out.printf("FAILED: Caught exception %s%n%n", e.getMessage());
+                e.printStackTrace();
                 Exit.exit(1);
             }
         }
+    }
 
+    @FunctionalInterface
+    public interface Command {
+        void run() throws Exception;
+    }
+
+    private static void processGenerateS3UrlCmd(String[] args) {
+        ArgumentParser genS3UrlParser = GenerateS3UrlCmd.argumentParser();
+        Namespace res = parseArguments(genS3UrlParser, args);
+        runCommandWithParameter(genS3UrlParser, res, () -> new GenerateS3UrlCmd(new GenerateS3UrlCmd.Parameter(res)).run());
+    }
+
+    private static void processGenerateStartCmd(String[] args) {
+        ArgumentParser parser = GenerateStartCmdCmd.argumentParser();
+        Namespace res = parseArguments(parser, args);
+        runCommandWithParameter(parser, res, () -> new GenerateStartCmdCmd(new GenerateStartCmdCmd.Parameter(res)).run());
+    }
+
+    private static void processGenConfigPropertiesCmd(String[] args) {
+        ArgumentParser parser = GenerateConfigFileCmd.argumentParser();
+        Namespace res = parseArguments(parser, args);
+        runCommandWithParameter(parser, res, () -> new GenerateConfigFileCmd(new GenerateConfigFileCmd.Parameter(res)).run());
     }
 
 }

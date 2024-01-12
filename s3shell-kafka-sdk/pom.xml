@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.automq.s3shell</groupId>
-    <artifactId>s3shell-sdk</artifactId>
+    <artifactId>s3shell-kafka-sdk</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>

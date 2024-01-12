@@ -26,7 +26,7 @@ public class AutoMQAdminCmd {
     public static final String ADMIN_TOOL_NAME = "automq-kafka-admin.sh";
 
     public static final String GENERATE_S3_URL_CMD = "generate-s3-url";
-    public static final String GENERATE_LOCAL_START_COMMAND_CMD = "generate-local-start-command";
+    public static final String GENERATE_START_COMMAND_CMD = "generate-start-command";
     public static final String GENERATE_CONFIG_PROPERTIES_CMD = "generate-config-properties";
 
     static ArgumentParser argumentParser() {
@@ -35,7 +35,7 @@ public class AutoMQAdminCmd {
             .usage(String.format("%s [-h] %s | %s | %s",
                 ADMIN_TOOL_NAME,
                 GENERATE_S3_URL_CMD,
-                GENERATE_LOCAL_START_COMMAND_CMD,
+                GENERATE_START_COMMAND_CMD,
                 GENERATE_CONFIG_PROPERTIES_CMD))
             .defaultHelp(true)
             .description("This AutoMQ admin tool contains several tools to help user init and manage AutoMQ cluster easily.");
@@ -50,7 +50,7 @@ public class AutoMQAdminCmd {
             .required(false)
             .type(String.class)
             .metavar("generate-local-start-command")
-            .help(String.format("This cmd is used to generate config file and local start command. Execute '%s -h' to check its usage.", GENERATE_LOCAL_START_COMMAND_CMD));
+            .help(String.format("This cmd is used to generate config file and local start command. Execute '%s -h' to check its usage.", GENERATE_START_COMMAND_CMD));
         parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
             .action(store())
             .required(false)
