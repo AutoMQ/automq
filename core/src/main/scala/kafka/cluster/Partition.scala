@@ -320,6 +320,12 @@ class Partition(val topicPartition: TopicPartition,
 
   // AutoMQ for Kafka inject start
   private var closed: Boolean = false
+  /**
+   * Same with the `_confirmOffset` in `ElasticLog`
+   * Updated by [[ElasticUnifiedLog.confirmOffsetChangeListener]]
+   * Used to return fast when fetching messages with `fetchOffset` equals to `confirmOffset` in [[checkFetchOffsetAndMaybeGetInfo]]
+   */
+  private var confirmOffset: Option[Long] = None
   // AutoMQ for Kafka inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
@@ -1063,7 +1069,9 @@ class Partition(val topicPartition: TopicPartition,
     // move high watermark based on log confirm offset to prevent ack inflight record.
     leaderLog match {
       case elasticLog: ElasticUnifiedLog =>
-        newHighWatermark = elasticLog.confirmOffset()
+        val confirmOffset = elasticLog.confirmOffset()
+        newHighWatermark = confirmOffset
+        this.confirmOffset = Some(confirmOffset.messageOffset)
       case _ =>
     }
     // AutoMQ for Kafka inject end
@@ -1526,6 +1534,41 @@ class Partition(val topicPartition: TopicPartition,
       logStartOffset = initialLogStartOffset,
       logEndOffset = initialLogEndOffset,
       lastStableOffset = initialLastStableOffset
+    )
+  }
+
+  /**
+   * Check whether the fetch offset in the fetch request equals to the current confirmed offset.
+   * If so, return empty response with necessary metadata, e.g., [[LogReadInfo.fetchedData.fetchOffsetMetadata]],
+   * [[LogReadInfo.highWatermark]], etc.
+   * Otherwise, return null.
+   * This method could be called before [[fetchRecordsAsync]] to avoid unnecessary log read.
+   */
+  def checkFetchOffsetAndMaybeGetInfo(fetchParams: FetchParams, fetchPartitionData: FetchRequest.PartitionData): LogReadInfo = {
+    if (!confirmOffset.contains(fetchPartitionData.fetchOffset)) {
+      return null
+    }
+
+    // The fetch offset equals to the confirmed offset
+    val localLog = localLogWithEpochOrThrow(fetchPartitionData.currentLeaderEpoch, fetchParams.fetchOnlyLeader)
+    assert(localLog.isInstanceOf[ElasticUnifiedLog])
+    val elasticLog = localLog.asInstanceOf[ElasticUnifiedLog]
+
+    // Get max offset from the log and recheck the fetch offset
+    val maxOffsetMetadata = elasticLog.maxOffsetMetadata(fetchParams.isolation)
+    if (maxOffsetMetadata.messageOffset != fetchPartitionData.fetchOffset) {
+      return null
+    }
+
+    // return empty response with necessary metadata
+    val fetchDataInfo = elasticLog.emptyFetchDataInfo(maxOffsetMetadata, fetchParams.isolation)
+    LogReadInfo(
+      fetchedData = fetchDataInfo,
+      divergingEpoch = None,
+      highWatermark = localLog.highWatermark,
+      logStartOffset = localLog.logStartOffset,
+      logEndOffset = localLog.logEndOffset,
+      lastStableOffset = localLog.lastStableOffset
     )
   }
 
