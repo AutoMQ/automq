@@ -167,21 +167,20 @@ public class GenerateS3UrlCmd {
         S3Utils.checkS3Access(context);
 
         String s3Url = buildS3Url();
-        System.out.println("####################################  S3 URL RESULT #################################");
+        System.out.println("##########  S3 URL RESULT ############");
         System.out.println();
         System.out.println("Your S3 URL is: \n");
         System.out.println(s3Url);
         System.out.println("\n");
 
-        System.out.println("####################################  S3 URL USAGE #################################");
-        System.out.println("[BASIC USAGE]");
-        System.out.println("Basic usage to generate all config properties for 2c16g instance with 120MB/s bandwidth");
+        System.out.println("############  S3 URL USAGE ##############");
+        System.out.println("You can use s3url to generate start command to start AutoMQ");
         System.out.println("------------------------ COPY ME ------------------");
         //tips: Not add whitespace after \\
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
             + "--s3-url=\"%s\" \\%n"
             + "--controller-address=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
-            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD, s3Url
+            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", AutoMQAdminCmd.GENERATE_START_COMMAND_CMD, s3Url
         ));
         System.out.println("TIPS: Replace the controller-address and broker-address with your real ip list.");
 

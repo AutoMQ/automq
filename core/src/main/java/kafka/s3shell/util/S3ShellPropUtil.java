@@ -19,12 +19,10 @@ package kafka.s3shell.util;
 import com.automq.s3shell.sdk.constant.ServerConfigKey;
 import com.automq.s3shell.sdk.model.S3Url;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
-import kafka.utils.CommandLineUtils;
 import org.apache.kafka.common.internals.FatalExitError;
 import org.apache.kafka.common.utils.Utils;
 
@@ -49,16 +47,6 @@ public class S3ShellPropUtil {
     }
 
     public static Properties autoGenPropsByCmd(String[] args, String processRole) throws IOException {
-        if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-            CommandLineUtils.printUsageAndDie(acceptOption(),
-                String.format("USAGE: java [options] %s server.properties [--override property=value]*",
-                    S3ShellPropUtil.class.getCanonicalName().split("\\$")[0]));
-        }
-
-        if (Arrays.asList(args).contains("--version")) {
-            CommandLineUtils.printVersionAndDie();
-        }
-
         if (args.length < 1) {
             throw new FatalExitError(1);
         }

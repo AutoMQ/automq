@@ -1848,16 +1848,24 @@ project(':tools') {
   archivesBaseName = "kafka-tools"
 
   dependencies {
-    implementation project(':clients')
-    implementation project(':server-common')
-    implementation project(':log4j-appender')
+    implementation (project(':clients')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation (project(':server-common')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation (project(':log4j-appender')){
+      exclude group: 'org.slf4j', module: '*'
+    }
     implementation libs.argparse4j
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
     implementation libs.slf4jApi
     implementation libs.log4j
-
-    implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
+    // for SASL/OAUTHBEARER JWT validation
+    implementation (libs.jose4j){
+      exclude group: 'org.slf4j', module: '*'
+    }
     implementation libs.jacksonJaxrsJsonProvider
     implementation(libs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
@@ -1867,11 +1875,19 @@ project(':tools') {
     implementation libs.s3shellKafkaSdk
 
 
-    testImplementation project(':clients')
+    testImplementation (project(':clients')){
+      exclude group: 'org.slf4j', module: '*'
+    }
     testImplementation project(':clients').sourceSets.test.output
-    testImplementation project(':core')
+    testImplementation (project(':core')){
+      exclude group: 'org.slf4j', module: '*'
+    }
     testImplementation project(':core').sourceSets.test.output
-    testImplementation project(':server-common')
+    testImplementation (project(':server-common')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+
+
     testImplementation project(':server-common').sourceSets.test.output
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoInline // supports mocking static methods, final classes, etc.

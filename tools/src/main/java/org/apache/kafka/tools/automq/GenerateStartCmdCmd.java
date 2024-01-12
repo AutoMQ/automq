@@ -103,8 +103,8 @@ public class GenerateStartCmdCmd {
         ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerAddress, parameter.controllerOnlyMode);
         ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerAddress, controllerGroupConfig);
 
-        System.out.println("####################################  START CMD LIST #################################");
-        System.out.println("You can copy the properties to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");
+        System.out.println("##############  START CMD LIST ###########");
+        System.out.println("You can copy the command to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");
         System.out.println("Ensure that your compute instance already have JDK17 installed. Execute 'java -version' to check.");
         System.out.println();
         System.out.println("------------------------ COPY ME  ------------------");

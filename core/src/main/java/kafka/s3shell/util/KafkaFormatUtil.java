@@ -31,7 +31,7 @@ public class KafkaFormatUtil {
 
         S3PropUtil.persist(props, propFileName);
         if (!Files.isDirectory(Paths.get(logDirPath)) || !Files.exists(Paths.get(logDirPath, "meta.properties"))) {
-            StorageTool.main(new String[] {"format", "-t", clusterId, "-c=" + propFilePath});
+            StorageTool.main(new String[] {"auto-format", "-t", clusterId, "-c=" + propFilePath});
         }
     }
 }
