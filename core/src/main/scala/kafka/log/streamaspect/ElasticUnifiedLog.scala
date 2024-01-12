@@ -33,6 +33,7 @@ import java.util
 import java.util.concurrent.{CompletableFuture, Executors}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import scala.util.{Failure, Success, Try}
 
 class ElasticUnifiedLog(_logStartOffset: Long,
                         elasticLog: ElasticLog,
@@ -114,18 +115,29 @@ class ElasticUnifiedLog(_logStartOffset: Long,
                          maxLength: Int,
                          isolation: FetchIsolation,
                          minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
-    try {
-      checkLogStartOffset(startOffset)
-    } catch {
-      case e: OffsetOutOfRangeException =>
-        return CompletableFuture.failedFuture(e);
+    Try(checkLogStartOffset(startOffset)) match {
+      case Success(_) => elasticLog.readAsync(startOffset, maxLength, minOneMessage, maxOffsetMetadata(isolation), isolation == FetchTxnCommitted)
+      case Failure(e: OffsetOutOfRangeException) => CompletableFuture.failedFuture(e)
+      case Failure(e) => throw e
     }
-    val maxOffsetMetadata = isolation match {
+  }
+
+  /**
+   * Get the max offset metadata of the log based on the isolation level
+   */
+  def maxOffsetMetadata(isolation: FetchIsolation): LogOffsetMetadata = {
+    isolation match {
       case FetchLogEnd => elasticLog.logEndOffsetMetadata
       case FetchHighWatermark => fetchHighWatermarkMetadata
       case FetchTxnCommitted => fetchLastStableOffsetMetadata
     }
-    elasticLog.readAsync(startOffset, maxLength, minOneMessage, maxOffsetMetadata, isolation == FetchTxnCommitted)
+  }
+
+  /**
+   * Create a fetch data info with no messages
+   */
+  def emptyFetchDataInfo(maxOffsetMetadata: LogOffsetMetadata, isolation: FetchIsolation): FetchDataInfo = {
+    LocalLog.emptyFetchDataInfo(maxOffsetMetadata, isolation == FetchTxnCommitted)
   }
 
   override def close(): CompletableFuture[Void] = {
