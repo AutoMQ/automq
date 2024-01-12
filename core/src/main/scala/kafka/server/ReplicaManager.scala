@@ -1356,7 +1356,7 @@ class ReplicaManager(val config: KafkaConfig,
 
       // Check if topic ID from the fetch request/session matches the ID in the log
       val topicId = if (tp.topicId == Uuid.ZERO_UUID) None else Some(tp.topicId)
-      if (!hasConsistentTopicId(topicId, partition.topicId))
+      if (!hasConsistentTopicId(topicId, partition.topicIdV2))
         throw new InconsistentTopicIdException("Topic ID in the fetch session did not match the topic ID in the log.")
 
       partition

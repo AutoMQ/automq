@@ -520,6 +520,22 @@ class Partition(val topicPartition: TopicPartition,
     log.flatMap(_.topicId)
   }
 
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Remove lambda function in [[topicId]] to avoid allocation.
+   */
+  def topicIdV2: Option[Uuid] = {
+    if (this.log.isDefined) {
+      this.log.get.topicId
+    } else {
+      val log = logManager.getLog(topicPartition)
+      log.flatMap(_.topicId)
+    }
+  }
+
+  // AutoMQ for Kafka inject end
+
   // remoteReplicas will be called in the hot path, and must be inexpensive
   def remoteReplicas: Iterable[Replica] =
     remoteReplicasMap.values
