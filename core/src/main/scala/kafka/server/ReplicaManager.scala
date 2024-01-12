@@ -270,6 +270,12 @@ class ReplicaManager(val config: KafkaConfig,
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  /**
+   * Used to reduce allocation in [[readFromLocalLogV2]]
+   */
+  private val readFutureBuffer = new ThreadLocal[ArrayBuffer[CompletableFuture[Void]]] {
+    override def initialValue(): ArrayBuffer[CompletableFuture[Void]] = new ArrayBuffer[CompletableFuture[Void]]()
+  }
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
@@ -1435,7 +1441,8 @@ class ReplicaManager(val config: KafkaConfig,
       }).exceptionally(e => _exception2LogReadResult(e))
     }
 
-    val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)]
+    val resultInitialSize = Math.min(readPartitionInfo.size, ArrayBuffer.DefaultInitialSize)
+    val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)](resultInitialSize)
 
     def release(): Unit = {
       result.foreach { case (_, logReadResult) =>
@@ -1469,7 +1476,8 @@ class ReplicaManager(val config: KafkaConfig,
     var partitionIndex = 0;
     while (remainingBytes.get() > 0 && partitionIndex < readPartitionInfo.size) {
       // In each iteration, we read as many partitions as possible until we reach the maximum bytes limit.
-      val readCfArray = new ArrayBuffer[CompletableFuture[Void]]
+      val readCfArray = readFutureBuffer.get()
+      readCfArray.clear()
       var assignedBytes = 0 // The total bytes we have assigned to the read requests.
       val availableBytes = remainingBytes.get() // The remaining bytes we can assign to the read requests, used to control the following loop.
 
@@ -1516,7 +1524,8 @@ class ReplicaManager(val config: KafkaConfig,
 
     // The remaining partitions still need to be read, but we limit byte size to 0.
     // The corresponding futures are completed immediately with empty LogReadResult.
-    val remainingCfArray = new ArrayBuffer[CompletableFuture[Void]]
+    val remainingCfArray = readFutureBuffer.get()
+    remainingCfArray.clear()
     while (partitionIndex < readPartitionInfo.size) {
       val tp = readPartitionInfo(partitionIndex)._1
       val partitionData = readPartitionInfo(partitionIndex)._2
