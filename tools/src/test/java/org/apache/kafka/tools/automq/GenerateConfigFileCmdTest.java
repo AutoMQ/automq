@@ -17,6 +17,7 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.s3shell.sdk.model.S3Url;
+import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -30,7 +31,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.apache.kafka.tools.automq.GenerateConfigFileCmd.BROKER_PROPS_PATH;
+import static com.automq.s3shell.sdk.util.S3PropUtil.BROKER_PROPS_PATH;
+import static com.automq.s3shell.sdk.util.S3PropUtil.CONTROLLER_PROPS_PATH;
+import static com.automq.s3shell.sdk.util.S3PropUtil.SERVER_PROPS_PATH;
 
 class GenerateConfigFileCmdTest {
 
@@ -62,7 +65,7 @@ class GenerateConfigFileCmdTest {
 
         Properties props = null;
         try {
-            props = cmd.loadTemplateProps(GenerateConfigFileCmd.CONTROLLER_PROPS_PATH);
+            props = S3PropUtil.loadTemplateProps(CONTROLLER_PROPS_PATH);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -70,7 +73,7 @@ class GenerateConfigFileCmdTest {
         Assertions.assertEquals(props.getProperty("controller.quorum.voters"), "1@localhost:9093");
 
         try {
-            props = cmd.loadTemplateProps(BROKER_PROPS_PATH);
+            props = S3PropUtil.loadTemplateProps(BROKER_PROPS_PATH);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -78,7 +81,7 @@ class GenerateConfigFileCmdTest {
         Assertions.assertEquals(props.getProperty("process.roles"), "broker");
 
         try {
-            props = cmd.loadTemplateProps(GenerateConfigFileCmd.SERVER_PROPS_PATH);
+            props = S3PropUtil.loadTemplateProps(SERVER_PROPS_PATH);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -90,7 +93,7 @@ class GenerateConfigFileCmdTest {
     void flushPropsTest() {
         Properties props = null;
         try {
-            props = cmd.loadTemplateProps(BROKER_PROPS_PATH);
+            props = S3PropUtil.loadTemplateProps(BROKER_PROPS_PATH);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -127,7 +130,7 @@ class GenerateConfigFileCmdTest {
             GenerateConfigFileCmd cmd = new GenerateConfigFileCmd(null);
             List<String> propFiles = cmd.processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
             Assertions.assertEquals(2, propFiles.size());
-            Properties groupProps = cmd.loadTemplateProps(propFiles.get(0));
+            Properties groupProps = S3PropUtil.loadTemplateProps(propFiles.get(0));
             Assertions.assertEquals(3, groupProps.getProperty("node.id"));
 
         } catch (IOException e) {

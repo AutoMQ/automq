@@ -29,6 +29,9 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
+import static com.automq.s3shell.sdk.util.S3PropUtil.BROKER_PROPS_PATH;
+import static com.automq.s3shell.sdk.util.S3PropUtil.CONTROLLER_PROPS_PATH;
+import static com.automq.s3shell.sdk.util.S3PropUtil.SERVER_PROPS_PATH;
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 
 /**
@@ -37,9 +40,7 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 public class GenerateConfigFileCmd {
     private final Parameter parameter;
 
-    protected static final String BROKER_PROPS_PATH = "template/broker.properties";
-    protected static final String CONTROLLER_PROPS_PATH = "template/controller.properties";
-    protected static final String SERVER_PROPS_PATH = "template/server.properties";
+
 
     public GenerateConfigFileCmd(GenerateConfigFileCmd.Parameter parameter) {
         this.parameter = parameter;
@@ -148,7 +149,7 @@ public class GenerateConfigFileCmd {
         List<String> propFileNameList = new ArrayList<>();
         for (int i = 0; i < groupConfig.getNodeIdList().size(); i++) {
             int nodeId = groupConfig.getNodeIdList().get(i);
-            Properties groupProps = loadTemplateProps(propFilePath);
+            Properties groupProps = S3PropUtil.loadTemplateProps(propFilePath);
             groupProps.put(ServerConfigKey.NODE_ID.getKeyName(), String.valueOf(nodeId));
             groupProps.put(ServerConfigKey.CONTROLLER_QUORUM_VOTERS.getKeyName(), groupConfig.getQuorumVoters());
             groupProps.put(ServerConfigKey.LISTENERS.getKeyName(), groupConfig.getListenerMap().get(nodeId));
@@ -166,17 +167,7 @@ public class GenerateConfigFileCmd {
         return propFileNameList;
     }
 
-    protected Properties loadTemplateProps(String propsPath) throws IOException {
-        try (var in = this.getClass().getClassLoader().getResourceAsStream(propsPath)) {
-            if (in != null) {
-                Properties props = new Properties();
-                props.load(in);
-                return props;
-            } else {
-                throw new IOException(String.format("Can not find resource file under path: %s", propsPath));
-            }
-        }
-    }
+
 
     protected void flushProps(Properties props, String fileName) throws IOException {
         S3PropUtil.persist(props, fileName);

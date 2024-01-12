@@ -18,13 +18,13 @@ package kafka.s3shell.util;
 
 import com.automq.s3shell.sdk.constant.ServerConfigKey;
 import com.automq.s3shell.sdk.model.S3Url;
+import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.IOException;
 import java.util.List;
 import java.util.Properties;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import org.apache.kafka.common.internals.FatalExitError;
-import org.apache.kafka.common.utils.Utils;
 
 import static kafka.log.stream.s3.ConfigUtils.ACCESS_KEY_NAME;
 import static kafka.log.stream.s3.ConfigUtils.SECRET_KEY_NAME;
@@ -54,14 +54,14 @@ public class S3ShellPropUtil {
         Properties props = new Properties();
         switch (processRole) {
             case "broker":
-                props.putAll(Utils.loadProps("config/kraft/broker.properties"));
+                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.BROKER_PROPS_PATH));
                 break;
             case "controller":
-                props.putAll(Utils.loadProps("config/kraft/controller.properties"));
+                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.CONTROLLER_PROPS_PATH));
                 break;
             case "broker,controller":
             case "controller,broker":
-                props.putAll(Utils.loadProps("config/kraft/server.properties"));
+                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.SERVER_PROPS_PATH));
                 break;
             default:
                 throw new IllegalArgumentException("Invalid process role:" + processRole);
