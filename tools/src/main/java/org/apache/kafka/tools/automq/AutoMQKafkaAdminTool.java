@@ -38,6 +38,9 @@ public class AutoMQKafkaAdminTool {
             case AutoMQAdminCmd.GENERATE_START_COMMAND_CMD:
                 processGenerateStartCmd(args);
                 break;
+            case AutoMQAdminCmd.GENERATE_CONFIG_PROPERTIES_CMD:
+                processGenConfigPropertiesCmd(args);
+                break;
             default:
                 System.out.println(String.format("Not supported command %s. Check usage first.", args[0]));
                 parser.printHelp();

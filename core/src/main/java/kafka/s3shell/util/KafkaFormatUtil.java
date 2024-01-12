@@ -19,6 +19,7 @@ package kafka.s3shell.util;
 import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 import kafka.tools.StorageTool;
@@ -28,6 +29,12 @@ public class KafkaFormatUtil {
         String propFileName = String.format("automq-%s.properties", clusterId);
         String propFilePath = "generated/" + propFileName;
         String logDirPath = props.getProperty("log.dirs");
+
+        Path propPath = Paths.get(propFilePath);
+        if (Files.exists(propPath)) {
+            //delete if exists
+            Files.delete(propPath);
+        }
 
         S3PropUtil.persist(props, propFileName);
         if (!Files.isDirectory(Paths.get(logDirPath)) || !Files.exists(Paths.get(logDirPath, "meta.properties"))) {

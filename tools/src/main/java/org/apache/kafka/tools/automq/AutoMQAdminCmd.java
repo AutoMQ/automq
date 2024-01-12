@@ -45,11 +45,11 @@ public class AutoMQAdminCmd {
             .type(String.class)
             .metavar(GENERATE_S3_URL_CMD)
             .help(String.format("This cmd is used to generate s3url for AutoMQ that is used to connect to s3 or other cloud object storage service. Execute '%s -h' to check its usage.", GENERATE_S3_URL_CMD));
-        parser.addArgument("generate-local-start-command")
+        parser.addArgument(GENERATE_START_COMMAND_CMD)
             .action(store())
             .required(false)
             .type(String.class)
-            .metavar("generate-local-start-command")
+            .metavar(GENERATE_START_COMMAND_CMD)
             .help(String.format("This cmd is used to generate config file and local start command. Execute '%s -h' to check its usage.", GENERATE_START_COMMAND_CMD));
         parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
             .action(store())

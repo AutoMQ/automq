@@ -40,7 +40,7 @@ public class ConfigParserUtil {
             quorumVoters.append(i).append("@").append(ipPortPairs[i]);
 
             if (isControllerOnlyMode) {
-                listenerMap.put(i, "PLAINTEXT://" + ipPortPairs[i]);
+                listenerMap.put(i, "CONTROLLER://" + ipPortPairs[i]);
             } else {
                 if ("9092".equals(ipPortPairs[i].split(":")[1])) {
                     throw new UnsupportedOperationException("Controller port can not be 9092 in server mode,because it will conflict with broker port");
