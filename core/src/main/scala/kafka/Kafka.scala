@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -20,6 +20,7 @@ package kafka
 import java.util.Properties
 
 import joptsimple.OptionParser
+import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{CommandLineUtils, Exit, Logging}
@@ -30,6 +31,39 @@ import scala.jdk.CollectionConverters._
 object Kafka extends Logging {
 
   def getPropsFromArgs(args: Array[String]): Properties = {
+    // AutoMQ for Kafka inject start
+    if (args.exists(_.contains("s3-url"))) {
+      val roleInfo = args.find(_.startsWith("process.roles="))
+      if (roleInfo.isEmpty) {
+        throw new IllegalArgumentException("'--override process.roles=broker|controller' is required")
+      }
+      if (!args.exists(_.startsWith("node.id"))) {
+        throw new IllegalArgumentException(s"'--override node.id= ' is required")
+      }
+      if (!args.exists(_.startsWith("controller.quorum.voters"))) {
+        throw new IllegalArgumentException(s"'--override controller.quorum.voters=''' is required")
+      }
+      if (!args.exists(_.startsWith("listeners"))) {
+        throw new IllegalArgumentException(s"'--override listeners=''' is required")
+      }
+
+      roleInfo match {
+        case Some("process.roles=broker") =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker")
+        case Some("process.roles=controller") =>
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "controller")
+        case _ =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker,controller")
+      }
+    }
+    // AutoMQ for Kafka inject end
+
     val optionParser = new OptionParser(false)
     val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
       .withRequiredArg()

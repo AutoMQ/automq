@@ -17,18 +17,18 @@
 
 package kafka.tools
 
-import java.io.PrintStream
-import java.nio.file.{Files, Paths}
 import kafka.server.{BrokerMetadataCheckpoint, KafkaConfig, MetaProperties, RawMetaProperties}
 import kafka.utils.{Exit, Logging}
 import net.sourceforge.argparse4j.ArgumentParsers
 import net.sourceforge.argparse4j.impl.Arguments.{store, storeTrue}
-import net.sourceforge.argparse4j.inf.Namespace
+import net.sourceforge.argparse4j.inf.{Namespace, Subparser}
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.metadata.bootstrap.{BootstrapDirectory, BootstrapMetadata}
 import org.apache.kafka.server.common.MetadataVersion
 
+import java.io.PrintStream
+import java.nio.file.{Files, Paths}
 import java.util.Optional
 import scala.collection.mutable
 
@@ -45,7 +45,7 @@ object StorageTool extends Logging {
           val selfManagedMode = configToSelfManagedMode(config.get)
           Exit.exit(infoCommand(System.out, selfManagedMode, directories))
 
-        case "format" =>
+        case "format" | "auto-format" =>
           val directories = configToLogDirectories(config.get)
           val clusterId = namespace.getString("cluster_id")
           val metadataVersion = getMetadataVersion(namespace, Option(config.get.interBrokerProtocolVersionString))
@@ -56,10 +56,12 @@ object StorageTool extends Logging {
           val ignoreFormatted = namespace.getBoolean("ignore_formatted")
           if (!configToSelfManagedMode(config.get)) {
             throw new TerseFailure("The kafka configuration file appears to be for " +
-              "a legacy cluster. Formatting is only supported for clusters in KRaft mode.")
+                "a legacy cluster. Formatting is only supported for clusters in KRaft mode.")
           }
-          Exit.exit(formatCommand(System.out, directories, metaProperties, metadataVersion, ignoreFormatted))
-
+          val commandResult = formatCommand(System.out, directories, metaProperties, metadataVersion, ignoreFormatted)
+          if (command == "format") {
+            Exit.exit(commandResult)
+          }
         case "random-uuid" =>
           System.out.println(Uuid.randomUuid)
           Exit.exit(0)
@@ -85,24 +87,30 @@ object StorageTool extends Logging {
       help("Get information about the Kafka log directories on this node.")
     val formatParser = subparsers.addParser("format").
       help("Format the Kafka log directories on this node.")
+    val autoFormatParser = subparsers.addParser("auto-format").
+        help("Auto format the Kafka log directories on this node. ")
     subparsers.addParser("random-uuid").help("Print a random UUID.")
-    List(infoParser, formatParser).foreach(parser => {
+    List(infoParser, formatParser,autoFormatParser).foreach(parser => {
       parser.addArgument("--config", "-c").
         action(store()).
         required(true).
         help("The Kafka configuration file to use.")
     })
-    formatParser.addArgument("--cluster-id", "-t").
-      action(store()).
-      required(true).
-      help("The cluster ID to use.")
-    formatParser.addArgument("--ignore-formatted", "-g").
-      action(storeTrue())
-    formatParser.addArgument("--release-version", "-r").
-      action(store()).
-      help(s"A KRaft release version to use for the initial metadata version. The minimum is 3.0, the default is ${MetadataVersion.latest().version()}")
-
+    configureFormatParser(formatParser)
+    configureFormatParser(autoFormatParser)
     parser.parseArgsOrFail(args)
+  }
+
+  private def configureFormatParser(parser: Subparser): Unit = {
+    parser.addArgument("--cluster-id", "-t").
+        action(store()).
+        required(true).
+        help("The cluster ID to use.")
+    parser.addArgument("--ignore-formatted", "-g").
+        action(storeTrue())
+    parser.addArgument("--release-version", "-r").
+        action(store()).
+        help(s"A KRaft release version to use for the initial metadata version. The minimum is 3.0, the default is ${MetadataVersion.latest().version()}")
   }
 
   def configToLogDirectories(config: KafkaConfig): Seq[String] = {

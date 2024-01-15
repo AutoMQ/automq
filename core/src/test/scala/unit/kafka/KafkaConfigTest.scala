@@ -16,18 +16,18 @@
  */
 package kafka
 
-import java.nio.file.Files
-import java.util
-import java.util.Properties
 import kafka.server.KafkaConfig
-import kafka.utils.{Exit, TestUtils}
 import kafka.utils.TestUtils.assertBadConfigContainingMessage
+import kafka.utils.{Exit, TestUtils}
 import org.apache.kafka.common.config.internals.BrokerSecurityConfigs
 import org.apache.kafka.common.config.types.Password
 import org.apache.kafka.common.internals.FatalExitError
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
 
+import java.nio.file.Files
+import java.util
+import java.util.Properties
 import scala.jdk.CollectionConverters._
 
 class KafkaTest {
@@ -81,7 +81,7 @@ class KafkaTest {
 
   @Test
   def testBrokerRoleNodeIdValidation(): Unit = {
-    // Ensure that validation is happening at startup to check that brokers do not use their node.id as a voter in controller.quorum.voters 
+    // Ensure that validation is happening at startup to check that brokers do not use their node.id as a voter in controller.quorum.voters
     val propertiesFile = new Properties
     propertiesFile.setProperty(KafkaConfig.ProcessRolesProp, "broker")
     propertiesFile.setProperty(KafkaConfig.NodeIdProp, "1")
@@ -97,7 +97,7 @@ class KafkaTest {
 
   @Test
   def testControllerRoleNodeIdValidation(): Unit = {
-    // Ensure that validation is happening at startup to check that controllers use their node.id as a voter in controller.quorum.voters 
+    // Ensure that validation is happening at startup to check that controllers use their node.id as a voter in controller.quorum.voters
     val propertiesFile = new Properties
     propertiesFile.setProperty(KafkaConfig.ProcessRolesProp, "controller")
     propertiesFile.setProperty(KafkaConfig.NodeIdProp, "1")
@@ -113,7 +113,7 @@ class KafkaTest {
 
   @Test
   def testColocatedRoleNodeIdValidation(): Unit = {
-    // Ensure that validation is happening at startup to check that colocated processes use their node.id as a voter in controller.quorum.voters 
+    // Ensure that validation is happening at startup to check that colocated processes use their node.id as a voter in controller.quorum.voters
     val propertiesFile = new Properties
     propertiesFile.setProperty(KafkaConfig.ProcessRolesProp, "controller,broker")
     propertiesFile.setProperty(KafkaConfig.NodeIdProp, "1")
@@ -169,7 +169,7 @@ class KafkaTest {
     }
     if (!(hasControllerRole & !hasBrokerRole)) { // not controller-only
       props.setProperty(KafkaConfig.InterBrokerListenerNameProp, "PLAINTEXT")
-      props.setProperty(KafkaConfig.AdvertisedListenersProp, "PLAINTEXT://localhost:9092") 
+      props.setProperty(KafkaConfig.AdvertisedListenersProp, "PLAINTEXT://localhost:9092")
     }
   }
 
@@ -340,6 +340,32 @@ class KafkaTest {
     val config = KafkaConfig.fromProps(Kafka.getPropsFromArgs(Array(propertiesFile, "--override", s"sasl_ssl.oauthbearer.connections.max.reauth.ms=${expected}")))
     assertEquals(expected, config.valuesWithPrefixOverride("sasl_ssl.oauthbearer.").get(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS).asInstanceOf[Long])
   }
+
+  @Test
+  def testGetPropsFromArgsMissingS3Url(): Unit = {
+    val propertiesFile = prepareDefaultConfig()
+    val s3UrlMissingArgsOkController = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew","--override", "process.roles=controller", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "listeners=CONTROLLER://localhost:9093", "--override", "node.id=1")
+    assertDoesNotThrow(() => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgsOkController)))
+
+    val s3UrlMissingArgsOkBroker = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew", "--override", "process.roles=controller,broker", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "listeners=PLAINTEXT://localhost:9092,CONTROLLER://localhost:9093", "--override", "advertised.listeners=PLAINTEXT://localhost:9092","--override", "node.id=1")
+    assertDoesNotThrow(() => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgsOkBroker)))
+
+    val s3UrlMissingArgs1 = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "listeners=PLAINTEXT://localhost:9092","--override", "advertised.listeners=PLAINTEXT://localhost:9092","--override", "node.id=1")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgs1)))
+    val s3UrlMissingArgs2 = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew","--override", "process.roles=broker",  "--override", "listeners=PLAINTEXT://localhost:9092","--override", "advertised.listeners=PLAINTEXT://localhost:9092","--override", "node.id=1")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgs2)))
+
+    val s3UrlMissingArgs3 = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew","--override", "process.roles=broker", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "advertised.listeners=PLAINTEXT://localhost:9092","--override", "node.id=1")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgs3)))
+
+    val s3UrlMissingArgs4 =  Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew","--override", "process.roles=controller,broker", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "PLAINTEXT://localhost,CONTROLLER://localhost:9093","--override", "--override", "node.id=1")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgs4)))
+
+    val s3UrlMissingArgs5 = Array[String](propertiesFile, "--s3-url", "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xx&s3-secret-key=xx&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-path-style=false&cluster-id=1dxiawPlSI2OlUO6U22-Ew", "--override", "process.roles=controller", "--override", "controller.quorum.voters=1@localhost:9093", "--override", "listeners=CONTROLLER://localhost:9093", "--override", "advertised.listeners=PLAINTEXT://localhost:9092", "--override")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(Kafka.getPropsFromArgs(s3UrlMissingArgs5)))
+  }
+
+
 
   private def testZkConfig[T, U](kafkaPropName: String,
                                  expectedKafkaPropName: String,

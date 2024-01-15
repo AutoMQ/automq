@@ -335,6 +335,8 @@ if [ "x$GC_LOG_ENABLED" = "xtrue" ]; then
 fi
 
 KAFKA_JDK_COMPATIBILITY_OPTS=""
+# We need to override KAFKA_S3_ACCESS_KEY and KAFKA_S3_SECRET_KEY. There is no method called System.setEnv, so we set system environment variable by reflection. Add this --add-opens to enable reflection to set system env in class EnvUtil
+KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/java.util=ALL-UNNAMED "
 if [[ "$JAVA_MAJOR_VERSION" -ge "9" ]] ; then
   KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Dio.netty.tryReflectionSetAccessible=true"
 fi
