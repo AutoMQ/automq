@@ -17,7 +17,7 @@
 
 package com.automq.stream.utils;
 
-import java.util.Collection;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -93,14 +93,16 @@ public class FutureUtil {
         return ex;
     }
 
-    public static <T> void completeExceptionally(Collection<CompletableFuture<T>> futures, Throwable ex) {
-        for (CompletableFuture<T> future : futures) {
+    public static <T> void completeExceptionally(Iterator<CompletableFuture<T>> futures, Throwable ex) {
+        while (futures.hasNext()) {
+            CompletableFuture<T> future = futures.next();
             future.completeExceptionally(ex);
         }
     }
 
-    public static <T> void complete(Collection<CompletableFuture<T>> futures, T value) {
-        for (CompletableFuture<T> future : futures) {
+    public static <T> void complete(Iterator<CompletableFuture<T>> futures, T value) {
+        while (futures.hasNext()) {
+            CompletableFuture<T> future = futures.next();
             future.complete(value);
         }
     }
