@@ -325,7 +325,7 @@ class Partition(val topicPartition: TopicPartition,
    * Updated by [[ElasticUnifiedLog.confirmOffsetChangeListener]]
    * Used to return fast when fetching messages with `fetchOffset` equals to `confirmOffset` in [[checkFetchOffsetAndMaybeGetInfo]]
    */
-  private var confirmOffset: Option[Long] = None
+  private var confirmOffset: Long = -1L
   // AutoMQ for Kafka inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
@@ -519,6 +519,22 @@ class Partition(val topicPartition: TopicPartition,
     val log = this.log.orElse(logManager.getLog(topicPartition))
     log.flatMap(_.topicId)
   }
+
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Remove lambda function in [[topicId]] to avoid allocation.
+   */
+  def topicIdV2: Option[Uuid] = {
+    if (this.log.isDefined) {
+      this.log.get.topicId
+    } else {
+      val log = logManager.getLog(topicPartition)
+      log.flatMap(_.topicId)
+    }
+  }
+
+  // AutoMQ for Kafka inject end
 
   // remoteReplicas will be called in the hot path, and must be inexpensive
   def remoteReplicas: Iterable[Replica] =
@@ -1071,7 +1087,7 @@ class Partition(val topicPartition: TopicPartition,
       case elasticLog: ElasticUnifiedLog =>
         val confirmOffset = elasticLog.confirmOffset()
         newHighWatermark = confirmOffset
-        this.confirmOffset = Some(confirmOffset.messageOffset)
+        this.confirmOffset = confirmOffset.messageOffset
       case _ =>
     }
     // AutoMQ for Kafka inject end
@@ -1537,6 +1553,9 @@ class Partition(val topicPartition: TopicPartition,
     )
   }
 
+
+  // AutoMQ for Kafka inject start
+
   /**
    * Check whether the fetch offset in the fetch request equals to the current confirmed offset.
    * If so, return empty response with necessary metadata, e.g., [[LogReadInfo.fetchedData.fetchOffsetMetadata]],
@@ -1545,7 +1564,7 @@ class Partition(val topicPartition: TopicPartition,
    * This method could be called before [[fetchRecordsAsync]] to avoid unnecessary log read.
    */
   def checkFetchOffsetAndMaybeGetInfo(fetchParams: FetchParams, fetchPartitionData: FetchRequest.PartitionData): LogReadInfo = {
-    if (!confirmOffset.contains(fetchPartitionData.fetchOffset)) {
+    if (confirmOffset < 0 || confirmOffset != fetchPartitionData.fetchOffset) {
       return null
     }
 
@@ -1636,6 +1655,8 @@ class Partition(val topicPartition: TopicPartition,
       )
     )
   }
+
+  // AutoMQ for Kafka inject end
 
   def fetchOffsetForTimestamp(timestamp: Long,
                               isolationLevel: Option[IsolationLevel],

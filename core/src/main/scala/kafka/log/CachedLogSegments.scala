@@ -28,19 +28,13 @@ import org.apache.kafka.common.TopicPartition
 class CachedLogSegments(_topicPartition: TopicPartition) extends LogSegments(_topicPartition){
 
   /**
-   * The lock of [[_activeSegment]]
-   */
-  private val lock: Object = new Object()
-
-  /**
-   * Cached active segment, should be updated with [[lock]] held.
    * Its [[LogSegment.baseOffset]] will always be the largest one among all segments.
    */
   private var _activeSegment: LogSegment = null
 
   @threadsafe
   override def add(segment: LogSegment): LogSegment = {
-    lock.synchronized {
+    this.synchronized {
       if (null == _activeSegment || segment.baseOffset >= _activeSegment.baseOffset) {
         _activeSegment = segment
       }
@@ -50,7 +44,7 @@ class CachedLogSegments(_topicPartition: TopicPartition) extends LogSegments(_to
 
   @threadsafe
   override def remove(offset: Long): Unit = {
-    lock.synchronized {
+    this.synchronized {
       if (null != _activeSegment && offset == _activeSegment.baseOffset) {
         _activeSegment = null
       }
@@ -60,7 +54,7 @@ class CachedLogSegments(_topicPartition: TopicPartition) extends LogSegments(_to
 
   @threadsafe
   override def clear(): Unit = {
-    lock.synchronized {
+    this.synchronized {
       _activeSegment = null
       super.clear()
     }
@@ -68,14 +62,14 @@ class CachedLogSegments(_topicPartition: TopicPartition) extends LogSegments(_to
 
   @threadsafe
   override def lastSegment: Option[LogSegment] = {
-    lock.synchronized {
+    this.synchronized {
       Option(_activeSegment)
     }
   }
 
   @threadsafe
   override def activeSegment: LogSegment = {
-    lock.synchronized {
+    this.synchronized {
       _activeSegment
     }
   }

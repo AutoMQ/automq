@@ -28,10 +28,10 @@ import com.automq.stream.utils.FutureUtil;
 import org.apache.kafka.common.utils.Utils;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     /**
@@ -139,7 +139,10 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
         public FetchResultWrapper(FetchResult fetchResult) {
             this.inner = fetchResult;
-            this.recordBatchList = fetchResult.recordBatchList().stream().map(RecordBatchWithContextWrapper::new).collect(Collectors.toList());
+            this.recordBatchList = new ArrayList<>(fetchResult.recordBatchList().size());
+            for (RecordBatchWithContext recordBatchWithContext : fetchResult.recordBatchList()) {
+                this.recordBatchList.add(new RecordBatchWithContextWrapper(recordBatchWithContext));
+            }
         }
 
         @Override

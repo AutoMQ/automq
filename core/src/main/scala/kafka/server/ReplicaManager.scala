@@ -270,6 +270,12 @@ class ReplicaManager(val config: KafkaConfig,
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  /**
+   * Used to reduce allocation in [[readFromLocalLogV2]]
+   */
+  private val readFutureBuffer = new ThreadLocal[ArrayBuffer[CompletableFuture[Void]]] {
+    override def initialValue(): ArrayBuffer[CompletableFuture[Void]] = new ArrayBuffer[CompletableFuture[Void]]()
+  }
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
@@ -583,6 +589,38 @@ class ReplicaManager(val config: KafkaConfig,
   private def offlinePartitionCount: Int = {
     allPartitions.values.iterator.count(_ == HostedPartition.Offline)
   }
+
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Remove the usage of [[Option]] in [[getPartition]] to avoid allocation
+   */
+  def getPartitionV2(topicPartition: TopicPartition): HostedPartition = {
+    val partition = allPartitions.get(topicPartition)
+    if (null == partition) {
+      HostedPartition.None
+    } else {
+      partition
+    }
+  }
+
+  /**
+   * Remove the usage of [[Either]] in [[getPartitionOrException]] to avoid allocation
+   */
+  def getPartitionOrExceptionV2(topicPartition: TopicPartition): Partition = {
+    getPartitionV2(topicPartition) match {
+      case HostedPartition.Online(partition) =>
+        partition
+      case HostedPartition.Offline =>
+        throw new KafkaStorageException(s"Partition $topicPartition is in an offline log directory")
+      case HostedPartition.None if metadataCache.contains(topicPartition) =>
+        throw Errors.NOT_LEADER_OR_FOLLOWER.exception(s"Error while fetching partition state for $topicPartition")
+      case HostedPartition.None =>
+        throw Errors.UNKNOWN_TOPIC_OR_PARTITION.exception(s"Error while fetching partition state for $topicPartition")
+    }
+  }
+
+  // AutoMQ for Kafka inject end
 
   def getPartitionOrException(topicPartition: TopicPartition): Partition = {
     getPartitionOrError(topicPartition) match {
@@ -1206,6 +1244,8 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
+  // AutoMQ for Kafka inject start
+
   /**
    * A Wrapper of [[readFromLocalLogV2]] which acquire memory permits from limiter.
    * It has the same behavior as [[readFromLocalLogV2]] using the default [[NoopLimiter]].
@@ -1318,11 +1358,11 @@ class ReplicaManager(val config: KafkaConfig,
      * Get the partition or throw an exception.
      */
     def getPartitionAndCheckTopicId(tp: TopicIdPartition): Partition = {
-      val partition = getPartitionOrException(tp.topicPartition)
+      val partition = getPartitionOrExceptionV2(tp.topicPartition)
 
       // Check if topic ID from the fetch request/session matches the ID in the log
       val topicId = if (tp.topicId == Uuid.ZERO_UUID) None else Some(tp.topicId)
-      if (!hasConsistentTopicId(topicId, partition.topicId))
+      if (!hasConsistentTopicId(topicId, partition.topicIdV2))
         throw new InconsistentTopicIdException("Topic ID in the fetch session did not match the topic ID in the log.")
 
       partition
@@ -1357,7 +1397,6 @@ class ReplicaManager(val config: KafkaConfig,
       )
     }
 
-    // AutoMQ for Kafka inject start
     def read(partition: Partition, tp: TopicIdPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): CompletableFuture[LogReadResult] = {
       def _exception2LogReadResult(e: Throwable): LogReadResult = {
         exception2LogReadResult(e, tp, fetchInfo, limitBytes)
@@ -1402,7 +1441,8 @@ class ReplicaManager(val config: KafkaConfig,
       }).exceptionally(e => _exception2LogReadResult(e))
     }
 
-    val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)]
+    val resultInitialSize = Math.min(readPartitionInfo.size, ArrayBuffer.DefaultInitialSize)
+    val result = new mutable.ArrayBuffer[(TopicIdPartition, LogReadResult)](resultInitialSize)
 
     def release(): Unit = {
       result.foreach { case (_, logReadResult) =>
@@ -1436,7 +1476,8 @@ class ReplicaManager(val config: KafkaConfig,
     var partitionIndex = 0;
     while (remainingBytes.get() > 0 && partitionIndex < readPartitionInfo.size) {
       // In each iteration, we read as many partitions as possible until we reach the maximum bytes limit.
-      val readCfArray = new ArrayBuffer[CompletableFuture[Void]]
+      val readCfArray = readFutureBuffer.get()
+      readCfArray.clear()
       var assignedBytes = 0 // The total bytes we have assigned to the read requests.
       val availableBytes = remainingBytes.get() // The remaining bytes we can assign to the read requests, used to control the following loop.
 
@@ -1483,7 +1524,8 @@ class ReplicaManager(val config: KafkaConfig,
 
     // The remaining partitions still need to be read, but we limit byte size to 0.
     // The corresponding futures are completed immediately with empty LogReadResult.
-    val remainingCfArray = new ArrayBuffer[CompletableFuture[Void]]
+    val remainingCfArray = readFutureBuffer.get()
+    remainingCfArray.clear()
     while (partitionIndex < readPartitionInfo.size) {
       val tp = readPartitionInfo(partitionIndex)._1
       val partitionData = readPartitionInfo(partitionIndex)._2
@@ -1506,6 +1548,8 @@ class ReplicaManager(val config: KafkaConfig,
     }
     result
   }
+
+  // AutoMQ for Kafka inject end
 
   /**
    * Read from multiple topic partitions at the given offset up to maxSize bytes
