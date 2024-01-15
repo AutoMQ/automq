@@ -219,7 +219,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}kafka_request_queue_time_mean_milliseconds{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", type=~\"Fetch|Produce\"}",
+          "expr": "${namespace}kafka_request_time_mean_milliseconds{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", type=~\"Fetch|Produce\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -533,8 +533,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -673,8 +672,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -821,8 +819,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -993,8 +990,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1106,8 +1102,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1239,8 +1234,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1356,8 +1350,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1455,8 +1448,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1555,8 +1547,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3651,16 +3642,17 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "auto",
+  "refresh": "5s",
   "schemaVersion": 38,
   "tags": [],
   "templating": {
     "list": [
       {
         "current": {
+          "isNone": true,
           "selected": false,
-          "text": "xJGnLhprSXareHmTpNkpHg",
-          "value": "xJGnLhprSXareHmTpNkpHg"
+          "text": "None",
+          "value": ""
         },
         "datasource": {
           "type": "prometheus",
@@ -3854,6 +3846,6 @@
   "timezone": "",
   "title": "automq-for-kafka",
   "uid": "c25319fc-1031-4843-aaca-813f9d2b8438",
-  "version": 30,
+  "version": 32,
   "weekStart": ""
 }
