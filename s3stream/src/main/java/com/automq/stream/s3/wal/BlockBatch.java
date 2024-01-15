@@ -19,7 +19,7 @@ package com.automq.stream.s3.wal;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public class BlockBatch {
@@ -53,12 +53,30 @@ public class BlockBatch {
         return Collections.unmodifiableCollection(blocks);
     }
 
-    public List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures() {
-        return blocks.stream()
-            .map(Block::futures)
-            .flatMap(List::stream)
-            .toList();
+    public Iterator<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures() {
+        return new Iterator<>() {
+            private final Iterator<Block> blockIterator = blocks.iterator();
+            private Iterator<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futureIterator = blockIterator.next().futures().iterator();
 
+            @Override
+            public boolean hasNext() {
+                if (futureIterator.hasNext()) {
+                    return true;
+                } else {
+                    if (blockIterator.hasNext()) {
+                        futureIterator = blockIterator.next().futures().iterator();
+                        return hasNext();
+                    } else {
+                        return false;
+                    }
+                }
+            }
+
+            @Override
+            public CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> next() {
+                return futureIterator.next();
+            }
+        };
     }
 
     public void release() {

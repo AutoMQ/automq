@@ -18,6 +18,7 @@
 package com.automq.stream.utils.biniarysearch;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
+import java.util.ArrayList;
 import java.util.List;
 
 public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
@@ -26,7 +27,10 @@ public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
     private final int size;
 
     public StreamRecordBatchList(List<StreamRecordBatch> records) {
-        this.records = records.stream().map(ComparableStreamRecordBatch::new).toList();
+        this.records = new ArrayList<>(records.size());
+        for (StreamRecordBatch record : records) {
+            this.records.add(new ComparableStreamRecordBatch(record));
+        }
         this.size = records.size();
     }
 
