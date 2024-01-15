@@ -30,49 +30,49 @@ import scala.jdk.CollectionConverters._
 
 object Kafka extends Logging {
 
-    def getPropsFromArgs(args: Array[String]): Properties = {
-        // AutoMQ for Kafka inject start
-        if (args.exists(_.contains("s3-url"))) {
-            val roleInfo = args.find(_.startsWith("process.roles="))
-            if (roleInfo.isEmpty) {
-                throw new IllegalArgumentException("'--override process.roles=broker|controller' is required")
-            }
-            if (!args.exists(_.startsWith("node.id"))) {
-                throw new IllegalArgumentException(s"'--override node.id= ' is required")
-            }
-            if (!args.exists(_.startsWith("controller.quorum.voters"))) {
-                throw new IllegalArgumentException(s"'--override controller.quorum.voters=''' is required")
-            }
-            if (!args.exists(_.startsWith("listeners"))) {
-                throw new IllegalArgumentException(s"'--override listeners=''' is required")
-            }
+  def getPropsFromArgs(args: Array[String]): Properties = {
+    // AutoMQ for Kafka inject start
+    if (args.exists(_.contains("s3-url"))) {
+      val roleInfo = args.find(_.startsWith("process.roles="))
+      if (roleInfo.isEmpty) {
+        throw new IllegalArgumentException("'--override process.roles=broker|controller' is required")
+      }
+      if (!args.exists(_.startsWith("node.id"))) {
+        throw new IllegalArgumentException(s"'--override node.id= ' is required")
+      }
+      if (!args.exists(_.startsWith("controller.quorum.voters"))) {
+        throw new IllegalArgumentException(s"'--override controller.quorum.voters=''' is required")
+      }
+      if (!args.exists(_.startsWith("listeners"))) {
+        throw new IllegalArgumentException(s"'--override listeners=''' is required")
+      }
 
-            roleInfo match {
-                case Some("process.roles=broker") =>
-                    if (!args.exists(_.startsWith("advertised.listeners"))) {
-                        throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
-                    }
-                    return S3ShellPropUtil.autoGenPropsByCmd(args, "broker")
-                case Some("process.roles=controller") =>
-                    return S3ShellPropUtil.autoGenPropsByCmd(args, "controller")
-                case _ =>
-                    if (!args.exists(_.startsWith("advertised.listeners"))) {
-                        throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
-                    }
-                    return S3ShellPropUtil.autoGenPropsByCmd(args, "broker,controller")
-            }
-        }
-        // AutoMQ for Kafka inject end
+      roleInfo match {
+        case Some("process.roles=broker") =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker")
+        case Some("process.roles=controller") =>
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "controller")
+        case _ =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker,controller")
+      }
+    }
+    // AutoMQ for Kafka inject end
 
-        val optionParser = new OptionParser(false)
-        val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
-            .withRequiredArg()
-            .ofType(classOf[String])
-        // This is just to make the parameter show up in the help output, we are not actually using this due the
-        // fact that this class ignores the first parameter which is interpreted as positional and mandatory
-        // but would not be mandatory if --version is specified
-        // This is a bit of an ugly crutch till we get a chance to rework the entire command line parsing
-        optionParser.accepts("version", "Print version information and exit.")
+    val optionParser = new OptionParser(false)
+    val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
+      .withRequiredArg()
+      .ofType(classOf[String])
+    // This is just to make the parameter show up in the help output, we are not actually using this due the
+    // fact that this class ignores the first parameter which is interpreted as positional and mandatory
+    // but would not be mandatory if --version is specified
+    // This is a bit of an ugly crutch till we get a chance to rework the entire command line parsing
+    optionParser.accepts("version", "Print version information and exit.")
 
     if (args.isEmpty || args.contains("--help")) {
       CommandLineUtils.printUsageAndDie(optionParser,
