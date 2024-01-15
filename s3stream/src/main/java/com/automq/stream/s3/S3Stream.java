@@ -56,7 +56,6 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -203,7 +202,10 @@ public class S3Stream implements Stream {
                         LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                     }
                 } else if (networkOutboundLimiter != null) {
-                    long totalSize = rs.recordBatchList().stream().mapToLong(record -> record.rawPayload().remaining()).sum();
+                    long totalSize = 0L;
+                    for (RecordBatch recordBatch : rs.recordBatchList()) {
+                        totalSize += recordBatch.rawPayload().remaining();
+                    }
                     networkOutboundLimiter.forceConsume(totalSize);
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
@@ -379,7 +381,11 @@ public class S3Stream implements Stream {
             boolean pooledBuf) {
             this.pooledRecords = streamRecords;
             this.pooledBuf = pooledBuf;
-            this.records = streamRecords.stream().map(r -> new RecordBatchWithContextWrapper(covert(r, pooledBuf), r.getBaseOffset())).collect(Collectors.toList());
+            this.records = new ArrayList<>(streamRecords.size());
+            for (StreamRecordBatch streamRecordBatch : streamRecords) {
+                RecordBatch recordBatch = covert(streamRecordBatch, pooledBuf);
+                records.add(new RecordBatchWithContextWrapper(recordBatch, streamRecordBatch.getBaseOffset()));
+            }
             this.cacheAccessType = cacheAccessType;
             if (!pooledBuf) {
                 streamRecords.forEach(StreamRecordBatch::release);

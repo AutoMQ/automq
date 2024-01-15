@@ -166,7 +166,11 @@ public class LogCache {
                 continue;
             }
             nextStartOffset = records.get(records.size() - 1).getLastOffset();
-            nextMaxBytes -= Math.min(nextMaxBytes, records.stream().mapToInt(StreamRecordBatch::size).sum());
+            int recordsSize = 0;
+            for (StreamRecordBatch record : records) {
+                recordsSize += record.size();
+            }
+            nextMaxBytes -= Math.min(nextMaxBytes, recordsSize);
             rst.addAll(records);
             if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
                 fulfill = true;
