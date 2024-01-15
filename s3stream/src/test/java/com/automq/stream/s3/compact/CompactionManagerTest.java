@@ -153,6 +153,37 @@ public class CompactionManagerTest extends CompactionTestBase {
     }
 
     @Test
+    public void testForceSplitWithOutDatedObject() {
+        when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
+            List.of(new StreamMetadata(STREAM_0, 0, 999, 9999, StreamState.OPENED),
+                new StreamMetadata(STREAM_1, 0, 999, 9999, StreamState.OPENED),
+                new StreamMetadata(STREAM_2, 0, 999, 9999, StreamState.OPENED))));
+
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+
+        CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(1));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(2));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+    }
+
+    @Test
     public void testForceSplitWithException() {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
         doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
@@ -315,6 +346,26 @@ public class CompactionManagerTest extends CompactionTestBase {
         assertTrue(request.getObjectId() > OBJECT_3);
         request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_3));
         assertEquals(4, request.getStreamObjects().size());
+        assertEquals(2, request.getStreamRanges().size());
+
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));
+    }
+
+    @Test
+    public void testCompactWithOutdatedObject() {
+        when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
+            List.of(new StreamMetadata(STREAM_0, 0, 15, 20, StreamState.OPENED),
+                new StreamMetadata(STREAM_1, 0, 60, 500, StreamState.OPENED),
+                new StreamMetadata(STREAM_2, 0, 60, 270, StreamState.OPENED))));
+        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
+
+        assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
+        assertEquals(OBJECT_0, request.getOrderId());
+        assertTrue(request.getObjectId() > OBJECT_2);
+        request.getStreamObjects().forEach(s -> assertTrue(s.getObjectId() > OBJECT_2));
+        assertEquals(2, request.getStreamObjects().size());
         assertEquals(2, request.getStreamRanges().size());
 
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));

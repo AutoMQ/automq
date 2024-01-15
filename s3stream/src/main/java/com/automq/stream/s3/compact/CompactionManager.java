@@ -312,29 +312,30 @@ public class CompactionManager {
      *
      * @param streamMetadataList metadata of opened streams
      * @param objectMetadata     stream set object to split
-     * @return List of CompletableFuture of StreamObject
+     * @param cfs                List of CompletableFuture of StreamObject
+     * @return                   true if split succeed, false otherwise
      */
-    private Collection<CompletableFuture<StreamObject>> splitStreamSetObject(List<StreamMetadata> streamMetadataList,
-        S3ObjectMetadata objectMetadata) {
+    private boolean splitStreamSetObject(List<StreamMetadata> streamMetadataList,
+        S3ObjectMetadata objectMetadata, Collection<CompletableFuture<StreamObject>> cfs) {
         if (objectMetadata == null) {
-            return new ArrayList<>();
+            return false;
         }
 
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
             Collections.singletonList(objectMetadata), s3Operator, logger);
         if (streamDataBlocksMap.isEmpty()) {
-            // object not exist, metadata is out of date
-            logger.warn("Object {} not exist, metadata is out of date", objectMetadata.objectId());
-            return new ArrayList<>();
+            logger.warn("Read index for object {} failed", objectMetadata.objectId());
+            return false;
         }
         List<StreamDataBlock> streamDataBlocks = streamDataBlocksMap.get(objectMetadata.objectId());
         if (streamDataBlocks.isEmpty()) {
             // object is empty, metadata is out of date
-            logger.warn("Object {} is empty, metadata is out of date", objectMetadata.objectId());
-            return new ArrayList<>();
+            logger.info("Object {} is out of date, will be deleted after compaction", objectMetadata.objectId());
+            return true;
         }
 
-        return groupAndSplitStreamDataBlocks(objectMetadata, streamDataBlocks);
+        cfs.addAll(groupAndSplitStreamDataBlocks(objectMetadata, streamDataBlocks));
+        return true;
     }
 
     Collection<CompletableFuture<StreamObject>> groupAndSplitStreamDataBlocks(S3ObjectMetadata objectMetadata,
@@ -414,8 +415,9 @@ public class CompactionManager {
     CommitStreamSetObjectRequest buildSplitRequest(List<StreamMetadata> streamMetadataList,
         S3ObjectMetadata objectToSplit)
         throws CompletionException {
-        Collection<CompletableFuture<StreamObject>> cfs = splitStreamSetObject(streamMetadataList, objectToSplit);
-        if (cfs.isEmpty()) {
+        List<CompletableFuture<StreamObject>> cfs = new ArrayList<>();
+        boolean status = splitStreamSetObject(streamMetadataList, objectToSplit, cfs);
+        if (!status) {
             logger.error("Force split object {} failed, no stream object generated", objectToSplit.objectId());
             return null;
         }
@@ -467,6 +469,12 @@ public class CompactionManager {
         objectsToCompact = objectsToCompact.stream().filter(e -> !excludedObjectIds.contains(e.objectId())).collect(Collectors.toList());
         executeCompactionPlans(request, compactionPlans, objectsToCompact);
         compactionPlans.forEach(c -> c.streamDataBlocksMap().values().forEach(v -> v.forEach(b -> compactedObjectIds.add(b.getObjectId()))));
+
+        // compact out-dated objects directly
+        streamDataBlockMap.entrySet().stream().filter(e -> e.getValue().isEmpty()).forEach(e -> {
+            logger.info("Object {} is out of date, will be deleted after compaction", e.getKey());
+            compactedObjectIds.add(e.getKey());
+        });
 
         request.setCompactedObjectIds(new ArrayList<>(compactedObjectIds));
         List<S3ObjectMetadata> compactedObjectMetadata = objectsToCompact.stream()
