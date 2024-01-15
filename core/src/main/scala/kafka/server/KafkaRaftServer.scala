@@ -75,20 +75,13 @@ class KafkaRaftServer(
   )
 
   private val broker: Option[BrokerServer] = if (config.processRoles.contains(BrokerRole)) {
-    Some(new BrokerServer(
-      sharedServer,
-      offlineDirs
-    ))
+    Some(brokerServer())
   } else {
     None
   }
 
   private val controller: Option[ControllerServer] = if (config.processRoles.contains(ControllerRole)) {
-    Some(new ControllerServer(
-      sharedServer,
-      KafkaRaftServer.configSchema,
-      bootstrapMetadata,
-    ))
+    Some(controllerServer())
   } else {
     None
   }
@@ -114,6 +107,24 @@ class KafkaRaftServer(
     broker.foreach(_.awaitShutdown())
     controller.foreach(_.awaitShutdown())
   }
+
+  // AutoMQ for Kafka inject start
+  protected def brokerServer(): BrokerServer = {
+    new BrokerServer(
+      sharedServer,
+      offlineDirs
+    )
+  }
+
+  protected def controllerServer(): ControllerServer = {
+    new ControllerServer(
+      sharedServer,
+      KafkaRaftServer.configSchema,
+      bootstrapMetadata,
+    )
+  }
+  // AutoMQ for Kafka inject end
+
 }
 
 object KafkaRaftServer {

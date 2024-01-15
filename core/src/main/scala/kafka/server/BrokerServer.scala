@@ -333,14 +333,7 @@ class BrokerServer(
         sharedServer.metadataLoaderFaultHandler)
 
       // AutoMQ for Kafka inject start
-
-      if (config.elasticStreamEnabled) {
-        if (!ElasticLogManager.init(config, clusterId, this)) {
-          throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
-        }
-      } else {
-        warn("Elastic stream is disabled. This node will store data locally.")
-      }
+      initElasticLogManager()
       // AutoMQ for Kafka inject end
 
       val networkListeners = new ListenerCollection()
@@ -656,4 +649,15 @@ class BrokerServer(
       retryTimeout
     )
   }
+
+  protected def initElasticLogManager(): Unit = {
+    if (config.elasticStreamEnabled) {
+      if (!ElasticLogManager.init(config, clusterId, this)) {
+        throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
+      }
+    } else {
+      warn("Elastic stream is disabled. This node will store data locally.")
+    }
+  }
+
 }
