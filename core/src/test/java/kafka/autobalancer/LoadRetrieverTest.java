@@ -114,7 +114,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
         loadRetriever.start();
 
-        Assertions.assertTimeout(Duration.ofMillis(5000), loadRetriever::shutdown);
+        Assertions.assertTimeout(Duration.ofMillis(15000), loadRetriever::shutdown);
 
         LoadRetriever loadRetriever2 = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
@@ -131,7 +131,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                                 .setPort(endpoint.port())
                                 .setSecurityProtocol(endpoint.securityProtocol().id)).iterator()));
         loadRetriever2.onBrokerRegister(record);
-        Assertions.assertTimeout(Duration.ofMillis(5000), loadRetriever2::shutdown);
+        Assertions.assertTimeout(Duration.ofMillis(15000), loadRetriever2::shutdown);
     }
 
     @Test
