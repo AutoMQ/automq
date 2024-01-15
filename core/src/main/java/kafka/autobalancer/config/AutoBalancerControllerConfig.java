@@ -34,7 +34,6 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_CONTROLLER_ENABLE = PREFIX + "enable";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT = PREFIX + "consumer.poll.timeout";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX = PREFIX + "consumer.client.id";
-    public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX = PREFIX + CommonClientConfigs.GROUP_ID_CONFIG;
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS = PREFIX + CommonClientConfigs.RETRY_BACKOFF_MS_CONFIG;
     public static final String AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS = PREFIX + "metrics.delay.ms";
     public static final String AUTO_BALANCER_CONTROLLER_GOALS = PREFIX + "goals";
@@ -54,7 +53,6 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_ENABLE = false;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT = 1000L;
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX = "AutoBalancerControllerConsumer";
-    public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX = "AutoBalancerControllerConsumerGroup";
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS = 1000;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS = Duration.ofMinutes(1).toMillis();
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_GOALS = new StringJoiner(",")
@@ -105,9 +103,6 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
                 .define(AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX, ConfigDef.Type.STRING,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX, ConfigDef.Importance.LOW,
                         AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX_DOC)
-                .define(AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX, ConfigDef.Type.STRING,
-                        DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS, ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS_DOC)
