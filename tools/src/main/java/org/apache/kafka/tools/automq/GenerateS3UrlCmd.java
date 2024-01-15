@@ -61,7 +61,7 @@ public class GenerateS3UrlCmd {
             this.s3SecretKey = res.getString("s3-secret-key");
             String authMethodName = res.getString("s3-auth-method");
             if (authMethodName == null || authMethodName.trim().isEmpty()) {
-                this.s3AuthMethod = AuthMethod.KEY_FROM_ENV;
+                this.s3AuthMethod = AuthMethod.KEY_FROM_ARGS;
             } else {
                 this.s3AuthMethod = AuthMethod.getByName(authMethodName);
             }
@@ -70,7 +70,12 @@ public class GenerateS3UrlCmd {
             this.endpointProtocol = EndpointProtocol.getByName(endpointProtocolStr);
             this.s3Endpoint = res.getString("s3-endpoint");
             this.s3DataBucket = res.getString("s3-data-bucket");
-            this.s3OpsBucket = res.getString("s3-ops-bucket");
+            String s3OpsBucketFromArg = res.getString("s3-ops-bucket");
+            if (s3OpsBucketFromArg == null) {
+                this.s3OpsBucket = this.s3DataBucket;
+            } else {
+                this.s3OpsBucket = s3OpsBucketFromArg;
+            }
             this.s3PathStyle = Boolean.valueOf(res.getString("s3-path-style"));
         }
     }
@@ -96,6 +101,7 @@ public class GenerateS3UrlCmd {
         parser.addArgument("--s3-auth-method")
             .action(store())
             .required(false)
+            .setDefault(AuthMethod.KEY_FROM_ARGS.getKeyName())
             .type(String.class)
             .dest("s3-auth-method")
             .metavar("S3-AUTH-METHOD")
@@ -192,12 +198,11 @@ public class GenerateS3UrlCmd {
             .append("?").append("s3-access-key=").append(parameter.s3AccessKey)
             .append("&").append("s3-secret-key=").append(parameter.s3SecretKey)
             .append("&").append("s3-region=").append(parameter.s3Region)
-            //todo open option when kafka shell is supported
-//            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.name())
+            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.getKeyName())
             .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.getName())
             .append("&").append("s3-data-bucket=").append(parameter.s3DataBucket)
             .append("&").append("s3-path-style=").append(parameter.s3PathStyle)
-//            .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
+            .append("&").append("s3-ops-bucket=").append(parameter.s3OpsBucket)
             .append("&").append("cluster-id=").append(Uuid.randomUuid());
         return s3UrlBuilder.toString();
     }

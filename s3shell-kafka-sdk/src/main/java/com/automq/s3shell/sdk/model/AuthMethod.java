@@ -20,7 +20,12 @@ public enum AuthMethod {
     KEY_FROM_ENV("key-from-env"),
 
     KEY_FROM_ARGS("key-from-args"),
-    ROLE("role");
+
+    // assume role
+    USER_ROLE("user-role"),
+
+    // instance profile
+    INSTANCE_ROLE("instance-role");
 
     AuthMethod(String keyName) {
         this.keyName = keyName;
