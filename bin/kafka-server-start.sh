@@ -26,7 +26,7 @@ if [ "x$KAFKA_LOG4J_OPTS" = "x" ]; then
 fi
 
 if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
-    export KAFKA_HEAP_OPTS="-Xmx1G -Xms1G"
+    export KAFKA_HEAP_OPTS="-Xmx6g -Xms6g -XX:MaxDirectMemorySize=6g -XX:MetaspaceSize=96m"
 fi
 
 EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}

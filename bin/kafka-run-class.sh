@@ -276,7 +276,7 @@ fi
 
 # Memory options
 if [ -z "$KAFKA_HEAP_OPTS" ]; then
-  KAFKA_HEAP_OPTS="-Xmx6g -XX:MaxDirectMemorySize=6g -XX:MetaspaceSize=96m"
+  KAFKA_HEAP_OPTS="-Xmx256M"
 fi
 
 # JVM performance options
