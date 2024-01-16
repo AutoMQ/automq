@@ -81,7 +81,6 @@ public class LoadRetriever implements BrokerStatusListener {
     private final Lock lock;
     private final Condition cond;
     private final Controller controller;
-    private final ScheduledExecutorService createTopicExecutorService;
     private final ScheduledExecutorService mainExecutorService;
     private final Set<Integer> brokerIdsInUse;
     private final Set<TopicPartition> currentAssignment = new HashSet<>();
@@ -105,7 +104,6 @@ public class LoadRetriever implements BrokerStatusListener {
         this.brokerIdsInUse = new HashSet<>();
         this.lock = new ReentrantLock();
         this.cond = lock.newCondition();
-        this.createTopicExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-create-topic"));
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
         leaderEpochInitialized = false;
         metricReporterTopic = config.getString(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG);
@@ -119,19 +117,14 @@ public class LoadRetriever implements BrokerStatusListener {
 
     public void start() {
         this.shutdown = false;
-        this.createTopicExecutorService.scheduleAtFixedRate(this::checkAndCreateTopic, 1, 1L, TimeUnit.MINUTES);
         this.mainExecutorService.schedule(this::retrieve, 0, TimeUnit.MILLISECONDS);
         logger.info("Started");
     }
 
     public void shutdown() {
         this.shutdown = true;
-        this.createTopicExecutorService.shutdown();
         this.mainExecutorService.shutdown();
         try {
-            if (!createTopicExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                this.createTopicExecutorService.shutdownNow();
-            }
             if (!mainExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
                 this.mainExecutorService.shutdownNow();
             }
@@ -325,6 +318,10 @@ public class LoadRetriever implements BrokerStatusListener {
             return;
         }
 
+        if (!hasAvailableBroker()) {
+            return;
+        }
+
         CreateTopicsRequestData request = new CreateTopicsRequestData();
         CreateTopicsRequestData.CreatableTopicCollection topicCollection = new CreateTopicsRequestData.CreatableTopicCollection();
         CreateTopicsRequestData.CreateableTopicConfigCollection configCollection = new CreateTopicsRequestData.CreateableTopicConfigCollection();
@@ -367,6 +364,7 @@ public class LoadRetriever implements BrokerStatusListener {
             }
             try {
                 if (!refreshAssignment()) {
+                    checkAndCreateTopic();
                     this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
                     break;
                 }
