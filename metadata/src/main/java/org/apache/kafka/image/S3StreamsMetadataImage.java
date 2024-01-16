@@ -94,7 +94,7 @@ public final class S3StreamsMetadataImage {
                     //noinspection StatementWithEmptyBody
                     if (objects.isEmpty() && streamObject.startOffset() <= nextStartOffset && streamObject.endOffset() > nextStartOffset) {
                         // it's the first object, we only need the stream object contains the nextStartOffset
-                    } else if (streamObject.endOffset() < nextStartOffset) {
+                    } else if (streamObject.endOffset() <= nextStartOffset) {
                         // the stream object not match the requirement, move to the next stream object
                         continue;
                     } else {
