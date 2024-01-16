@@ -67,9 +67,9 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 i++;
             }
             for (ControllerNode controller : nodes.controllerNodes().values()) {
+                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
                 controller.propertyOverrides().putAll(overridingControllerProps());
                 controller.propertyOverrides().putAll(overridingNodeProps());
-                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
                 controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
                 controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
             }

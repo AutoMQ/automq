@@ -20,6 +20,7 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import kafka.autobalancer.common.RawMetricType;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import kafka.metrics.KafkaMetricsGroup$;

@@ -20,16 +20,17 @@ package kafka.autobalancer.goals;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+import org.apache.kafka.common.Configurable;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-public interface Goal {
+public interface Goal extends Configurable, Comparable<Goal> {
 
     boolean isHardGoal();
 
-    List<Action> optimize(ClusterModelSnapshot cluster, Collection<AbstractGoal> goalsByPriority);
+    List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
 
     void validateConfig();
 
@@ -53,4 +54,9 @@ public interface Goal {
      * @return action acceptance score, 0 for not accepted
      */
     double actionAcceptanceScore(Action action, ClusterModelSnapshot cluster);
+
+    @Override
+    default int compareTo(Goal other) {
+        return Integer.compare(other.priority(), this.priority());
+    }
 }

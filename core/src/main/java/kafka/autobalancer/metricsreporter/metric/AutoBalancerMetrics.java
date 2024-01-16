@@ -20,6 +20,8 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import kafka.autobalancer.common.RawMetricType;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;

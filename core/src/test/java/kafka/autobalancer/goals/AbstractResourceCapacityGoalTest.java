@@ -36,7 +36,7 @@ import java.util.StringJoiner;
 
 @Tag("S3Unit")
 public class AbstractResourceCapacityGoalTest extends GoalTestBase {
-    private final Map<String, AbstractGoal> goalMap = new HashMap<>();
+    private final Map<String, Goal> goalMap = new HashMap<>();
 
     @BeforeEach
     public void setup() {
@@ -53,8 +53,8 @@ public class AbstractResourceCapacityGoalTest extends GoalTestBase {
         }
     }
 
-    private AbstractGoal getGoalByResource(Resource resource) {
-        AbstractGoal goal = null;
+    private Goal getGoalByResource(Resource resource) {
+        Goal goal = null;
         switch (resource) {
             case NW_IN:
                 goal = goalMap.get(NetworkInCapacityGoal.class.getSimpleName());
@@ -69,7 +69,7 @@ public class AbstractResourceCapacityGoalTest extends GoalTestBase {
     }
 
     private void testActionAcceptanceScore(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -127,7 +127,7 @@ public class AbstractResourceCapacityGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceCapacityOptimizeOneMove(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -200,7 +200,7 @@ public class AbstractResourceCapacityGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceCapacityOptimizeMultiMove(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -265,7 +265,7 @@ public class AbstractResourceCapacityGoalTest extends GoalTestBase {
 
     @Test
     public void testMultiGoalOptimizeWithOneToOneReplicaSwap() {
-        AbstractGoal goal = getGoalByResource(Resource.NW_IN);
+        Goal goal = getGoalByResource(Resource.NW_IN);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();

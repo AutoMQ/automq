@@ -53,7 +53,7 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
     }
 
     @Override
-    public List<Action> optimize(ClusterModelSnapshot cluster, Collection<AbstractGoal> goalsByPriority) {
+    public List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
         List<Action> actions = new ArrayList<>();
         validateConfig();
         Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);

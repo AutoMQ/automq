@@ -14,20 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*
- * Copyright 2017 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License"). See License in the project root for license information.
- */
 
-package kafka.autobalancer.metricsreporter.exception;
+package kafka.autobalancer.goals;
 
-/**
- * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.exception.UnknownVersionException.
- */
-/*
- Unknown version during Serialization/Deserialization.
- */
-public class UnknownVersionException extends Exception {
-    public UnknownVersionException(String msg) {
-        super(msg);
-    }
+public class GoalConstants {
+    public static final int NETWORK_DISTRIBUTION_GOAL_PRIORITY = 8;
+    public static final int NETWORK_CAPACITY_GOAL_PRIORITY = 10;
 }

@@ -17,14 +17,13 @@
 
 package kafka.autobalancer.model;
 
+import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
-import kafka.autobalancer.metricsreporter.metric.RawMetricType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -46,6 +45,7 @@ public class BrokerUpdater {
         private final double[] brokerCapacity = new double[Resource.cachedValues().size()];
         private final double[] brokerLoad = new double[Resource.cachedValues().size()];
         private final Set<Resource> resources = new HashSet<>();
+        private final Map<RawMetricType, Double> metricsMap = new HashMap<>();
         private boolean active;
         private long timestamp;
 
@@ -82,6 +82,10 @@ public class BrokerUpdater {
         public void setLoad(Resource resource, double value) {
             resources.add(resource);
             this.brokerLoad[resource.id()] = value;
+        }
+
+        public void setMetricValue(RawMetricType metricType, double value) {
+            this.metricsMap.put(metricType, value);
         }
 
         public double load(Resource resource) {
@@ -145,45 +149,57 @@ public class BrokerUpdater {
             StringBuilder builder = new StringBuilder();
             builder.append("{brokerId=")
                     .append(brokerId)
-                    .append(", brokerCapacity=[");
+                    .append(", active=").append(active)
+                    .append(", timestamp=").append(timestamp)
+                    .append(", Capacities=[");
             for (int i = 0; i < brokerCapacity.length; i++) {
                 builder.append(Resource.of(i).resourceString(brokerCapacity[i]));
                 if (i != brokerCapacity.length - 1) {
                     builder.append(", ");
                 }
             }
-            builder.append("], brokerLoad=[");
+            builder.append("], Loads=[");
             for (int i = 0; i < brokerLoad.length; i++) {
                 builder.append(Resource.of(i).resourceString(brokerLoad[i]));
                 if (i != brokerLoad.length - 1) {
                     builder.append(", ");
                 }
             }
-            builder.append("], active=").append(active)
-                    .append(", timestamp=").append(timestamp)
-                    .append("}");
+            builder.append("]");
+            int i = 0;
+            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
+                if (i == 0) {
+                    builder.append(" Metrics={");
+                }
+                builder.append(entry.getKey())
+                        .append("=")
+                        .append(entry.getValue());
+                if (i != metricsMap.size() - 1) {
+                    builder.append(", ");
+                }
+                i++;
+            }
+            builder.append("}");
             return builder.toString();
         }
     }
 
-    public boolean update(AutoBalancerMetrics metrics) {
-        if (metrics.metricClassId() != AutoBalancerMetrics.MetricClassId.BROKER_METRIC) {
-            LOGGER.error("Mismatched metrics type {} for broker", metrics.metricClassId());
-            return false;
-        }
-
-        if (!MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics)) {
-            LOGGER.error("Broker metrics sanity check failed, metrics is incomplete {}", metrics);
+    public boolean update(Map<RawMetricType, Double> metricsMap, long time) {
+        if (!metricsMap.keySet().containsAll(RawMetricType.brokerMetricTypes())) {
+            LOGGER.error("Broker metrics for broker={} sanity check failed, metrics is incomplete {}", broker.getBrokerId(), metricsMap.keySet());
             return false;
         }
 
         lock.lock();
         try {
-            if (metrics.time() < broker.getTimestamp()) {
-                LOGGER.warn("Outdated metrics at time {}, last updated time {}", metrics.time(), broker.getTimestamp());
+            if (time < broker.getTimestamp()) {
+                LOGGER.warn("Outdated broker metrics at time {} for broker={}, last updated time {}", time, broker.getBrokerId(), broker.getTimestamp());
                 return false;
             }
-            for (Map.Entry<RawMetricType, Double> entry : metrics.getMetricTypeValueMap().entrySet()) {
+            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
+                if (entry.getKey().metricScope() != RawMetricType.MetricScope.BROKER) {
+                    continue;
+                }
                 switch (entry.getKey()) {
                     case BROKER_CAPACITY_NW_IN:
                         broker.setCapacity(Resource.NW_IN, entry.getValue());
@@ -201,11 +217,11 @@ public class BrokerUpdater {
                         broker.setLoad(Resource.CPU, entry.getValue());
                         break;
                     default:
-                        LOGGER.error("Unsupported broker metrics type {}", entry.getKey());
+                        broker.setMetricValue(entry.getKey(), entry.getValue());
                         break;
                 }
             }
-            broker.setTimestamp(metrics.time());
+            broker.setTimestamp(time);
         } finally {
             lock.unlock();
         }
@@ -245,10 +261,6 @@ public class BrokerUpdater {
             lock.unlock();
         }
         return broker;
-    }
-
-    public int id() {
-        return this.broker.getBrokerId();
     }
 
     public void setActive(boolean active) {

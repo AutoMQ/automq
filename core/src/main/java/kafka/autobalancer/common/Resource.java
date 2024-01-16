@@ -22,11 +22,6 @@ package kafka.autobalancer.common;
 
 import java.util.List;
 
-/**
- * CPU: a host and broker-level resource.
- * NW (in and out): a host-level resource.
- * DISK: a broker-level resource.
- */
 public enum Resource {
     CPU("CPU", 0, 0.001),
     NW_IN("NWIn", 1, 10),

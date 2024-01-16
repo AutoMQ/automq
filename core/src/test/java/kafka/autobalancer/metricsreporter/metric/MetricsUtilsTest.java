@@ -17,6 +17,7 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import kafka.autobalancer.common.RawMetricType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

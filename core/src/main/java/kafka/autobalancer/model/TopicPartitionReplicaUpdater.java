@@ -17,15 +17,13 @@
 
 package kafka.autobalancer.model;
 
+import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
-import kafka.autobalancer.metricsreporter.metric.RawMetricType;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -44,7 +42,8 @@ public class TopicPartitionReplicaUpdater {
 
     public static class TopicPartitionReplica {
         private final TopicPartition tp;
-        private final double[] replicaLoad = new double[Resource.cachedValues().size()];
+        private final double[] loads = new double[Resource.cachedValues().size()];
+        private final Map<RawMetricType, Double> metricsMap = new HashMap<>();
         private final Set<Resource> resources = new HashSet<>();
         private long timestamp;
 
@@ -54,7 +53,7 @@ public class TopicPartitionReplicaUpdater {
 
         public TopicPartitionReplica(TopicPartitionReplica other) {
             this.tp = new TopicPartition(other.tp.topic(), other.tp.partition());
-            System.arraycopy(other.replicaLoad, 0, this.replicaLoad, 0, other.replicaLoad.length);
+            System.arraycopy(other.loads, 0, this.loads, 0, other.loads.length);
             this.resources.addAll(other.resources);
             this.timestamp = other.timestamp;
         }
@@ -65,14 +64,14 @@ public class TopicPartitionReplicaUpdater {
 
         public void setLoad(Resource resource, double value) {
             this.resources.add(resource);
-            this.replicaLoad[resource.id()] = value;
+            this.loads[resource.id()] = value;
         }
 
         public double load(Resource resource) {
             if (!this.resources.contains(resource)) {
                 return 0.0;
             }
-            return this.replicaLoad[resource.id()];
+            return this.loads[resource.id()];
         }
 
         public void setTimestamp(long timestamp) {
@@ -102,31 +101,52 @@ public class TopicPartitionReplicaUpdater {
 
         @Override
         public String toString() {
-            return "TopicPartitionReplica{" +
-                    "tp=" + tp +
-                    ", replicaLoad=" + Arrays.toString(replicaLoad) +
-                    '}';
+            StringBuilder builder = new StringBuilder();
+            builder.append("{TopicPartition=")
+                    .append(tp)
+                    .append(", timestamp=").append(timestamp)
+                    .append(", Loads=[");
+            for (int i = 0; i < loads.length; i++) {
+                builder.append(Resource.of(i).resourceString(loads[i]));
+                if (i != loads.length - 1) {
+                    builder.append(", ");
+                }
+            }
+            builder.append("]");
+            int i = 0;
+            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
+                if (i == 0) {
+                    builder.append(" Metrics={");
+                }
+                builder.append(entry.getKey())
+                        .append("=")
+                        .append(entry.getValue());
+                if (i != metricsMap.size() - 1) {
+                    builder.append(", ");
+                }
+                i++;
+            }
+            builder.append("}");
+            return builder.toString();
         }
     }
 
-    public boolean update(AutoBalancerMetrics metrics) {
-        if (metrics.metricClassId() != AutoBalancerMetrics.MetricClassId.PARTITION_METRIC) {
-            LOGGER.error("Mismatched metrics type {} for broker", metrics.metricClassId());
-            return false;
-        }
-
-        if (!MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
-            LOGGER.error("Topic partition metrics sanity check failed, metrics is incomplete {}", metrics);
+    public boolean update(Map<RawMetricType, Double> metricsMap, long time) {
+        if (!metricsMap.keySet().containsAll(RawMetricType.partitionMetricTypes())) {
+            LOGGER.error("Topic partition {} metrics sanity check failed, metrics is incomplete {}", replica.getTopicPartition(), metricsMap.keySet());
             return false;
         }
 
         lock.lock();
         try {
-            if (metrics.time() < this.replica.getTimestamp()) {
-                LOGGER.warn("Outdated metrics at time {}, last updated time {}", metrics.time(), this.replica.getTimestamp());
+            if (time < this.replica.getTimestamp()) {
+                LOGGER.warn("Outdated topic partition {} metrics at time {}, last updated time {}", replica.getTopicPartition(), time, this.replica.getTimestamp());
                 return false;
             }
-            for (Map.Entry<RawMetricType, Double> entry : metrics.getMetricTypeValueMap().entrySet()) {
+            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
+                if (entry.getKey().metricScope() != RawMetricType.MetricScope.PARTITION) {
+                    continue;
+                }
                 switch (entry.getKey()) {
                     case TOPIC_PARTITION_BYTES_IN:
                         this.replica.setLoad(Resource.NW_IN, entry.getValue());
@@ -134,14 +154,12 @@ public class TopicPartitionReplicaUpdater {
                     case TOPIC_PARTITION_BYTES_OUT:
                         this.replica.setLoad(Resource.NW_OUT, entry.getValue());
                         break;
-                    case PARTITION_SIZE:
-                        // simply update the timestamp
-                        break;
                     default:
-                        LOGGER.error("Unsupported broker metrics type {}", entry.getKey());
+                        metricsMap.put(entry.getKey(), entry.getValue());
+                        break;
                 }
             }
-            this.replica.setTimestamp(metrics.time());
+            this.replica.setTimestamp(time);
         } finally {
             lock.unlock();
         }

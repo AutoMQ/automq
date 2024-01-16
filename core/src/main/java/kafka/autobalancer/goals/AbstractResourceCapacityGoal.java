@@ -19,8 +19,8 @@ package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+import kafka.autobalancer.model.BrokerUpdater.Broker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +39,7 @@ public abstract class AbstractResourceCapacityGoal extends AbstractResourceGoal 
     }
 
     @Override
-    public List<Action> optimize(ClusterModelSnapshot cluster, Collection<AbstractGoal> goalsByPriority) {
+    public List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
         List<Action> actions = new ArrayList<>();
         validateConfig();
         Set<Broker> eligibleBrokers = getEligibleBrokers(cluster);

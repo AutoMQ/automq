@@ -14,20 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*
- * Copyright 2017 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License"). See License in the project root for license information.
- */
 
-package kafka.autobalancer.metricsreporter.exception;
+package kafka.autobalancer.executor;
 
-/**
- * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.exception.UnknownVersionException.
- */
-/*
- Unknown version during Serialization/Deserialization.
- */
-public class UnknownVersionException extends Exception {
-    public UnknownVersionException(String msg) {
-        super(msg);
-    }
+import kafka.autobalancer.common.Action;
+
+import java.util.List;
+
+public interface ActionExecutorService {
+
+    void start();
+
+    void shutdown();
+
+    void execute(Action action);
+
+    void execute(List<Action> actions);
 }

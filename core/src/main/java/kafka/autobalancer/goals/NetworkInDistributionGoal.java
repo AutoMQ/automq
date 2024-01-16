@@ -18,8 +18,8 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +34,7 @@ public class NetworkInDistributionGoal extends AbstractResourceDistributionGoal 
     }
 
     @Override
-    Resource resource() {
+    protected Resource resource() {
         return Resource.NW_IN;
     }
 
@@ -48,5 +48,10 @@ public class NetworkInDistributionGoal extends AbstractResourceDistributionGoal 
     @Override
     public void onBalanceFailed(BrokerUpdater.Broker broker) {
         LOGGER.warn("Failed to balance broker {} network inbound load after iterating all partitions", broker.getBrokerId());
+    }
+
+    @Override
+    public int priority() {
+        return GoalConstants.NETWORK_DISTRIBUTION_GOAL_PRIORITY;
     }
 }
