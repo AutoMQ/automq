@@ -18,7 +18,6 @@
 package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.AutoBalancerManager;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.RawMetricType;
 import org.apache.kafka.common.TopicPartition;
