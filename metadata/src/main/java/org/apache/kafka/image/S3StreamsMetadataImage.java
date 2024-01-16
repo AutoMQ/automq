@@ -91,8 +91,14 @@ public final class S3StreamsMetadataImage {
             for (; streamObjectIndex != -1 && streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
                 S3StreamObject streamObject = streamObjects.get(streamObjectIndex);
                 if (streamObject.startOffset() != nextStartOffset) {
-                    if (!(objects.isEmpty() && streamObject.endOffset() > nextStartOffset)) {
-                        // it's the first object, we only need the stream object contains the startOffset
+                    //noinspection StatementWithEmptyBody
+                    if (objects.isEmpty() && streamObject.startOffset() <= nextStartOffset && streamObject.endOffset() > nextStartOffset) {
+                        // it's the first object, we only need the stream object contains the nextStartOffset
+                    } else if (streamObject.endOffset() <= nextStartOffset) {
+                        // the stream object not match the requirement, move to the next stream object
+                        continue;
+                    } else {
+                        // the streamObject.startOffset() > nextStartOffset
                         break;
                     }
                 }

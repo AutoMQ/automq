@@ -186,5 +186,11 @@ public class S3StreamsMetadataImageTest {
         assertEquals(600, objects.endOffset());
         assertEquals(4, objects.objects().size());
         assertEquals(expectedObjectIds.subList(7, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+
+        objects = streamsImage.getObjects(STREAM0, 101, 400L, Integer.MAX_VALUE);
+        assertEquals(100L, objects.startOffset());
+        assertEquals(400L, objects.endOffset());
+        assertEquals(7, objects.objects().size());
+        assertEquals(expectedObjectIds.subList(1, 8), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
 }
