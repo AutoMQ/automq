@@ -20,6 +20,7 @@ package kafka.autobalancer;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.executor.ControllerActionExecutorService;
 import kafka.test.MockController;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
@@ -38,7 +39,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @Tag("S3Unit")
-public class ExecutionManagerTest {
+public class ControllerActionExecutorServiceTest {
 
     private boolean checkTopicPartition(AlterPartitionReassignmentsRequestData.ReassignableTopic topic,
                                         String name, int partitionId, int nodeId) {
@@ -69,13 +70,13 @@ public class ExecutionManagerTest {
         Mockito.doAnswer(answer -> CompletableFuture.completedFuture(new AlterPartitionReassignmentsResponseData()))
                 .when(controller).alterPartitionReassignments(ctxCaptor.capture(), reqCaptor.capture());
 
-        ExecutionManager executionManager = new ExecutionManager(config, controller);
-        executionManager.start();
+        ControllerActionExecutorService controllerActionExecutorService = new ControllerActionExecutorService(config, controller);
+        controllerActionExecutorService.start();
 
         List<Action> actionList = List.of(
                 new Action(ActionType.MOVE, new TopicPartition("topic1", 0), 0, 1),
                 new Action(ActionType.SWAP, new TopicPartition("topic2", 0), 0, 1, new TopicPartition("topic1", 1)));
-        executionManager.appendActions(actionList);
+        controllerActionExecutorService.execute(actionList);
 
         TestUtils.waitForCondition(() -> {
             List<AlterPartitionReassignmentsRequestData> reqs = reqCaptor.getAllValues();
@@ -97,6 +98,6 @@ public class ExecutionManagerTest {
                     && checkTopicPartition(reqSwap.topics().get(1), "topic1", 1, 0);
         }, 5000L, 1000L, () -> "failed to meet reassign");
 
-        executionManager.shutdown();
+        controllerActionExecutorService.shutdown();
     }
 }

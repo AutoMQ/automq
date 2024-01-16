@@ -110,6 +110,10 @@ class ControllerServer(
   var migrationSupport: Option[ControllerMigrationSupport] = None
   var autoBalancerManager: AutoBalancerManager = _
 
+  def buildAutoBalancerManager: AutoBalancerManager = {
+    new AutoBalancerManager(time, config, controller.asInstanceOf[QuorumController], raftManager.client)
+  }
+
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
     try {
@@ -300,7 +304,7 @@ class ControllerServer(
         DataPlaneAcceptor.ThreadPrefix)
 
       if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
-        autoBalancerManager = new AutoBalancerManager(time, config, controller.asInstanceOf[QuorumController], raftManager.client)
+        autoBalancerManager = buildAutoBalancerManager
         autoBalancerManager.start()
       }
       /**

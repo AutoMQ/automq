@@ -17,11 +17,14 @@
 
 package kafka.autobalancer.goals;
 
+import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -36,7 +39,7 @@ import java.util.StringJoiner;
 @Tag("S3Unit")
 public class AbstractGoalTest extends GoalTestBase {
 
-    private final Map<String, AbstractGoal> goalMap = new HashMap<>();
+    private final Map<String, Goal> goalMap = new HashMap<>();
 
     @BeforeEach
     public void setup() {
@@ -57,6 +60,65 @@ public class AbstractGoalTest extends GoalTestBase {
         goalList.sort(Comparator.reverseOrder());
         for (AbstractGoal goal : goalList) {
             goalMap.put(goal.name(), goal);
+        }
+    }
+
+    @Test
+    public void testCalculateAcceptanceScore() {
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        BrokerUpdater.Broker broker0 = createBroker(cluster, RACK, 0, true);
+        BrokerUpdater.Broker broker1 = createBroker(cluster, RACK, 1, true);
+        BrokerUpdater.Broker broker2 = createBroker(cluster, RACK, 2, true);
+
+        broker0.setCapacity(Resource.NW_IN, 50);
+        broker0.setLoad(Resource.NW_IN, 40);
+
+        broker1.setCapacity(Resource.NW_IN, 50);
+        broker1.setLoad(Resource.NW_IN, 80);
+
+        broker2.setCapacity(Resource.NW_IN, 50);
+        broker2.setLoad(Resource.NW_IN, 120);
+
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica0 = createTopicPartition(cluster, 0, TOPIC_0, 0);
+        replica0.setLoad(Resource.NW_IN, 40);
+
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_0, 1);
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_0, 2);
+        replica1.setLoad(Resource.NW_IN, 40);
+        replica2.setLoad(Resource.NW_IN, 40);
+
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica3 = createTopicPartition(cluster, 2, TOPIC_0, 3);
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica4 = createTopicPartition(cluster, 2, TOPIC_0, 4);
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica5 = createTopicPartition(cluster, 2, TOPIC_0, 5);
+        replica3.setLoad(Resource.NW_IN, 40);
+        replica4.setLoad(Resource.NW_IN, 40);
+        replica5.setLoad(Resource.NW_IN, 40);
+
+        Goal capacityGoal = goalMap.get(NetworkInCapacityGoal.class.getSimpleName());
+
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 1), cluster));
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 2), cluster));
+
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 2), 1, 0), cluster));
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 2), 1, 2), cluster));
+
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 0), cluster));
+        Assertions.assertEquals(0, capacityGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 1), cluster));
+
+        Goal distributionGoal = goalMap.get(NetworkInDistributionGoal.class.getSimpleName());
+
+        Assertions.assertEquals(0.1, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 1), cluster), 0.001);
+        Assertions.assertEquals(0.1, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 2), cluster), 0.001);
+
+        Assertions.assertEquals(0.5, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 2), 1, 0), cluster), 0.001);
+        Assertions.assertEquals(0.1, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 2), 1, 2), cluster), 0.001);
+
+        Assertions.assertEquals(0.9, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 0), cluster), 0.001);
+        Assertions.assertEquals(0.5, distributionGoal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 1), cluster), 0.001);
+
+        for (Goal goal : goalMap.values()) {
+            List<Action> actions = goal.optimize(cluster, goalMap.values());
+            Assertions.assertTrue(actions.isEmpty());
         }
     }
 
@@ -136,7 +198,7 @@ public class AbstractGoalTest extends GoalTestBase {
         Assertions.assertEquals(60, cluster.replicasFor(3).stream().mapToDouble(e -> e.load(Resource.NW_IN)).sum());
         Assertions.assertEquals(10, cluster.replicasFor(3).stream().mapToDouble(e -> e.load(Resource.NW_OUT)).sum());
 
-        for (AbstractGoal goal : goalMap.values()) {
+        for (Goal goal : goalMap.values()) {
             goal.optimize(cluster, goalMap.values());
         }
         for (BrokerUpdater.Broker broker : cluster.brokers()) {
@@ -149,7 +211,7 @@ public class AbstractGoalTest extends GoalTestBase {
                 Assertions.assertTrue(goalMap.get(NetworkOutDistributionGoal.class.getSimpleName()).isBrokerAcceptable(broker));
             }
         }
-        for (AbstractGoal goal : goalMap.values()) {
+        for (Goal goal : goalMap.values()) {
             goal.optimize(cluster, goalMap.values());
         }
         // all goals succeed in second iteration

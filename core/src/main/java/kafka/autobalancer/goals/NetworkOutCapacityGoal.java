@@ -18,8 +18,8 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +34,7 @@ public class NetworkOutCapacityGoal extends AbstractResourceCapacityGoal {
     }
 
     @Override
-    Resource resource() {
+    protected Resource resource() {
         return Resource.NW_OUT;
     }
 
@@ -47,5 +47,10 @@ public class NetworkOutCapacityGoal extends AbstractResourceCapacityGoal {
     @Override
     public void onBalanceFailed(BrokerUpdater.Broker broker) {
         LOGGER.warn("Failed to reduce broker {} network outbound load after iterating all partitions", broker.getBrokerId());
+    }
+
+    @Override
+    public int priority() {
+        return GoalConstants.NETWORK_CAPACITY_GOAL_PRIORITY;
     }
 }

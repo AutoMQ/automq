@@ -14,26 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*
- * Copyright 2017 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License"). See License in the project root for license information.
- */
 
-package kafka.autobalancer.metricsreporter.exception;
+package kafka.autobalancer.common;
 
-/**
- * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.exception.CruiseControlMetricsReporterException.
- */
-public class AutoBalancerMetricsReporterException extends Exception {
-
-    public AutoBalancerMetricsReporterException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
-    public AutoBalancerMetricsReporterException(String message) {
-        super(message);
-    }
-
-    public AutoBalancerMetricsReporterException(Throwable cause) {
-        super(cause);
-    }
+public class AutoBalancerConstants {
+    public static final String AUTO_BALANCER_LOGGER_CLAZZ = "kafka.autobalancer";
 }

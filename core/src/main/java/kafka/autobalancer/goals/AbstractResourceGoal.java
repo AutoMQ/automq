@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
 public abstract class AbstractResourceGoal extends AbstractGoal {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractGoal.class);
 
-    abstract Resource resource();
+    protected abstract Resource resource();
 
     private Optional<Action> getAcceptableAction(List<Map.Entry<Action, Double>> candidateActionScores) {
         Action acceptableAction = null;
@@ -51,8 +51,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         return Optional.ofNullable(acceptableAction);
     }
 
-    private double normalizeGoalsScore(Map<AbstractGoal, Double> scoreMap) {
-        int totalWeight = scoreMap.keySet().stream().mapToInt(AbstractGoal::priority).sum();
+    private double normalizeGoalsScore(Map<Goal, Double> scoreMap) {
+        int totalWeight = scoreMap.keySet().stream().mapToInt(Goal::priority).sum();
         return scoreMap.entrySet().stream()
                 .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().priority() / totalWeight)
                 .sum();
@@ -62,7 +62,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                  TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
                                                  BrokerUpdater.Broker srcBroker,
                                                  List<BrokerUpdater.Broker> candidates,
-                                                 Collection<AbstractGoal> goalsByPriority) {
+                                                 Collection<Goal> goalsByPriority) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
@@ -72,8 +72,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 boolean isHardGoalViolated = false;
                 Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                Map<AbstractGoal, Double> scoreMap = new HashMap<>();
-                for (AbstractGoal goal : goalsByPriority) {
+                Map<Goal, Double> scoreMap = new HashMap<>();
+                for (Goal goal : goalsByPriority) {
                     double score = goal.actionAcceptanceScore(action, cluster);
                     if (goal.isHardGoal() && score == 0) {
                         isHardGoalViolated = true;
@@ -94,13 +94,13 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                  TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
                                                  BrokerUpdater.Broker srcBroker,
                                                  List<BrokerUpdater.Broker> candidates,
-                                                 Collection<AbstractGoal> goalsByPriority) {
+                                                 Collection<Goal> goalsByPriority) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
             boolean isHardGoalViolated = false;
             Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
-            Map<AbstractGoal, Double> scoreMap = new HashMap<>();
-            for (AbstractGoal goal : goalsByPriority) {
+            Map<Goal, Double> scoreMap = new HashMap<>();
+            for (Goal goal : goalsByPriority) {
                 double score = goal.actionAcceptanceScore(action, cluster);
                 if (goal.isHardGoal() && score == 0) {
                     isHardGoalViolated = true;
@@ -131,7 +131,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                  ClusterModelSnapshot cluster,
                                                  BrokerUpdater.Broker srcBroker,
                                                  List<BrokerUpdater.Broker> candidateBrokers,
-                                                 Collection<AbstractGoal> goalsByPriority) {
+                                                 Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
         List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
@@ -174,7 +174,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                    ClusterModelSnapshot cluster,
                                                    BrokerUpdater.Broker srcBroker,
                                                    List<BrokerUpdater.Broker> candidateBrokers,
-                                                   Collection<AbstractGoal> goalsByPriority) {
+                                                   Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
         candidateBrokers.sort(Comparator.comparingDouble(b -> -b.utilizationFor(resource()))); // higher load first
         for (BrokerUpdater.Broker candidateBroker : candidateBrokers) {

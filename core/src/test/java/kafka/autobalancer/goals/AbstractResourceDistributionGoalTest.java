@@ -36,7 +36,7 @@ import java.util.StringJoiner;
 
 @Tag("S3Unit")
 public class AbstractResourceDistributionGoalTest extends GoalTestBase {
-    private final Map<String, AbstractGoal> goalMap = new HashMap<>();
+    private final Map<String, Goal> goalMap = new HashMap<>();
 
     @BeforeEach
     public void setup() {
@@ -55,8 +55,8 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
         }
     }
 
-    private AbstractGoal getGoalByResource(Resource resource) {
-        AbstractGoal goal = null;
+    private Goal getGoalByResource(Resource resource) {
+        Goal goal = null;
         switch (resource) {
             case NW_IN:
                 goal = goalMap.get(NetworkInDistributionGoal.class.getSimpleName());
@@ -71,7 +71,7 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     }
 
     private void testActionAcceptanceScore(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -104,7 +104,7 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeOneMove(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -144,7 +144,7 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeMultiMoveOut(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -190,7 +190,7 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeMultiMoveIn(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -256,7 +256,7 @@ public class AbstractResourceDistributionGoalTest extends GoalTestBase {
     }
 
     private void testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource resource) {
-        AbstractGoal goal = getGoalByResource(resource);
+        Goal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();

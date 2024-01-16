@@ -20,6 +20,7 @@
 
 package kafka.autobalancer.metricsreporter;
 
+import kafka.autobalancer.common.RawMetricType;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
@@ -29,7 +30,6 @@ import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
-import kafka.autobalancer.metricsreporter.metric.RawMetricType;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientUtils;

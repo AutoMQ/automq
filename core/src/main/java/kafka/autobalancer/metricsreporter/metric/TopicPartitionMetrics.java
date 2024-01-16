@@ -20,6 +20,7 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 import org.apache.kafka.common.TopicPartition;
 

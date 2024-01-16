@@ -17,11 +17,17 @@
 
 package kafka.autobalancer;
 
+import com.automq.stream.utils.LogContext;
+import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.detector.AnomalyDetector;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.detector.AnomalyDetectorBuilder;
+import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.ClusterStatusListenerRegistry;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
-import kafka.autobalancer.model.ClusterModel;
+import kafka.autobalancer.executor.ControllerActionExecutorService;
+import kafka.autobalancer.model.RecordClusterModel;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
@@ -32,7 +38,6 @@ import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
-import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.queue.KafkaEventQueue;
@@ -45,7 +50,9 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.snapshot.SnapshotReader;
 import org.slf4j.Logger;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class AutoBalancerManager {
     private final Logger logger;
@@ -56,21 +63,34 @@ public class AutoBalancerManager {
 
     public AutoBalancerManager(Time time, KafkaConfig kafkaConfig, QuorumController quorumController, KafkaRaftClient<ApiMessageAndVersion> raftClient) {
         LogContext logContext = new LogContext(String.format("[AutoBalancerManager id=%d] ", quorumController.nodeId()));
-        logger = logContext.logger(AutoBalancerManager.class);
+        logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(kafkaConfig.props(), false);
-        ClusterModel clusterModel = new ClusterModel(config, new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
+        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
                 new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
-        ExecutionManager executionManager = new ExecutionManager(config, quorumController,
+        ControllerActionExecutorService actionExecutorService = new ControllerActionExecutorService(config, quorumController,
                 new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
-        this.anomalyDetector = new AnomalyDetector(config, clusterModel, executionManager,
-                new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())));
-        this.queue = new KafkaEventQueue(time, new LogContext(), "auto-balancer-");
+
+        this.anomalyDetector = new AnomalyDetectorBuilder()
+                .logContext(new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())))
+                .maxActionsNumPerExecution(config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS))
+                .detectIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS))
+                .maxTolerateMetricsDelayMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS))
+                .coolDownIntervalPerActionMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS))
+                .aggregateBrokerLoad(config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION))
+                .clusterModel(clusterModel)
+                .executor(actionExecutorService)
+                .addGoals(config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class))
+                .excludedBrokers(parseExcludedBrokers(config))
+                .excludedTopics(config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS))
+                .build();
+
+        this.queue = new KafkaEventQueue(time, new org.apache.kafka.common.utils.LogContext(), "auto-balancer-");
         this.quorumController = quorumController;
         ClusterStatusListenerRegistry registry = new ClusterStatusListenerRegistry();
         registry.register((BrokerStatusListener) clusterModel);
         registry.register((TopicPartitionStatusListener) clusterModel);
-        registry.register(executionManager);
+        registry.register(actionExecutorService);
         registry.register(this.loadRetriever);
         raftClient.register(new AutoBalancerListener(registry, this.loadRetriever, this.anomalyDetector));
     }
@@ -86,6 +106,19 @@ public class AutoBalancerManager {
         loadRetriever.shutdown();
         queue.close();
         logger.info("Shutdown completed");
+    }
+
+    private Set<Integer> parseExcludedBrokers(AutoBalancerControllerConfig config) {
+        Set<Integer> excludedBrokers = new HashSet<>();
+        for (String brokerId : config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)) {
+            try {
+                excludedBrokers.add(Integer.parseInt(brokerId));
+            } catch (Exception e) {
+                logger.warn("Failed to parse broker id {} from config", brokerId);
+            }
+
+        }
+        return excludedBrokers;
     }
 
     class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVersion> {
