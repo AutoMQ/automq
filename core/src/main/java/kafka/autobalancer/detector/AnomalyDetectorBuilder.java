@@ -35,7 +35,7 @@ public class AnomalyDetectorBuilder {
     private LogContext logContext = null;
     private ClusterModel clusterModel = null;
     private ActionExecutorService executor = null;
-    private int maxActionsNumPerDetect = AnomalyDetector.UNLIMITED_ACTIONS_PER_DETECT;
+    private int maxActionsNumPerDetect = Integer.MAX_VALUE;
     private long detectIntervalMs = 60000;
     private long maxTolerateMetricsDelayMs = 30000;
     private long coolDownIntervalPerActionMs = 100;
