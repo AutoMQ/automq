@@ -21,22 +21,7 @@ import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public class GoalUtils {
-    private static final Map<String, Integer> GOALS_PRIORITY_MAP = new HashMap<>();
-
-    static {
-        GOALS_PRIORITY_MAP.put(NetworkInCapacityGoal.class.getSimpleName(), 10);
-        GOALS_PRIORITY_MAP.put(NetworkOutCapacityGoal.class.getSimpleName(), 10);
-        GOALS_PRIORITY_MAP.put(NetworkInDistributionGoal.class.getSimpleName(), 8);
-        GOALS_PRIORITY_MAP.put(NetworkOutDistributionGoal.class.getSimpleName(), 8);
-    }
-
-    public static int priority(AbstractGoal goal) {
-        return GOALS_PRIORITY_MAP.getOrDefault(goal.name(), 0);
-    }
 
     public static boolean isValidAction(Action action, ClusterModelSnapshot cluster) {
         if (cluster.broker(action.getSrcBrokerId()) == null

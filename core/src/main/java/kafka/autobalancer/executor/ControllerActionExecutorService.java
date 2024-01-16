@@ -15,10 +15,12 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer;
+package kafka.autobalancer.executor;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import org.apache.kafka.common.TopicPartition;
@@ -27,7 +29,6 @@ import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.utils.KafkaThread;
-import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
@@ -43,41 +44,59 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ExecutionManager implements Runnable, BrokerStatusListener {
-    private final Logger logger;
-    private final Controller controller;
+public class ControllerActionExecutorService implements ActionExecutorService, Runnable, BrokerStatusListener {
     private final BlockingQueue<Action> actionQueue = new ArrayBlockingQueue<>(1000);
     private final Set<Integer> fencedBrokers = ConcurrentHashMap.newKeySet();
-    private final long executionInterval;
-    private final KafkaThread dispatchThread;
+    private Logger logger;
+    private Controller controller;
+    private long executionInterval;
+    private KafkaThread dispatchThread;
     // TODO: optimize to per-broker concurrency control
     private long lastExecutionTime = 0L;
     private volatile boolean shutdown;
 
-    public ExecutionManager(AutoBalancerControllerConfig config, Controller controller) {
+    public ControllerActionExecutorService(AutoBalancerControllerConfig config, Controller controller) {
         this(config, controller, null);
     }
 
-    public ExecutionManager(AutoBalancerControllerConfig config, Controller controller, LogContext logContext) {
+    public ControllerActionExecutorService(AutoBalancerControllerConfig config, Controller controller, LogContext logContext) {
         if (logContext == null) {
             logContext = new LogContext("[ExecutionManager] ");
         }
-        this.logger = logContext.logger(ExecutionManager.class);
+        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         this.controller = controller;
         this.executionInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
         this.dispatchThread = KafkaThread.daemon("executor-dispatcher", this);
     }
 
+    @Override
     public void start() {
         this.shutdown = false;
         this.dispatchThread.start();
         logger.info("Started");
     }
 
+    @Override
     public void shutdown() {
         this.shutdown = true;
         this.dispatchThread.interrupt();
         logger.info("Shutdown completed");
+    }
+
+    @Override
+    public void execute(Action action) {
+        try {
+            this.actionQueue.put(action);
+        } catch (InterruptedException ignored) {
+
+        }
+    }
+
+    @Override
+    public void execute(List<Action> actions) {
+        for (Action action : actions) {
+            execute(action);
+        }
     }
 
     @Override
@@ -133,20 +152,6 @@ public class ExecutionManager implements Runnable, BrokerStatusListener {
         partition.setReplicas(List.of(brokerId));
         topic.setPartitions(List.of(partition));
         return topic;
-    }
-
-    public void appendAction(Action action) {
-        try {
-            this.actionQueue.put(action);
-        } catch (InterruptedException ignored) {
-
-        }
-    }
-
-    public void appendActions(List<Action> actions) {
-        for (Action action : actions) {
-            appendAction(action);
-        }
     }
 
     @Override

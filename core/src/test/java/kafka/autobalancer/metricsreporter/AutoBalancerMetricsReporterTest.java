@@ -17,11 +17,11 @@
 
 package kafka.autobalancer.metricsreporter;
 
+import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
-import kafka.autobalancer.metricsreporter.metric.RawMetricType;
 import kafka.autobalancer.utils.AutoBalancerClientsIntegrationTestHarness;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -47,14 +47,14 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.ALL_TOPIC_BYTES_IN;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.ALL_TOPIC_BYTES_OUT;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.BROKER_CAPACITY_NW_IN;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.BROKER_CAPACITY_NW_OUT;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.BROKER_CPU_UTIL;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.PARTITION_SIZE;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_IN;
-import static kafka.autobalancer.metricsreporter.metric.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
+import static kafka.autobalancer.common.RawMetricType.ALL_TOPIC_BYTES_IN;
+import static kafka.autobalancer.common.RawMetricType.ALL_TOPIC_BYTES_OUT;
+import static kafka.autobalancer.common.RawMetricType.BROKER_CAPACITY_NW_IN;
+import static kafka.autobalancer.common.RawMetricType.BROKER_CAPACITY_NW_OUT;
+import static kafka.autobalancer.common.RawMetricType.BROKER_CPU_UTIL;
+import static kafka.autobalancer.common.RawMetricType.PARTITION_SIZE;
+import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_IN;
+import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
 
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.doNothing;
@@ -79,6 +79,7 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
+//        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "false");
         props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
         props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
@@ -103,47 +104,43 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "testReportingMetrics");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props);
+        try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
+            consumer.subscribe(Collections.singleton(METRIC_TOPIC));
+            long startMs = System.currentTimeMillis();
+            Set<Integer> expectedBrokerMetricTypes = new HashSet<>(Arrays.asList(
+                    (int) BROKER_CAPACITY_NW_IN.id(),
+                    (int) BROKER_CAPACITY_NW_OUT.id(),
+                    (int) ALL_TOPIC_BYTES_IN.id(),
+                    (int) ALL_TOPIC_BYTES_OUT.id(),
+                    (int) BROKER_CPU_UTIL.id()));
+            Set<Integer> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
+                    (int) TOPIC_PARTITION_BYTES_IN.id(),
+                    (int) TOPIC_PARTITION_BYTES_OUT.id(),
+                    (int) PARTITION_SIZE.id()));
+            Set<Integer> expectedMetricTypes = new HashSet<>(expectedBrokerMetricTypes);
+            expectedMetricTypes.addAll(expectedTopicPartitionMetricTypes);
 
-        consumer.subscribe(Collections.singleton(METRIC_TOPIC));
-        long startMs = System.currentTimeMillis();
-        Set<Integer> expectedBrokerMetricTypes = new HashSet<>(Arrays.asList(
-                (int) BROKER_CAPACITY_NW_IN.id(),
-                (int) BROKER_CAPACITY_NW_OUT.id(),
-                (int) ALL_TOPIC_BYTES_IN.id(),
-                (int) ALL_TOPIC_BYTES_OUT.id(),
-                (int) BROKER_CPU_UTIL.id()));
-        Set<Integer> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
-                (int) TOPIC_PARTITION_BYTES_IN.id(),
-                (int) TOPIC_PARTITION_BYTES_OUT.id(),
-                (int) PARTITION_SIZE.id()));
-        Set<Integer> expectedMetricTypes = new HashSet<>(expectedBrokerMetricTypes);
-        expectedMetricTypes.addAll(expectedTopicPartitionMetricTypes);
-
-        Set<Integer> metricTypes = new HashSet<>();
-        ConsumerRecords<String, AutoBalancerMetrics> records;
-        while (metricTypes.size() < (expectedBrokerMetricTypes.size() + expectedTopicPartitionMetricTypes.size())
-                && System.currentTimeMillis() < startMs + 15000) {
-            records = consumer.poll(Duration.ofMillis(10L));
-            for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
-                AutoBalancerMetrics metrics = record.value();
-                Set<Integer> localMetricTypes = new HashSet<>();
-                for (RawMetricType type : record.value().getMetricTypeValueMap().keySet()) {
-                    int typeId = type.id();
-                    metricTypes.add(typeId);
-                    localMetricTypes.add(typeId);
+            Set<Integer> metricTypes = new HashSet<>();
+            ConsumerRecords<String, AutoBalancerMetrics> records;
+            while (metricTypes.size() < (expectedBrokerMetricTypes.size() + expectedTopicPartitionMetricTypes.size())
+                    && System.currentTimeMillis() < startMs + 15000) {
+                records = consumer.poll(Duration.ofMillis(10L));
+                for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
+                    AutoBalancerMetrics metrics = record.value();
+                    Set<Integer> localMetricTypes = new HashSet<>();
+                    for (RawMetricType type : record.value().getMetricTypeValueMap().keySet()) {
+                        int typeId = type.id();
+                        metricTypes.add(typeId);
+                        localMetricTypes.add(typeId);
+                    }
+                    Set<Integer> expectedMap = metrics.metricClassId() == AutoBalancerMetrics.MetricClassId.BROKER_METRIC ?
+                            expectedBrokerMetricTypes : expectedTopicPartitionMetricTypes;
+                    Assertions.assertEquals(expectedMap, localMetricTypes, "Expected " + expectedMap + ", but saw " + localMetricTypes);
                 }
-                Set<Integer> expectedMap = metrics.metricClassId() == AutoBalancerMetrics.MetricClassId.BROKER_METRIC ?
-                        expectedBrokerMetricTypes : expectedTopicPartitionMetricTypes;
-                Assertions.assertEquals(expectedMap, localMetricTypes, "Expected " + expectedMap + ", but saw " + localMetricTypes);
             }
+            Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
         }
-        Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
     }
-
-
-
-
 
     @Test
     public void testConfigureNwCapacity() throws NoSuchFieldException, IllegalAccessException {

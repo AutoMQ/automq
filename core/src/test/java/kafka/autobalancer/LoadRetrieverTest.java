@@ -24,6 +24,7 @@ import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+import kafka.autobalancer.model.RecordClusterModel;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import kafka.autobalancer.utils.AutoBalancerClientsIntegrationTestHarness;
 import kafka.cluster.EndPoint;
@@ -86,8 +87,8 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         return props;
     }
 
-    private boolean checkConsumeRecord(ClusterModel clusterModel, int brokerId) {
-        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+    private boolean checkConsumeRecord(ClusterModel clusterModel, int brokerId, long delay) {
+        ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), delay, true);
         if (snapshot.broker(brokerId) == null) {
             return false;
         }
@@ -109,7 +110,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     public void testLoadRetrieverShutdown() {
         Map<String, Object> props = new HashMap<>();
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(props, false);
-        ClusterModel clusterModel = new ClusterModel(config);
+        ClusterModel clusterModel = new ClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
         loadRetriever.start();
@@ -138,10 +139,9 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     public void testConsume() throws InterruptedException {
         Map<String, Object> props = new HashMap<>();
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS, 3000L);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(props, false);
 
-        ClusterModel clusterModel = new ClusterModel(config);
+        RecordClusterModel clusterModel = new RecordClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
         loadRetriever.start();
@@ -178,7 +178,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setPartitionId(0));
         loadRetriever.onBrokerRegister(record);
 
-        TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId()),
+        TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId(), 3000L),
                 15000L, 1000L, () -> "cluster model failed to reach expected status");
 
         UnregisterBrokerRecord unregisterRecord = new UnregisterBrokerRecord()
@@ -186,7 +186,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         loadRetriever.onBrokerUnregister(unregisterRecord);
         Thread.sleep(5000);
         Assertions.assertTrue(() -> {
-            ClusterModelSnapshot snapshot = clusterModel.snapshot();
+            ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), 3000L, true);
             if (snapshot.broker(brokerConfig.brokerId()) != null) {
                 return false;
             }
@@ -199,7 +199,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
 
         clusterModel.onBrokerRegister(record);
         loadRetriever.onBrokerRegister(record);
-        TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId()),
+        TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId(), 3000L),
                 15000L, 1000L, () -> "cluster model failed to reach expected status");
         Assertions.assertTimeout(Duration.ofMillis(5000), loadRetriever::shutdown);
     }

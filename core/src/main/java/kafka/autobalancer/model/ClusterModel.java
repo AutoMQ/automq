@@ -17,24 +17,12 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
-import kafka.autobalancer.listeners.BrokerStatusListener;
-import kafka.autobalancer.listeners.TopicPartitionStatusListener;
-import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
-import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
-import org.apache.commons.lang3.StringUtils;
+import com.automq.stream.utils.LogContext;
+import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.RawMetricType;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
-import org.apache.kafka.common.metadata.PartitionChangeRecord;
-import org.apache.kafka.common.metadata.PartitionRecord;
-import org.apache.kafka.common.metadata.RegisterBrokerRecord;
-import org.apache.kafka.common.metadata.RemoveTopicRecord;
-import org.apache.kafka.common.metadata.TopicRecord;
-import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
-import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
-import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 
 import java.util.Collections;
@@ -45,9 +33,11 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 
-public class ClusterModel implements BrokerStatusListener, TopicPartitionStatusListener {
-    private final Logger logger;
+public class ClusterModel {
+    protected final Logger logger;
     private static final String DEFAULT_RACK_ID = "rack_default";
+    private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
+    private static final boolean DEFAULT_AGGREGATE_BROKER_LOAD = true;
 
     /*
      * Guard the change on cluster structure (add/remove for brokers, replicas)
@@ -61,27 +51,23 @@ public class ClusterModel implements BrokerStatusListener, TopicPartitionStatusL
     private final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
     private final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
 
-    private final long maxToleratedMetricsDelay;
-    private final boolean aggregateBrokerLoad;
-
-    public ClusterModel(AutoBalancerControllerConfig config) {
-        this(config, null);
+    public ClusterModel() {
+        this(null);
     }
 
-    public ClusterModel(AutoBalancerControllerConfig config, LogContext logContext) {
+    public ClusterModel(LogContext logContext) {
         if (logContext == null) {
             logContext = new LogContext("[ClusterModel]");
         }
-        logger = logContext.logger(ClusterModel.class);
-        maxToleratedMetricsDelay = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS);
-        aggregateBrokerLoad = config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION);
+        logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     }
 
     public ClusterModelSnapshot snapshot() {
-        return snapshot(Collections.emptySet(), Collections.emptySet());
+        return snapshot(Collections.emptySet(), Collections.emptySet(), DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS, DEFAULT_AGGREGATE_BROKER_LOAD);
     }
 
-    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics) {
+    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics,
+                                         long maxToleratedMetricsDelay, boolean aggregateBrokerLoad) {
         ClusterModelSnapshot snapshot = new ClusterModelSnapshot();
         clusterLock.lock();
         try {
@@ -125,105 +111,97 @@ public class ClusterModel implements BrokerStatusListener, TopicPartitionStatusL
         return snapshot;
     }
 
-    public boolean updateBroker(BrokerMetrics brokerMetrics) {
+    public boolean updateBrokerMetrics(int brokerId, Map<RawMetricType, Double> metricsMap, long time) {
         BrokerUpdater brokerUpdater = null;
         clusterLock.lock();
         try {
-            brokerUpdater = brokerMap.get(brokerMetrics.brokerId());
+            brokerUpdater = brokerMap.get(brokerId);
         } finally {
             clusterLock.unlock();
         }
         if (brokerUpdater != null) {
-            return brokerUpdater.update(brokerMetrics);
+            return brokerUpdater.update(metricsMap, time);
         }
         return false;
     }
 
-    public boolean updateTopicPartition(TopicPartitionMetrics topicPartitionMetrics) {
+    public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Map<RawMetricType, Double> metricsMap, long time) {
         TopicPartitionReplicaUpdater replicaUpdater = null;
         clusterLock.lock();
         try {
-            Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = brokerReplicaMap.get(topicPartitionMetrics.brokerId());
+            Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = brokerReplicaMap.get(brokerId);
             if (replicaMap != null) {
-                replicaUpdater = replicaMap.get(new TopicPartition(topicPartitionMetrics.topic(), topicPartitionMetrics.partition()));
+                replicaUpdater = replicaMap.get(tp);
             }
         } finally {
             clusterLock.unlock();
         }
         if (replicaUpdater != null) {
-            return replicaUpdater.update(topicPartitionMetrics);
+            return replicaUpdater.update(metricsMap, time);
         }
         return false;
     }
 
-    @Override
-    public void onBrokerRegister(RegisterBrokerRecord record) {
+    public void registerBroker(int brokerId, String rackId) {
         clusterLock.lock();
         try {
-            if (brokerMap.containsKey(record.brokerId())) {
+            if (brokerMap.containsKey(brokerId)) {
                 return;
             }
-            String rackId = StringUtils.isEmpty(record.rack()) ? DEFAULT_RACK_ID : record.rack();
-            BrokerUpdater brokerUpdater = new BrokerUpdater(record.brokerId());
+            BrokerUpdater brokerUpdater = new BrokerUpdater(brokerId);
             brokerUpdater.setActive(true);
-            brokerIdToRackMap.putIfAbsent(record.brokerId(), rackId);
-            brokerMap.putIfAbsent(record.brokerId(), brokerUpdater);
-            brokerReplicaMap.put(record.brokerId(), new HashMap<>());
-        } finally {
-            clusterLock.unlock();
-        }
-    }
-
-    @Override
-    public void onBrokerUnregister(UnregisterBrokerRecord record) {
-        clusterLock.lock();
-        try {
-            brokerIdToRackMap.remove(record.brokerId());
-            brokerMap.remove(record.brokerId());
-            brokerReplicaMap.remove(record.brokerId());
-        } finally {
-            clusterLock.unlock();
-        }
-    }
-
-    @Override
-    public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
-        BrokerUpdater brokerUpdater;
-        clusterLock.lock();
-        try {
-            if (!brokerMap.containsKey(record.brokerId())) {
-                return;
+            if (Utils.isBlank(rackId)) {
+                rackId = DEFAULT_RACK_ID;
             }
-            brokerUpdater = brokerMap.get(record.brokerId());
-        } finally {
-            clusterLock.unlock();
-        }
-        if (brokerUpdater != null) {
-            brokerUpdater.setActive(record.fenced() != BrokerRegistrationFencingChange.FENCE.value()
-                    && record.inControlledShutdown() != BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value());
-        }
-    }
-
-    @Override
-    public void onTopicCreate(TopicRecord record) {
-        clusterLock.lock();
-        try {
-            idToTopicNameMap.putIfAbsent(record.topicId(), record.name());
-            topicPartitionReplicaMap.putIfAbsent(record.name(), new HashMap<>());
+            brokerIdToRackMap.putIfAbsent(brokerId, rackId);
+            brokerMap.putIfAbsent(brokerId, brokerUpdater);
+            brokerReplicaMap.put(brokerId, new HashMap<>());
         } finally {
             clusterLock.unlock();
         }
     }
 
-    @Override
-    public void onTopicDelete(RemoveTopicRecord record) {
+    public void unregisterBroker(int brokerId) {
         clusterLock.lock();
         try {
-            String topicName = idToTopicNameMap.get(record.topicId());
+            brokerIdToRackMap.remove(brokerId);
+            brokerMap.remove(brokerId);
+            brokerReplicaMap.remove(brokerId);
+        } finally {
+            clusterLock.unlock();
+        }
+    }
+
+    public void changeBrokerStatus(int brokerId, boolean active) {
+        clusterLock.lock();
+        try {
+            brokerMap.computeIfPresent(brokerId, (id, brokerUpdater) -> {
+                brokerUpdater.setActive(active);
+                return brokerUpdater;
+            });
+        } finally {
+            clusterLock.unlock();
+        }
+    }
+
+    public void createTopic(Uuid topicId, String topicName) {
+        clusterLock.lock();
+        try {
+            idToTopicNameMap.putIfAbsent(topicId, topicName);
+            topicPartitionReplicaMap.putIfAbsent(topicName, new HashMap<>());
+        } finally {
+            clusterLock.unlock();
+        }
+    }
+
+    public void deleteTopic(Uuid topicId) {
+        clusterLock.lock();
+        try {
+            String topicName = idToTopicNameMap.get(topicId);
             if (topicName == null) {
                 return;
             }
-            idToTopicNameMap.remove(record.topicId());
+            idToTopicNameMap.remove(topicId);
             for (Map.Entry<Integer, Integer> entry : topicPartitionReplicaMap.get(topicName).entrySet()) {
                 int partitionId = entry.getKey();
                 int brokerId = entry.getValue();
@@ -238,68 +216,58 @@ public class ClusterModel implements BrokerStatusListener, TopicPartitionStatusL
         }
     }
 
-    @Override
-    public void onPartitionCreate(PartitionRecord record) {
+    public void createPartition(Uuid topicId, int partitionId, int brokerId) {
         clusterLock.lock();
         try {
-            String topicName = idToTopicNameMap.get(record.topicId());
+            String topicName = idToTopicNameMap.get(topicId);
             if (topicName == null) {
-                return;
-            }
-            if (record.replicas().size() != 1) {
-                logger.error("Illegal replica size {} for {}-{}", record.replicas().size(), topicName, record.partitionId());
                 return;
             }
             if (!topicPartitionReplicaMap.containsKey(topicName)) {
                 logger.error("Create partition on invalid topic {}", topicName);
                 return;
             }
-            int brokerIdToCreateOn = record.replicas().iterator().next();
-            if (!brokerMap.containsKey(brokerIdToCreateOn)) {
-                logger.error("Create partition for topic {} on invalid broker {}", topicName, brokerIdToCreateOn);
+            if (!brokerMap.containsKey(brokerId)) {
+                logger.error("Create partition for topic {} on invalid broker {}", topicName, brokerId);
                 return;
             }
-            topicPartitionReplicaMap.get(topicName).put(record.partitionId(), brokerIdToCreateOn);
-            TopicPartition tp = new TopicPartition(topicName, record.partitionId());
-            brokerReplicaMap.get(brokerIdToCreateOn).put(tp, new TopicPartitionReplicaUpdater(tp));
+            topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
+            TopicPartition tp = new TopicPartition(topicName, partitionId);
+            brokerReplicaMap.get(brokerId).put(tp, new TopicPartitionReplicaUpdater(tp));
         } finally {
             clusterLock.unlock();
         }
     }
 
-    @Override
-    public void onPartitionChange(PartitionChangeRecord record) {
+    public void reassignPartition(Uuid topicId, int partitionId, int brokerId) {
         clusterLock.lock();
         try {
-            String topicName = idToTopicNameMap.get(record.topicId());
+            String topicName = idToTopicNameMap.get(topicId);
             if (topicName == null) {
                 return;
             }
 
-            if (record.replicas() == null || record.replicas().size() != 1) {
-                return;
-            }
             if (!topicPartitionReplicaMap.containsKey(topicName)) {
-                logger.error("Reassign partition {} on invalid topic {}", record.partitionId(), topicName);
+                logger.error("Reassign partition {} on invalid topic {}", partitionId, topicName);
                 return;
             }
-            int brokerIdToReassign = record.replicas().iterator().next();
-            if (!brokerMap.containsKey(brokerIdToReassign)) {
-                logger.error("Reassign partition {} for topic {} on invalid broker {}", record.partitionId(), topicName, brokerIdToReassign);
+
+            if (!brokerMap.containsKey(brokerId)) {
+                logger.error("Reassign partition {} for topic {} on invalid broker {}", partitionId, topicName, brokerId);
                 return;
             }
-            int oldBrokerId = topicPartitionReplicaMap.get(topicName).getOrDefault(record.partitionId(), -1);
-            if (oldBrokerId == brokerIdToReassign) {
-                logger.warn("Reassign partition {} for topic {} on same broker {}, {}", record.partitionId(), topicName, oldBrokerId, record);
+            int oldBrokerId = topicPartitionReplicaMap.get(topicName).getOrDefault(partitionId, -1);
+            if (oldBrokerId == brokerId) {
+                logger.warn("Reassign partition {} for topic {} on same broker {}", partitionId, topicName, oldBrokerId);
                 return;
             }
             if (oldBrokerId != -1) {
-                TopicPartition tp = new TopicPartition(topicName, record.partitionId());
+                TopicPartition tp = new TopicPartition(topicName, partitionId);
                 TopicPartitionReplicaUpdater replicaUpdater = brokerReplicaMap.get(oldBrokerId).get(tp);
-                brokerReplicaMap.get(brokerIdToReassign).put(tp, replicaUpdater);
+                brokerReplicaMap.get(brokerId).put(tp, replicaUpdater);
                 brokerReplicaMap.get(oldBrokerId).remove(tp);
             }
-            topicPartitionReplicaMap.get(topicName).put(record.partitionId(), brokerIdToReassign);
+            topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
         } finally {
             clusterLock.unlock();
         }

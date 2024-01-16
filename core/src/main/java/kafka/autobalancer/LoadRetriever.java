@@ -17,6 +17,8 @@
 
 package kafka.autobalancer;
 
+import com.automq.stream.utils.LogContext;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
@@ -34,6 +36,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.TopicConfig;
+import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
@@ -41,7 +44,6 @@ import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
@@ -97,7 +99,7 @@ public class LoadRetriever implements BrokerStatusListener {
         if (logContext == null) {
             logContext = new LogContext("[LoadRetriever] ");
         }
-        this.logger = logContext.logger(LoadRetriever.class);
+        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         this.controller = controller;
         this.clusterModel = clusterModel;
         this.bootstrapServerMap = new HashMap<>();
@@ -379,6 +381,8 @@ public class LoadRetriever implements BrokerStatusListener {
                     updateClusterModel(record.value());
                 }
                 logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
+            } catch (InvalidTopicException e) {
+                checkAndCreateTopic();
             } catch (Exception e) {
                 logger.error("Consumer poll error: {}", e.getMessage());
             }
@@ -409,10 +413,14 @@ public class LoadRetriever implements BrokerStatusListener {
     private void updateClusterModel(AutoBalancerMetrics metrics) {
         switch (metrics.metricClassId()) {
             case BROKER_METRIC:
-                clusterModel.updateBroker((BrokerMetrics) metrics);
+                BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
+                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricTypeValueMap(), brokerMetrics.time());
                 break;
             case PARTITION_METRIC:
-                clusterModel.updateTopicPartition((TopicPartitionMetrics) metrics);
+                TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
+                clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
+                        new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
+                        partitionMetrics.getMetricTypeValueMap(), partitionMetrics.time());
                 break;
             default:
                 logger.error("Not supported metrics version {}", metrics.metricClassId());

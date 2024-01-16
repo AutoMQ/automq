@@ -15,21 +15,21 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer;
+package kafka.autobalancer.detector;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
-import kafka.autobalancer.goals.AbstractGoal;
+import kafka.autobalancer.executor.ActionExecutorService;
+import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
-import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -37,52 +37,46 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class AnomalyDetector {
+    public static final int UNLIMITED_ACTIONS_PER_DETECT = -1;
     private final Logger logger;
-    private final List<AbstractGoal> goalsByPriority;
-    private final int maxActionsNumPerExecution;
-    private final long executionInterval;
+    private final List<Goal> goalsByPriority;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
-    private final ExecutionManager executionManager;
+    private final ActionExecutorService actionExecutor;
+    private final Set<Integer> excludedBrokers;
+    private final Set<String> excludedTopics;
+    private final int maxActionsNumPerExecution;
     private final long detectInterval;
-    private final Set<Integer> excludedBrokers = new HashSet<>();
-    private final Set<String> excludedTopics = new HashSet<>();
+    private final long maxTolerateMetricsDelayMs;
+    private final long coolDownIntervalPerActionMs;
+    private final boolean aggregateBrokerLoad;
     private volatile boolean running;
 
-    public AnomalyDetector(AutoBalancerControllerConfig config, ClusterModel clusterModel, ExecutionManager executionManager, LogContext logContext) {
-        if (logContext == null) {
-            logContext = new LogContext("[AnomalyDetector] ");
-        }
-        this.logger = logContext.logger(AnomalyDetector.class);
-        this.goalsByPriority = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, AbstractGoal.class);
-        this.maxActionsNumPerExecution = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
-        Collections.sort(this.goalsByPriority);
-        logger.info("Goals: {}", this.goalsByPriority);
-        this.detectInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
-        this.executionInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
-        fetchExcludedConfig(config);
+    AnomalyDetector(LogContext logContext, int maxActionsNumPerDetect, long detectIntervalMs, long maxTolerateMetricsDelayMs,
+                    long coolDownIntervalPerActionMs, boolean aggregateBrokerLoad, ClusterModel clusterModel,
+                    ActionExecutorService actionExecutor, List<Goal> goals,
+                    Set<Integer> excludedBrokers, Set<String> excludedTopics) {
+        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+
+        this.maxActionsNumPerExecution = maxActionsNumPerDetect;
+        this.detectInterval = detectIntervalMs;
+        this.maxTolerateMetricsDelayMs = maxTolerateMetricsDelayMs;
+        this.coolDownIntervalPerActionMs = coolDownIntervalPerActionMs;
+        this.aggregateBrokerLoad = aggregateBrokerLoad;
         this.clusterModel = clusterModel;
+        this.actionExecutor = actionExecutor;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("anomaly-detector"));
-        this.executionManager = executionManager;
+        this.goalsByPriority = goals;
+        Collections.sort(this.goalsByPriority);
+        this.excludedBrokers = excludedBrokers;
+        this.excludedTopics = excludedTopics;
         this.running = false;
-    }
-
-    private void fetchExcludedConfig(AutoBalancerControllerConfig config) {
-        List<String> brokerIds = config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS);
-        for (String brokerIdStr : brokerIds) {
-            try {
-                excludedBrokers.add(Integer.parseInt(brokerIdStr));
-            } catch (NumberFormatException ignored) {
-
-            }
-        }
-        List<String> topics = config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS);
-        excludedTopics.addAll(topics);
-        logger.info("Excluded brokers: {}, excluded topics: {}", excludedBrokers, excludedTopics);
+        logger.info("maxActionsNumPerDetect: {}, detectInterval: {}ms, coolDownIntervalPerAction: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
+                this.maxActionsNumPerExecution, this.detectInterval, coolDownIntervalPerActionMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }
 
     public void start() {
-        this.executionManager.start();
+        this.actionExecutor.start();
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
         logger.info("Started");
     }
@@ -90,7 +84,14 @@ public class AnomalyDetector {
     public void shutdown() throws InterruptedException {
         this.running = false;
         this.executorService.shutdown();
-        this.executionManager.shutdown();
+        try {
+            if (!this.executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                this.executorService.shutdownNow();
+            }
+        } catch (InterruptedException ignored) {
+        }
+
+        this.actionExecutor.shutdown();
         logger.info("Shutdown completed");
     }
 
@@ -108,7 +109,8 @@ public class AnomalyDetector {
         }
         logger.info("Start detect");
         // The delay in processing kraft log could result in outdated cluster snapshot
-        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics);
+        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics,
+                this.maxTolerateMetricsDelayMs, this.aggregateBrokerLoad);
 
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
             logger.info("Broker status: {}", broker);
@@ -118,13 +120,13 @@ public class AnomalyDetector {
         }
 
         int availableActionNum = maxActionsNumPerExecution;
-        for (AbstractGoal goal : goalsByPriority) {
+        for (Goal goal : goalsByPriority) {
             if (!this.running) {
                 break;
             }
             List<Action> actions = goal.optimize(snapshot, goalsByPriority);
             int size = Math.min(availableActionNum, actions.size());
-            this.executionManager.appendActions(actions.subList(0, size));
+            this.actionExecutor.execute(actions.subList(0, size));
             availableActionNum -= size;
             if (availableActionNum <= 0) {
                 logger.info("No more action can be executed in this round");
@@ -132,7 +134,7 @@ public class AnomalyDetector {
             }
         }
 
-        long nextDelay = (maxActionsNumPerExecution - availableActionNum) * this.executionInterval + this.detectInterval;
+        long nextDelay = (maxActionsNumPerExecution - availableActionNum) * this.coolDownIntervalPerActionMs + this.detectInterval;
         this.executorService.schedule(this::detect, nextDelay, TimeUnit.MILLISECONDS);
         logger.info("Detect finished, next detect will be after {} ms", nextDelay);
     }

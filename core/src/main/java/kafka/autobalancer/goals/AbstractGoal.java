@@ -18,20 +18,16 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
+import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
-import org.apache.kafka.common.Configurable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public abstract class AbstractGoal implements Goal, Configurable, Comparable<AbstractGoal> {
-    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractGoal.class);
+public abstract class AbstractGoal implements Goal {
     protected static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
 
     /**
@@ -61,16 +57,17 @@ public abstract class AbstractGoal implements Goal, Configurable, Comparable<Abs
      * @return normalized score. 0 means not allowed action
      * > 0 means permitted action, but can be positive or negative for this goal
      */
-    private double calculateAcceptanceScore(Broker srcBrokerBefore, Broker destBrokerBefore, Broker srcBrokerAfter, Broker destBrokerAfter) {
+    double calculateAcceptanceScore(Broker srcBrokerBefore, Broker destBrokerBefore, Broker srcBrokerAfter, Broker destBrokerAfter) {
         double score = scoreDelta(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);
-        boolean isSrcBrokerAcceptedBefore = isBrokerAcceptable(srcBrokerBefore);
-        boolean isDestBrokerAcceptedBefore = isBrokerAcceptable(destBrokerBefore);
-        boolean isSrcBrokerAcceptedAfter = isBrokerAcceptable(srcBrokerAfter);
-        boolean isDestBrokerAcceptedAfter = isBrokerAcceptable(destBrokerAfter);
 
         if (!isHardGoal()) {
             return score;
         }
+
+        boolean isSrcBrokerAcceptedBefore = isBrokerAcceptable(srcBrokerBefore);
+        boolean isDestBrokerAcceptedBefore = isBrokerAcceptable(destBrokerBefore);
+        boolean isSrcBrokerAcceptedAfter = isBrokerAcceptable(srcBrokerAfter);
+        boolean isDestBrokerAcceptedAfter = isBrokerAcceptable(destBrokerAfter);
 
         if (isSrcBrokerAcceptedBefore && !isSrcBrokerAcceptedAfter) {
             return 0.0;
@@ -114,18 +111,8 @@ public abstract class AbstractGoal implements Goal, Configurable, Comparable<Abs
     }
 
     @Override
-    public int priority() {
-        return GoalUtils.priority(this);
-    }
-
-    @Override
     public Set<Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
         return cluster.brokers().stream().filter(Broker::isActive).collect(Collectors.toSet());
-    }
-
-    @Override
-    public int compareTo(AbstractGoal other) {
-        return Integer.compare(other.priority(), this.priority());
     }
 
     @Override
