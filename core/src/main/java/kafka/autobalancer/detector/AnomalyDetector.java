@@ -37,7 +37,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class AnomalyDetector {
-    public static final int UNLIMITED_ACTIONS_PER_DETECT = -1;
     private final Logger logger;
     private final List<Goal> goalsByPriority;
     private final ClusterModel clusterModel;
@@ -103,7 +102,7 @@ public class AnomalyDetector {
         this.running = true;
     }
 
-    private void detect() {
+    void detect() {
         if (!this.running) {
             return;
         }

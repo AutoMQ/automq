@@ -1006,6 +1006,7 @@ project(':core') {
     testImplementation(libs.jfreechart) {
       exclude group: 'junit', module: 'junit'
     }
+    testImplementation(libs.commonMath3)
 
     generator project(':generator')
   }
