@@ -723,7 +723,6 @@ object KafkaConfig {
   val S3ObjectLogEnableProp = "s3.object.log.enable"
   val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
   val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
-  val S3FailoverEnableProp = "s3.failover.enable"
   val S3MetricsEnableProp = "s3.telemetry.metrics.enable"
   val S3TracerEnableProp = "s3.telemetry.tracer.enable"
   val S3ExporterOTLPEndpointProp = "s3.telemetry.exporter.otlp.endpoint"
@@ -772,7 +771,6 @@ object KafkaConfig {
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
-  val S3FailoverEnableDoc = "Failover mode: if enable, the controller will scan failed node and failover the failed node"
   val S3MetricsEnableDoc = "Whether to enable metrics exporter for s3stream."
   val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
   val S3MetricsLevelDoc = "The metrics level, supported value: INFO, DEBUG"
@@ -1618,7 +1616,6 @@ object KafkaConfig {
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
-      .define(S3FailoverEnableProp, BOOLEAN, false, MEDIUM, S3FailoverEnableDoc)
       .define(S3MetricsEnableProp, BOOLEAN, true, MEDIUM, S3MetricsEnableDoc)
       .define(S3TracerEnableProp, BOOLEAN, false, MEDIUM, S3TracerEnableDoc)
       .define(S3MetricsLevelProp, STRING, "INFO", MEDIUM, S3MetricsLevelDoc)
@@ -2201,7 +2198,6 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
-  val s3FailoverEnable = getBoolean(KafkaConfig.S3FailoverEnableProp)
   val s3MetricsEnable = getBoolean(KafkaConfig.S3MetricsEnableProp)
   val s3TracerEnable = getBoolean(KafkaConfig.S3TracerEnableProp)
   val s3MetricsLevel = getString(KafkaConfig.S3MetricsLevelProp)

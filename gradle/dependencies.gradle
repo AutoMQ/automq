@@ -130,7 +130,7 @@ versions += [
   commonLang: "3.12.0",
   commonio: "2.15.1",
   commonMath3: "3.6.1",
-  s3stream: "0.16.0-SNAPSHOT",
+  s3stream: "0.17.0-SNAPSHOT",
   opentelemetry: "1.32.0",
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7"

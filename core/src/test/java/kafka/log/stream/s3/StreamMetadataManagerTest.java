@@ -115,7 +115,7 @@ public class StreamMetadataManagerTest {
 
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
                 DeltaMap.of(BROKER0, walMetadataImage0));
-        image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
+        image0 = new MetadataImage(new MetadataProvenance(0, 0, 0), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
 
         ranges = new ArrayList<>(ranges);
         ranges.add(new RangeMetadata(STREAM0, 1L, 1, 100L, 150L, BROKER0));
@@ -124,7 +124,7 @@ public class StreamMetadataManagerTest {
         streamImage = new S3StreamMetadataImage(STREAM0, 2L, StreamState.OPENED, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
                 DeltaMap.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
-        image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
+        image1 = new MetadataImage(new MetadataProvenance(1, 1, 1), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
 
         ranges = new ArrayList<>(ranges);
         ranges.add(new RangeMetadata(STREAM0, 2L, 2, 150L, 200L, BROKER0));
@@ -133,7 +133,7 @@ public class StreamMetadataManagerTest {
         streamImage = new S3StreamMetadataImage(STREAM0, 3L, StreamState.OPENED, 10L, ranges, streamObjects);
         streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
                 DeltaMap.of(BROKER0, NodeS3StreamSetObjectMetadataImage.EMPTY));
-        image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null, null);
+        image2 = new MetadataImage(new MetadataProvenance(2, 2, 2), null, null, null, null, null, null, null, streamsImage, objectsImage, null);
     }
 
     @Test

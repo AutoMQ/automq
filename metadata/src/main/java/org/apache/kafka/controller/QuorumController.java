@@ -91,7 +91,6 @@ import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
-import org.apache.kafka.common.metadata.FailoverContextRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -128,7 +127,6 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.controller.stream.FailoverControlManager;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -636,9 +634,12 @@ public final class QuorumController implements Controller {
         return replicationControl;
     }
 
-    // Visible for testing
-    ClusterControlManager clusterControl() {
+    public ClusterControlManager clusterControl() {
         return clusterControl;
+    }
+
+    public SnapshotRegistry snapshotRegistry() {
+        return snapshotRegistry;
     }
 
     // Visible for testing
@@ -669,7 +670,7 @@ public final class QuorumController implements Controller {
         return event.future();
     }
 
-    interface ControllerWriteOperation<T> {
+    public interface ControllerWriteOperation<T> {
         /**
          * Generate the metadata records needed to implement this controller write
          * operation.  In general, this operation should not modify the "hard state" of
@@ -896,7 +897,7 @@ public final class QuorumController implements Controller {
         }
     }
 
-    <T> CompletableFuture<T> appendWriteEvent(String name,
+    public <T> CompletableFuture<T> appendWriteEvent(String name,
                                               OptionalLong deadlineNs,
                                               ControllerWriteOperation<T> op) {
         ControllerWriteEvent<T> event = new ControllerWriteEvent<>(name, op);
@@ -1445,6 +1446,7 @@ public final class QuorumController implements Controller {
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset) {
         logReplayTracker.replay(message);
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
+        boolean extensionMatch = extension.replay(type, message, snapshotId, batchLastOffset);
         switch (type) {
             case REGISTER_BROKER_RECORD:
                 clusterControl.replay((RegisterBrokerRecord) message, batchLastOffset);
@@ -1500,7 +1502,6 @@ public final class QuorumController implements Controller {
                 break;
 
             // AutoMQ for Kafka inject start
-
             case S3_STREAM_RECORD:
                 streamControlManager.replay((S3StreamRecord) message);
                 break;
@@ -1552,12 +1553,11 @@ public final class QuorumController implements Controller {
             case UPDATE_NEXT_NODE_ID_RECORD:
                 clusterControl.replay((UpdateNextNodeIdRecord) message);
                 break;
-            case FAILOVER_CONTEXT_RECORD:
-                failoverControlManager.replay((FailoverContextRecord) message);
-                break;
-            // AutoMQ for Kafka inject end
             default:
-                throw new RuntimeException("Unhandled record type " + type);
+                if (!extensionMatch) {
+                    throw new RuntimeException("Unhandled record type " + type);
+                }
+            // AutoMQ for Kafka inject end
         }
     }
 
@@ -1807,11 +1807,7 @@ public final class QuorumController implements Controller {
      */
     private final KVControlManager kvControlManager;
 
-    /**
-     * Failover control manager which handles the failover of the failed node.
-     */
-    private final FailoverControlManager failoverControlManager;
-
+    private QuorumControllerExtension extension = QuorumControllerExtension.NOOP;
     // AutoMQ for Kafka inject end
 
     private QuorumController(
@@ -1934,7 +1930,6 @@ public final class QuorumController implements Controller {
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
         this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
-        this.failoverControlManager = new FailoverControlManager(this, clusterControl, snapshotRegistry, streamConfig.failoverEnable());
         // AutoMQ for Kafka inject end
         updateWriteOffset(-1);
 
@@ -2456,10 +2451,8 @@ public final class QuorumController implements Controller {
         );
     }
 
-    @Override
-    public CompletableFuture<Void> failover(ControllerRequestContext context) {
-        return appendWriteEvent("failover", context.deadlineNs(),
-                failoverControlManager::failover);
+    public void setExtension(QuorumControllerExtension extension) {
+        this.extension = extension;
     }
 
     // AutoMQ for Kafka inject end

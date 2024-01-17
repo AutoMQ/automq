@@ -61,7 +61,6 @@ public class ConfigUtils {
                 .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
                 .refillPeriodMs(s.s3RefillPeriodMsProp())
                 .objectRetentionTimeInSecond(s.s3ObjectRetentionTimeInSecond())
-                .failoverEnable(s.s3FailoverEnable())
                 .forcePathStyle(s.s3PathStyle())
                 .accessKey(accessKey)
                 .secretKey(secretKey);

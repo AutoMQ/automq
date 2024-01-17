@@ -33,6 +33,9 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.failover.FailoverRequest;
+import com.automq.stream.s3.failover.FailoverResponse;
+import com.automq.stream.utils.FutureUtil;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -67,6 +70,11 @@ public class MemoryClient implements Client {
     @Override
     public KVClient kvClient() {
         return kvClient;
+    }
+
+    @Override
+    public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     static class StreamImpl implements Stream {

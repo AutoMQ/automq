@@ -37,7 +37,7 @@ import org.apache.kafka.common.security.scram.internals.ScramMechanism
 import org.apache.kafka.common.security.token.delegation.internals.DelegationTokenCache
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint}
-import org.apache.kafka.controller.{Controller, QuorumController, QuorumFeatures}
+import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.metadata.KafkaConfigSchema
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
@@ -103,7 +103,7 @@ class ControllerServer(
   val socketServerFirstBoundPortFuture = new CompletableFuture[Integer]()
   var createTopicPolicy: Option[CreateTopicPolicy] = None
   var alterConfigPolicy: Option[AlterConfigPolicy] = None
-  var controller: Controller = _
+  var controller: QuorumController = _
   var quotaManagers: QuotaManagers = _
   var controllerApis: ControllerApis = _
   var controllerApisHandlerPool: KafkaRequestHandlerPool = _
@@ -111,7 +111,7 @@ class ControllerServer(
   var autoBalancerManager: AutoBalancerManager = _
 
   def buildAutoBalancerManager: AutoBalancerManager = {
-    new AutoBalancerManager(time, config, controller.asInstanceOf[QuorumController], raftManager.client)
+    new AutoBalancerManager(time, config, controller, raftManager.client)
   }
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -255,6 +255,7 @@ class ControllerServer(
         case _ => // nothing to do
       }
       controller = controllerBuilder.build()
+      controller.setExtension(quorumControllerExtension(controller))
 
       // Perform any setup that is done only when this node is a controller-only node.
       if (!config.processRoles.contains(BrokerRole)) {
@@ -267,7 +268,7 @@ class ControllerServer(
         val propagator: LegacyPropagator = new MigrationPropagator(config.nodeId, config)
         val migrationDriver = new KRaftMigrationDriver(
           config.nodeId,
-          controller.asInstanceOf[QuorumController].zkRecordConsumer(),
+          controller.zkRecordConsumer(),
           migrationClient,
           propagator,
           publisher => sharedServer.loader.installPublishers(java.util.Collections.singletonList(publisher)),
@@ -376,4 +377,10 @@ class ControllerServer(
       lock.unlock()
     }
   }
+
+  // AutoMQ for Kafka inject start
+  def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
+    QuorumControllerExtension.NOOP
+  }
+  // AutoMQ for Kafka inject end
 }
