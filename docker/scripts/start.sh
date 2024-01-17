@@ -270,9 +270,6 @@ kafka_up() {
       setup_value "log.dirs" "${data_path}/kraft-${role}-logs" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "s3.wal.path" "${data_path}/wal" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "s3.endpoint" "${s3_endpoint}" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "WorkingDirectory" "${kafka_dir}" "${start_dir}/kafka.service"
-      sed -i "s|Environment='KAFKA_S3_ACCESS_KEY.*$|Environment='KAFKA_S3_ACCESS_KEY=${s3_access_key}'|" "${start_dir}/kafka.service"
-      sed -i "s|Environment='KAFKA_S3_SECRET_KEY.*$|Environment='KAFKA_S3_SECRET_KEY=${s3_secret_key}'|" "${start_dir}/kafka.service"
       # turn on auto_balancer
       turn_on_auto_balancer "${role}" "${kafka_dir}/config/kraft/${role}.properties"
   done
@@ -286,8 +283,6 @@ kafka_up() {
   else
       die "kafka_start_up: unknown process role ${process_role}"
   fi
-  sed -i "s|Environment='KAFKA_HEAP_OPTS.*$|Environment='KAFKA_HEAP_OPTS=${kafka_heap_opts}'|" "${start_dir}/kafka.service"
-  setup_value "ExecStart" "${kafka_dir}/bin/kafka-server-start.sh ${kafka_dir}/config/kraft/${process_role}.properties" "${start_dir}/kafka.service"
 
   # add this node's info to run.info
   setup_value "node.id" "${node_id}" "${run_info_file}"
@@ -302,17 +297,13 @@ kafka_up() {
   # override settings from env
   configure_from_environment_variables "${kafka_dir}/config/kraft/${process_role}.properties"
 
+  # Disable the default console logger in favour of KafkaAppender (which provides the exact output)
+  echo "log4j.appender.stdout.Threshold=OFF" >> "${kafka_dir}/config/log4j.properties"
+
   # format the data path
   must_do -v "${kafka_dir}/bin/kafka-storage.sh format -g -t ${cluster_id} -c ${kafka_dir}/config/kraft/${process_role}.properties"
 
-  must_do -v cp "${start_dir}/kafka.service" "/etc/systemd/system/kafka.service"
-  must_do -v systemctl daemon-reload
-  must_do -v systemctl enable kafka
-  must_do -v systemctl start kafka
-
-  echo "** kafka_up: successfully brought up kafka node with role ${process_role} **"
-
-  tail -f /dev/null
+  exec "${kafka_dir}/bin/kafka-server-start.sh" "${kafka_dir}/config/kraft/${process_role}.properties"
 }
 
 # Parse command-line arguments

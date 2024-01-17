@@ -21,15 +21,17 @@ MAINTAINER AutoMQ for Apache Kafka dev@automq.com
 # Set mirrors
 ARG general_mirror_url=""
 RUN [ -z "${general_mirror_url}" ] || (sed -i "s/deb.debian.org/${general_mirror_url}/g" /etc/apt/sources.list && sed -i "s|security.debian.org/debian-security|${general_mirror_url}/debian-security|g" /etc/apt/sources.list)
-RUN apt update && apt install -y vim systemctl
+RUN apt update && apt install -y vim
 
 # Do not ask for confirmations when running apt-get, etc.
 ENV DEBIAN_FRONTEND=noninteractive \
-    AWS_DEFAULT_REGION=us-east-1
+    AWS_DEFAULT_REGION=us-east-1 \
+    KAFKA_JVM_PERFORMANCE_OPTS="-server -XX:+UseZGC -XX:ZCollectionInterval=5"
 
 COPY "./kafka_*.tgz" /opt/kafka/kafka.tgz
 RUN tar -xzvf "/opt/kafka/kafka.tgz" -C /opt/kafka/ --one-top-level=kafka --strip-components 1 && rm "/opt/kafka/kafka.tgz"
 COPY scripts /opt/kafka/scripts
+RUN chmod +x /opt/kafka/scripts/*.sh
 
 RUN mkdir -p /data/kafka
 

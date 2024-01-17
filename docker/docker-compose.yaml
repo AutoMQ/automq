@@ -52,12 +52,17 @@ services:
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
+    stop_grace_period: 2m
     image: automqinc/kafka:1.0.0-rc5
     environment:
       - KAFKA_S3_ACCESS_KEY=test
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
-    command: bash /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - afk_net
     depends_on:
@@ -67,6 +72,7 @@ services:
   broker1:
     container_name: "${BROKER1_DOCKER_NAME-broker1}"
     hostname: "${BROKER1_DOCKER_NAME-broker1}"
+    stop_grace_period: 2m
     image: automqinc/kafka:1.0.0-rc5
     ports:
       - "9094:9094"
@@ -81,7 +87,11 @@ services:
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9094
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9094
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - afk_net
     depends_on:
@@ -92,6 +102,7 @@ services:
   broker2:
     container_name: "${BROKER2_DOCKER_NAME-broker2}"
     hostname: "${BROKER2_DOCKER_NAME-broker2}"
+    stop_grace_period: 2m
     image: automqinc/kafka:1.0.0-rc5
     ports:
       - "9095:9095"
@@ -106,7 +117,11 @@ services:
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9095
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9095
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
-    command: bash /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - afk_net
     depends_on:
