@@ -13,9 +13,9 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 ![](https://img.shields.io/badge/Java%20-%20JDK17-green)
 
 ---
-[![](https://img.shields.io/badge/official%20document-20B2AA?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
+[![](https://img.shields.io/badge/official%20website-20B2AA?style=for-the-badge)](https://www.automq.com)
 &nbsp;
-[![](https://img.shields.io/badge/playground-blue?style=for-the-badge)](https://www.automq.com/home.html)
+[![](https://img.shields.io/badge/official%20document-blue?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 &nbsp;
 <a href="https://twitter.com/AutoMQ_Lab"><img src="https://img.shields.io/badge/- @AutoMQ_Lab -424549?style=social&logo=twitter" height=25></a>
 &nbsp;
