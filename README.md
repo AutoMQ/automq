@@ -19,18 +19,12 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 &nbsp;
 <a href="https://twitter.com/AutoMQ_Lab"><img src="https://img.shields.io/badge/- @AutoMQ_Lab -424549?style=social&logo=twitter" height=25></a>
 &nbsp;
-<a href="docs/images/automq-wechat.png"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=25></a>
+[](docs/images/automq-wechat.png)<img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=25></a>
 &nbsp;
 
 ---
 
-<img src="https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws" height="20">
-<img src="https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud" height="20">
-<img src="https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure" height="20">
-<img src="https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud" height="20">
-<img src="https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei" height="20">
-<img src="https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu" height="20">
-<img src="https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq" height="20">
+<img src="https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws" height="20"><img src="https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud" height="20"><img src="https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure" height="20"><img src="https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud" height="20"><img src="https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei" height="20"><img src="https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu" height="20"><img src="https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq" height="20">
 
 
 
