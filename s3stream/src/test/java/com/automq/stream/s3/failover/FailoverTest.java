@@ -28,19 +28,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 public class FailoverTest {
     String path;
     FailoverFactory failoverFactory;
     WALRecover walRecover;
-    Serverless serverless;
     Failover failover;
 
     @BeforeEach
@@ -48,8 +44,7 @@ public class FailoverTest {
         path = "/tmp/" + System.currentTimeMillis() + "/failover_test_wal";
         failoverFactory = mock(FailoverFactory.class);
         walRecover = mock(WALRecover.class);
-        serverless = mock(Serverless.class);
-        failover = spy(new Failover(failoverFactory, walRecover, serverless));
+        failover = spy(new Failover(failoverFactory, walRecover));
     }
 
     @AfterEach
@@ -82,12 +77,8 @@ public class FailoverTest {
 
         // node match
         request.setNodeId(233);
-        failover.failover(request).get(1, TimeUnit.SECONDS);
-
-        ArgumentCaptor<String> ac = ArgumentCaptor.forClass(String.class);
-        verify(serverless, times(1)).delete(ac.capture());
-        String req = ac.getValue();
-        assertEquals("test_volume_id", req);
+        FailoverResponse resp = failover.failover(request).get(1, TimeUnit.SECONDS);
+        assertEquals(233, resp.getNodeId());
     }
 
 }

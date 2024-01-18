@@ -46,12 +46,10 @@ public class Failover {
     private final ExecutorService executor = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("wal-failover-%d", true), LOGGER);
     private final FailoverFactory factory;
     private final WALRecover walRecover;
-    private final Serverless serverless;
 
-    public Failover(FailoverFactory factory, WALRecover walRecover, Serverless serverless) {
+    public Failover(FailoverFactory factory, WALRecover walRecover) {
         this.factory = factory;
         this.walRecover = walRecover;
-        this.serverless = serverless;
     }
 
     public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
@@ -81,14 +79,12 @@ public class Failover {
             FailoverResponse resp = new FailoverResponse();
             resp.setNodeId(request.getNodeId());
             // fence the device to ensure the old node stops writing to the delta WAL
-            serverless.fence(request.getVolumeId());
             // recover WAL data and upload to S3
             BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
             try {
                 wal.start();
             } catch (WALNotInitializedException ex) {
                 LOGGER.info("fail over empty wal {}", request);
-                serverless.delete(request.getVolumeId());
                 return resp;
             }
             try {
@@ -108,8 +104,6 @@ public class Failover {
             } finally {
                 wal.shutdownGracefully();
             }
-            // delete the volume
-            serverless.delete(request.getVolumeId());
             LOGGER.info("failover done {}", request);
             return resp;
         }
