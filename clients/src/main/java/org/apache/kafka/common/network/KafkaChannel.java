@@ -86,12 +86,9 @@ public class KafkaChannel implements AutoCloseable {
     public enum ChannelMuteState {
         NOT_MUTED,
         MUTED,
-        MUTED_AND_THROTTLED
-        // AutoMQ for Kafka inject start
-        //        MUTED_AND_RESPONSE_PENDING,
-        //        MUTED_AND_THROTTLED,
-        //        MUTED_AND_THROTTLED_AND_RESPONSE_PENDING
-        // AutoMQ for Kafka inject end
+        MUTED_AND_RESPONSE_PENDING,
+        MUTED_AND_THROTTLED,
+        MUTED_AND_THROTTLED_AND_RESPONSE_PENDING
     }
 
     /** Socket server events that will change the mute state:
@@ -112,11 +109,8 @@ public class KafkaChannel implements AutoCloseable {
      * </ul>
      */
     public enum ChannelMuteEvent {
-        // AutoMQ for Kafka inject start
-        // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
-        //        REQUEST_RECEIVED,
-        //        RESPONSE_SENT,
-        // AutoMQ for Kafka inject end
+        REQUEST_RECEIVED,
+        RESPONSE_SENT,
         THROTTLE_STARTED,
         THROTTLE_ENDED
     }
@@ -280,14 +274,28 @@ public class KafkaChannel implements AutoCloseable {
         return muteState == ChannelMuteState.NOT_MUTED;
     }
 
-    // AutoMQ for Kafka inject start
-    // Handle the specified channel mute-related event and transition the mute state according to the state machine.
     public void handleChannelMuteEvent(ChannelMuteEvent event) {
         boolean stateChanged = false;
         switch (event) {
-            case THROTTLE_STARTED:
-                if (muteState == ChannelMuteState.NOT_MUTED) {
+            case REQUEST_RECEIVED:
+                if (muteState == ChannelMuteState.MUTED) {
+                    muteState = ChannelMuteState.MUTED_AND_RESPONSE_PENDING;
+                    stateChanged = true;
+                }
+                break;
+            case RESPONSE_SENT:
+                if (muteState == ChannelMuteState.MUTED_AND_RESPONSE_PENDING) {
+                    muteState = ChannelMuteState.MUTED;
+                    stateChanged = true;
+                }
+                if (muteState == ChannelMuteState.MUTED_AND_THROTTLED_AND_RESPONSE_PENDING) {
                     muteState = ChannelMuteState.MUTED_AND_THROTTLED;
+                    stateChanged = true;
+                }
+                break;
+            case THROTTLE_STARTED:
+                if (muteState == ChannelMuteState.MUTED_AND_RESPONSE_PENDING) {
+                    muteState = ChannelMuteState.MUTED_AND_THROTTLED_AND_RESPONSE_PENDING;
                     stateChanged = true;
                 }
                 break;
@@ -296,13 +304,15 @@ public class KafkaChannel implements AutoCloseable {
                     muteState = ChannelMuteState.MUTED;
                     stateChanged = true;
                 }
-                break;
+                if (muteState == ChannelMuteState.MUTED_AND_THROTTLED_AND_RESPONSE_PENDING) {
+                    muteState = ChannelMuteState.MUTED_AND_RESPONSE_PENDING;
+                    stateChanged = true;
+                }
         }
         if (!stateChanged) {
             throw new IllegalStateException("Cannot transition from " + muteState.name() + " for " + event.name());
         }
     }
-    // AutoMQ for Kafka inject end
 
     public ChannelMuteState muteState() {
         return muteState;
