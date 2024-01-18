@@ -34,10 +34,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
@@ -84,26 +85,16 @@ public class S3Utils {
     }
 
     private static S3AsyncClient newS3AsyncClient(String endpoint, String region, boolean forcePathStyle,
-        String accessKey, String secretKey) {
+        List<AwsCredentialsProvider> credentialsProviders) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
-        builder.credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
+        builder.credentialsProvider(AwsCredentialsProviderChain.builder().credentialsProviders(credentialsProviders).build());
         builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
             .apiCallAttemptTimeout(Duration.ofSeconds(30)));
         return builder.build();
-    }
-
-    private static String hideSecret(String secret) {
-        if (secret == null) {
-            return null;
-        }
-        if (secret.length() < 6) {
-            return "*".repeat(secret.length());
-        }
-        return secret.substring(0, 3) + "*".repeat(secret.length() - 6) + secret.substring(secret.length() - 3);
     }
 
     private static abstract class S3CheckTask implements AutoCloseable {
@@ -112,7 +103,7 @@ public class S3Utils {
         private final String taskName;
 
         public S3CheckTask(S3Context context, String taskName) {
-            this.client = newS3AsyncClient(context.endpoint, context.region, context.forcePathStyle, context.accessKey, context.secretKey);
+            this.client = newS3AsyncClient(context.endpoint, context.region, context.forcePathStyle, context.credentialsProviders);
             this.bucketName = context.bucketName;
             this.taskName = taskName;
         }
@@ -363,17 +354,16 @@ public class S3Utils {
 
     public static class S3Context {
         private final String endpoint;
-        private final String accessKey;
-        private final String secretKey;
+        private final List<AwsCredentialsProvider> credentialsProviders;
         private final String bucketName;
         private final String region;
         private final boolean forcePathStyle;
 
-        public S3Context(String endpoint, String accessKey, String secretKey, String bucketName, String region,
+        public S3Context(String endpoint, List<AwsCredentialsProvider> credentialsProviders, String bucketName,
+            String region,
             boolean forcePathStyle) {
             this.endpoint = endpoint;
-            this.accessKey = accessKey;
-            this.secretKey = secretKey;
+            this.credentialsProviders = credentialsProviders;
             this.bucketName = bucketName;
             this.region = region;
             this.forcePathStyle = forcePathStyle;
@@ -406,11 +396,13 @@ public class S3Utils {
                     }
                 }
             }
-            if (StringUtils.isBlank(accessKey)) {
-                advises.add("accessKey is blank. Please supply a valid accessKey.");
+            if (credentialsProviders == null || credentialsProviders.isEmpty()) {
+                advises.add("no credentials provider is supplied. Please supply a credentials provider.");
             }
-            if (StringUtils.isBlank(secretKey)) {
-                advises.add("secretKey is blank. Please supply a valid secretKey.");
+            try (AwsCredentialsProviderChain chain = AwsCredentialsProviderChain.builder().credentialsProviders(credentialsProviders).build()) {
+                chain.resolveCredentials();
+            } catch (SdkClientException e) {
+                advises.add("all provided credentials providers are invalid. Please supply a valid credentials provider. Error msg: " + e.getMessage());
             }
             if (StringUtils.isBlank(region)) {
                 advises.add("region is blank. Please supply a valid region.");
@@ -425,8 +417,7 @@ public class S3Utils {
         public String toString() {
             return "S3CheckContext{" +
                 "endpoint='" + endpoint + '\'' +
-                ", accessKey='" + hideSecret(accessKey) + '\'' +
-                ", secretKey='" + hideSecret(secretKey) + '\'' +
+                ", credentialsProviders=" + credentialsProviders +
                 ", bucketName='" + bucketName + '\'' +
                 ", region='" + region + '\'' +
                 ", forcePathStyle=" + forcePathStyle +
@@ -435,8 +426,7 @@ public class S3Utils {
 
         public static class Builder {
             private String endpoint;
-            private String accessKey;
-            private String secretKey;
+            private List<AwsCredentialsProvider> credentialsProviders;
             private String bucketName;
             private String region;
             private boolean forcePathStyle;
@@ -446,13 +436,8 @@ public class S3Utils {
                 return this;
             }
 
-            public Builder setAccessKey(String accessKey) {
-                this.accessKey = accessKey;
-                return this;
-            }
-
-            public Builder setSecretKey(String secretKey) {
-                this.secretKey = secretKey;
+            public Builder setCredentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
+                this.credentialsProviders = credentialsProviders;
                 return this;
             }
 
@@ -472,7 +457,7 @@ public class S3Utils {
             }
 
             public S3Context build() {
-                return new S3Context(endpoint, accessKey, secretKey, bucketName, region, forcePathStyle);
+                return new S3Context(endpoint, credentialsProviders, bucketName, region, forcePathStyle);
             }
         }
 
