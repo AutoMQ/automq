@@ -1119,8 +1119,12 @@ private[kafka] class Processor(
                 // AutoMQ for Kafka inject start
                 // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
 
-                //                selector.mute(connectionId)
-                //                handleChannelMuteEvent(connectionId, ChannelMuteEvent.REQUEST_RECEIVED)
+                // Mute the channel if the inflight requests exceed the threshold.
+                if (ordering.nextCorrelationId.size() >= 8 && !channel.isMuted) {
+                  info(s"Mute channel ${channel.id} because the inflight requests exceed the threshold, inflight count is ${ordering.nextCorrelationId.size()}.")
+                  selector.mute(connectionId)
+                  handleChannelMuteEvent(connectionId, ChannelMuteEvent.REQUEST_RECEIVED)
+                }
 
                 // AutoMQ for Kafka inject end
               }
@@ -1157,8 +1161,15 @@ private[kafka] class Processor(
         // Try unmuting the channel. If there was no quota violation and the channel has not been throttled,
         // it will be unmuted immediately. If the channel has been throttled, it will unmuted only if the throttling
         // delay has already passed by now.
-        //        handleChannelMuteEvent(send.destinationId, ChannelMuteEvent.RESPONSE_SENT)
-        //        tryUnmuteChannel(send.destinationId)
+
+        val orderedResponse = orderedResponses.get(send.destinationId)
+        openOrClosingChannel(send.destinationId).foreach(channel => {
+          if (channel.isMuted && (orderedResponse == null || orderedResponse.nextCorrelationId.size() < 8)) {
+            info(s"Unmute channel ${send.destinationId} because the inflight requests are below the threshold.")
+            channel.handleChannelMuteEvent(ChannelMuteEvent.RESPONSE_SENT)
+            selector.unmute(channel.id)
+          }
+        })
 
         // AutoMQ for Kafka inject end
       } catch {
