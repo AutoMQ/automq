@@ -60,7 +60,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
@@ -113,20 +113,20 @@ public class DefaultS3Operator implements S3Operator {
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey,
-        String secretKey) {
-        this(endpoint, region, bucket, forcePathStyle, accessKey, secretKey, null, null, false);
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
+        List<AwsCredentialsProvider> credentialsProviders) {
+        this(endpoint, region, bucket, forcePathStyle, credentialsProviders, null, null, false);
     }
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle, String accessKey,
-        String secretKey,
+    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
+        List<AwsCredentialsProvider> credentialsProviders,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
-        this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, accessKey, secretKey);
-        this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, accessKey, secretKey) : writeS3Client;
+        this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders);
+        this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders) : writeS3Client;
         this.inflightWriteLimiter = new Semaphore(50);
         this.inflightReadLimiter = readWriteIsolate ? new Semaphore(50) : inflightWriteLimiter;
         this.bucket = bucket;
@@ -137,8 +137,7 @@ public class DefaultS3Operator implements S3Operator {
             .setRegion(region)
             .setBucketName(bucket)
             .setForcePathStyle(forcePathStyle)
-            .setAccessKey(accessKey)
-            .setSecretKey(secretKey)
+            .setCredentialsProviders(credentialsProviders)
             .build();
         LOGGER.info("You are using s3Context: {}", s3Context);
         checkAvailable(s3Context);
@@ -649,24 +648,28 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle, String accessKey,
-        String secretKey) {
+    public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
+        List<AwsCredentialsProvider> credentialsProviders) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
-        builder.credentialsProvider(AwsCredentialsProviderChain.builder()
-            .reuseLastProviderEnabled(true)
-            .credentialsProviders(
-                () -> AwsBasicCredentials.create(accessKey, secretKey),
-                InstanceProfileCredentialsProvider.create(),
-                AnonymousCredentialsProvider.create()
-            ).build()
-        );
+        builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
             .apiCallAttemptTimeout(Duration.ofSeconds(30)));
         return builder.build();
+    }
+
+    private AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
+        List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
+        // Add default providers to the end of the chain
+        providers.add(InstanceProfileCredentialsProvider.create());
+        providers.add(AnonymousCredentialsProvider.create());
+        return AwsCredentialsProviderChain.builder()
+            .reuseLastProviderEnabled(true)
+            .credentialsProviders(providers)
+            .build();
     }
 
     /**
@@ -813,8 +816,7 @@ public class DefaultS3Operator implements S3Operator {
         private String region;
         private String bucket;
         private boolean forcePathStyle;
-        private String accessKey;
-        private String secretKey;
+        private List<AwsCredentialsProvider> credentialsProviders;
         private AsyncNetworkBandwidthLimiter inboundLimiter;
         private AsyncNetworkBandwidthLimiter outboundLimiter;
         private boolean readWriteIsolate;
@@ -839,13 +841,8 @@ public class DefaultS3Operator implements S3Operator {
             return this;
         }
 
-        public Builder accessKey(String accessKey) {
-            this.accessKey = accessKey;
-            return this;
-        }
-
-        public Builder secretKey(String secretKey) {
-            this.secretKey = secretKey;
+        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
+            this.credentialsProviders = credentialsProviders;
             return this;
         }
 
@@ -865,7 +862,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         public DefaultS3Operator build() {
-            return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, accessKey, secretKey,
+            return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, credentialsProviders,
                 inboundLimiter, outboundLimiter, readWriteIsolate);
         }
     }

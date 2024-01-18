@@ -24,8 +24,6 @@ public class Config {
     private String region;
     private String bucket;
     private boolean forcePathStyle = false;
-    private String accessKey;
-    private String secretKey;
     private String walPath = "/tmp/s3stream_wal";
     private long walCacheSize = 200 * 1024 * 1024;
     private long walCapacity = 1024L * 1024 * 1024;
@@ -205,14 +203,6 @@ public class Config {
 
     public boolean objectLogEnable() {
         return objectLogEnable;
-    }
-
-    public String accessKey() {
-        return accessKey;
-    }
-
-    public String secretKey() {
-        return secretKey;
     }
 
     public long networkBaselineBandwidth() {
@@ -400,16 +390,6 @@ public class Config {
 
     public Config objectLogEnable(boolean s3ObjectLogEnable) {
         this.objectLogEnable = s3ObjectLogEnable;
-        return this;
-    }
-
-    public Config accessKey(String s3AccessKey) {
-        this.accessKey = s3AccessKey;
-        return this;
-    }
-
-    public Config secretKey(String s3SecretKey) {
-        this.secretKey = s3SecretKey;
         return this;
     }
 
