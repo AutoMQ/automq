@@ -559,11 +559,5 @@ public class MockController implements Controller {
     public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
         throw new UnsupportedOperationException();
     }
-
-    @Override
-    public CompletableFuture<Void> failover(ControllerRequestContext context) {
-        throw new UnsupportedOperationException();
-    }
-
     // AutoMQ for Kafka inject end
 }

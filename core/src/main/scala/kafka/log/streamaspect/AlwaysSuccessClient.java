@@ -31,6 +31,8 @@ import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.failover.FailoverRequest;
+import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
@@ -87,6 +89,11 @@ public class AlwaysSuccessClient implements Client {
     @Override
     public KVClient kvClient() {
         return kvClient;
+    }
+
+    @Override
+    public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
+        return innerClient.failover(request);
     }
 
     @Override

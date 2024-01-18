@@ -60,4 +60,8 @@ public final class KVDelta {
         return new KVImage(newKV);
     }
 
+    public Map<String, ByteBuffer> changedKV() {
+        return changedKV;
+    }
+
 }

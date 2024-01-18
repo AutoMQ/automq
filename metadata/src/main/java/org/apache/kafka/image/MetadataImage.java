@@ -41,8 +41,7 @@ public final class MetadataImage {
         AclsImage.EMPTY,
         S3StreamsMetadataImage.EMPTY,
         S3ObjectsImage.EMPTY,
-        KVImage.EMPTY,
-        FailoverContextImage.EMPTY);
+        KVImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -67,9 +66,6 @@ public final class MetadataImage {
     private final S3ObjectsImage objectsMetadata;
 
     private final KVImage kv;
-
-    private final FailoverContextImage failover;
-
     // AutoMQ for Kafka inject end
 
     public MetadataImage(
@@ -83,8 +79,7 @@ public final class MetadataImage {
         AclsImage acls,
         S3StreamsMetadataImage streamMetadata,
         S3ObjectsImage s3ObjectsImage,
-        KVImage kvImage,
-        FailoverContextImage failover
+        KVImage kvImage
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -97,7 +92,6 @@ public final class MetadataImage {
         this.streamMetadata = streamMetadata;
         this.objectsMetadata = s3ObjectsImage;
         this.kv = kvImage;
-        this.failover = failover;
     }
 
     public boolean isEmpty() {
@@ -110,8 +104,7 @@ public final class MetadataImage {
             acls.isEmpty() &&
             streamMetadata.isEmpty() &&
             objectsMetadata.isEmpty() &&
-            kv.isEmpty() &&
-            failover.isEmpty();
+            kv.isEmpty();
     }
 
     public MetadataProvenance provenance() {
@@ -167,11 +160,6 @@ public final class MetadataImage {
     public KVImage kv() {
         return kv;
     }
-
-    public FailoverContextImage failoverContext() {
-        return failover;
-    }
-
     // AutoMQ for Kafka inject end
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
@@ -188,7 +176,6 @@ public final class MetadataImage {
         streamMetadata.write(writer, options);
         objectsMetadata.write(writer, options);
         kv.write(writer, options);
-        failover.write(writer, options);
         // AutoMQ for Kafka inject end
         writer.close(true);
     }
@@ -207,8 +194,7 @@ public final class MetadataImage {
             acls.equals(other.acls) &&
             streamMetadata.equals(other.streamMetadata) &&
             objectsMetadata.equals(other.objectsMetadata) &&
-            kv.equals(other.kv) &&
-            failover.equals(other.failover);
+            kv.equals(other.kv);
     }
 
     @Override
@@ -224,8 +210,7 @@ public final class MetadataImage {
             acls,
             streamMetadata,
             objectsMetadata,
-            kv,
-            failover);
+            kv);
     }
 
     @Override
@@ -242,7 +227,6 @@ public final class MetadataImage {
             ", streamMetadata=" + streamMetadata +
             ", objectsMetadata=" + objectsMetadata +
             ", kv=" + kv +
-            ", failover=" + failover +
             ")";
     }
 }

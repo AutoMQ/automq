@@ -504,8 +504,5 @@ public interface Controller extends AclMutator, AutoCloseable {
         ControllerRequestContext context,
         DeleteKVsRequestData request
     );
-
-    CompletableFuture<Void> failover(ControllerRequestContext context);
-
     // AutoMQ for Kafka inject end
 }

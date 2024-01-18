@@ -164,7 +164,6 @@ final class ControllerMetricsManager {
             case KVRECORD:
             case REMOVE_KVRECORD:
             case UPDATE_NEXT_NODE_ID_RECORD:
-            case FAILOVER_CONTEXT_RECORD:
             // AutoMQ for Kafka inject end
                 // These record types do not affect metrics
                 break;

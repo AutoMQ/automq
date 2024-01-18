@@ -23,20 +23,20 @@ import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.S3StreamClient;
-import com.automq.stream.s3.Storage;
 import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.compact.CompactionManager;
-import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.failover.Failover;
+import com.automq.stream.s3.failover.FailoverRequest;
+import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
-import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import kafka.log.stream.s3.failover.FailoverListener;
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
+import kafka.log.stream.s3.failover.DefaultFailoverFactory;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
@@ -46,6 +46,7 @@ import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class DefaultS3Client implements Client {
@@ -56,13 +57,13 @@ public class DefaultS3Client implements Client {
     private final ControllerRequestSender requestSender;
 
     private final WriteAheadLog writeAheadLog;
-    private final Storage storage;
+    private final S3Storage storage;
 
     private final S3BlockCache blockCache;
 
-    private final ObjectManager objectManager;
+    private final ControllerObjectManager objectManager;
 
-    private final StreamManager streamManager;
+    private final ControllerStreamManager streamManager;
 
     private final CompactionManager compactionManager;
 
@@ -70,7 +71,7 @@ public class DefaultS3Client implements Client {
 
     private final KVClient kvClient;
 
-    private FailoverListener failover;
+    private final Failover failover;
 
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
@@ -104,10 +105,8 @@ public class DefaultS3Client implements Client {
         // stream object compactions share the same s3Operator with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionS3Operator, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
+        this.failover = failover();
 
-        if (config.failoverEnable()) {
-            this.failover = new FailoverListener((ControllerStreamManager) streamManager, (ControllerObjectManager) objectManager, (S3Storage) storage, brokerServer);
-        }
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();
     }
@@ -138,5 +137,20 @@ public class DefaultS3Client implements Client {
     @Override
     public KVClient kvClient() {
         return this.kvClient;
+    }
+
+    @Override
+    public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
+        return this.failover.failover(request);
+    }
+
+    Failover failover() {
+        return new Failover(new DefaultFailoverFactory(streamManager, objectManager), (wal, sm, om, logger) -> {
+            try {
+                storage.recover(wal, sm, om, logger);
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 }
