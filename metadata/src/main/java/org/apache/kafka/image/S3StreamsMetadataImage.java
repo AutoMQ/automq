@@ -73,6 +73,9 @@ public final class S3StreamsMetadataImage {
     }
 
     public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
+        if (streamId < 0 || startOffset > endOffset || limit < 0) {
+            return InRangeObjects.INVALID;
+        }
         S3StreamMetadataImage stream = streamsMetadata.get(streamId);
         if (stream == null || startOffset < stream.startOffset()) {
             return InRangeObjects.INVALID;
@@ -80,7 +83,8 @@ public final class S3StreamsMetadataImage {
         List<S3ObjectMetadata> objects = new LinkedList<>();
         long nextStartOffset = startOffset;
 
-        int streamObjectIndex = stream.floorStreamObjectIndex(startOffset);
+        // floor value < 0 means that all stream objects' ranges are greater than startOffset
+        int streamObjectIndex = Math.max(0, stream.floorStreamObjectIndex(startOffset));
         List<S3StreamObject> streamObjects = stream.getStreamObjects();
 
         int lastRangeIndex = -1;
@@ -88,7 +92,9 @@ public final class S3StreamsMetadataImage {
         int streamSetObjectIndex = 0;
         for (; ; ) {
             int roundStartObjectSize = objects.size();
-            for (; streamObjectIndex != -1 && streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
+
+            // try to find consistent stream objects
+            for (; streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
                 S3StreamObject streamObject = streamObjects.get(streamObjectIndex);
                 if (streamObject.startOffset() != nextStartOffset) {
                     //noinspection StatementWithEmptyBody
@@ -108,8 +114,11 @@ public final class S3StreamsMetadataImage {
                     return new InRangeObjects(streamId, objects);
                 }
             }
+
             if (streamSetObjects == null) {
                 int rangeIndex = stream.getRangeContainsOffset(nextStartOffset);
+                // 1. can not find the range containing nextStartOffset, or
+                // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
                 if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
                     break;
                 }
@@ -123,6 +132,7 @@ public final class S3StreamsMetadataImage {
             for (; streamSetObjectIndex < streamSetObjects.size(); streamSetObjectIndex++) {
                 S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
                 StreamOffsetRange streamOffsetRange = search(streamSetObject.offsetRangeList(), streamId);
+                // skip the stream set object not containing the stream or the range is before the nextStartOffset
                 if (streamOffsetRange == null || streamOffsetRange.endOffset() <= nextStartOffset) {
                     continue;
                 }
@@ -135,11 +145,16 @@ public final class S3StreamsMetadataImage {
                         return new InRangeObjects(streamId, objects);
                     }
                 } else {
+                    // We keep the corresponding object ( with a range startOffset > nextStartOffset) by not changing
+                    // the streamSetObjectIndex. This object may be picked up in the next round.
                     break;
                 }
             }
+            // case 1. streamSetObjectIndex >= streamSetObjects.size(), which means we have reached the end of the stream set objects.
+            // case 2. objects.size() == roundStartObjectSize, which means we have not found any new object in this round.
             if (streamSetObjectIndex >= streamSetObjects.size() || objects.size() == roundStartObjectSize) {
                 // move to the next range
+                // This can ensure that we can break the loop.
                 streamSetObjects = null;
             }
         }

@@ -193,4 +193,65 @@ public class S3StreamsMetadataImageTest {
         assertEquals(7, objects.objects().size());
         assertEquals(expectedObjectIds.subList(1, 8), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
+
+    /**
+     * Test get objects with the first hit object is a stream object.
+     */
+    @Test
+    public void testGetObjectsWithFirstStreamObject() {
+        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
+                0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 20L, 40L)), 0L));
+        NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+                broker0Objects);
+        List<RangeMetadata> ranges = List.of(
+                new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
+                new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
+        List<S3StreamObject> streamObjects = List.of(
+                new S3StreamObject(8, STREAM0, 10L, 20L, S3StreamConstant.INVALID_TS),
+                new S3StreamObject(8, STREAM0, 40L, 60L, S3StreamConstant.INVALID_TS));
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, broker0WALMetadataImage));
+
+        InRangeObjects objects = streamsImage.getObjects(STREAM0, 22L, 55, 4);
+        assertEquals(2, objects.objects().size());
+        assertEquals(20L, objects.startOffset());
+        assertEquals(60L, objects.endOffset());
+
+        objects = streamsImage.getObjects(STREAM0, 22L, 55, 1);
+        assertEquals(1, objects.objects().size());
+        assertEquals(20L, objects.startOffset());
+        assertEquals(40L, objects.endOffset());
+    }
+
+
+    /**
+     * Test get objects with the first hit object is a stream set object.
+     */
+    @Test
+    public void testGetObjectsWithFirstStreamSetObject() {
+        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
+                0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 10L, 20L)), 0L),
+                1L, new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 40L, 60L)), 1L));
+        NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+                broker0Objects);
+        List<RangeMetadata> ranges = List.of(
+                new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
+                new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
+        List<S3StreamObject> streamObjects = List.of(
+                new S3StreamObject(8, STREAM0, 20L, 40L, S3StreamConstant.INVALID_TS));
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, broker0WALMetadataImage));
+
+        InRangeObjects objects = streamsImage.getObjects(STREAM0, 12L, 30, 4);
+        assertEquals(2, objects.objects().size());
+        assertEquals(10L, objects.startOffset());
+        assertEquals(40L, objects.endOffset());
+
+        objects = streamsImage.getObjects(STREAM0, 12L, 30, 1);
+        assertEquals(1, objects.objects().size());
+        assertEquals(10L, objects.startOffset());
+        assertEquals(20L, objects.endOffset());
+    }
 }
