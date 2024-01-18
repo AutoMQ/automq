@@ -39,75 +39,61 @@ public class DefaultFailoverFactory implements FailoverFactory {
         this.streamManager = streamManager;
         this.objectManager = objectManager;
     }
-    @Override
-    public StreamManager getStreamManager(int nodeId, long epoch) {
+
+    public StreamManager getStreamManager(final int nodeId, final long epoch) {
         return new StreamManager() {
-            @Override
             public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
-                return streamManager.getOpeningStreams(nodeId, epoch, true);
+                return DefaultFailoverFactory.this.streamManager.getOpeningStreams(nodeId, epoch, true);
             }
 
-            @Override
             public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> list) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
             public CompletableFuture<Long> createStream() {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
-            public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
+            public CompletableFuture<StreamMetadata> openStream(long streamId, long epochx) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
-            public CompletableFuture<Void> trimStream(long streamId, long epoch, long offset) {
+            public CompletableFuture<Void> trimStream(long streamId, long epochx, long offset) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
             public CompletableFuture<Void> closeStream(long streamId, long streamEpoch) {
-                return streamManager.closeStream(streamId, streamEpoch, nodeId, epoch);
+                return DefaultFailoverFactory.this.streamManager.closeStream(streamId, streamEpoch, nodeId, epoch);
             }
 
-            @Override
-            public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
+            public CompletableFuture<Void> deleteStream(long streamId, long epochx) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
         };
     }
 
-    @Override
-    public ObjectManager getObjectManager(int nodeId, long epoch) {
+    public ObjectManager getObjectManager(final int nodeId, final long epoch) {
         return new ObjectManager() {
-            @Override
             public CompletableFuture<Long> prepareObject(int count, long ttl) {
-                return objectManager.prepareObject(count, ttl);
+                return DefaultFailoverFactory.this.objectManager.prepareObject(count, ttl);
             }
 
-            @Override
             public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
-                return objectManager.commitStreamSetObject(commitStreamSetObjectRequest, nodeId, epoch, true);
+                return DefaultFailoverFactory.this.objectManager.commitStreamSetObject(commitStreamSetObjectRequest, nodeId, epoch, true);
             }
 
-            @Override
             public CompletableFuture<Void> compactStreamObject(CompactStreamObjectRequest compactStreamObjectRequest) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
             public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
             public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            @Override
             public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
