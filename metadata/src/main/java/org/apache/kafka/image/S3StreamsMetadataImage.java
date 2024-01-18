@@ -73,7 +73,7 @@ public final class S3StreamsMetadataImage {
     }
 
     public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
-        if (streamId < 0 || startOffset >= endOffset || limit <= 0) {
+        if (streamId < 0 || startOffset > endOffset || limit < 0) {
             return InRangeObjects.INVALID;
         }
         S3StreamMetadataImage stream = streamsMetadata.get(streamId);
