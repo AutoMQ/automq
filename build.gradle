@@ -1263,6 +1263,7 @@ project(':metadata') {
     implementation project(':server-common')
     implementation project(':clients')
     implementation project(':raft')
+    implementation project(':s3shell-kafka-sdk')
 
     implementation libs.nettyHttp2
     implementation(libs.s3stream) {
@@ -1851,6 +1852,10 @@ project(':s3shell-kafka-sdk') {
 
   checkstyle {
     configProperties = checkstyleConfigProperties("import-control-automq.xml")
+  }
+
+  dependencies {
+    compileOnly libs.awsSdkAuth
   }
 }
 

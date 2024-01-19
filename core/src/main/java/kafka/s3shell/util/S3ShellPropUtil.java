@@ -19,15 +19,16 @@ package kafka.s3shell.util;
 import com.automq.s3shell.sdk.constant.ServerConfigKey;
 import com.automq.s3shell.sdk.model.S3Url;
 import com.automq.s3shell.sdk.util.S3PropUtil;
-import java.io.IOException;
-import java.util.List;
-import java.util.Properties;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import org.apache.kafka.common.internals.FatalExitError;
 
-import static kafka.log.stream.s3.ConfigUtils.ACCESS_KEY_NAME;
-import static kafka.log.stream.s3.ConfigUtils.SECRET_KEY_NAME;
+import java.io.IOException;
+import java.util.List;
+import java.util.Properties;
+
+import static com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider.ACCESS_KEY_NAME;
+import static com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider.SECRET_KEY_NAME;
 
 public class S3ShellPropUtil {
 
@@ -86,6 +87,7 @@ public class S3ShellPropUtil {
             props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), String.valueOf(s3Url.isS3PathStyle()));
 
             // override system env
+            // TODO: no need to override system env here, just set ak/sk to CredentialsProviderHolder
             EnvUtil.setEnv(ACCESS_KEY_NAME, s3Url.getS3AccessKey());
             EnvUtil.setEnv(SECRET_KEY_NAME, s3Url.getS3SecretKey());
         }
@@ -113,4 +115,3 @@ public class S3ShellPropUtil {
         }
     }
 }
-

@@ -130,10 +130,11 @@ versions += [
   commonLang: "3.12.0",
   commonio: "2.15.1",
   commonMath3: "3.6.1",
-  s3stream: "0.17.0-SNAPSHOT",
+  s3stream: "0.18.0-SNAPSHOT",
   opentelemetry: "1.32.0",
   opentelemetryAlpha: "1.32.0-alpha",
-  oshi: "6.4.7"
+  oshi: "6.4.7",
+  awsSdkAuth:"2.20.127",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -231,6 +232,7 @@ libs += [
   commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   s3stream: "com.automq.elasticstream:s3stream:$versions.s3stream",
+  awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdkAuth",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",
