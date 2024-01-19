@@ -204,7 +204,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  extra_kafka_opts="", tls_version=None,
                  remote_kafka=None,
                  controller_num_nodes_override=0,
-                 allow_zk_with_kraft=False,
+                 allow_zk_with_kraft=True,
                  quorum_info_provider=None
                  ):
         """

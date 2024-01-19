@@ -32,7 +32,7 @@ all_non_upgrade = [remote_kraft]
 
 def for_test(test_context):
     # A test uses ZooKeeper if it doesn't specify a metadata quorum or if it explicitly specifies ZooKeeper
-    default_quorum_type = zk
+    default_quorum_type = colocated_kraft
     arg_name = 'metadata_quorum'
     retval = default_quorum_type if not test_context.injected_args else test_context.injected_args.get(arg_name, default_quorum_type)
     if retval not in all:
