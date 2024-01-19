@@ -20,6 +20,9 @@ package kafka.admin
 import com.automq.stream.utils.S3Utils
 import joptsimple.OptionSpec
 import kafka.utils.{CommandDefaultOptions, CommandLineUtils, Exit, Logging}
+import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
+
+import java.util
 
 object S3TestCommand extends Logging {
   def main(args: Array[String]): Unit = {
@@ -50,8 +53,7 @@ object S3TestCommand extends Logging {
 
     val context = S3Utils.S3Context.builder()
       .setEndpoint(s3Endpoint)
-      .setAccessKey(s3AccessKey)
-      .setSecretKey(s3SecretKey)
+      .setCredentialsProviders(util.List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3AccessKey, s3SecretKey))))
       .setBucketName(s3Bucket)
       .setRegion(s3Region)
       .setForcePathStyle(forcePathStyle)
@@ -83,7 +85,7 @@ object S3TestCommand extends Logging {
       .describedAs("s3 secret key")
       .ofType(classOf[String])
     val forcePathStyleOpt = parser.accepts("force-path-style", "Force path style access. Set it if you are using minio. " +
-        "As a result, the bucket name is always left in the request URI and never moved to the host as a sub-domain.")
+      "As a result, the bucket name is always left in the request URI and never moved to the host as a sub-domain.")
 
 
     options = parser.parse(args: _*)

@@ -17,6 +17,8 @@
 
 package kafka.log.stream.s3;
 
+import com.automq.s3shell.sdk.auth.CredentialsProviderHolder;
+import com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -45,7 +47,9 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -86,12 +90,11 @@ public class DefaultS3Client implements Client {
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
-        String accessKey = this.config.accessKey();
-        String secretKey = this.config.secretKey();
+        List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         boolean forcePathStyle = this.config.forcePathStyle();
-        S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
+        S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders)
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
-        S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).accessKey(accessKey).secretKey(secretKey)
+        S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders)
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
                 kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
