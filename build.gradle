@@ -1852,6 +1852,10 @@ project(':s3shell-kafka-sdk') {
   checkstyle {
     configProperties = checkstyleConfigProperties("import-control-automq.xml")
   }
+
+  dependencies {
+    compileOnly libs.awsSdkAuth
+  }
 }
 
 project(':tools') {
