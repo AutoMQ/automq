@@ -23,6 +23,9 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.common.Uuid;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+
+import java.util.List;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_START_COMMAND_CMD;
@@ -161,8 +164,7 @@ public class GenerateS3UrlCmd {
         //precheck
         var context = S3Utils.S3Context.builder()
             .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
-            .setAccessKey(parameter.s3AccessKey)
-            .setSecretKey(parameter.s3SecretKey)
+            .setCredentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
             .setBucketName(parameter.s3DataBucket)
             .setRegion(parameter.s3Region)
             .setForcePathStyle(false)

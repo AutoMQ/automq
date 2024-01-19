@@ -26,6 +26,11 @@ public class CredentialsProviderHolder {
     private CredentialsProviderHolder() {
     }
 
+    static {
+        // TODO: When we have a way to pass in credentials, we should remove this
+        create(EnvVariableCredentialsProvider.get());
+    }
+
     public static AwsCredentialsProvider getAwsCredentialsProvider() {
         if (awsCredentialsProvider == null) {
             throw new IllegalStateException("AwsCredentialsProvider has not been initialized");
