@@ -19,14 +19,24 @@ package com.automq.s3shell.sdk.auth;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
 public class CredentialsProviderHolder {
-    // This is a multi-cloud aware and auth-method-aware credentials provider. Invoker just use it directly.
-    private static AwsCredentialsProvider awsCredentialsProvider;
 
-    public static void create(AwsCredentialsProvider awsCredentialsProvider) {
-        CredentialsProviderHolder.awsCredentialsProvider = awsCredentialsProvider;
+    //global singleton credential provider
+    private static volatile AwsCredentialsProvider awsCredentialsProvider;
+
+    private CredentialsProviderHolder() {
     }
 
     public static AwsCredentialsProvider getAwsCredentialsProvider() {
+        if (awsCredentialsProvider == null) {
+            throw new IllegalStateException("AwsCredentialsProvider has not been initialized");
+        }
         return awsCredentialsProvider;
+    }
+
+    public static synchronized void create(AwsCredentialsProvider newAwsCredentialsProvider) {
+        if (awsCredentialsProvider != null) {
+            throw new IllegalStateException("AwsCredentialsProvider is already initialized");
+        }
+        awsCredentialsProvider = newAwsCredentialsProvider;
     }
 }
