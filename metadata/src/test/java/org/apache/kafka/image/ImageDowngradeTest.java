@@ -18,6 +18,9 @@
 package org.apache.kafka.image;
 
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
@@ -67,7 +70,14 @@ public class ImageDowngradeTest {
                     setIsr(Arrays.asList(0, 1)).
                     setLeader(0).
                     setLeaderEpoch(1).
-                    setPartitionEpoch(2), (short) 0));
+                    setPartitionEpoch(2), (short) 0),
+            new ApiMessageAndVersion(new AssignedStreamIdRecord()
+                    .setAssignedStreamId(-1), (short) 0),
+            new ApiMessageAndVersion(new AssignedS3ObjectIdRecord()
+                    .setAssignedS3ObjectId(-1), (short) 0),
+            new ApiMessageAndVersion(new KVRecord()
+                    .setKeyValues(Arrays.asList()), (short) 0)
+            );
 
     static ApiMessageAndVersion metadataVersionRecord(MetadataVersion metadataVersion) {
         return new ApiMessageAndVersion(new FeatureLevelRecord().
@@ -92,7 +102,10 @@ public class ImageDowngradeTest {
                         setFeatureLevel((short) 4), (short) 0)),
             Arrays.asList(
                 TEST_RECORDS.get(0),
-                TEST_RECORDS.get(1)));
+                TEST_RECORDS.get(1),
+                TEST_RECORDS.get(2),
+                TEST_RECORDS.get(3),
+                TEST_RECORDS.get(4)));
     }
 
     /**
@@ -123,7 +136,10 @@ public class ImageDowngradeTest {
                             setRack(null).
                             setFenced(false), (short) 0),
                         TEST_RECORDS.get(0),
-                        TEST_RECORDS.get(1)));
+                        TEST_RECORDS.get(1),
+                        TEST_RECORDS.get(2),
+                        TEST_RECORDS.get(3),
+                        TEST_RECORDS.get(4)));
     }
 
     private static void writeWithExpectedLosses(

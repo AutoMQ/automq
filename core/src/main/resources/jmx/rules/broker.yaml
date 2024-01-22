@@ -132,6 +132,10 @@ rules:
         metric: kafka.request.queue.time.99p
         type: gauge
         desc: The 99th percentile time the broker has taken to dequeue requests
+      Max:
+        metric: kafka.request.time.max
+        type: gauge
+        desc: The max time the broker has taken to service requests
 
   - bean: kafka.network:type=RequestMetrics,name=ResponseQueueTimeMs,request=*
     metricAttribute:
