@@ -17,9 +17,9 @@
 
 package kafka.autobalancer.goals;
 
-import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.model.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import kafka.autobalancer.model.TopicPartitionReplica;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Tag;
 
@@ -32,20 +32,19 @@ public class GoalTestBase {
     protected static final String TOPIC_3 = "TestTopic3";
     protected static final String TOPIC_4 = "TestTopic4";
 
-    protected BrokerUpdater.Broker createBroker(ClusterModelSnapshot cluster, String rack,
-                                                int brokerId, boolean active) {
-        BrokerUpdater.Broker broker = new BrokerUpdater.Broker(brokerId);
-        broker.setActive(active);
+    protected Broker createBroker(ClusterModelSnapshot cluster, String rack,
+                                  int brokerId, boolean active) {
+        Broker broker = new Broker(brokerId, active);
         cluster.addBroker(rack, broker);
         return broker;
     }
 
-    protected TopicPartitionReplicaUpdater.TopicPartitionReplica createTopicPartition(ClusterModelSnapshot cluster,
+    protected TopicPartitionReplica createTopicPartition(ClusterModelSnapshot cluster,
                                                                                       int brokerId,
                                                                                       String topic,
                                                                                       int partition) {
         TopicPartition tp = new TopicPartition(topic, partition);
-        TopicPartitionReplicaUpdater.TopicPartitionReplica replica = new TopicPartitionReplicaUpdater.TopicPartitionReplica(tp);
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp);
         cluster.addTopicPartition(brokerId, replica);
         return replica;
     }

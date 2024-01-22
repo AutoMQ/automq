@@ -20,9 +20,7 @@ package kafka.autobalancer;
 import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
-import kafka.autobalancer.goals.NetworkInCapacityGoal;
 import kafka.autobalancer.goals.NetworkInDistributionGoal;
-import kafka.autobalancer.goals.NetworkOutCapacityGoal;
 import kafka.autobalancer.goals.NetworkOutDistributionGoal;
 import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter;
 import kafka.autobalancer.utils.AbstractLoadGenerator;
@@ -87,8 +85,6 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
         Map<String, String> props = new HashMap<>();
         props.put(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, AutoBalancerMetricsReporter.class.getName());
         props.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG, "1000");
-        props.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY, "100"); // KB/s
-        props.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY, "100"); // KB/s
 
         return props;
     }
@@ -97,12 +93,10 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     public Map<String, String> overridingControllerProps() {
         Map<String, String> props = new HashMap<>();
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")
-                        .add(NetworkInCapacityGoal.class.getName())
-                        .add(NetworkOutCapacityGoal.class.getName())
                         .add(NetworkInDistributionGoal.class.getName())
                         .add(NetworkOutDistributionGoal.class.getName()).toString());
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD, "0.2");
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD, "0.2");
+        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD, "0");
+        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD, "0");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, "0.2");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, "0.2");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, "10000");

@@ -18,7 +18,7 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
-import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.model.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.apache.kafka.common.Configurable;
 
@@ -32,19 +32,17 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
 
-    void validateConfig();
+    void onBalanceFailed(Broker broker);
 
-    void onBalanceFailed(BrokerUpdater.Broker broker);
-
-    boolean isBrokerAcceptable(BrokerUpdater.Broker broker);
+    boolean isBrokerAcceptable(Broker broker);
 
     int priority();
 
-    Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
+    Set<Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
 
     String name();
 
-    double brokerScore(BrokerUpdater.Broker broker);
+    double brokerScore(Broker broker);
 
     /**
      * Get the acceptance score of the goal if the action applied to the given cluster.

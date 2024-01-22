@@ -39,7 +39,6 @@ public class AnomalyDetectorBuilder {
     private long detectIntervalMs = 60000;
     private long maxTolerateMetricsDelayMs = 30000;
     private long coolDownIntervalPerActionMs = 100;
-    private boolean aggregateBrokerLoad = true;
 
     public AnomalyDetectorBuilder() {
 
@@ -105,11 +104,6 @@ public class AnomalyDetectorBuilder {
         return this;
     }
 
-    public AnomalyDetectorBuilder aggregateBrokerLoad(boolean aggregateBrokerLoad) {
-        this.aggregateBrokerLoad = aggregateBrokerLoad;
-        return this;
-    }
-
     public AnomalyDetectorBuilder coolDownIntervalPerActionMs(long coolDownIntervalPerActionMs) {
         this.coolDownIntervalPerActionMs = coolDownIntervalPerActionMs;
         return this;
@@ -129,6 +123,6 @@ public class AnomalyDetectorBuilder {
             throw new IllegalArgumentException("At least one goal must be set");
         }
         return new AnomalyDetector(logContext, maxActionsNumPerDetect, detectIntervalMs, maxTolerateMetricsDelayMs,
-                coolDownIntervalPerActionMs, aggregateBrokerLoad, clusterModel, executor, goalsByPriority, excludedBrokers, excludedTopics);
+                coolDownIntervalPerActionMs, clusterModel, executor, goalsByPriority, excludedBrokers, excludedTopics);
     }
 }

@@ -25,7 +25,7 @@ import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.RecordClusterModel;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import kafka.autobalancer.model.TopicPartitionReplica;
 import kafka.autobalancer.utils.AutoBalancerClientsIntegrationTestHarness;
 import kafka.cluster.EndPoint;
 import kafka.server.BrokerServer;
@@ -88,14 +88,14 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     }
 
     private boolean checkConsumeRecord(ClusterModel clusterModel, int brokerId, long delay) {
-        ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), delay, true);
+        ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), delay);
         if (snapshot.broker(brokerId) == null) {
             return false;
         }
         TopicPartition testTp = new TopicPartition(TOPIC_0, 0);
         TopicPartition metricTp = new TopicPartition(METRIC_TOPIC, 0);
-        TopicPartitionReplicaUpdater.TopicPartitionReplica testReplica = snapshot.replica(brokerId, testTp);
-        TopicPartitionReplicaUpdater.TopicPartitionReplica metricReplica = snapshot.replica(brokerId, metricTp);
+        TopicPartitionReplica testReplica = snapshot.replica(brokerId, testTp);
+        TopicPartitionReplica metricReplica = snapshot.replica(brokerId, metricTp);
         if (testReplica == null || metricReplica == null) {
             return false;
         }
@@ -186,13 +186,13 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         loadRetriever.onBrokerUnregister(unregisterRecord);
         Thread.sleep(5000);
         Assertions.assertTrue(() -> {
-            ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), 3000L, true);
+            ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Collections.emptySet(), 3000L);
             if (snapshot.broker(brokerConfig.brokerId()) != null) {
                 return false;
             }
-            TopicPartitionReplicaUpdater.TopicPartitionReplica testReplica = snapshot.replica(brokerConfig.brokerId(),
+            TopicPartitionReplica testReplica = snapshot.replica(brokerConfig.brokerId(),
                     new TopicPartition(TOPIC_0, 0));
-            TopicPartitionReplicaUpdater.TopicPartitionReplica metricReplica = snapshot.replica(brokerConfig.brokerId(),
+            TopicPartitionReplica metricReplica = snapshot.replica(brokerConfig.brokerId(),
                     new TopicPartition(METRIC_TOPIC, 0));
             return testReplica == null && metricReplica == null;
         });

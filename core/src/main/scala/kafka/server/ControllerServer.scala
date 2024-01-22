@@ -18,7 +18,7 @@
 package kafka.server
 
 import com.automq.stream.s3.metadata.ObjectUtils
-import kafka.autobalancer.AutoBalancerManager
+import kafka.autobalancer.{AutoBalancerManager, AutoBalancerService}
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.cluster.Broker.ServerInfo
 import kafka.log.stream.s3.ConfigUtils
@@ -108,9 +108,9 @@ class ControllerServer(
   var controllerApis: ControllerApis = _
   var controllerApisHandlerPool: KafkaRequestHandlerPool = _
   var migrationSupport: Option[ControllerMigrationSupport] = None
-  var autoBalancerManager: AutoBalancerManager = _
+  var autoBalancerManager: AutoBalancerService = _
 
-  def buildAutoBalancerManager: AutoBalancerManager = {
+  def buildAutoBalancerManager: AutoBalancerService = {
     new AutoBalancerManager(time, config, controller, raftManager.client)
   }
 

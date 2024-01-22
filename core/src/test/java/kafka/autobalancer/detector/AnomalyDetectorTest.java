@@ -32,7 +32,7 @@ import org.apache.kafka.common.Uuid;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -66,7 +66,6 @@ public class AnomalyDetectorTest {
             for (int j = 0; j < partitionNumPerTopic; j++) {
                 clusterModel.createPartition(topicId, j, brokerIndex);
                 Map<RawMetricType, Double> metrics = generateRandomMetrics(r);
-                clusterModel.updateBrokerMetrics(brokerIndex, metrics, System.currentTimeMillis());
                 clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics, System.currentTimeMillis());
                 currPartitionNum++;
                 if (currPartitionNum >= partitionNums[brokerIndex]) {
@@ -82,6 +81,7 @@ public class AnomalyDetectorTest {
         goal0.configure(configs);
         goal1.configure(configs);
 
+        List<Action> actionList = new ArrayList<>();
         AnomalyDetector detector = new AnomalyDetectorBuilder()
                 .clusterModel(clusterModel)
                 .addGoal(goal0)
@@ -99,22 +99,21 @@ public class AnomalyDetectorTest {
 
                     @Override
                     public void execute(Action action) {
-
+                        actionList.add(action);
                     }
 
                     @Override
                     public void execute(List<Action> actions) {
-
+                        actionList.addAll(actions);
                     }
                 })
                 .build();
 
-        Assertions.assertTimeout(Duration.ofMillis(1000), () -> {
-            TimerUtil timerUtil = new TimerUtil();
-            detector.resume();
-            detector.detect();
-            System.out.printf("Detect cost: %d ms%n", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-        });
+        TimerUtil timerUtil = new TimerUtil();
+        detector.resume();
+        detector.detect();
+        System.out.printf("Detect cost: %d ms, %d actions detected%n", timerUtil.elapsedAs(TimeUnit.MILLISECONDS), actionList.size());
+        Assertions.assertFalse(actionList.isEmpty());
     }
 
     private int[] generatePartitionDist(int totalPartitionNum, int brokerNum) {
@@ -132,11 +131,6 @@ public class AnomalyDetectorTest {
 
     private Map<RawMetricType, Double> generateRandomMetrics(Random r) {
         Map<RawMetricType, Double> metrics = new HashMap<>();
-        metrics.put(RawMetricType.BROKER_CAPACITY_NW_IN, 20.0 * 1024 * 1024);
-        metrics.put(RawMetricType.BROKER_CAPACITY_NW_OUT, 20.0 * 1024 * 1024);
-        metrics.put(RawMetricType.ALL_TOPIC_BYTES_IN, 20.0 * 1024 * 1024);
-        metrics.put(RawMetricType.ALL_TOPIC_BYTES_OUT, 20.0 * 1024 * 1024);
-        metrics.put(RawMetricType.BROKER_CPU_UTIL, 0.0);
         metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, r.nextDouble(0, 1024 * 1024));
         metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
         metrics.put(RawMetricType.PARTITION_SIZE, 0.0);

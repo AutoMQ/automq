@@ -24,7 +24,6 @@ import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import kafka.autobalancer.model.ClusterModel;
@@ -412,15 +411,11 @@ public class LoadRetriever implements BrokerStatusListener {
 
     private void updateClusterModel(AutoBalancerMetrics metrics) {
         switch (metrics.metricClassId()) {
-            case BROKER_METRIC:
-                BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
-                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricTypeValueMap(), brokerMetrics.time());
-                break;
             case PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
-                        partitionMetrics.getMetricTypeValueMap(), partitionMetrics.time());
+                        partitionMetrics.getMetricValueMap(), partitionMetrics.time());
                 break;
             default:
                 logger.error("Not supported metrics version {}", metrics.metricClassId());

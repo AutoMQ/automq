@@ -78,6 +78,7 @@ public class TelemetryManager {
     private final String clusterId;
     private final List<MetricReader> metricReaderList;
     private final List<AutoCloseable> autoCloseables;
+    private JmxMetricInsight jmxMetricInsight;
     private PrometheusHttpServer prometheusHttpServer;
 
     public TelemetryManager(KafkaConfig kafkaConfig, String clusterId) {
@@ -149,7 +150,7 @@ public class TelemetryManager {
     }
 
     private void addJmxMetrics(OpenTelemetry ot) {
-        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(ot, kafkaConfig.s3ExporterReportIntervalMs());
+        jmxMetricInsight = JmxMetricInsight.createService(ot, kafkaConfig.s3ExporterReportIntervalMs());
         MetricConfiguration conf = new MetricConfiguration();
 
         Set<KafkaRaftServer.ProcessRole> roles = kafkaConfig.processRoles();

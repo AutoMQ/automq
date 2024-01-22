@@ -18,14 +18,14 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.model.Broker;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
-public class NetworkOutDistributionGoal extends AbstractResourceDistributionGoal {
+public class NetworkOutDistributionGoal extends AbstractLoadDistributionGoal {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkOutDistributionGoal.class);
 
     @Override
@@ -41,12 +41,12 @@ public class NetworkOutDistributionGoal extends AbstractResourceDistributionGoal
     @Override
     public void configure(Map<String, ?> configs) {
         AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(configs, false);
-        this.utilizationDetectThreshold = controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD);
-        this.utilizationAvgDeviation = controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION);
+        this.loadDetectThreshold = controllerConfig.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD);
+        this.loadAvgDeviation = controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION);
     }
 
     @Override
-    public void onBalanceFailed(BrokerUpdater.Broker broker) {
+    public void onBalanceFailed(Broker broker) {
         LOGGER.warn("Failed to balance broker {} network outbound load after iterating all partitions", broker.getBrokerId());
     }
 

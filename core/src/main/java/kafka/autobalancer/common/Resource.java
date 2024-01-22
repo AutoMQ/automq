@@ -28,7 +28,7 @@ public enum Resource {
     NW_OUT("NWOut", 2, 10),
     UNKNOWN("UNKNOWN", 999, 0);
 
-    public static final Double IGNORED_CAPACITY_VALUE = -1.0;
+    public static final Double IGNORED_VALUE = -1.0;
     // EPSILON_PERCENT defines the acceptable nuance when comparing the utilization of the resource.
     // This nuance is generated due to precision loss when summing up float type utilization value.
     // In stress test we find that for cluster of around 800,000 replicas, the summed up nuance can be
@@ -58,7 +58,7 @@ public enum Resource {
 
     public String resourceString(double value) {
         String valueStr = "";
-        if (value == IGNORED_CAPACITY_VALUE) {
+        if (value == IGNORED_VALUE) {
             valueStr = "ignored";
         } else {
             switch (this) {

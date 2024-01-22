@@ -56,13 +56,12 @@ public class MetricSerde implements Serializer<AutoBalancerMetrics>, Deserialize
      */
     public static AutoBalancerMetrics fromBytes(byte[] bytes) throws UnknownVersionException {
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
-        switch (AutoBalancerMetrics.MetricClassId.forId(buffer.get())) {
-            case BROKER_METRIC:
-                return BrokerMetrics.fromBuffer(buffer);
+
+        switch (MetricClassId.forId(buffer.get())) {
             case PARTITION_METRIC:
                 return TopicPartitionMetrics.fromBuffer(buffer);
             default:
-                // This could happen when a new type of metric is added but we are still running the old code.
+                // This could happen when a new type of metric is added, but we are still running the old code.
                 // simply ignore the metric by returning a null.
                 return null;
         }

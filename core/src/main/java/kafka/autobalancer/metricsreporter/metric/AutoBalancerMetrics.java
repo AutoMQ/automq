@@ -34,8 +34,7 @@ import java.util.Map;
  * An interface for all the raw metrics reported by {@link AutoBalancerMetricsReporter}.
  */
 public abstract class AutoBalancerMetrics {
-    static final byte METRIC_VERSION = 0;
-    private final Map<RawMetricType, Double> metricTypeValueMap = new HashMap<>();
+    private final Map<RawMetricType, Double> metricValueMap = new HashMap<>();
     private final long time;
     private final int brokerId;
     private final String brokerRack;
@@ -44,11 +43,11 @@ public abstract class AutoBalancerMetrics {
         this(time, brokerId, brokerRack, Collections.emptyMap());
     }
 
-    public AutoBalancerMetrics(long time, int brokerId, String brokerRack, Map<RawMetricType, Double> metricTypeValueMap) {
+    public AutoBalancerMetrics(long time, int brokerId, String brokerRack, Map<RawMetricType, Double> metricValueMap) {
         this.time = time;
         this.brokerId = brokerId;
         this.brokerRack = brokerRack;
-        this.metricTypeValueMap.putAll(metricTypeValueMap);
+        this.metricValueMap.putAll(metricValueMap);
     }
 
     static Map<RawMetricType, Double> parseMetricsMap(ByteBuffer buffer) {
@@ -63,18 +62,18 @@ public abstract class AutoBalancerMetrics {
     }
 
     public AutoBalancerMetrics put(RawMetricType type, double value) {
-        this.metricTypeValueMap.put(type, value);
+        this.metricValueMap.put(type, value);
         return this;
     }
 
     public void add(AutoBalancerMetrics metrics) {
-        for (Map.Entry<RawMetricType, Double> metricEntry : metrics.metricTypeValueMap.entrySet()) {
-            this.metricTypeValueMap.putIfAbsent(metricEntry.getKey(), metricEntry.getValue());
+        for (Map.Entry<RawMetricType, Double> metricEntry : metrics.metricValueMap.entrySet()) {
+            this.metricValueMap.putIfAbsent(metricEntry.getKey(), metricEntry.getValue());
         }
     }
 
-    public Map<RawMetricType, Double> getMetricTypeValueMap() {
-        return metricTypeValueMap;
+    public Map<RawMetricType, Double> getMetricValueMap() {
+        return metricValueMap;
     }
 
     public abstract String key();
@@ -104,12 +103,12 @@ public abstract class AutoBalancerMetrics {
     }
 
     public int bodySize() {
-        return Integer.SIZE + (Byte.SIZE + Double.SIZE) * metricTypeValueMap.size();
+        return Integer.SIZE + (Byte.SIZE + Double.SIZE) * metricValueMap.size();
     }
 
     public ByteBuffer writeBody(ByteBuffer buffer) {
-        buffer.putInt(metricTypeValueMap.size());
-        for (Map.Entry<RawMetricType, Double> entry : metricTypeValueMap.entrySet()) {
+        buffer.putInt(metricValueMap.size());
+        for (Map.Entry<RawMetricType, Double> entry : metricValueMap.entrySet()) {
             buffer.put(entry.getKey().id());
             buffer.putDouble(entry.getValue());
         }
@@ -126,7 +125,7 @@ public abstract class AutoBalancerMetrics {
 
     public String buildKVString() {
         StringBuilder builder = new StringBuilder();
-        for (Map.Entry<RawMetricType, Double> entry : metricTypeValueMap.entrySet()) {
+        for (Map.Entry<RawMetricType, Double> entry : metricValueMap.entrySet()) {
             builder.append(entry.getKey());
             builder.append(":");
             builder.append(String.format("%.4f", entry.getValue()));
@@ -137,31 +136,5 @@ public abstract class AutoBalancerMetrics {
     @Override
     public String toString() {
         return String.format("[BrokerId=%d,Time=%d,Key:Value=%s]", brokerId, time, buildKVString());
-    }
-
-    /**
-     * An enum that list all the implementations of the interface. This id will be store in the serialized
-     * metrics to help the metric sampler to decide using which class to deserialize the metric bytes.
-     */
-    public enum MetricClassId {
-        BROKER_METRIC((byte) 0), PARTITION_METRIC((byte) 1);
-
-        private final byte id;
-
-        MetricClassId(byte id) {
-            this.id = id;
-        }
-
-        static MetricClassId forId(byte id) {
-            if (id < values().length) {
-                return values()[id];
-            } else {
-                throw new IllegalArgumentException("MetricClassId " + id + " does not exist.");
-            }
-        }
-
-        byte id() {
-            return id;
-        }
     }
 }

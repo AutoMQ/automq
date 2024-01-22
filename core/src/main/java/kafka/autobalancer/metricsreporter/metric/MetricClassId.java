@@ -15,18 +15,30 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.metricsreporter.metric;
 
-import kafka.autobalancer.common.Resource;
+/**
+ * An enum that list all the implementations of the interface. This id will be store in the serialized
+ * metrics to help the metric sampler to decide using which class to deserialize the metric bytes.
+ */
+public enum MetricClassId {
+    PARTITION_METRIC((byte) 0);
 
-public class ModelUtils {
+    private final byte id;
 
-    public static void moveReplicaLoad(Broker src, Broker dest, TopicPartitionReplica replica) {
-        for (Resource resource : replica.getResources()) {
-            double delta = replica.load(resource);
-            src.reduceLoad(resource, delta);
-            dest.addLoad(resource, delta);
+    MetricClassId(byte id) {
+        this.id = id;
+    }
+
+    static MetricClassId forId(byte id) {
+        if (id < values().length) {
+            return values()[id];
+        } else {
+            throw new IllegalArgumentException("MetricClassId " + id + " does not exist.");
         }
     }
 
+    byte id() {
+        return id;
+    }
 }

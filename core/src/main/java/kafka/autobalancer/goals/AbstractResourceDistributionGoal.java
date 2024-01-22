@@ -19,8 +19,7 @@ package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.model.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,52 +33,37 @@ import java.util.stream.Collectors;
 public abstract class AbstractResourceDistributionGoal extends AbstractResourceGoal {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractResourceDistributionGoal.class);
 
-    protected double utilizationDetectThreshold;
-
-    protected double utilizationAvgDeviation;
-    private double meanResourceUtil;
-    private double resourceUtilDistLowerBound;
-    private double resourceUtilDistUpperBound;
-
     @Override
     public boolean isHardGoal() {
         return false;
     }
 
     @Override
-    public void validateConfig() {
-        this.utilizationDetectThreshold = Math.min(1.0, Math.max(0.0, this.utilizationDetectThreshold));
-        this.utilizationAvgDeviation = Math.abs(utilizationAvgDeviation);
-    }
-
-    @Override
     public List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
         List<Action> actions = new ArrayList<>();
-        validateConfig();
-        Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);
-        calcUtilizationBound(eligibleBrokers);
-        List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : eligibleBrokers) {
+        Set<Broker> eligibleBrokers = getEligibleBrokers(cluster);
+        calcUsageBound(eligibleBrokers);
+        List<Broker> brokersToOptimize = new ArrayList<>();
+        for (Broker broker : eligibleBrokers) {
             if (!isBrokerAcceptable(broker)) {
                 LOGGER.warn("Broker {} violates goal {}", broker.getBrokerId(), name());
                 brokersToOptimize.add(broker);
             }
         }
-        Resource resource = resource();
-        for (BrokerUpdater.Broker broker : brokersToOptimize) {
+        for (Broker broker : brokersToOptimize) {
             if (isBrokerAcceptable(broker)) {
                 continue;
             }
-            List<BrokerUpdater.Broker> candidateBrokers =
+            List<Broker> candidateBrokers =
                     eligibleBrokers.stream().filter(b -> b.getBrokerId() != broker.getBrokerId()).collect(Collectors.toList());
-            double loadUtil = broker.utilizationFor(resource);
-            if (requireLessLoad(loadUtil)) {
+            double load = broker.load(resource());
+            if (requireLessLoad(load)) {
                 List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
                 if (!isBrokerAcceptable(broker)) {
                     brokerActions.addAll(tryReduceLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
                 }
                 actions.addAll(brokerActions);
-            } else if (requireMoreLoad(loadUtil)) {
+            } else if (requireMoreLoad(load)) {
                 List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
                 if (isBrokerAcceptable(broker)) {
                     brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
@@ -95,33 +79,9 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
         return actions;
     }
 
-    private void calcUtilizationBound(Set<BrokerUpdater.Broker> brokers) {
-        Resource resource = resource();
-        meanResourceUtil = brokers.stream().mapToDouble(e -> e.utilizationFor(resource)).sum() / brokers.size();
-        resourceUtilDistLowerBound = Math.max(0, meanResourceUtil * (1 - this.utilizationAvgDeviation));
-        resourceUtilDistUpperBound = meanResourceUtil * (1 + this.utilizationAvgDeviation);
-    }
+    abstract void calcUsageBound(Set<Broker> brokers);
 
-    private boolean requireLessLoad(double util) {
-        return util > resourceUtilDistUpperBound;
-    }
+    abstract boolean requireLessLoad(double load);
 
-    private boolean requireMoreLoad(double util) {
-        return util < resourceUtilDistLowerBound;
-    }
-
-    @Override
-    public boolean isBrokerAcceptable(BrokerUpdater.Broker broker) {
-        double util = broker.utilizationFor(resource());
-        if (util < this.utilizationDetectThreshold) {
-            return true;
-        }
-        return !requireLessLoad(util) && !requireMoreLoad(util);
-    }
-
-    @Override
-    public double brokerScore(BrokerUpdater.Broker broker) {
-        double utilMeanDeviationAbs = Math.abs(meanResourceUtil - broker.utilizationFor(resource()));
-        return GoalUtils.normalize(utilMeanDeviationAbs, 1, 0, true);
-    }
+    abstract boolean requireMoreLoad(double load);
 }

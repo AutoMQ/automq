@@ -17,6 +17,7 @@
 
 package kafka.autobalancer.common;
 
+import java.util.Objects;
 import org.apache.kafka.common.TopicPartition;
 
 public class Action {
@@ -77,5 +78,19 @@ public class Action {
             return String.format("Action-%s: %s@node-%d <--> %s@node-%d", type, srcTp, srcBrokerId, destTp, destBrokerId);
         }
         return toString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Action action = (Action) o;
+        return srcBrokerId == action.srcBrokerId && destBrokerId == action.destBrokerId
+                && Objects.equals(srcTp, action.srcTp) && Objects.equals(destTp, action.destTp) && type == action.type;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(srcTp, destTp, srcBrokerId, destBrokerId, type);
     }
 }

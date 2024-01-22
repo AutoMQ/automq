@@ -37,7 +37,6 @@ public class ClusterModel {
     protected final Logger logger;
     private static final String DEFAULT_RACK_ID = "rack_default";
     private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
-    private static final boolean DEFAULT_AGGREGATE_BROKER_LOAD = true;
 
     /*
      * Guard the change on cluster structure (add/remove for brokers, replicas)
@@ -63,17 +62,16 @@ public class ClusterModel {
     }
 
     public ClusterModelSnapshot snapshot() {
-        return snapshot(Collections.emptySet(), Collections.emptySet(), DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS, DEFAULT_AGGREGATE_BROKER_LOAD);
+        return snapshot(Collections.emptySet(), Collections.emptySet(), DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS);
     }
 
-    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics,
-                                         long maxToleratedMetricsDelay, boolean aggregateBrokerLoad) {
+    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics, long maxToleratedMetricsDelay) {
         ClusterModelSnapshot snapshot = new ClusterModelSnapshot();
         clusterLock.lock();
         try {
             long now = System.currentTimeMillis();
             for (BrokerUpdater brokerUpdater : brokerMap.values()) {
-                BrokerUpdater.Broker broker = brokerUpdater.get(now - maxToleratedMetricsDelay);
+                Broker broker = brokerUpdater.get();
                 if (broker == null) {
                     continue;
                 }
@@ -88,7 +86,7 @@ public class ClusterModel {
                     continue;
                 }
                 for (TopicPartitionReplicaUpdater replicaUpdater : entry.getValue().values()) {
-                    TopicPartitionReplicaUpdater.TopicPartitionReplica replica = replicaUpdater.get(now - maxToleratedMetricsDelay);
+                    TopicPartitionReplica replica = replicaUpdater.get(now - maxToleratedMetricsDelay);
                     if (replica == null) {
                         logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, replicaUpdater.topicPartition());
                         snapshot.removeBroker(brokerIdToRackMap.get(brokerId), brokerId);
@@ -104,25 +102,9 @@ public class ClusterModel {
             clusterLock.unlock();
         }
 
-        if (aggregateBrokerLoad) {
-            snapshot.aggregate();
-        }
+        snapshot.aggregate();
 
         return snapshot;
-    }
-
-    public boolean updateBrokerMetrics(int brokerId, Map<RawMetricType, Double> metricsMap, long time) {
-        BrokerUpdater brokerUpdater = null;
-        clusterLock.lock();
-        try {
-            brokerUpdater = brokerMap.get(brokerId);
-        } finally {
-            clusterLock.unlock();
-        }
-        if (brokerUpdater != null) {
-            return brokerUpdater.update(metricsMap, time);
-        }
-        return false;
     }
 
     public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Map<RawMetricType, Double> metricsMap, long time) {
@@ -148,8 +130,7 @@ public class ClusterModel {
             if (brokerMap.containsKey(brokerId)) {
                 return;
             }
-            BrokerUpdater brokerUpdater = new BrokerUpdater(brokerId);
-            brokerUpdater.setActive(true);
+            BrokerUpdater brokerUpdater = new BrokerUpdater(brokerId, true);
             if (Utils.isBlank(rackId)) {
                 rackId = DEFAULT_RACK_ID;
             }

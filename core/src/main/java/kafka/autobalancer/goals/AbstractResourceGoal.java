@@ -20,9 +20,9 @@ package kafka.autobalancer.goals;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater;
+import kafka.autobalancer.model.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import kafka.autobalancer.model.TopicPartitionReplica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,13 +59,13 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     }
 
     private Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
-                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidates,
+                                                 TopicPartitionReplica srcReplica,
+                                                 Broker srcBroker,
+                                                 List<Broker> candidates,
                                                  Collection<Goal> goalsByPriority) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
-        for (BrokerUpdater.Broker candidate : candidates) {
-            for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
+        for (Broker candidate : candidates) {
+            for (TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
                 if (candidate.load(resource()) > srcReplica.load(resource())) {
                     continue;
                 }
@@ -91,12 +91,12 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     }
 
     private Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
-                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidates,
+                                                 TopicPartitionReplica replica,
+                                                 Broker srcBroker,
+                                                 List<Broker> candidates,
                                                  Collection<Goal> goalsByPriority) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
-        for (BrokerUpdater.Broker candidate : candidates) {
+        for (Broker candidate : candidates) {
             boolean isHardGoalViolated = false;
             Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
             Map<Goal, Double> scoreMap = new HashMap<>();
@@ -129,17 +129,17 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
      */
     protected List<Action> tryReduceLoadByAction(ActionType actionType,
                                                  ClusterModelSnapshot cluster,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidateBrokers,
+                                                 Broker srcBroker,
+                                                 List<Broker> candidateBrokers,
                                                  Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
-        List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
+        List<TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
                 .stream()
                 .sorted(Comparator.comparingDouble(r -> -r.load(resource()))) // higher load first
                 .collect(Collectors.toList());
-        for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
-            candidateBrokers.sort(Comparator.comparingDouble(b -> b.utilizationFor(resource()))); // lower load first
+        for (TopicPartitionReplica tp : srcReplicas) {
+            candidateBrokers.sort(lowLoadComparator()); // lower load first
             Optional<Action> optionalAction;
             if (actionType == ActionType.MOVE) {
                 optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
@@ -172,18 +172,18 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
      */
     protected List<Action> tryIncreaseLoadByAction(ActionType actionType,
                                                    ClusterModelSnapshot cluster,
-                                                   BrokerUpdater.Broker srcBroker,
-                                                   List<BrokerUpdater.Broker> candidateBrokers,
+                                                   Broker srcBroker,
+                                                   List<Broker> candidateBrokers,
                                                    Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
-        candidateBrokers.sort(Comparator.comparingDouble(b -> -b.utilizationFor(resource()))); // higher load first
-        for (BrokerUpdater.Broker candidateBroker : candidateBrokers) {
-            List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
+        candidateBrokers.sort(highLoadComparator()); // higher load first
+        for (Broker candidateBroker : candidateBrokers) {
+            List<TopicPartitionReplica> candidateReplicas = cluster
                     .replicasFor(candidateBroker.getBrokerId())
                     .stream()
                     .sorted(Comparator.comparingDouble(r -> -r.load(resource()))) // higher load first
                     .collect(Collectors.toList());
-            for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : candidateReplicas) {
+            for (TopicPartitionReplica tp : candidateReplicas) {
                 Optional<Action> optionalAction;
                 if (actionType == ActionType.MOVE) {
                     optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority);
@@ -204,4 +204,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         }
         return actionList;
     }
+
+    protected abstract Comparator<Broker> highLoadComparator();
+
+    protected abstract Comparator<Broker> lowLoadComparator();
 }

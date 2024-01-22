@@ -20,8 +20,6 @@ package kafka.autobalancer.model;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collection;

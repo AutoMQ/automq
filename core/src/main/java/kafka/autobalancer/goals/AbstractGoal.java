@@ -20,8 +20,8 @@ package kafka.autobalancer.goals;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
+import kafka.autobalancer.model.Broker;
+import kafka.autobalancer.model.TopicPartitionReplica;
 
 import java.util.Objects;
 import java.util.Set;
@@ -44,7 +44,7 @@ public abstract class AbstractGoal implements Goal {
     private double scoreDelta(Broker srcBrokerBefore, Broker destBrokerBefore, Broker srcBrokerAfter, Broker destBrokerAfter) {
         double scoreBefore = Math.min(brokerScore(srcBrokerBefore), brokerScore(destBrokerBefore));
         double scoreAfter = Math.min(brokerScore(srcBrokerAfter), brokerScore(destBrokerAfter));
-        return GoalUtils.normalize(scoreAfter - scoreBefore, 1.0, -1.0);
+        return GoalUtils.linearNormalization(scoreAfter - scoreBefore, 1.0, -1.0);
     }
 
     /**
