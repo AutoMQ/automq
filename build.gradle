@@ -955,9 +955,7 @@ project(':core') {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version {
-        branch = 'main'
-      }
+      version branchVersions.s3stream
     }
 
     implementation libs.opentelemetryJava8
@@ -1267,9 +1265,7 @@ project(':metadata') {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version {
-        branch = 'main'
-      }
+      version branchVersions.s3stream
     }
 
     implementation libs.jacksonDatabind
@@ -1632,9 +1628,7 @@ project(':server-common') {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version {
-        branch = 'main'
-      }
+      version branchVersions.s3stream
     }
 
     testImplementation project(':clients')
@@ -1890,9 +1884,7 @@ project(':tools') {
     implementation(extLibs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version {
-        branch = 'main'
-      }
+      version branchVersions.s3stream
     }
     implementation libs.commonio
 
