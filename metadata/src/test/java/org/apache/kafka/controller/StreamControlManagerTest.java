@@ -43,7 +43,6 @@ import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
@@ -80,7 +79,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
