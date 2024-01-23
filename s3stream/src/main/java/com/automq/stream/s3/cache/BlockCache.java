@@ -32,6 +32,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.SortedMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -391,7 +392,45 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         void onCacheEvict(long streamId, long startOffset, long endOffset, int size);
     }
 
-    record CacheBlockKey(long streamId, long startOffset) {
+    static final class CacheBlockKey {
+        private final long streamId;
+        private final long startOffset;
+
+        CacheBlockKey(long streamId, long startOffset) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+        }
+
+        public long streamId() {
+            return streamId;
+        }
+
+        public long startOffset() {
+            return startOffset;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (CacheBlockKey) obj;
+            return this.streamId == that.streamId &&
+                this.startOffset == that.startOffset;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(streamId, startOffset);
+        }
+
+        @Override
+        public String toString() {
+            return "CacheBlockKey[" +
+                "streamId=" + streamId + ", " +
+                "startOffset=" + startOffset + ']';
+        }
 
     }
 

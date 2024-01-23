@@ -25,7 +25,7 @@ import io.opentelemetry.api.metrics.LongHistogram;
 public class HistogramMetric extends ConfigurableMetrics {
     private final LongHistogram longHistogram;
 
-    public HistogramMetric(MetricsConfig metricsConfig,LongHistogram longHistogram) {
+    public HistogramMetric(MetricsConfig metricsConfig, LongHistogram longHistogram) {
         this(metricsConfig, Attributes.empty(), longHistogram);
     }
 

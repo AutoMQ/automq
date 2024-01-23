@@ -31,8 +31,8 @@
         <s3.version>2.20.127</s3.version>
 
         <maven-checkstyle-plugin.version>3.2.0</maven-checkstyle-plugin.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <opentelemetry.version>1.32.0</opentelemetry.version>
         <aspectj.version>1.9.20.1</aspectj.version>

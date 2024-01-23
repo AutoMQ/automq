@@ -23,6 +23,7 @@ import com.automq.stream.s3.StreamDataBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -89,6 +90,45 @@ public class DataBlockReadAccumulator {
         }
     }
 
-    public record ReserveResult(int reserveSize, CompletableFuture<DataBlockRecords> cf) {
+    public static final class ReserveResult {
+        private final int reserveSize;
+        private final CompletableFuture<DataBlockRecords> cf;
+
+        public ReserveResult(int reserveSize, CompletableFuture<DataBlockRecords> cf) {
+            this.reserveSize = reserveSize;
+            this.cf = cf;
+        }
+
+        public int reserveSize() {
+            return reserveSize;
+        }
+
+        public CompletableFuture<DataBlockRecords> cf() {
+            return cf;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (ReserveResult) obj;
+            return this.reserveSize == that.reserveSize &&
+                Objects.equals(this.cf, that.cf);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(reserveSize, cf);
+        }
+
+        @Override
+        public String toString() {
+            return "ReserveResult[" +
+                "reserveSize=" + reserveSize + ", " +
+                "cf=" + cf + ']';
+        }
+
     }
 }

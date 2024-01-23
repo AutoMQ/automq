@@ -116,7 +116,7 @@ public class CompactionUtils {
      * Sort stream data blocks by stream id and start offset.
      *
      * @param streamDataBlocksMap streamDataBlocksMap stream data blocks map, key: object id, value: stream data blocks
-     * @return                   sorted stream data blocks
+     * @return sorted stream data blocks
      */
     public static List<StreamDataBlock> sortStreamRangePositions(Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
         //TODO: use merge sort
@@ -135,7 +135,7 @@ public class CompactionUtils {
      *
      * @param streamDataBlocks stream data blocks to be grouped
      * @param predicate        the predicate to check whether a stream data block should be grouped with the previous one
-     * @return                 grouped stream data blocks
+     * @return grouped stream data blocks
      */
     public static List<List<StreamDataBlock>> groupStreamDataBlocks(List<StreamDataBlock> streamDataBlocks,
         Predicate<StreamDataBlock> predicate) {
@@ -156,7 +156,8 @@ public class CompactionUtils {
         return groupedStreamDataBlocks;
     }
 
-    public static List<ObjectStreamRange> buildObjectStreamRangeFromGroup(List<List<StreamDataBlock>> streamDataBlockGroup) {
+    public static List<ObjectStreamRange> buildObjectStreamRangeFromGroup(
+        List<List<StreamDataBlock>> streamDataBlockGroup) {
         List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
 
         for (List<StreamDataBlock> streamDataBlocks : streamDataBlockGroup) {
@@ -174,7 +175,8 @@ public class CompactionUtils {
         return objectStreamRanges;
     }
 
-    public static List<DataBlockIndex> buildDataBlockIndicesFromGroup(List<List<StreamDataBlock>> streamDataBlockGroup) {
+    public static List<DataBlockIndex> buildDataBlockIndicesFromGroup(
+        List<List<StreamDataBlock>> streamDataBlockGroup) {
         List<DataBlockIndex> dataBlockIndices = new ArrayList<>();
 
         long blockStartPosition = 0;

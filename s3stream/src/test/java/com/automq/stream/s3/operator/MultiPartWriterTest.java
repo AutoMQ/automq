@@ -185,10 +185,17 @@ class MultiPartWriterTest {
         for (int i = 0; i < 3; i++) {
             int partNum = uploadPartRequests.get(i).partNumber();
             switch (partNum) {
-                case 2 -> assertEquals(120L, writeContentLengths.get(i));
-                case 3 -> assertEquals(280L, writeContentLengths.get(i));
-                case 4 -> assertEquals(10L, writeContentLengths.get(i));
-                default -> throw new IllegalStateException();
+                case 2:
+                    assertEquals(120L, writeContentLengths.get(i));
+                    break;
+                case 3:
+                    assertEquals(280L, writeContentLengths.get(i));
+                    break;
+                case 4:
+                    assertEquals(10L, writeContentLengths.get(i));
+                    break;
+                default:
+                    throw new IllegalStateException();
             }
         }
 

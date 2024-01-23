@@ -47,6 +47,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -176,7 +177,8 @@ public class DefaultS3Operator implements S3Operator {
 
     private static boolean isUnrecoverable(Throwable ex) {
         ex = cause(ex);
-        if (ex instanceof S3Exception s3Ex) {
+        if (ex instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) ex;
             return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
         }
         return false;
@@ -808,7 +810,61 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
-    record ReadTask(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
+    static final class ReadTask {
+        private final String path;
+        private final long start;
+        private final long end;
+        private final CompletableFuture<ByteBuf> cf;
+
+        ReadTask(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
+            this.path = path;
+            this.start = start;
+            this.end = end;
+            this.cf = cf;
+        }
+
+        public String path() {
+            return path;
+        }
+
+        public long start() {
+            return start;
+        }
+
+        public long end() {
+            return end;
+        }
+
+        public CompletableFuture<ByteBuf> cf() {
+            return cf;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (ReadTask) obj;
+            return Objects.equals(this.path, that.path) &&
+                this.start == that.start &&
+                this.end == that.end &&
+                Objects.equals(this.cf, that.cf);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(path, start, end, cf);
+        }
+
+        @Override
+        public String toString() {
+            return "ReadTask[" +
+                "path=" + path + ", " +
+                "start=" + start + ", " +
+                "end=" + end + ", " +
+                "cf=" + cf + ']';
+        }
     }
 
     public static class Builder {

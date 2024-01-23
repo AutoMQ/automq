@@ -189,7 +189,7 @@ public class DataBlockReader {
 
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
         return rangeRead0(start, end).whenComplete((ret, ex) ->
-                CompactionStats.getInstance().compactionReadSizeStats.add(MetricsLevel.INFO, ret.readableBytes()));
+            CompactionStats.getInstance().compactionReadSizeStats.add(MetricsLevel.INFO, ret.readableBytes()));
     }
 
     private CompletableFuture<ByteBuf> rangeRead0(long start, long end) {
