@@ -313,7 +313,7 @@ public class CompactionManager {
      * @param streamMetadataList metadata of opened streams
      * @param objectMetadata     stream set object to split
      * @param cfs                List of CompletableFuture of StreamObject
-     * @return                   true if split succeed, false otherwise
+     * @return true if split succeed, false otherwise
      */
     private boolean splitStreamSetObject(List<StreamMetadata> streamMetadataList,
         S3ObjectMetadata objectMetadata, Collection<CompletableFuture<StreamObject>> cfs) {

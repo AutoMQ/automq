@@ -109,7 +109,8 @@ public class S3Utils {
         }
 
         protected static void showErrorInfo(Exception e) {
-            if (e.getCause() instanceof S3Exception se) {
+            if (e.getCause() instanceof S3Exception) {
+                S3Exception se = (S3Exception) e.getCause();
                 // Do not use system.err because automq admin tool suppress system.err
                 System.out.println("get S3 exception: ");
                 se.printStackTrace(System.out);

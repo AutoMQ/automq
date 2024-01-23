@@ -22,6 +22,7 @@ import com.automq.stream.s3.compact.objects.CompactionType;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class CompactionStats {
@@ -60,7 +61,45 @@ public class CompactionStats {
         return s3ObjectToCompactedObjectNumMap;
     }
 
-    public record CompactionStreamRecord(int streamNumInStreamSet, int streamObjectNum) {
+    public static final class CompactionStreamRecord {
+        private final int streamNumInStreamSet;
+        private final int streamObjectNum;
+
+        public CompactionStreamRecord(int streamNumInStreamSet, int streamObjectNum) {
+            this.streamNumInStreamSet = streamNumInStreamSet;
+            this.streamObjectNum = streamObjectNum;
+        }
+
+        public int streamNumInStreamSet() {
+            return streamNumInStreamSet;
+        }
+
+        public int streamObjectNum() {
+            return streamObjectNum;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (CompactionStreamRecord) obj;
+            return this.streamNumInStreamSet == that.streamNumInStreamSet &&
+                this.streamObjectNum == that.streamObjectNum;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(streamNumInStreamSet, streamObjectNum);
+        }
+
+        @Override
+        public String toString() {
+            return "CompactionStreamRecord[" +
+                "streamNumInStreamSet=" + streamNumInStreamSet + ", " +
+                "streamObjectNum=" + streamObjectNum + ']';
+        }
 
     }
 }

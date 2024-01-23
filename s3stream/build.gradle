@@ -36,8 +36,8 @@ dependencies {
 }
 
 group = 'com.automq.elasticstream'
-version = '0.18.0-SNAPSHOT'
 description = 's3stream'
+java.sourceCompatibility = '11'
 
 java {
     withSourcesJar()

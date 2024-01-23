@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -713,15 +714,56 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    record AppendResultImpl(long recordOffset, CompletableFuture<CallbackResult> future) implements AppendResult {
+    static final class AppendResultImpl implements AppendResult {
+        private final long recordOffset;
+        private final CompletableFuture<CallbackResult> future;
+
+        AppendResultImpl(long recordOffset, CompletableFuture<CallbackResult> future) {
+            this.recordOffset = recordOffset;
+            this.future = future;
+        }
 
         @Override
         public String toString() {
             return "AppendResultImpl{" + "recordOffset=" + recordOffset + '}';
         }
+
+        @Override
+        public long recordOffset() {
+            return recordOffset;
+        }
+
+        @Override
+        public CompletableFuture<CallbackResult> future() {
+            return future;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (AppendResultImpl) obj;
+            return this.recordOffset == that.recordOffset &&
+                Objects.equals(this.future, that.future);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(recordOffset, future);
+        }
+
     }
 
-    record RecoverResultImpl(ByteBuf record, long recordOffset) implements RecoverResult {
+    static final class RecoverResultImpl implements RecoverResult {
+        private final ByteBuf record;
+        private final long recordOffset;
+
+        RecoverResultImpl(ByteBuf record, long recordOffset) {
+            this.record = record;
+            this.recordOffset = recordOffset;
+        }
 
         @Override
         public String toString() {
@@ -730,6 +772,33 @@ public class BlockWALService implements WriteAheadLog {
                 + ", recordOffset=" + recordOffset
                 + '}';
         }
+
+        @Override
+        public ByteBuf record() {
+            return record;
+        }
+
+        @Override
+        public long recordOffset() {
+            return recordOffset;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (RecoverResultImpl) obj;
+            return Objects.equals(this.record, that.record) &&
+                this.recordOffset == that.recordOffset;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(record, recordOffset);
+        }
+
     }
 
     static class ReadRecordException extends Exception {

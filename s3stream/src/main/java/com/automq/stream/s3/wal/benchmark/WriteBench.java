@@ -29,6 +29,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.NavigableSet;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
@@ -325,7 +326,62 @@ public class WriteBench implements AutoCloseable {
             return new Result(countValue, costNanosValue, maxCostNanosValue, elapsedTimeNanos);
         }
 
-        public record Result(long count, long costNanos, long maxCostNanos, long elapsedTimeNanos) {
+        public static final class Result {
+            private final long count;
+            private final long costNanos;
+            private final long maxCostNanos;
+            private final long elapsedTimeNanos;
+
+            public Result(long count, long costNanos, long maxCostNanos, long elapsedTimeNanos) {
+                this.count = count;
+                this.costNanos = costNanos;
+                this.maxCostNanos = maxCostNanos;
+                this.elapsedTimeNanos = elapsedTimeNanos;
+            }
+
+            public long count() {
+                return count;
+            }
+
+            public long costNanos() {
+                return costNanos;
+            }
+
+            public long maxCostNanos() {
+                return maxCostNanos;
+            }
+
+            public long elapsedTimeNanos() {
+                return elapsedTimeNanos;
+            }
+
+            @Override
+            public boolean equals(Object obj) {
+                if (obj == this)
+                    return true;
+                if (obj == null || obj.getClass() != this.getClass())
+                    return false;
+                var that = (Result) obj;
+                return this.count == that.count &&
+                    this.costNanos == that.costNanos &&
+                    this.maxCostNanos == that.maxCostNanos &&
+                    this.elapsedTimeNanos == that.elapsedTimeNanos;
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(count, costNanos, maxCostNanos, elapsedTimeNanos);
+            }
+
+            @Override
+            public String toString() {
+                return "Result[" +
+                    "count=" + count + ", " +
+                    "costNanos=" + costNanos + ", " +
+                    "maxCostNanos=" + maxCostNanos + ", " +
+                    "elapsedTimeNanos=" + elapsedTimeNanos + ']';
+            }
+
         }
     }
 

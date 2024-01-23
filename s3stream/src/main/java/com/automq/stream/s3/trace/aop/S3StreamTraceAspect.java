@@ -35,7 +35,8 @@ public class S3StreamTraceAspect {
     @Around(value = "trace(withSpan) && execution(* com.automq.stream..*(..))", argNames = "joinPoint,withSpan")
     public Object createSpan(ProceedingJoinPoint joinPoint, WithSpan withSpan) throws Throwable {
         Object[] args = joinPoint.getArgs();
-        if (args.length > 0 && args[0] instanceof TraceContext context) {
+        if (args.length > 0 && args[0] instanceof TraceContext) {
+            TraceContext context = (TraceContext) args[0];
             return TraceUtils.trace(context, joinPoint, withSpan);
         }
 
