@@ -1930,7 +1930,8 @@ public final class QuorumController implements Controller {
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
-        this.streamControlManager = new StreamControlManager(snapshotRegistry, logContext, this.s3ObjectControlManager);
+        this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
+                this.s3ObjectControlManager, clusterControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         // AutoMQ for Kafka inject end
         updateWriteOffset(-1);
@@ -2308,8 +2309,7 @@ public final class QuorumController implements Controller {
     // AutoMQ for Kafka inject start
     @Override
     public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
-        return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(),
-            () -> s3ObjectControlManager.checkS3ObjectsLifecycle());
+        return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(), s3ObjectControlManager::checkS3ObjectsLifecycle);
     }
 
 
