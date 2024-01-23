@@ -52,7 +52,10 @@ import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.ThreadUtils;
+import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
@@ -65,9 +68,16 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -79,11 +89,8 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 @SuppressWarnings("all")
 public class StreamControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
-    private final SnapshotRegistry snapshotRegistry;
 
     private final Logger log;
-
-    private final S3ObjectControlManager s3ObjectControlManager;
 
     /**
      * The next stream id to be assigned.
@@ -94,16 +101,36 @@ public class StreamControlManager {
 
     private final TimelineHashMap<Integer/*nodeId*/, NodeMetadata> nodesMetadata;
 
+    private final QuorumController quorumController;
+
+    private final SnapshotRegistry snapshotRegistry;
+
+    private final S3ObjectControlManager s3ObjectControlManager;
+
+    private final ClusterControlManager clusterControlManager;
+
+    private final ScheduledExecutorService cleanupScheduler;
+
     public StreamControlManager(
+            QuorumController quorumController,
             SnapshotRegistry snapshotRegistry,
             LogContext logContext,
-            S3ObjectControlManager s3ObjectControlManager) {
+            S3ObjectControlManager s3ObjectControlManager,
+            ClusterControlManager clusterControlManager) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(StreamControlManager.class);
-        this.s3ObjectControlManager = s3ObjectControlManager;
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
+
+        this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("stream-cleanup-scheduler", true));
+
+        this.quorumController = quorumController;
+        this.s3ObjectControlManager = s3ObjectControlManager;
+        this.clusterControlManager = clusterControlManager;
+
+        this.cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
     }
 
     public ControllerResult<CreateStreamResponse> createStream(int nodeId, long nodeEpoch, CreateStreamRequest request) {
@@ -896,6 +923,55 @@ public class StreamControlManager {
             return Errors.NODE_FENCED;
         }
         return Errors.NONE;
+    }
+
+    public void triggerCleanupScaleInNodes() {
+        if (!quorumController.isActive()) {
+            return;
+        }
+        quorumController.appendWriteEvent("cleanupScaleInNodes", OptionalLong.empty(), () -> {
+            return cleanupScaleInNodes();
+        });
+    }
+
+    public ControllerResult<Void> cleanupScaleInNodes() {
+        List<ApiMessageAndVersion> records = new LinkedList<>();
+        List<S3StreamSetObject> cleanupObjects = new LinkedList<>();
+        nodesMetadata.forEach((nodeId, nodeMetadata) -> {
+            if (!clusterControlManager.isActive(nodeId)) {
+                Collection<S3StreamSetObject> objects = nodeMetadata.streamSetObjects().values();
+                boolean alive = false;
+                for (S3StreamSetObject object: objects) {
+                    if (alive) {
+                        // if the last object is not expired, the likelihood of the subsequent object expiring is also quite low.
+                        break;
+                    }
+                    long objectId = object.objectId();
+                    AtomicBoolean expired = new AtomicBoolean(true);
+                    List<StreamOffsetRange> streamOffsetRanges = object.offsetRangeList();
+                    for (StreamOffsetRange streamOffsetRange : streamOffsetRanges) {
+                        S3StreamMetadata stream = streamsMetadata.get(streamOffsetRange.streamId());
+                        if (stream != null && stream.startOffset() < streamOffsetRange.endOffset()) {
+                            expired.set(false);
+                            alive = true;
+                        }
+                    }
+                    if (expired.get()) {
+                        cleanupObjects.add(object);
+                        records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
+                                .setNodeId(nodeId)
+                                .setObjectId(objectId), (short) 0));
+                        records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(objectId)).records());
+                    }
+                }
+            }
+        });
+        if (!cleanupObjects.isEmpty()) {
+            LOGGER.info("clean up scaled-in nodes objects: {}", cleanupObjects);
+        } else {
+            LOGGER.debug("clean up scaled-in nodes objects: []");
+        }
+        return ControllerResult.of(records, null);
     }
 
     public void replay(AssignedStreamIdRecord record) {

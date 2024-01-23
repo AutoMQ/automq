@@ -621,11 +621,13 @@ public class ClusterControlManager {
         return !registration.inControlledShutdown() && !registration.fenced();
     }
 
+    // AutoMQ for kafka inject start
     public List<BrokerRegistration> getActiveBrokers() {
         return brokerRegistrations.values().stream()
             .filter(broker -> isActive(broker.id()))
             .collect(Collectors.toList());
     }
+    // AutoMQ for kafka inject end
 
     BrokerHeartbeatManager heartbeatManager() {
         if (heartbeatManager == null) {
