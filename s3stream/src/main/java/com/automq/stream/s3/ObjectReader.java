@@ -28,6 +28,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
@@ -121,10 +122,20 @@ public class ObjectReader implements AutoCloseable {
     }
 
     /**
-     * @param dataBlockSize The total size of the data blocks, which equals to index start position.
-     * @param indexBlock    raw index data.
+     *
      */
-    public record BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock) {
+    public static final class BasicObjectInfo {
+        private final long dataBlockSize;
+        private final IndexBlock indexBlock;
+
+        /**
+         * @param dataBlockSize The total size of the data blocks, which equals to index start position.
+         * @param indexBlock    raw index data.
+         */
+        public BasicObjectInfo(long dataBlockSize, IndexBlock indexBlock) {
+            this.dataBlockSize = dataBlockSize;
+            this.indexBlock = indexBlock;
+        }
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf,
             S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
@@ -154,6 +165,38 @@ public class ObjectReader implements AutoCloseable {
         void close() {
             indexBlock.close();
         }
+
+        public long dataBlockSize() {
+            return dataBlockSize;
+        }
+
+        public IndexBlock indexBlock() {
+            return indexBlock;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (BasicObjectInfo) obj;
+            return this.dataBlockSize == that.dataBlockSize &&
+                Objects.equals(this.indexBlock, that.indexBlock);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(dataBlockSize, indexBlock);
+        }
+
+        @Override
+        public String toString() {
+            return "BasicObjectInfo[" +
+                "dataBlockSize=" + dataBlockSize + ", " +
+                "indexBlock=" + indexBlock + ']';
+        }
+
     }
 
     public static class IndexBlock {
@@ -261,8 +304,62 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
-    public record FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes,
-                                  List<StreamDataBlock> streamDataBlocks) {
+    public static final class FindIndexResult {
+        private final boolean isFulfilled;
+        private final long nextStartOffset;
+        private final int nextMaxBytes;
+        private final List<StreamDataBlock> streamDataBlocks;
+
+        public FindIndexResult(boolean isFulfilled, long nextStartOffset, int nextMaxBytes,
+            List<StreamDataBlock> streamDataBlocks) {
+            this.isFulfilled = isFulfilled;
+            this.nextStartOffset = nextStartOffset;
+            this.nextMaxBytes = nextMaxBytes;
+            this.streamDataBlocks = streamDataBlocks;
+        }
+
+        public boolean isFulfilled() {
+            return isFulfilled;
+        }
+
+        public long nextStartOffset() {
+            return nextStartOffset;
+        }
+
+        public int nextMaxBytes() {
+            return nextMaxBytes;
+        }
+
+        public List<StreamDataBlock> streamDataBlocks() {
+            return streamDataBlocks;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (FindIndexResult) obj;
+            return this.isFulfilled == that.isFulfilled &&
+                this.nextStartOffset == that.nextStartOffset &&
+                this.nextMaxBytes == that.nextMaxBytes &&
+                Objects.equals(this.streamDataBlocks, that.streamDataBlocks);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(isFulfilled, nextStartOffset, nextMaxBytes, streamDataBlocks);
+        }
+
+        @Override
+        public String toString() {
+            return "FindIndexResult[" +
+                "isFulfilled=" + isFulfilled + ", " +
+                "nextStartOffset=" + nextStartOffset + ", " +
+                "nextMaxBytes=" + nextMaxBytes + ", " +
+                "streamDataBlocks=" + streamDataBlocks + ']';
+        }
 
     }
 

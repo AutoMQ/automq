@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -243,7 +244,45 @@ public class DefaultS3BlockCache implements S3BlockCache {
         WAIT_THROTTLE,
     }
 
-    public record ReadAheadTaskKey(long streamId, long startOffset) {
+    public static final class ReadAheadTaskKey {
+        private final long streamId;
+        private final long startOffset;
+
+        public ReadAheadTaskKey(long streamId, long startOffset) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+        }
+
+        public long streamId() {
+            return streamId;
+        }
+
+        public long startOffset() {
+            return startOffset;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (ReadAheadTaskKey) obj;
+            return this.streamId == that.streamId &&
+                this.startOffset == that.startOffset;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(streamId, startOffset);
+        }
+
+        @Override
+        public String toString() {
+            return "ReadAheadTaskKey[" +
+                "streamId=" + streamId + ", " +
+                "startOffset=" + startOffset + ']';
+        }
 
     }
 
@@ -261,7 +300,21 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
     }
 
-    public record ReadTaskKey(long streamId, long startOffset, long endOffset, int maxBytes, UUID uuid) {
+    public static final class ReadTaskKey {
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+        private final int maxBytes;
+        private final UUID uuid;
+
+        public ReadTaskKey(long streamId, long startOffset, long endOffset, int maxBytes, UUID uuid) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.maxBytes = maxBytes;
+            this.uuid = uuid;
+        }
+
         @Override
         public String toString() {
             return "ReadTaskKey{" +
@@ -272,6 +325,46 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 ", uuid=" + uuid +
                 '}';
         }
+
+        public long streamId() {
+            return streamId;
+        }
+
+        public long startOffset() {
+            return startOffset;
+        }
+
+        public long endOffset() {
+            return endOffset;
+        }
+
+        public int maxBytes() {
+            return maxBytes;
+        }
+
+        public UUID uuid() {
+            return uuid;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (ReadTaskKey) obj;
+            return this.streamId == that.streamId &&
+                this.startOffset == that.startOffset &&
+                this.endOffset == that.endOffset &&
+                this.maxBytes == that.maxBytes &&
+                Objects.equals(this.uuid, that.uuid);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(streamId, startOffset, endOffset, maxBytes, uuid);
+        }
+
     }
 
     public static class ReadTaskContext {
@@ -288,7 +381,38 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
     }
 
-    public record ReadAheadRecord(long nextRAOffset) {
+    public static final class ReadAheadRecord {
+        private final long nextRAOffset;
+
+        public ReadAheadRecord(long nextRAOffset) {
+            this.nextRAOffset = nextRAOffset;
+        }
+
+        public long nextRAOffset() {
+            return nextRAOffset;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (ReadAheadRecord) obj;
+            return this.nextRAOffset == that.nextRAOffset;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(nextRAOffset);
+        }
+
+        @Override
+        public String toString() {
+            return "ReadAheadRecord[" +
+                "nextRAOffset=" + nextRAOffset + ']';
+        }
+
     }
 
 }

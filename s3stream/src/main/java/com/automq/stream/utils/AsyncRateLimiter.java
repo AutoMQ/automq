@@ -18,6 +18,7 @@
 package com.automq.stream.utils;
 
 import com.google.common.util.concurrent.RateLimiter;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -69,7 +70,44 @@ public class AsyncRateLimiter {
         }
     }
 
-    record Acquire(CompletableFuture<Void> cf, int size) {
-    }
+    static final class Acquire {
+        private final CompletableFuture<Void> cf;
+        private final int size;
 
+        Acquire(CompletableFuture<Void> cf, int size) {
+            this.cf = cf;
+            this.size = size;
+        }
+
+        public CompletableFuture<Void> cf() {
+            return cf;
+        }
+
+        public int size() {
+            return size;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (Acquire) obj;
+            return Objects.equals(this.cf, that.cf) &&
+                this.size == that.size;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(cf, size);
+        }
+
+        @Override
+        public String toString() {
+            return "Acquire[" +
+                "cf=" + cf + ", " +
+                "size=" + size + ']';
+        }
+    }
 }

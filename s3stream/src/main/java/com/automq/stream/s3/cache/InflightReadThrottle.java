@@ -26,6 +26,7 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -147,6 +148,45 @@ public class InflightReadThrottle implements Runnable {
         }
     }
 
-    record InflightReadItem(int readSize, CompletableFuture<Void> cf) {
+    static final class InflightReadItem {
+        private final int readSize;
+        private final CompletableFuture<Void> cf;
+
+        InflightReadItem(int readSize, CompletableFuture<Void> cf) {
+            this.readSize = readSize;
+            this.cf = cf;
+        }
+
+        public int readSize() {
+            return readSize;
+        }
+
+        public CompletableFuture<Void> cf() {
+            return cf;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (InflightReadItem) obj;
+            return this.readSize == that.readSize &&
+                Objects.equals(this.cf, that.cf);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(readSize, cf);
+        }
+
+        @Override
+        public String toString() {
+            return "InflightReadItem[" +
+                "readSize=" + readSize + ", " +
+                "cf=" + cf + ']';
+        }
+
     }
 }

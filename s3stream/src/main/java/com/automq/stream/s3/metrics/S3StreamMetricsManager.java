@@ -268,14 +268,14 @@ public class S3StreamMetricsManager {
         Supplier<Long> networkAvailableBandwidthSupplier,
         Supplier<Integer> networkLimiterQueueSizeSupplier) {
         switch (type) {
-            case INBOUND -> {
+            case INBOUND:
                 S3StreamMetricsManager.networkInboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
                 S3StreamMetricsManager.networkInboundLimiterQueueSizeSupplier = networkLimiterQueueSizeSupplier;
-            }
-            case OUTBOUND -> {
+                break;
+            case OUTBOUND:
                 S3StreamMetricsManager.networkOutboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
                 S3StreamMetricsManager.networkOutboundLimiterQueueSizeSupplier = networkLimiterQueueSizeSupplier;
-            }
+                break;
         }
     }
 

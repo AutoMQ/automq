@@ -736,7 +736,15 @@ public class S3Storage implements Storage {
          * Wrapper of {@link WalWriteRequest}.
          * When the {@code request} is null, it is used as a flag.
          */
-        record WalWriteRequestWrapper(WalWriteRequest request) {
+        static final class WalWriteRequestWrapper {
+            private final WalWriteRequest request;
+
+            /**
+             *
+             */
+            WalWriteRequestWrapper(WalWriteRequest request) {
+                this.request = request;
+            }
 
             static WalWriteRequestWrapper flag() {
                 return new WalWriteRequestWrapper(null);
@@ -745,6 +753,32 @@ public class S3Storage implements Storage {
             public boolean isFlag() {
                 return request == null;
             }
+
+            public WalWriteRequest request() {
+                return request;
+            }
+
+            @Override
+            public boolean equals(Object obj) {
+                if (obj == this)
+                    return true;
+                if (obj == null || obj.getClass() != this.getClass())
+                    return false;
+                var that = (WalWriteRequestWrapper) obj;
+                return Objects.equals(this.request, that.request);
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(request);
+            }
+
+            @Override
+            public String toString() {
+                return "WalWriteRequestWrapper[" +
+                    "request=" + request + ']';
+            }
+
         }
     }
 

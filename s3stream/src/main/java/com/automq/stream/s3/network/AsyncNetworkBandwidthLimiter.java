@@ -167,10 +167,58 @@ public class AsyncNetworkBandwidthLimiter {
         }
     }
 
-    record BucketItem(int priority, long size, CompletableFuture<Void> cf) implements Comparable<BucketItem> {
+    static final class BucketItem implements Comparable<BucketItem> {
+        private final int priority;
+        private final long size;
+        private final CompletableFuture<Void> cf;
+
+        BucketItem(int priority, long size, CompletableFuture<Void> cf) {
+            this.priority = priority;
+            this.size = size;
+            this.cf = cf;
+        }
+
         @Override
         public int compareTo(BucketItem o) {
             return Long.compare(priority, o.priority);
         }
+
+        public int priority() {
+            return priority;
+        }
+
+        public long size() {
+            return size;
+        }
+
+        public CompletableFuture<Void> cf() {
+            return cf;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (BucketItem) obj;
+            return this.priority == that.priority &&
+                this.size == that.size &&
+                Objects.equals(this.cf, that.cf);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(priority, size, cf);
+        }
+
+        @Override
+        public String toString() {
+            return "BucketItem[" +
+                "priority=" + priority + ", " +
+                "size=" + size + ", " +
+                "cf=" + cf + ']';
+        }
+
     }
 }
