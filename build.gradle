@@ -20,12 +20,6 @@ import java.nio.charset.StandardCharsets
 buildscript {
   repositories {
     mavenCentral()
-    maven {
-      url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
-      mavenContent {
-        snapshotsOnly()
-      }
-    }
   }
   apply from: "$rootDir/gradle/dependencies.gradle"
 
@@ -957,10 +951,13 @@ project(':core') {
     implementation libs.slf4jlog4j
     implementation libs.slf4jBridge
     implementation libs.nettyHttp2
-    implementation(libs.s3stream) {
+    implementation(extLibs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version {
+        branch = 'main'
+      }
     }
 
     implementation libs.opentelemetryJava8
@@ -1266,10 +1263,13 @@ project(':metadata') {
     implementation project(':kshell-sdk')
 
     implementation libs.nettyHttp2
-    implementation(libs.s3stream) {
+    implementation(extLibs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version {
+        branch = 'main'
+      }
     }
 
     implementation libs.jacksonDatabind
@@ -1628,10 +1628,13 @@ project(':server-common') {
     api project(':clients')
     implementation libs.slf4jApi
     implementation libs.metrics
-    implementation(libs.s3stream) {
+    implementation(extLibs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version {
+        branch = 'main'
+      }
     }
 
     testImplementation project(':clients')
@@ -1884,9 +1887,12 @@ project(':tools') {
       exclude group: 'org.slf4j', module: '*'
     }
     implementation libs.jacksonJaxrsJsonProvider
-    implementation(libs.s3stream) {
+    implementation(extLibs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version {
+        branch = 'main'
+      }
     }
     implementation libs.commonio
 

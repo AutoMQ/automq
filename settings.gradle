@@ -12,6 +12,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+def s3stream_repo = 'https://github.com/AutoMQ/automq-for-rocketmq.git'
+
+sourceControl {
+    gitRepository(s3stream_repo) {
+        producesModule("com.automq.elasticstream:s3stream")
+        rootDir = "s3stream"
+    }
+}
 
 include 'clients',
     'connect:api',
