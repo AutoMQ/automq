@@ -17,20 +17,21 @@
 
 package kafka.autobalancer.goals;
 
+import com.automq.stream.utils.LogContext;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.model.BrokerUpdater;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
-public class NetworkInCapacityGoal extends AbstractResourceCapacityGoal {
-    private static final Logger LOGGER = LoggerFactory.getLogger(NetworkInCapacityGoal.class);
+public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistributionGoal {
+    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
     public String name() {
-        return NetworkInCapacityGoal.class.getSimpleName();
+        return NetworkInUsageDistributionGoal.class.getSimpleName();
     }
 
     @Override
@@ -41,16 +42,18 @@ public class NetworkInCapacityGoal extends AbstractResourceCapacityGoal {
     @Override
     public void configure(Map<String, ?> configs) {
         AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(configs, false);
-        this.utilizationThreshold = controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_UTILIZATION_THRESHOLD);
+        this.usageDetectThreshold = controllerConfig.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD);
+        this.usageAvgDeviation = Math.max(0.0, Math.min(1.0,
+                controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION)));
     }
 
     @Override
     public void onBalanceFailed(BrokerUpdater.Broker broker) {
-        LOGGER.warn("Failed to reduce broker {} network inbound load after iterating all partitions", broker.getBrokerId());
+        LOGGER.warn("Failed to balance broker {} network inbound load after iterating all partitions", broker.getBrokerId());
     }
 
     @Override
-    public int priority() {
-        return GoalConstants.NETWORK_CAPACITY_GOAL_PRIORITY;
+    public GoalType type() {
+        return GoalType.SOFT;
     }
 }

@@ -26,21 +26,6 @@ import org.junit.jupiter.api.Test;
 public class MetricsUtilsTest {
 
     @Test
-    public void testSanityCheckBrokerMetricsCompleteness() {
-        BrokerMetrics metrics = new BrokerMetrics(System.currentTimeMillis(), 1, "");
-        metrics.put(RawMetricType.BROKER_CAPACITY_NW_IN, 10);
-        Assertions.assertFalse(MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.BROKER_CAPACITY_NW_OUT, 10);
-        Assertions.assertFalse(MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.ALL_TOPIC_BYTES_IN, 10);
-        Assertions.assertFalse(MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.ALL_TOPIC_BYTES_OUT, 10);
-        Assertions.assertFalse(MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.BROKER_CPU_UTIL, 10);
-        Assertions.assertTrue(MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics));
-    }
-
-    @Test
     public void testSanityCheckTopicPartitionMetricsCompleteness() {
         TopicPartitionMetrics metrics = new TopicPartitionMetrics(System.currentTimeMillis(), 1, "", "testTopic", 0);
         metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_IN, 10);

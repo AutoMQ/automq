@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.goals;
+package kafka.autobalancer;
 
-public class GoalConstants {
-    public static final int NETWORK_DISTRIBUTION_GOAL_PRIORITY = 8;
-    public static final int NETWORK_CAPACITY_GOAL_PRIORITY = 10;
+public interface AutoBalancerService {
+    void start();
+    void shutdown();
 }

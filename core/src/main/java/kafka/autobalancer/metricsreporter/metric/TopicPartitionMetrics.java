@@ -33,7 +33,6 @@ import java.util.Map;
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.metric.PartitionMetric.
  */
 public class TopicPartitionMetrics extends AutoBalancerMetrics {
-    private static final byte METRIC_VERSION = 0;
     private final String topic;
     private final int partition;
 
@@ -113,6 +112,7 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
      * @param headerPos Header position
      * @return Byte buffer of the partition metric.
      */
+    @Override
     public ByteBuffer toBuffer(int headerPos) {
         byte[] brokerRackBytes = brokerRack().getBytes(StandardCharsets.UTF_8);
         byte[] topic = topic().getBytes(StandardCharsets.UTF_8);

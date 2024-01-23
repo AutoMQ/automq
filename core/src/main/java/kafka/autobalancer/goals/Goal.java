@@ -28,17 +28,13 @@ import java.util.Set;
 
 public interface Goal extends Configurable, Comparable<Goal> {
 
-    boolean isHardGoal();
-
     List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
-
-    void validateConfig();
 
     void onBalanceFailed(BrokerUpdater.Broker broker);
 
     boolean isBrokerAcceptable(BrokerUpdater.Broker broker);
 
-    int priority();
+    GoalType type();
 
     Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
 
@@ -57,6 +53,6 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     @Override
     default int compareTo(Goal other) {
-        return Integer.compare(other.priority(), this.priority());
+        return Integer.compare(other.type().priority(), this.type().priority());
     }
 }
