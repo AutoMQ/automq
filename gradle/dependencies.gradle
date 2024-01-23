@@ -20,6 +20,8 @@
 ext {
   versions = [:]
   libs = [:]
+  extLibs = [:]
+  branchVersions = [:]
 
   // Available if -PscalaVersion is used. This is useful when we want to support a Scala version that has
   // a higher minimum Java requirement than Kafka. This was previously the case for Scala 2.12 and Java 7.
@@ -130,7 +132,6 @@ versions += [
   commonLang: "3.12.0",
   commonio: "2.15.1",
   commonMath3: "3.6.1",
-  s3stream: "0.18.0-SNAPSHOT",
   opentelemetry: "1.32.0",
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7",
@@ -231,7 +232,6 @@ libs += [
   commonio          : "commons-io:commons-io:$versions.commonio",
   commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
-  s3stream: "com.automq.elasticstream:s3stream:$versions.s3stream",
   awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdkAuth",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
@@ -242,4 +242,12 @@ libs += [
   opentelemetryExporterOTLP: "io.opentelemetry:opentelemetry-exporter-otlp:$versions.opentelemetry",
   opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryAlpha",
   oshi: "com.github.oshi:oshi-core-java11:$versions.oshi"
+]
+extLibs += [
+  s3stream: "com.automq.elasticstream:s3stream"
+]
+branchVersions += [
+  s3stream: {
+    branch = "main"
+  }
 ]
