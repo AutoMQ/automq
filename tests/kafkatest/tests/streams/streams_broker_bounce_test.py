@@ -212,16 +212,16 @@ class StreamsBrokerBounceTest(Test):
         return data
 
     @cluster(num_nodes=7)
-    @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
+    @matrix(failure_mode=["clean_shutdown", "clean_bounce", "hard_bounce"],
             broker_type=["leader"],
             num_threads=[1, 3],
             sleep_time_secs=[120],
             metadata_quorum=[quorum.remote_kraft])
-    @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
-            broker_type=["leader", "controller"],
-            num_threads=[1, 3],
-            sleep_time_secs=[120],
-            metadata_quorum=[quorum.zk])
+    # @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
+    #         broker_type=["leader", "controller"],
+    #         num_threads=[1, 3],
+    #         sleep_time_secs=[120],
+    #         metadata_quorum=[quorum.zk])
     def test_broker_type_bounce(self, failure_mode, broker_type, sleep_time_secs, num_threads, metadata_quorum):
         """
         Start a smoke test client, then kill one particular broker and ensure data is still received
@@ -262,6 +262,8 @@ class StreamsBrokerBounceTest(Test):
 
         return self.collect_results(sleep_time_secs)
 
+    # AutoMQ E2E need clean shutdown, the test case is duplicated to test_all_brokers_bounce
+    @ignore
     @cluster(num_nodes=7)
     @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
             num_failures=[2],
@@ -282,9 +284,13 @@ class StreamsBrokerBounceTest(Test):
         return self.collect_results(120)
 
     @cluster(num_nodes=7)
-    @matrix(failure_mode=["clean_bounce", "hard_bounce"],
-            num_failures=[3],
+    @matrix(failure_mode=["clean_shutdown"],
+            num_failures=[1],
             metadata_quorum=quorum.all_non_upgrade)
+    # AutoMQ E2E need clean shutdown
+    # @matrix(failure_mode=["clean_bounce", "hard_bounce"],
+    #         num_failures=[3],
+    #         metadata_quorum=quorum.all_non_upgrade)
     def test_all_brokers_bounce(self, failure_mode, num_failures, metadata_quorum=quorum.zk):
         """
         Start a smoke test client, then kill a few brokers and ensure data is still received
