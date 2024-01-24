@@ -1990,8 +1990,11 @@ project(':shell') {
     implementation libs.jacksonJDK8Datatypes
     implementation libs.jline
     implementation libs.slf4jApi
-    implementation(libs.s3stream) {
+    implementation(extLibs.s3stream) {
+      exclude group: 'io.netty', module: '*'
+      exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
     }
     implementation project(':server-common')
     implementation project(':clients')
