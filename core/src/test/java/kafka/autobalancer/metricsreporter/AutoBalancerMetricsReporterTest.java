@@ -17,7 +17,6 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
@@ -46,9 +45,9 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-import static kafka.autobalancer.common.RawMetricType.PARTITION_SIZE;
-import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_IN;
-import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
+import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_SIZE;
+import static kafka.autobalancer.common.types.RawMetricTypes.TOPIC_PARTITION_BYTES_IN;
+import static kafka.autobalancer.common.types.RawMetricTypes.TOPIC_PARTITION_BYTES_OUT;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
@@ -97,22 +96,21 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(Collections.singleton(METRIC_TOPIC));
             long startMs = System.currentTimeMillis();
-            Set<Integer> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
-                    (int) TOPIC_PARTITION_BYTES_IN.id(),
-                    (int) TOPIC_PARTITION_BYTES_OUT.id(),
-                    (int) PARTITION_SIZE.id()));
-            Set<Integer> expectedMetricTypes = new HashSet<>(expectedTopicPartitionMetricTypes);
+            Set<Byte> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
+                    TOPIC_PARTITION_BYTES_IN,
+                    TOPIC_PARTITION_BYTES_OUT,
+                    PARTITION_SIZE));
+            Set<Byte> expectedMetricTypes = new HashSet<>(expectedTopicPartitionMetricTypes);
 
-            Set<Integer> metricTypes = new HashSet<>();
+            Set<Byte> metricTypes = new HashSet<>();
             ConsumerRecords<String, AutoBalancerMetrics> records;
             while (metricTypes.size() < expectedTopicPartitionMetricTypes.size() && System.currentTimeMillis() < startMs + 15000) {
                 records = consumer.poll(Duration.ofMillis(10L));
                 for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
-                    Set<Integer> localMetricTypes = new HashSet<>();
-                    for (RawMetricType type : record.value().getMetricValueMap().keySet()) {
-                        int typeId = type.id();
-                        metricTypes.add(typeId);
-                        localMetricTypes.add(typeId);
+                    Set<Byte> localMetricTypes = new HashSet<>();
+                    for (Byte type : record.value().getMetricValueMap().keySet()) {
+                        metricTypes.add(type);
+                        localMetricTypes.add(type);
                     }
                     Assertions.assertEquals(expectedTopicPartitionMetricTypes, localMetricTypes,
                             "Expected " + expectedTopicPartitionMetricTypes + ", but saw " + localMetricTypes);

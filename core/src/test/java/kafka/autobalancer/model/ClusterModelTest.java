@@ -17,7 +17,7 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.RawMetricType;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -202,9 +202,9 @@ public class ClusterModelTest {
         // update on non-exist topic
         long now = System.currentTimeMillis();
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
-        topicPartitionMetrics.put(RawMetricType.TOPIC_PARTITION_BYTES_IN, 10);
-        topicPartitionMetrics.put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 10);
-        topicPartitionMetrics.put(RawMetricType.PARTITION_SIZE, 10);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertFalse(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
                 new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
 

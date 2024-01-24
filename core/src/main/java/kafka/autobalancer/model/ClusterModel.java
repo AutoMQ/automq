@@ -19,7 +19,6 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.RawMetricType;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.utils.Utils;
@@ -116,7 +115,7 @@ public class ClusterModel {
         snapshot.aggregate();
     }
 
-    public boolean updateBrokerMetrics(int brokerId, Map<RawMetricType, Double> metricsMap, long time) {
+    public boolean updateBrokerMetrics(int brokerId, Map<Byte, Double> metricsMap, long time) {
         BrokerUpdater brokerUpdater = null;
         clusterLock.lock();
         try {
@@ -130,7 +129,7 @@ public class ClusterModel {
         return false;
     }
 
-    public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Map<RawMetricType, Double> metricsMap, long time) {
+    public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Map<Byte, Double> metricsMap, long time) {
         TopicPartitionReplicaUpdater replicaUpdater = null;
         clusterLock.lock();
         try {

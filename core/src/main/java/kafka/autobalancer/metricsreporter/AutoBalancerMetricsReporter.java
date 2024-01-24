@@ -20,14 +20,14 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import kafka.autobalancer.common.RawMetricType;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
+import kafka.autobalancer.common.types.MetricTypes;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.MetricClassId;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
@@ -326,11 +326,11 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     private void addMandatoryPartitionMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
-            if (metrics.metricClassId() == MetricClassId.PARTITION_METRIC
+            if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
                     && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
-                metrics.getMetricValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_IN, 0.0);
-                metrics.getMetricValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 0.0);
-                metrics.getMetricValueMap().putIfAbsent(RawMetricType.PARTITION_SIZE, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_SIZE, 0.0);
             }
         }
     }
