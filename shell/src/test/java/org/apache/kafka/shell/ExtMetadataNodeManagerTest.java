@@ -26,17 +26,25 @@ import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecordJsonConverter;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RangeRecordJsonConverter;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
+import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,16 +84,13 @@ public class ExtMetadataNodeManagerTest {
             .setStartOffset(startOffset)
             .setStreamState(StreamState.OPENED.toByte());
         metadataNodeManager.handleMessage(record1);
-        assertEquals(Long.toString(epoch), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "epoch").contents());
-        assertEquals(Integer.toString(rangeIndex), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "rangeIndex").contents());
-        assertEquals(Long.toString(startOffset), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "startOffset").contents());
+        assertEquals(S3StreamRecordJsonConverter.write(record1, S3StreamRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "data").contents());
 
         RemoveS3StreamRecord record2 = new RemoveS3StreamRecord().setStreamId(streamId);
         metadataNodeManager.handleMessage(record2);
         assertFalse(metadataNodeManager.getData().root().directory("s3Streams").children().containsKey(Long.toString(streamId)));
     }
 
-    // Only works for AutoMQ.
     @Test
     public void testRangeRecord() {
         long streamId = 1L;
@@ -102,10 +107,7 @@ public class ExtMetadataNodeManagerTest {
             .setEndOffset(endOffset)
             .setNodeId(nodeId);
         metadataNodeManager.handleMessage(record1);
-        assertEquals(Long.toString(epoch), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "ranges", Integer.toString(rangeIndex), "epoch").contents());
-        assertEquals(Long.toString(startOffset), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "ranges", Integer.toString(rangeIndex), "startOffset").contents());
-        assertEquals(Long.toString(endOffset), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "ranges", Integer.toString(rangeIndex), "endOffset").contents());
-        assertEquals(Integer.toString(nodeId), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "ranges", Integer.toString(rangeIndex), "nodeId").contents());
+        assertEquals(RangeRecordJsonConverter.write(record1, RangeRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "ranges", Integer.toString(rangeIndex)).contents());
 
         RemoveRangeRecord record2 = new RemoveRangeRecord().setStreamId(streamId).setRangeIndex(rangeIndex);
         metadataNodeManager.handleMessage(record2);
@@ -126,9 +128,7 @@ public class ExtMetadataNodeManagerTest {
             .setObjectId(objectId)
             .setDataTimeInMs(dataTimeInMs);
         metadataNodeManager.handleMessage(record1);
-        assertEquals(Long.toString(startOffset), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "s3StreamObjects", Long.toString(objectId), "startOffset").contents());
-        assertEquals(Long.toString(endOffset), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "s3StreamObjects", Long.toString(objectId), "endOffset").contents());
-        assertEquals(Long.toString(dataTimeInMs), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "s3StreamObjects", Long.toString(objectId), "dataTimeInMs").contents());
+        assertEquals(S3StreamObjectRecordJsonConverter.write(record1, S3StreamObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(), metadataNodeManager.getData().root().file("s3Streams", Long.toString(streamId), "s3StreamObjects", Long.toString(objectId)).contents());
 
         RemoveS3StreamObjectRecord record2 = new RemoveS3StreamObjectRecord().setStreamId(streamId).setObjectId(objectId);
         metadataNodeManager.handleMessage(record2);
@@ -163,6 +163,32 @@ public class ExtMetadataNodeManagerTest {
     }
 
     @Test
+    public void testS3ObjectRecord() {
+        long objectId = 1L;
+        long objectSize = 3L;
+        long preparedTimeInMs = 5L;
+        long expiredTimeInMs = 7L;
+        long committedTimeInMs = 9L;
+        long markDestroyedTimeInMs = 11L;
+        byte objectState = S3ObjectState.COMMITTED.toByte();
+
+        S3ObjectRecord record1 = new S3ObjectRecord()
+            .setObjectId(objectId)
+            .setObjectSize(objectSize)
+            .setPreparedTimeInMs(preparedTimeInMs)
+            .setExpiredTimeInMs(expiredTimeInMs)
+            .setCommittedTimeInMs(committedTimeInMs)
+            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs)
+            .setObjectState(objectState);
+        metadataNodeManager.handleMessage(record1);
+        assertEquals(S3ObjectRecordJsonConverter.write(record1, S3ObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(), metadataNodeManager.getData().root().file("s3Objects", Long.toString(objectId)).contents());
+
+        RemoveS3ObjectRecord record2 = new RemoveS3ObjectRecord().setObjectId(objectId);
+        metadataNodeManager.handleMessage(record2);
+        assertFalse(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId)));
+    }
+
+    @Test
     public void testAssignedStreamIdRecord() {
         long streamId = 1L;
         AssignedStreamIdRecord record1 = new AssignedStreamIdRecord().setAssignedStreamId(streamId);
@@ -181,19 +207,9 @@ public class ExtMetadataNodeManagerTest {
         metadataNodeManager.handleMessage(record1);
         assertTrue(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId1)));
 
-        RemoveS3StreamObjectRecord record2 = new RemoveS3StreamObjectRecord().setObjectId(objectId1);
+        RemoveS3ObjectRecord record2 = new RemoveS3ObjectRecord().setObjectId(objectId1);
         metadataNodeManager.handleMessage(record2);
         assertFalse(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId1)));
-
-        long objectId2 = 2L;
-        int nodeId = 3;
-        AssignedS3ObjectIdRecord record3 = new AssignedS3ObjectIdRecord().setAssignedS3ObjectId(objectId2);
-        metadataNodeManager.handleMessage(record3);
-        assertTrue(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId2)));
-
-        RemoveStreamSetObjectRecord record4 = new RemoveStreamSetObjectRecord().setObjectId(objectId2).setNodeId(nodeId);
-        metadataNodeManager.handleMessage(record4);
-        assertFalse(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId2)));
     }
 
     @Test
@@ -206,8 +222,7 @@ public class ExtMetadataNodeManagerTest {
             .setNodeEpoch(nodeEpoch)
             .setFailoverMode(failoverMode);
         metadataNodeManager.handleMessage(record1);
-        assertEquals(Long.toString(nodeEpoch), metadataNodeManager.getData().root().file("nodes", Integer.toString(nodeId), "walMetadata", "nodeEpoch").contents());
-        assertEquals(Boolean.toString(failoverMode), metadataNodeManager.getData().root().file("nodes", Integer.toString(nodeId), "walMetadata", "failoverMode").contents());
+        assertEquals(NodeWALMetadataRecordJsonConverter.write(record1, RangeRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(), metadataNodeManager.getData().root().file("nodes", Integer.toString(nodeId), "walMetadata").contents());
 
         RemoveNodeWALMetadataRecord record2 = new RemoveNodeWALMetadataRecord().setNodeId(nodeId);
         metadataNodeManager.handleMessage(record2);

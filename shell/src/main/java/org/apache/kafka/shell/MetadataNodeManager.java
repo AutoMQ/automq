@@ -38,11 +38,13 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecordJsonConverter;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.PartitionRecordJsonConverter;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RangeRecordJsonConverter;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
@@ -54,8 +56,11 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecordJsonConverter;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
@@ -426,7 +431,30 @@ public final class MetadataNodeManager implements AutoCloseable {
     }
 
     /**
-     * For AutoMQ-related records.
+     * <h3>File Hierarchy for AutoMQ Custom Metadata</h3>
+     * <pre>
+     * .
+     * ├── kvRecords
+     * │   └── _kafka_FVWxwMClSYObxlUORZANzA
+     * │       └── 4IHvQLhZSJ6szHPcyady3Q
+     * │           └── 0
+     * ├── nodes
+     * │   └── 1 - node id
+     * │       ├── s3StreamSetObjects
+     * │       │   └── 4 - object id
+     * │       │       ├── dataTimeInMs
+     * │       │       ├── orderId
+     * │       │       └── ranges
+     * │       └── walMetadata
+     * ├── s3Objects
+     * │   └── 1 - object id
+     * └── s3Streams
+     *     └── 0 - stream id
+     *         ├── ranges
+     *         │   └── 0 - range index
+     *         └── s3StreamObjects
+     *             └── 3 - object id
+     * </pre>
      */
     private void handleExtCommitImpl(MetadataRecordType type, ApiMessage message) {
         switch (type) {
@@ -435,10 +463,8 @@ public final class MetadataNodeManager implements AutoCloseable {
                 S3StreamRecord record = (S3StreamRecord) message;
                 DirectoryNode s3Streams = data.root.mkdirs("s3Streams");
                 DirectoryNode s3Stream = s3Streams.mkdirs(Long.toString(record.streamId()));
-                s3Stream.create("epoch").setContents(Long.toString(record.epoch()));
-                s3Stream.create("rangeIndex").setContents(Integer.toString(record.rangeIndex()));
-                s3Stream.create("startOffset").setContents(Long.toString(record.startOffset()));
-                s3Stream.create("streamState").setContents(Byte.toString(record.streamState()));
+                String data = S3StreamRecordJsonConverter.write(record, S3StreamRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString();
+                s3Stream.create("data").setContents(data);
                 break;
             }
             case REMOVE_S3_STREAM_RECORD: {
@@ -451,11 +477,8 @@ public final class MetadataNodeManager implements AutoCloseable {
                 DirectoryNode streams = data.root.mkdirs("s3Streams");
                 DirectoryNode stream = streams.mkdirs(Long.toString(record.streamId()));
                 DirectoryNode ranges = stream.mkdirs("ranges");
-                DirectoryNode range = ranges.mkdirs(Integer.toString(record.rangeIndex()));
-                range.create("epoch").setContents(Long.toString(record.epoch()));
-                range.create("startOffset").setContents(Long.toString(record.startOffset()));
-                range.create("endOffset").setContents(Long.toString(record.endOffset()));
-                range.create("nodeId").setContents(Integer.toString(record.nodeId()));
+                FileNode file = ranges.create(Integer.toString(record.rangeIndex()));
+                file.setContents(RangeRecordJsonConverter.write(record, RangeRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
                 break;
             }
             case REMOVE_RANGE_RECORD: {
@@ -465,15 +488,13 @@ public final class MetadataNodeManager implements AutoCloseable {
             }
             case S3_STREAM_OBJECT_RECORD: {
                 S3StreamObjectRecord record = (S3StreamObjectRecord) message;
-                DirectoryNode s3StreamSetObject = data.root.mkdirs("s3Streams", Long.toString(record.streamId()), "s3StreamObjects", Long.toString(record.objectId()));
-                s3StreamSetObject.create("startOffset").setContents(Long.toString(record.startOffset()));
-                s3StreamSetObject.create("endOffset").setContents(Long.toString(record.endOffset()));
-                s3StreamSetObject.create("dataTimeInMs").setContents(Long.toString(record.dataTimeInMs()));
+                DirectoryNode s3StreamObjects = data.root.mkdirs("s3Streams", Long.toString(record.streamId()), "s3StreamObjects");
+                FileNode file = s3StreamObjects.create(Long.toString(record.objectId()));
+                file.setContents(S3StreamObjectRecordJsonConverter.write(record, S3StreamObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
                 break;
             }
             case REMOVE_S3_STREAM_OBJECT_RECORD: {
                 RemoveS3StreamObjectRecord record = (RemoveS3StreamObjectRecord) message;
-                data.root.rmrf("s3Objects", Long.toString(record.objectId()));
                 data.root.rmrf("s3Streams", Long.toString(record.streamId()), "s3StreamObjects", Long.toString(record.objectId()));
                 break;
             }
@@ -490,20 +511,14 @@ public final class MetadataNodeManager implements AutoCloseable {
             }
             case REMOVE_STREAM_SET_OBJECT_RECORD: {
                 RemoveStreamSetObjectRecord record = (RemoveStreamSetObjectRecord) message;
-                data.root.rmrf("s3Objects", Long.toString(record.objectId()));
                 data.root.rmrf("nodes", Integer.toString(record.nodeId()), "s3StreamSetObjects", Long.toString(record.objectId()));
                 break;
             }
             case S3_OBJECT_RECORD: {
                 S3ObjectRecord record = (S3ObjectRecord) message;
                 DirectoryNode s3Objects = data.root.mkdirs("s3Objects");
-                DirectoryNode s3Object = s3Objects.mkdirs(Long.toString(record.objectId()));
-                s3Object.create("objectSize").setContents(Long.toString(record.objectSize()));
-                s3Object.create("preparedTimeInMs").setContents(Long.toString(record.preparedTimeInMs()));
-                s3Object.create("expiredTimeInMs").setContents(Long.toString(record.expiredTimeInMs()));
-                s3Object.create("committedTimeInMs").setContents(Long.toString(record.committedTimeInMs()));
-                s3Object.create("markDestroyedTimeInMs").setContents(Long.toString(record.markDestroyedTimeInMs()));
-                s3Object.create("objectState").setContents(Byte.toString(record.objectState()));
+                FileNode file = s3Objects.create(Long.toString(record.objectId()));
+                file.setContents(S3ObjectRecordJsonConverter.write(record, S3ObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
                 break;
             }
             case REMOVE_S3_OBJECT_RECORD: {
@@ -521,15 +536,14 @@ public final class MetadataNodeManager implements AutoCloseable {
             case ASSIGNED_S3_OBJECT_ID_RECORD: {
                 AssignedS3ObjectIdRecord record = (AssignedS3ObjectIdRecord) message;
                 DirectoryNode s3ObjectsNode = data.root.mkdirs("s3Objects");
-                // Empty directory here. We just need to create the directory.
-                s3ObjectsNode.mkdirs(Long.toString(record.assignedS3ObjectId()));
+                s3ObjectsNode.create(Long.toString(record.assignedS3ObjectId()));
                 break;
             }
             case NODE_WALMETADATA_RECORD: {
                 NodeWALMetadataRecord record = (NodeWALMetadataRecord) message;
-                DirectoryNode metadata = data.root.mkdirs("nodes", Integer.toString(record.nodeId()), "walMetadata");
-                metadata.create("nodeEpoch").setContents(Long.toString(record.nodeEpoch()));
-                metadata.create("failoverMode").setContents(Boolean.toString(record.failoverMode()));
+                DirectoryNode nodeId = data.root.mkdirs("nodes", Integer.toString(record.nodeId()));
+                FileNode file = nodeId.create("walMetadata");
+                file.setContents(NodeWALMetadataRecordJsonConverter.write(record, NodeWALMetadataRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
                 break;
             }
             case REMOVE_NODE_WALMETADATA_RECORD: {
