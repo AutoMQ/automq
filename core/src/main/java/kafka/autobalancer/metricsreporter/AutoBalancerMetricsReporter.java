@@ -27,7 +27,7 @@ import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
+import kafka.autobalancer.metricsreporter.metric.MetricClassId;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
@@ -76,9 +76,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private int numMetricSendFailure = 0;
     private volatile boolean shutdown = false;
     private int metricsReporterCreateRetries;
-    private boolean kubernetesMode;
-    private double brokerNwInCapacity;
-    private double brokerNwOutCapacity;
 
     static String getBootstrapServers(Map<String, ?> configs) {
         Object port = configs.get("port");
@@ -103,14 +100,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         yammerMetricProcessor = new YammerMetricProcessor();
         metricsReporterRunner.start();
         metricsRegistry.addListener(this);
-        addMandatoryBrokerMetrics();
         LOGGER.info("AutoBalancerMetricsReporter init successful");
-    }
-
-    private void addMandatoryBrokerMetrics() {
-        for (String name : MetricsUtils.getMetricNameMaybeMissing()) {
-            interestedMetrics.putIfAbsent(MetricsUtils.buildBrokerMetricName(name), MetricsUtils.getEmptyMetricFor(name));
-        }
     }
 
     /**
@@ -189,16 +179,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                     AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
         }
 
-        //Add AUTO_BALANCER_BROKER_NW_IN/OUT_CAPACITY by S3NetworkBaselineBandwidthProp config value if not set
-        Object s3NetworkBaselineBandwidth = configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp());
-        if (s3NetworkBaselineBandwidth != null) {
-            if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY))
-                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY, s3NetworkBaselineBandwidth);
-
-            if (!configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY))
-                configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY, s3NetworkBaselineBandwidth);
-        }
-
         AutoBalancerMetricsReporterConfig reporterConfig = new AutoBalancerMetricsReporterConfig(configs, false);
 
         setIfAbsent(producerProps,
@@ -227,12 +207,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         if (brokerRack == null) {
             brokerRack = "";
         }
-        brokerNwInCapacity = reporterConfig.getDouble(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY);
-        brokerNwOutCapacity = reporterConfig.getDouble(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY);
 
         autoBalancerMetricsTopic = reporterConfig.getString(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_TOPIC_CONFIG);
         reportingIntervalMs = reporterConfig.getLong(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
-        kubernetesMode = reporterConfig.getBoolean(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_KUBERNETES_MODE_CONFIG);
 
         LOGGER.info("AutoBalancerMetricsReporter configuration finished");
     }
@@ -332,7 +309,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
         processYammerMetrics(context);
-        processCpuMetrics(context);
         for (Map.Entry<String, AutoBalancerMetrics> entry : context.getMetricMap().entrySet()) {
             sendAutoBalancerMetric(entry.getValue());
         }
@@ -345,41 +321,18 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
             entry.getValue().processWith(yammerMetricProcessor, entry.getKey(), context);
         }
-        // add broker capacity info
-        context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
-                .put(RawMetricType.BROKER_CAPACITY_NW_IN, brokerNwInCapacity)
-                .put(RawMetricType.BROKER_CAPACITY_NW_OUT, brokerNwOutCapacity));
         addMandatoryPartitionMetrics(context);
     }
 
     private void addMandatoryPartitionMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
-            if (metrics.metricClassId() == AutoBalancerMetrics.MetricClassId.PARTITION_METRIC
+            if (metrics.metricClassId() == MetricClassId.PARTITION_METRIC
                     && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_IN, 0.0);
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 0.0);
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.PARTITION_SIZE, 0.0);
-            } else if (metrics.metricClassId() == AutoBalancerMetrics.MetricClassId.BROKER_METRIC
-                    && !MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics)) {
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.ALL_TOPIC_BYTES_IN, 0.0);
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.ALL_TOPIC_BYTES_OUT, 0.0);
-                metrics.getMetricTypeValueMap().putIfAbsent(RawMetricType.BROKER_CPU_UTIL, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_IN, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricType.PARTITION_SIZE, 0.0);
             }
         }
-    }
-
-    private void processCpuMetrics(YammerMetricProcessor.Context context) {
-        BrokerMetrics brokerMetrics = null;
-        try {
-            brokerMetrics = MetricsUtils.getCpuMetric(context.time(), brokerId, brokerRack, kubernetesMode);
-        } catch (Exception e) {
-            LOGGER.error("Create cpu metrics failed: {}", e.getMessage());
-        }
-        if (brokerMetrics == null) {
-            brokerMetrics = new BrokerMetrics(context.time(), brokerId, brokerRack);
-            brokerMetrics.put(RawMetricType.BROKER_CPU_UTIL, 0.0);
-        }
-        context.merge(brokerMetrics);
     }
 
     private void addMetricIfInterested(MetricName name, Metric metric) {

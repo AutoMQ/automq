@@ -24,11 +24,8 @@ import kafka.autobalancer.common.RawMetricType;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import kafka.metrics.KafkaMetricsGroup$;
-import scala.collection.immutable.Map$;
 import scala.jdk.javaapi.CollectionConverters;
 
-import java.io.IOException;
-import java.lang.management.ManagementFactory;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,7 +55,6 @@ public final class MetricsUtils {
     // Type
     private static final String LOG_GROUP = "Log";
     private static final String BROKER_TOPIC_PARTITION_METRICS_GROUP = "BrokerTopicPartitionMetrics";
-    private static final String BROKER_TOPIC_METRICS_GROUP = "BrokerTopicMetrics";
     // Name Set.
     private static final Set<String> INTERESTED_TOPIC_PARTITION_METRIC_NAMES =
             Set.of(BYTES_IN_PER_SEC, BYTES_OUT_PER_SEC);
@@ -82,19 +78,6 @@ public final class MetricsUtils {
             default:
                 return null;
         }
-    }
-
-    public static MetricName buildBrokerMetricName(String name) {
-        String group = null;
-        String type = null;
-        if (BYTES_IN_PER_SEC.equals(name) || BYTES_OUT_PER_SEC.equals(name)) {
-            group = KAFKA_SERVER;
-            type = BROKER_TOPIC_METRICS_GROUP;
-        }
-        if (group == null) {
-            return null;
-        }
-        return KafkaMetricsGroup$.MODULE$.explicitMetricName(group, type, name, Map$.MODULE$.empty());
     }
 
     public static MetricName buildTopicPartitionMetricName(String name, String topic, String partition) {
@@ -203,30 +186,6 @@ public final class MetricsUtils {
     }
 
     /**
-     * Get the "recent CPU usage" for the JVM process.
-     *
-     * @param nowMs          The current time in milliseconds.
-     * @param brokerId       Broker Id.
-     * @param brokerRack     Broker rack.
-     * @param kubernetesMode If {@code true}, gets CPU usage values with respect to the operating environment instead of node.
-     * @return the "recent CPU usage" for the JVM process as a double in [0.0,1.0].
-     */
-    public static BrokerMetrics getCpuMetric(long nowMs, int brokerId, String brokerRack, boolean kubernetesMode) throws IOException {
-        double cpuUtil = ((com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean()).getProcessCpuLoad();
-
-        if (kubernetesMode) {
-            cpuUtil = ContainerMetricUtils.getContainerProcessCpuLoad(cpuUtil);
-        }
-
-        if (cpuUtil < 0) {
-            throw new IOException("Java Virtual Machine recent CPU usage is not available.");
-        }
-        BrokerMetrics brokerMetric = new BrokerMetrics(nowMs, brokerId, brokerRack);
-        brokerMetric.put(RawMetricType.BROKER_CPU_UTIL, cpuUtil);
-        return brokerMetric;
-    }
-
-    /**
      * Check whether the yammer metric name is an interested metric.
      *
      * @param metricName Yammer metric name.
@@ -250,8 +209,6 @@ public final class MetricsUtils {
         if (group.equals(KAFKA_SERVER)) {
             if (BROKER_TOPIC_PARTITION_METRICS_GROUP.equals(type)) {
                 return INTERESTED_TOPIC_PARTITION_METRIC_NAMES.contains(name) && sanityCheckTopicPartitionTags(tags);
-            } else if (BROKER_TOPIC_METRICS_GROUP.equals(type)) {
-                return INTERESTED_TOPIC_PARTITION_METRIC_NAMES.contains(name) && tags.isEmpty();
             }
         } else if (group.startsWith(KAFKA_LOG_PREFIX) && INTERESTED_LOG_METRIC_NAMES.contains(name)) {
             return LOG_GROUP.equals(type);
@@ -297,8 +254,6 @@ public final class MetricsUtils {
 
         if (topic != null && partition != -1) {
             return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricType.TOPIC_PARTITION_BYTES_IN, value);
-        } else if (topic == null && partition == -1) {
-            return new BrokerMetrics(nowMs, brokerId, brokerRack).put(RawMetricType.ALL_TOPIC_BYTES_IN, value);
         }
         return null;
     }
@@ -308,17 +263,11 @@ public final class MetricsUtils {
 
         if (topic != null && partition != -1) {
             return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, value);
-        } else if (topic == null && partition == -1) {
-            return new BrokerMetrics(nowMs, brokerId, brokerRack).put(RawMetricType.ALL_TOPIC_BYTES_OUT, value);
         }
         return null;
     }
 
-    public static boolean sanityCheckBrokerMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricTypeValueMap().keySet().containsAll(RawMetricType.brokerMetricTypes());
-    }
-
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricTypeValueMap().keySet().containsAll(RawMetricType.partitionMetricTypes());
+        return metrics.getMetricValueMap().keySet().containsAll(RawMetricType.partitionMetricTypes());
     }
 }

@@ -36,13 +36,13 @@ public class GoalUtils {
         return true;
     }
 
-    public static double normalize(double value, double max, double min) {
-        return normalize(value, max, min, false);
+    public static double linearNormalization(double value, double max, double min) {
+        return linearNormalization(value, max, min, false);
     }
 
-    public static double normalize(double value, double max, double min, boolean reverse) {
+    public static double linearNormalization(double value, double max, double min, boolean reverse) {
         if (reverse) {
-            return 1 - (value - min) / (max - min);
+            return 1 - ((value - min) / (max - min));
         }
         return (value - min) / (max - min);
     }

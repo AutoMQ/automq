@@ -15,19 +15,19 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.common.normalizer;
 
-import kafka.autobalancer.common.Resource;
+public interface Normalizer {
 
-public class ModelUtils {
-
-    public static void moveReplicaLoad(BrokerUpdater.Broker src, BrokerUpdater.Broker dest,
-                                       TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
-        for (Resource resource : replica.getResources()) {
-            double delta = replica.load(resource);
-            src.setLoad(resource, src.load(resource) - delta);
-            dest.setLoad(resource, dest.load(resource) + delta);
-        }
+    /**
+     * Normalize the value to [0, 1]
+     *
+     * @param value the value to normalize
+     * @return      the normalized value
+     */
+    double normalize(double value);
+    default double normalize(double value, boolean reverse) {
+        double normalizedValue = normalize(value);
+        return reverse ? (1 - normalizedValue) : normalizedValue;
     }
-
 }

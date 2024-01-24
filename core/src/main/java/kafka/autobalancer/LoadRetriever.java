@@ -414,13 +414,13 @@ public class LoadRetriever implements BrokerStatusListener {
         switch (metrics.metricClassId()) {
             case BROKER_METRIC:
                 BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
-                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricTypeValueMap(), brokerMetrics.time());
+                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricValueMap(), brokerMetrics.time());
                 break;
             case PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
-                        partitionMetrics.getMetricTypeValueMap(), partitionMetrics.time());
+                        partitionMetrics.getMetricValueMap(), partitionMetrics.time());
                 break;
             default:
                 logger.error("Not supported metrics version {}", metrics.metricClassId());

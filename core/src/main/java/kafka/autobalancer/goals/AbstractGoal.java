@@ -18,10 +18,10 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
+import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 
 import java.util.Objects;
 import java.util.Set;
@@ -41,10 +41,10 @@ public abstract class AbstractGoal implements Goal {
      * == 0.5 means action with no affection
      * > 0.5 means positive action
      */
-    private double scoreDelta(Broker srcBrokerBefore, Broker destBrokerBefore, Broker srcBrokerAfter, Broker destBrokerAfter) {
+    private double scoreDelta(BrokerUpdater.Broker srcBrokerBefore, BrokerUpdater.Broker destBrokerBefore, BrokerUpdater.Broker srcBrokerAfter, BrokerUpdater.Broker destBrokerAfter) {
         double scoreBefore = Math.min(brokerScore(srcBrokerBefore), brokerScore(destBrokerBefore));
         double scoreAfter = Math.min(brokerScore(srcBrokerAfter), brokerScore(destBrokerAfter));
-        return GoalUtils.normalize(scoreAfter - scoreBefore, 1.0, -1.0);
+        return GoalUtils.linearNormalization(scoreAfter - scoreBefore, 1.0, -1.0);
     }
 
     /**
@@ -57,10 +57,10 @@ public abstract class AbstractGoal implements Goal {
      * @return normalized score. 0 means not allowed action
      * > 0 means permitted action, but can be positive or negative for this goal
      */
-    double calculateAcceptanceScore(Broker srcBrokerBefore, Broker destBrokerBefore, Broker srcBrokerAfter, Broker destBrokerAfter) {
+    protected double calculateAcceptanceScore(BrokerUpdater.Broker srcBrokerBefore, BrokerUpdater.Broker destBrokerBefore, BrokerUpdater.Broker srcBrokerAfter, BrokerUpdater.Broker destBrokerAfter) {
         double score = scoreDelta(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);
 
-        if (!isHardGoal()) {
+        if (type() != GoalType.HARD) {
             return score;
         }
 
@@ -88,11 +88,11 @@ public abstract class AbstractGoal implements Goal {
         if (!GoalUtils.isValidAction(action, cluster)) {
             return 0.0;
         }
-        Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
-        Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
-        Broker srcBrokerAfter = new Broker(srcBrokerBefore);
-        Broker destBrokerAfter = new Broker(destBrokerBefore);
-        TopicPartitionReplica srcReplica = cluster.replica(action.getSrcBrokerId(), action.getSrcTopicPartition());
+        BrokerUpdater.Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
+        BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
+        BrokerUpdater.Broker srcBrokerAfter = srcBrokerBefore.copy();
+        BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy();
+        TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica = cluster.replica(action.getSrcBrokerId(), action.getSrcTopicPartition());
 
         switch (action.getType()) {
             case MOVE:
@@ -111,8 +111,8 @@ public abstract class AbstractGoal implements Goal {
     }
 
     @Override
-    public Set<Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
-        return cluster.brokers().stream().filter(Broker::isActive).collect(Collectors.toSet());
+    public Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
+        return cluster.brokers().stream().filter(BrokerUpdater.Broker::isActive).collect(Collectors.toSet());
     }
 
     @Override

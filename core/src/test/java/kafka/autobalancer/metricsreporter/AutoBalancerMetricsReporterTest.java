@@ -37,7 +37,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
@@ -47,18 +46,9 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-import static kafka.autobalancer.common.RawMetricType.ALL_TOPIC_BYTES_IN;
-import static kafka.autobalancer.common.RawMetricType.ALL_TOPIC_BYTES_OUT;
-import static kafka.autobalancer.common.RawMetricType.BROKER_CAPACITY_NW_IN;
-import static kafka.autobalancer.common.RawMetricType.BROKER_CAPACITY_NW_OUT;
-import static kafka.autobalancer.common.RawMetricType.BROKER_CPU_UTIL;
 import static kafka.autobalancer.common.RawMetricType.PARTITION_SIZE;
 import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_IN;
 import static kafka.autobalancer.common.RawMetricType.TOPIC_PARTITION_BYTES_OUT;
-
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.mock;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
@@ -107,99 +97,28 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(Collections.singleton(METRIC_TOPIC));
             long startMs = System.currentTimeMillis();
-            Set<Integer> expectedBrokerMetricTypes = new HashSet<>(Arrays.asList(
-                    (int) BROKER_CAPACITY_NW_IN.id(),
-                    (int) BROKER_CAPACITY_NW_OUT.id(),
-                    (int) ALL_TOPIC_BYTES_IN.id(),
-                    (int) ALL_TOPIC_BYTES_OUT.id(),
-                    (int) BROKER_CPU_UTIL.id()));
             Set<Integer> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
                     (int) TOPIC_PARTITION_BYTES_IN.id(),
                     (int) TOPIC_PARTITION_BYTES_OUT.id(),
                     (int) PARTITION_SIZE.id()));
-            Set<Integer> expectedMetricTypes = new HashSet<>(expectedBrokerMetricTypes);
-            expectedMetricTypes.addAll(expectedTopicPartitionMetricTypes);
+            Set<Integer> expectedMetricTypes = new HashSet<>(expectedTopicPartitionMetricTypes);
 
             Set<Integer> metricTypes = new HashSet<>();
             ConsumerRecords<String, AutoBalancerMetrics> records;
-            while (metricTypes.size() < (expectedBrokerMetricTypes.size() + expectedTopicPartitionMetricTypes.size())
-                    && System.currentTimeMillis() < startMs + 15000) {
+            while (metricTypes.size() < expectedTopicPartitionMetricTypes.size() && System.currentTimeMillis() < startMs + 15000) {
                 records = consumer.poll(Duration.ofMillis(10L));
                 for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
-                    AutoBalancerMetrics metrics = record.value();
                     Set<Integer> localMetricTypes = new HashSet<>();
-                    for (RawMetricType type : record.value().getMetricTypeValueMap().keySet()) {
+                    for (RawMetricType type : record.value().getMetricValueMap().keySet()) {
                         int typeId = type.id();
                         metricTypes.add(typeId);
                         localMetricTypes.add(typeId);
                     }
-                    Set<Integer> expectedMap = metrics.metricClassId() == AutoBalancerMetrics.MetricClassId.BROKER_METRIC ?
-                            expectedBrokerMetricTypes : expectedTopicPartitionMetricTypes;
-                    Assertions.assertEquals(expectedMap, localMetricTypes, "Expected " + expectedMap + ", but saw " + localMetricTypes);
+                    Assertions.assertEquals(expectedTopicPartitionMetricTypes, localMetricTypes,
+                            "Expected " + expectedTopicPartitionMetricTypes + ", but saw " + localMetricTypes);
                 }
             }
             Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
         }
-    }
-
-    @Test
-    public void testConfigureNwCapacity() throws NoSuchFieldException, IllegalAccessException {
-        // Create a spy object for AutoBalancerMetricsReporter
-        AutoBalancerMetricsReporter autoBalancerMetricsReporter = spy(new AutoBalancerMetricsReporter());
-
-        // When calling the autoBalancerMetricsReporter.createAutoBalancerMetricsProducer method, no action is taken
-        doNothing().when(autoBalancerMetricsReporter).createAutoBalancerMetricsProducer(mock(Properties.class));
-
-        // Using java reflection to obtain private fields
-        Field brokerNwInCapacity = AutoBalancerMetricsReporter.class.getDeclaredField("brokerNwInCapacity");
-        Field brokerNwOutCapacity = AutoBalancerMetricsReporter.class.getDeclaredField("brokerNwOutCapacity");
-        brokerNwInCapacity.setAccessible(true);
-        brokerNwOutCapacity.setAccessible(true);
-
-        // init default configs
-        Map<String, Object> initConfigs = Map.of(
-                "broker.id", "1",
-                "broker.rack", "rack-a"
-        );
-        Map<String, Object> configs = new HashMap<>(initConfigs);
-
-        //test1.the priority of AUTO_BALANCER_BROKER_NW_IN/OUT_CAPACITY is highest
-        configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_IN_CAPACITY, 51200);
-        configs.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_BROKER_NW_OUT_CAPACITY, 51200);
-        configs.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 102400);
-
-        autoBalancerMetricsReporter.configure(configs);
-
-        Assertions.assertEquals(51200, brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + 51200 + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
-        Assertions.assertEquals(51200, brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + 51200 + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
-
-
-        //test2.the priority of S3NetworkBaselineBandwidthProp is second highest
-        configs = new HashMap<>(initConfigs);
-        configs.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 204800);
-
-        autoBalancerMetricsReporter.configure(configs);
-
-        Assertions.assertEquals(204800, brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + 204800 + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
-        Assertions.assertEquals(204800, brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + 204800 + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
-
-
-        //test3.default autobalancer config is last one
-        configs = new HashMap<>(initConfigs);
-        autoBalancerMetricsReporter.configure(configs);
-
-        Assertions.assertEquals(AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY,
-                brokerNwInCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_IN_CAPACITY
-                        + ", but saw " + brokerNwInCapacity.getDouble(autoBalancerMetricsReporter));
-        Assertions.assertEquals(AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY,
-                brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter),
-                "Expected " + AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_BROKER_NW_OUT_CAPACITY
-                        + ", but saw " + brokerNwOutCapacity.getDouble(autoBalancerMetricsReporter));
-
     }
 }

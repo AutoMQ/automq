@@ -54,7 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class AutoBalancerManager {
+public class AutoBalancerManager implements AutoBalancerService {
     private final Logger logger;
     private final LoadRetriever loadRetriever;
     private final AnomalyDetector anomalyDetector;
@@ -65,7 +65,7 @@ public class AutoBalancerManager {
         LogContext logContext = new LogContext(String.format("[AutoBalancerManager id=%d] ", quorumController.nodeId()));
         logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(kafkaConfig.props(), false);
-        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
+        RecordClusterModel clusterModel = buildClusterModel(quorumController.nodeId());
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
                 new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
         ControllerActionExecutorService actionExecutorService = new ControllerActionExecutorService(config, quorumController,
@@ -77,7 +77,6 @@ public class AutoBalancerManager {
                 .detectIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS))
                 .maxTolerateMetricsDelayMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS))
                 .coolDownIntervalPerActionMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS))
-                .aggregateBrokerLoad(config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION))
                 .clusterModel(clusterModel)
                 .executor(actionExecutorService)
                 .addGoals(config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class))
@@ -95,17 +94,28 @@ public class AutoBalancerManager {
         raftClient.register(new AutoBalancerListener(registry, this.loadRetriever, this.anomalyDetector));
     }
 
+    @Override
     public void start() {
         loadRetriever.start();
         anomalyDetector.start();
         logger.info("Started");
     }
 
-    public void shutdown() throws InterruptedException {
-        anomalyDetector.shutdown();
-        loadRetriever.shutdown();
-        queue.close();
+    @Override
+    public void shutdown() {
+        try {
+            anomalyDetector.shutdown();
+            loadRetriever.shutdown();
+            queue.close();
+        } catch (Exception e) {
+            logger.error("Exception in shutdown", e);
+        }
+
         logger.info("Shutdown completed");
+    }
+
+    public RecordClusterModel buildClusterModel(int nodeId) {
+        return new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", nodeId)));
     }
 
     private Set<Integer> parseExcludedBrokers(AutoBalancerControllerConfig config) {

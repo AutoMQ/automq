@@ -18,7 +18,6 @@
 package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.RawMetricType;
-import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -48,8 +47,8 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(record2);
         clusterModel.onBrokerRegister(record1);
 
-        Assertions.assertEquals(1, clusterModel.brokerUpdater(1).get().getBrokerId());
-        Assertions.assertEquals(2, clusterModel.brokerUpdater(2).get().getBrokerId());
+        Assertions.assertEquals(1, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(1).get()).getBrokerId());
+        Assertions.assertEquals(2, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(2).get()).getBrokerId());
     }
 
     @Test
@@ -63,14 +62,14 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(record2);
         clusterModel.onBrokerRegister(record1);
 
-        Assertions.assertEquals(1, clusterModel.brokerUpdater(1).get().getBrokerId());
-        Assertions.assertEquals(2, clusterModel.brokerUpdater(2).get().getBrokerId());
+        Assertions.assertEquals(1, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(1).get()).getBrokerId());
+        Assertions.assertEquals(2, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(2).get()).getBrokerId());
 
         UnregisterBrokerRecord unregisterRecord = new UnregisterBrokerRecord()
                 .setBrokerId(2);
         clusterModel.onBrokerUnregister(unregisterRecord);
 
-        Assertions.assertEquals(1, clusterModel.brokerUpdater(1).get().getBrokerId());
+        Assertions.assertEquals(1, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(1).get()).getBrokerId());
         Assertions.assertNull(clusterModel.brokerUpdater(2));
     }
 
@@ -193,28 +192,6 @@ public class ClusterModelTest {
     }
 
     @Test
-    public void testUpdateBroker() {
-        RecordClusterModel clusterModel = new RecordClusterModel();
-        int brokerId = 1;
-
-        // update on non-exist broker
-        long now = System.currentTimeMillis();
-        BrokerMetrics brokerMetrics = new BrokerMetrics(now, brokerId, "");
-        brokerMetrics.put(RawMetricType.BROKER_CAPACITY_NW_IN, 10);
-        brokerMetrics.put(RawMetricType.BROKER_CAPACITY_NW_OUT, 10);
-        brokerMetrics.put(RawMetricType.ALL_TOPIC_BYTES_IN, 10);
-        brokerMetrics.put(RawMetricType.ALL_TOPIC_BYTES_OUT, 10);
-        brokerMetrics.put(RawMetricType.BROKER_CPU_UTIL, 10);
-        Assertions.assertFalse(clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricTypeValueMap(), brokerMetrics.time()));
-
-        RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(brokerId);
-        clusterModel.onBrokerRegister(registerBrokerRecord);
-        Assertions.assertEquals(brokerId, clusterModel.brokerUpdater(brokerId).get().getBrokerId());
-        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricTypeValueMap(), brokerMetrics.time()));
-    }
-
-    @Test
     public void testUpdatePartition() {
         RecordClusterModel clusterModel = new RecordClusterModel();
         String topicName = "testTopic";
@@ -229,7 +206,7 @@ public class ClusterModelTest {
         topicPartitionMetrics.put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricType.PARTITION_SIZE, 10);
         Assertions.assertFalse(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricTypeValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
                 .setBrokerId(brokerId);
@@ -244,7 +221,7 @@ public class ClusterModelTest {
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricTypeValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
     }
 
     @Test

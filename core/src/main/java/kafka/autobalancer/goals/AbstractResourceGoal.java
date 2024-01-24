@@ -17,14 +17,15 @@
 
 package kafka.autobalancer.goals;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -37,7 +38,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 public abstract class AbstractResourceGoal extends AbstractGoal {
-    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractGoal.class);
+    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     protected abstract Resource resource();
 
@@ -52,9 +53,9 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     }
 
     private double normalizeGoalsScore(Map<Goal, Double> scoreMap) {
-        int totalWeight = scoreMap.keySet().stream().mapToInt(Goal::priority).sum();
+        int totalWeight = scoreMap.keySet().stream().mapToInt(e -> e.type().priority()).sum();
         return scoreMap.entrySet().stream()
-                .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().priority() / totalWeight)
+                .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().type().priority() / totalWeight)
                 .sum();
     }
 
@@ -75,7 +76,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 Map<Goal, Double> scoreMap = new HashMap<>();
                 for (Goal goal : goalsByPriority) {
                     double score = goal.actionAcceptanceScore(action, cluster);
-                    if (goal.isHardGoal() && score == 0) {
+                    if (goal.type() == GoalType.HARD && score == 0) {
                         isHardGoalViolated = true;
                         break;
                     }
@@ -102,7 +103,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             Map<Goal, Double> scoreMap = new HashMap<>();
             for (Goal goal : goalsByPriority) {
                 double score = goal.actionAcceptanceScore(action, cluster);
-                if (goal.isHardGoal() && score == 0) {
+                if (goal.type() == GoalType.HARD && score == 0) {
                     isHardGoalViolated = true;
                     break;
                 }
@@ -139,7 +140,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 .sorted(Comparator.comparingDouble(r -> -r.load(resource()))) // higher load first
                 .collect(Collectors.toList());
         for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
-            candidateBrokers.sort(Comparator.comparingDouble(b -> b.utilizationFor(resource()))); // lower load first
+            candidateBrokers.sort(lowLoadComparator()); // lower load first
             Optional<Action> optionalAction;
             if (actionType == ActionType.MOVE) {
                 optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
@@ -176,7 +177,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                    List<BrokerUpdater.Broker> candidateBrokers,
                                                    Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
-        candidateBrokers.sort(Comparator.comparingDouble(b -> -b.utilizationFor(resource()))); // higher load first
+        candidateBrokers.sort(highLoadComparator()); // higher load first
         for (BrokerUpdater.Broker candidateBroker : candidateBrokers) {
             List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
                     .replicasFor(candidateBroker.getBrokerId())
@@ -204,4 +205,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         }
         return actionList;
     }
+
+    protected abstract Comparator<BrokerUpdater.Broker> highLoadComparator();
+
+    protected abstract Comparator<BrokerUpdater.Broker> lowLoadComparator();
 }

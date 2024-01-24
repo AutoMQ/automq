@@ -17,10 +17,8 @@
 
 package kafka.autobalancer.config;
 
-import kafka.autobalancer.goals.NetworkInCapacityGoal;
-import kafka.autobalancer.goals.NetworkInDistributionGoal;
-import kafka.autobalancer.goals.NetworkOutCapacityGoal;
-import kafka.autobalancer.goals.NetworkOutDistributionGoal;
+import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
+import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.config.ConfigDef;
 
@@ -38,12 +36,10 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS = PREFIX + "metrics.delay.ms";
     public static final String AUTO_BALANCER_CONTROLLER_GOALS = PREFIX + "goals";
     public static final String AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS = PREFIX + "anomaly.detect.interval.ms";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD = PREFIX + "network.in.distribution.detect.threshold";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD = PREFIX + "network.in.usage.distribution.detect.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION = PREFIX + "network.in.distribution.detect.avg.deviation";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD = PREFIX + "network.out.distribution.detect.threshold";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD = PREFIX + "network.out.usage.distribution.detect.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = PREFIX + "network.out.distribution.detect.avg.deviation";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_UTILIZATION_THRESHOLD = PREFIX + "network.in.utilization.threshold";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_UTILIZATION_THRESHOLD = PREFIX + "network.out.utilization.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = PREFIX + "execution.interval.ms";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS = PREFIX + "execution.steps";
     public static final String AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION = PREFIX + "load.aggregation";
@@ -56,17 +52,13 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS = 1000;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS = Duration.ofMinutes(1).toMillis();
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_GOALS = new StringJoiner(",")
-            .add(NetworkInCapacityGoal.class.getName())
-            .add(NetworkOutCapacityGoal.class.getName())
-            .add(NetworkInDistributionGoal.class.getName())
-            .add(NetworkOutDistributionGoal.class.getName()).toString();
+            .add(NetworkInUsageDistributionGoal.class.getName())
+            .add(NetworkOutUsageDistributionGoal.class.getName()).toString();
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS = 60000;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD = 0.2;
+    public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD = 1024 * 1024;
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.2;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD = 0.2;
+    public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD = 1024 * 1024;
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.2;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD = 0.8;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD = 0.8;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = 1000;
     public static final int DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS = 60;
     public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION = false;
@@ -76,17 +68,14 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
     public static final String AUTO_BALANCER_CONTROLLER_ENABLE_DOC = "Whether to enable auto balancer";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT_DOC = "The maximum time to block for one poll request in millisecond";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX_DOC = "An id string to pass to the server when making requests. The purpose of this is to be able to track the source of requests beyond just ip/port by allowing a logical application name to be included in server-side request logging.";
-    public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_GROUP_ID_PREFIX_DOC = CommonClientConfigs.GROUP_ID_DOC;
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS_DOC = CommonClientConfigs.RETRY_BACKOFF_MS_DOC;
     public static final String AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS_DOC = "The maximum delayed time to consider a metrics valid";
     public static final String AUTO_BALANCER_CONTROLLER_GOALS_DOC = "The goals to be detect in anomaly detector";
     public static final String AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS_DOC = "Time interval between anomaly detections in milliseconds";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network input bandwidth usage detect threshold";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network input bandwidth usage detect threshold in bytes";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network input bandwidth usage";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network output bandwidth usage detect threshold";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network output bandwidth usage detect threshold in bytes";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network output bandwidth usage";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD_DOC = "The maximum network input bandwidth usage of broker before trigger load balance";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD_DOC = PREFIX + "network.out.usage.threshold";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC = "Time interval between reassignments per broker in milliseconds";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS_DOC = "The max number of reassignments per broker in one execution";
     public static final String AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION_DOC = "Use aggregation of partition load as broker load, instead of using reported broker metrics directly";
@@ -112,24 +101,18 @@ public class AutoBalancerControllerConfig extends AutoBalancerConfig {
                 .define(AUTO_BALANCER_CONTROLLER_GOALS, ConfigDef.Type.LIST,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_GOALS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_GOALS_DOC)
-                .define(AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Type.DOUBLE,
-                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_THRESHOLD_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Type.LONG,
+                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, ConfigDef.Type.DOUBLE,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC)
-                .define(AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Type.DOUBLE,
-                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_THRESHOLD_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Type.LONG,
+                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, ConfigDef.Type.DOUBLE,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC)
-                .define(AUTO_BALANCER_CONTROLLER_NETWORK_IN_UTILIZATION_THRESHOLD, ConfigDef.Type.DOUBLE,
-                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_THRESHOLD_DOC)
-                .define(AUTO_BALANCER_CONTROLLER_NETWORK_OUT_UTILIZATION_THRESHOLD, ConfigDef.Type.DOUBLE,
-                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_THRESHOLD_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC)
