@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import ignore
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from kafkatest.services.kafka import config_property, KafkaService
@@ -110,6 +111,7 @@ client.id=console-consumer
 
         self.delegation_tokens.renew_delegation_token(dt["hmac"], new_expirydate_ms)
 
+    @ignore # delegation token doesn't support in KRAFT mode
     @cluster(num_nodes=5)
     def test_delegation_token_lifecycle(self):
         self.kafka.start()
