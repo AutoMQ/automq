@@ -20,6 +20,7 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
@@ -44,7 +45,7 @@ public class MetricSerde implements Serializer<AutoBalancerMetrics>, Deserialize
      */
     public static byte[] toBytes(AutoBalancerMetrics metric) {
         ByteBuffer byteBuffer = metric.toBuffer(HEADER_LENGTH);
-        byteBuffer.put(METRIC_TYPE_OFFSET, metric.metricClassId().id());
+        byteBuffer.put(METRIC_TYPE_OFFSET, metric.metricType());
         return byteBuffer.array();
     }
 
@@ -57,10 +58,8 @@ public class MetricSerde implements Serializer<AutoBalancerMetrics>, Deserialize
     public static AutoBalancerMetrics fromBytes(byte[] bytes) throws UnknownVersionException {
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
 
-        switch (MetricClassId.forId(buffer.get())) {
-            case BROKER_METRIC:
-                return BrokerMetrics.fromBuffer(buffer);
-            case PARTITION_METRIC:
+        switch (buffer.get()) {
+            case MetricTypes.TOPIC_PARTITION_METRIC:
                 return TopicPartitionMetrics.fromBuffer(buffer);
             default:
                 // This could happen when a new type of metric is added, but we are still running the old code.

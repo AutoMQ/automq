@@ -17,12 +17,10 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
 
 import java.util.Map;
 import java.util.Objects;
-
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final Broker broker;
@@ -45,7 +43,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected boolean validateMetrics(Map<RawMetricType, Double> metricsMap) {
+    protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
         return true;
     }
 

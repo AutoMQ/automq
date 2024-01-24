@@ -65,7 +65,7 @@ public class AutoBalancerManager implements AutoBalancerService {
         LogContext logContext = new LogContext(String.format("[AutoBalancerManager id=%d] ", quorumController.nodeId()));
         logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(kafkaConfig.props(), false);
-        RecordClusterModel clusterModel = buildClusterModel(quorumController.nodeId());
+        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
                 new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
         ControllerActionExecutorService actionExecutorService = new ControllerActionExecutorService(config, quorumController,
@@ -112,10 +112,6 @@ public class AutoBalancerManager implements AutoBalancerService {
         }
 
         logger.info("Shutdown completed");
-    }
-
-    public RecordClusterModel buildClusterModel(int nodeId) {
-        return new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", nodeId)));
     }
 
     private Set<Integer> parseExcludedBrokers(AutoBalancerControllerConfig config) {

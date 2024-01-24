@@ -17,7 +17,7 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import kafka.autobalancer.common.RawMetricType;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -28,11 +28,11 @@ public class MetricsUtilsTest {
     @Test
     public void testSanityCheckTopicPartitionMetricsCompleteness() {
         TopicPartitionMetrics metrics = new TopicPartitionMetrics(System.currentTimeMillis(), 1, "", "testTopic", 0);
-        metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_IN, 10);
+        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
         Assertions.assertFalse(MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, 10);
+        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
         Assertions.assertFalse(MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics));
-        metrics.put(RawMetricType.PARTITION_SIZE, 10);
+        metrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics));
     }
 }

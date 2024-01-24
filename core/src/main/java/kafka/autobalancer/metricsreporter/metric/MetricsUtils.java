@@ -20,9 +20,9 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import kafka.autobalancer.common.RawMetricType;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.metrics.KafkaMetricsGroup$;
 import scala.jdk.javaapi.CollectionConverters;
 
@@ -179,7 +179,7 @@ public final class MetricsUtils {
                 if (partition == -1) {
                     return null;
                 }
-                return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricType.PARTITION_SIZE, value);
+                return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.PARTITION_SIZE, value);
             default:
                 return null;
         }
@@ -253,7 +253,7 @@ public final class MetricsUtils {
                                                        int brokerId, String brokerRack, double value) {
 
         if (topic != null && partition != -1) {
-            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricType.TOPIC_PARTITION_BYTES_IN, value);
+            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, value);
         }
         return null;
     }
@@ -262,12 +262,12 @@ public final class MetricsUtils {
                                                         int brokerId, String brokerRack, double value) {
 
         if (topic != null && partition != -1) {
-            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, value);
+            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, value);
         }
         return null;
     }
 
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricValueMap().keySet().containsAll(RawMetricType.partitionMetricTypes());
+        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.partitionMetrics());
     }
 }

@@ -20,7 +20,6 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
 import org.slf4j.Logger;
 
@@ -35,11 +34,11 @@ public abstract class AbstractInstanceUpdater {
     protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     protected final Lock lock = new ReentrantLock();
 
-    protected abstract boolean validateMetrics(Map<RawMetricType, Double> metricsMap);
+    protected abstract boolean validateMetrics(Map<Byte, Double> metricsMap);
 
     protected abstract AbstractInstance instance();
 
-    public boolean update(Map<RawMetricType, Double> metricsMap, long time) {
+    public boolean update(Map<Byte, Double> metricsMap, long time) {
         if (!validateMetrics(metricsMap)) {
             LOGGER.error("Metrics validation failed for: {}, metrics: {}", this.instance().name(), metricsMap.keySet());
             return false;
@@ -87,7 +86,7 @@ public abstract class AbstractInstanceUpdater {
     public static abstract class AbstractInstance {
         protected final double[] loads = new double[Resource.cachedValues().size()];
         protected final Set<Resource> resources = new HashSet<>();
-        protected Map<RawMetricType, Double> metricsMap = new HashMap<>();
+        protected Map<Byte, Double> metricsMap = new HashMap<>();
         protected long timestamp = 0L;
 
         public AbstractInstance() {
@@ -121,16 +120,16 @@ public abstract class AbstractInstanceUpdater {
             return this.resources;
         }
 
-        public void update(Map<RawMetricType, Double> metricsMap, long timestamp) {
+        public void update(Map<Byte, Double> metricsMap, long timestamp) {
             this.metricsMap = metricsMap;
             this.timestamp = timestamp;
         }
 
-        public Map<RawMetricType, Double> getMetricsMap() {
+        public Map<Byte, Double> getMetricsMap() {
             return this.metricsMap;
         }
 
-        public double ofValue(RawMetricType metricType) {
+        public double ofValue(Byte metricType) {
             return this.metricsMap.getOrDefault(metricType, 0.0);
         }
 
@@ -161,7 +160,7 @@ public abstract class AbstractInstanceUpdater {
             StringBuilder builder = new StringBuilder();
             builder.append("Metrics={");
             int i = 0;
-            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
+            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
                 builder.append(entry.getKey())
                         .append("=")
                         .append(entry.getValue());
