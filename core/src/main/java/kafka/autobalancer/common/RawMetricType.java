@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -41,9 +40,6 @@ public enum RawMetricType {
     TOPIC_PARTITION_BYTES_OUT(MetricScope.PARTITION, (byte) 5, (byte) 0),
     PARTITION_SIZE(MetricScope.PARTITION, (byte) 6, (byte) 0),
     BROKER_CPU_UTIL(MetricScope.BROKER, (byte) 7, (byte) 0);
-
-    private static final List<RawMetricType> CACHED_VALUES = List.of(RawMetricType.values());
-    private static final SortedMap<Byte, Set<RawMetricType>> BROKER_METRIC_TYPES_DIFF_BY_VERSION = buildBrokerMetricTypesDiffByVersion();
     private static final List<RawMetricType> BROKER_METRIC_TYPES = Collections.unmodifiableList(buildMetricTypeList(MetricScope.BROKER));
     private static final List<RawMetricType> PARTITION_METRIC_TYPES = Collections.unmodifiableList(buildMetricTypeList(MetricScope.PARTITION));
     private final byte id;
@@ -58,18 +54,6 @@ public enum RawMetricType {
         this.id = id;
         metricScope = scope;
         this.supportedVersionSince = supportedVersionSince;
-    }
-
-    public static List<RawMetricType> allMetricTypes() {
-        return Collections.unmodifiableList(CACHED_VALUES);
-    }
-
-    public static Map<Byte, Set<RawMetricType>> brokerMetricTypesDiffByVersion() {
-        return BROKER_METRIC_TYPES_DIFF_BY_VERSION;
-    }
-
-    public static Set<RawMetricType> brokerMetricTypesDiffForVersion(byte version) {
-        return BROKER_METRIC_TYPES_DIFF_BY_VERSION.get(version);
     }
 
     public static List<RawMetricType> partitionMetricTypes() {

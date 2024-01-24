@@ -20,8 +20,6 @@ package kafka.autobalancer.model;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.model.BrokerUpdater.Broker;
-import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collection;
@@ -31,8 +29,8 @@ import java.util.Map;
 public class ClusterModelSnapshot {
 
     private final Map<String, Integer> rackToBrokerMap;
-    private final Map<Integer, Broker> brokerMap;
-    private final Map<Integer, Map<TopicPartition, TopicPartitionReplica>> brokerToReplicaMap;
+    private final Map<Integer, BrokerUpdater.Broker> brokerMap;
+    private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica>> brokerToReplicaMap;
 
     public ClusterModelSnapshot() {
         rackToBrokerMap = new HashMap<>();
@@ -42,7 +40,7 @@ public class ClusterModelSnapshot {
 
     public void aggregate() {
         // Override broker load with sum of replicas
-        for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplica>> entry : brokerToReplicaMap.entrySet()) {
+        for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica>> entry : brokerToReplicaMap.entrySet()) {
             int brokerId = entry.getKey();
             for (Resource resource : Resource.cachedValues()) {
                 double sum = entry.getValue().values().stream().mapToDouble(e -> e.load(resource)).sum();
@@ -51,10 +49,10 @@ public class ClusterModelSnapshot {
         }
     }
 
-    public void addBroker(String rack, Broker broker) {
-        rackToBrokerMap.putIfAbsent(rack, broker.getBrokerId());
-        brokerMap.putIfAbsent(broker.getBrokerId(), broker);
-        brokerToReplicaMap.putIfAbsent(broker.getBrokerId(), new HashMap<>());
+    public void addBroker(int brokerId, String rack, BrokerUpdater.Broker broker) {
+        rackToBrokerMap.putIfAbsent(rack, brokerId);
+        brokerMap.putIfAbsent(brokerId, broker);
+        brokerToReplicaMap.putIfAbsent(brokerId, new HashMap<>());
     }
 
     public void removeBroker(String rack, int brokerId) {
@@ -63,20 +61,20 @@ public class ClusterModelSnapshot {
         brokerToReplicaMap.remove(brokerId);
     }
 
-    public void addTopicPartition(int brokerId, TopicPartitionReplica replica) {
+    public void addTopicPartition(int brokerId, TopicPartition tp, TopicPartitionReplicaUpdater.TopicPartitionReplica tpInstance) {
         brokerToReplicaMap.putIfAbsent(brokerId, new HashMap<>());
-        brokerToReplicaMap.get(brokerId).put(replica.getTopicPartition(), replica);
+        brokerToReplicaMap.get(brokerId).put(tp, tpInstance);
     }
 
-    public Broker broker(int brokerId) {
+    public BrokerUpdater.Broker broker(int brokerId) {
         return brokerMap.get(brokerId);
     }
 
-    public Collection<Broker> brokers() {
+    public Collection<BrokerUpdater.Broker> brokers() {
         return brokerMap.values();
     }
 
-    public TopicPartitionReplica replica(int brokerId, TopicPartition tp) {
+    public TopicPartitionReplicaUpdater.TopicPartitionReplica replica(int brokerId, TopicPartition tp) {
         if (!brokerToReplicaMap.containsKey(brokerId)) {
             return null;
         }
@@ -86,22 +84,22 @@ public class ClusterModelSnapshot {
         return brokerToReplicaMap.get(brokerId).get(tp);
     }
 
-    public Collection<TopicPartitionReplica> replicasFor(int brokerId) {
+    public Collection<TopicPartitionReplicaUpdater.TopicPartitionReplica> replicasFor(int brokerId) {
         return brokerToReplicaMap.get(brokerId).values();
     }
 
     public void applyAction(Action action) {
-        Broker srcBroker = brokerMap.get(action.getSrcBrokerId());
-        Broker destBroker = brokerMap.get(action.getDestBrokerId());
+        BrokerUpdater.Broker srcBroker = brokerMap.get(action.getSrcBrokerId());
+        BrokerUpdater.Broker destBroker = brokerMap.get(action.getDestBrokerId());
         if (srcBroker == null || destBroker == null) {
             return;
         }
-        TopicPartitionReplica srcReplica = brokerToReplicaMap.get(action.getSrcBrokerId()).get(action.getSrcTopicPartition());
+        TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica = brokerToReplicaMap.get(action.getSrcBrokerId()).get(action.getSrcTopicPartition());
         ModelUtils.moveReplicaLoad(srcBroker, destBroker, srcReplica);
         brokerToReplicaMap.get(action.getSrcBrokerId()).remove(action.getSrcTopicPartition());
         brokerToReplicaMap.get(action.getDestBrokerId()).put(action.getSrcTopicPartition(), srcReplica);
         if (action.getType() == ActionType.SWAP) {
-            TopicPartitionReplica destReplica = brokerToReplicaMap.get(action.getDestBrokerId()).get(action.getDestTopicPartition());
+            TopicPartitionReplicaUpdater.TopicPartitionReplica destReplica = brokerToReplicaMap.get(action.getDestBrokerId()).get(action.getDestTopicPartition());
             ModelUtils.moveReplicaLoad(destBroker, srcBroker, destReplica);
             brokerToReplicaMap.get(action.getDestBrokerId()).remove(action.getDestTopicPartition());
             brokerToReplicaMap.get(action.getSrcBrokerId()).put(action.getDestTopicPartition(), destReplica);

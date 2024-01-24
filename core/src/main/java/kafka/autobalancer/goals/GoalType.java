@@ -15,19 +15,19 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.goals;
 
-import kafka.autobalancer.common.Resource;
+public enum GoalType {
+    HARD(10),
+    SOFT(8);
 
-public class ModelUtils {
+    private final int priority;
 
-    public static void moveReplicaLoad(BrokerUpdater.Broker src, BrokerUpdater.Broker dest,
-                                       TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
-        for (Resource resource : replica.getResources()) {
-            double delta = replica.load(resource);
-            src.setLoad(resource, src.load(resource) - delta);
-            dest.setLoad(resource, dest.load(resource) + delta);
-        }
+    GoalType(int priority) {
+        this.priority = priority;
     }
 
+    public int priority() {
+        return priority;
+    }
 }

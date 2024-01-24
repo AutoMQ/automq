@@ -17,14 +17,14 @@
 
 package kafka.autobalancer.common;
 
+import com.automq.stream.utils.LogContext;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class AutoBalancerThreadFactory implements ThreadFactory {
-    private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerThreadFactory.class);
+    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     private final String name;
     private final boolean daemon;
     private final AtomicInteger id = new AtomicInteger(0);

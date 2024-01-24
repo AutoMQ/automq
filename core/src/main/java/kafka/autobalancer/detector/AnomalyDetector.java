@@ -48,20 +48,16 @@ public class AnomalyDetector {
     private final long detectInterval;
     private final long maxTolerateMetricsDelayMs;
     private final long coolDownIntervalPerActionMs;
-    private final boolean aggregateBrokerLoad;
     private volatile boolean running;
 
     AnomalyDetector(LogContext logContext, int maxActionsNumPerDetect, long detectIntervalMs, long maxTolerateMetricsDelayMs,
-                    long coolDownIntervalPerActionMs, boolean aggregateBrokerLoad, ClusterModel clusterModel,
-                    ActionExecutorService actionExecutor, List<Goal> goals,
-                    Set<Integer> excludedBrokers, Set<String> excludedTopics) {
+                    long coolDownIntervalPerActionMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
+                    List<Goal> goals, Set<Integer> excludedBrokers, Set<String> excludedTopics) {
         this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-
         this.maxActionsNumPerExecution = maxActionsNumPerDetect;
         this.detectInterval = detectIntervalMs;
         this.maxTolerateMetricsDelayMs = maxTolerateMetricsDelayMs;
         this.coolDownIntervalPerActionMs = coolDownIntervalPerActionMs;
-        this.aggregateBrokerLoad = aggregateBrokerLoad;
         this.clusterModel = clusterModel;
         this.actionExecutor = actionExecutor;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("anomaly-detector"));
@@ -102,19 +98,20 @@ public class AnomalyDetector {
         this.running = true;
     }
 
-    void detect() {
+    public void detect() {
         if (!this.running) {
             return;
         }
         logger.info("Start detect");
         // The delay in processing kraft log could result in outdated cluster snapshot
-        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics,
-                this.maxTolerateMetricsDelayMs, this.aggregateBrokerLoad);
+        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, this.maxTolerateMetricsDelayMs);
 
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
-            logger.info("Broker status: {}", broker);
-            for (TopicPartitionReplicaUpdater.TopicPartitionReplica replica : snapshot.replicasFor(broker.getBrokerId())) {
-                logger.debug("Replica status {}", replica);
+            logger.info("Broker status: {}", broker.shortString());
+            if (logger.isDebugEnabled()) {
+                for (TopicPartitionReplicaUpdater.TopicPartitionReplica replica : snapshot.replicasFor(broker.getBrokerId())) {
+                    logger.debug("Replica status {}", replica.shortString());
+                }
             }
         }
 

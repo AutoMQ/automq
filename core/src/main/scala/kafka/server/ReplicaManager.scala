@@ -240,8 +240,6 @@ class ReplicaManager(val config: KafkaConfig,
   val delayedElectLeaderPurgatory = delayedElectLeaderPurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedElectLeader](
       purgatoryName = "ElectLeader", brokerId = config.brokerId))
-  // This threadPool is used to separate slow fetches from quick fetches.
-  val slowFetchExecutors = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("slow-fetch-executor-%d", true))
 
   /* epoch of the controller that last changed the leader */
   @volatile private[server] var controllerEpoch: Int = KafkaController.InitialControllerEpoch
@@ -2439,7 +2437,6 @@ class ReplicaManager(val config: KafkaConfig,
     replicaSelectorOpt.foreach(_.close)
     removeAllTopicMetrics()
 
-    slowFetchExecutors.shutdown()
     info("Shut down completely")
   }
 

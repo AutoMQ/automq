@@ -37,7 +37,6 @@ public class ClusterModel {
     protected final Logger logger;
     private static final String DEFAULT_RACK_ID = "rack_default";
     private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
-    private static final boolean DEFAULT_AGGREGATE_BROKER_LOAD = true;
 
     /*
      * Guard the change on cluster structure (add/remove for brokers, replicas)
@@ -63,52 +62,58 @@ public class ClusterModel {
     }
 
     public ClusterModelSnapshot snapshot() {
-        return snapshot(Collections.emptySet(), Collections.emptySet(), DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS, DEFAULT_AGGREGATE_BROKER_LOAD);
+        return snapshot(Collections.emptySet(), Collections.emptySet(), DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS);
     }
 
-    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics,
-                                         long maxToleratedMetricsDelay, boolean aggregateBrokerLoad) {
+    public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics, long maxToleratedMetricsDelay) {
         ClusterModelSnapshot snapshot = new ClusterModelSnapshot();
         clusterLock.lock();
         try {
             long now = System.currentTimeMillis();
-            for (BrokerUpdater brokerUpdater : brokerMap.values()) {
-                BrokerUpdater.Broker broker = brokerUpdater.get(now - maxToleratedMetricsDelay);
+            for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
+                int brokerId = entry.getKey();
+                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get();
                 if (broker == null) {
                     continue;
                 }
-                if (excludedBrokerIds.contains(broker.getBrokerId())) {
+                if (excludedBrokerIds.contains(brokerId)) {
                     continue;
                 }
-                snapshot.addBroker(brokerIdToRackMap.get(broker.getBrokerId()), broker);
+                broker.processMetrics();
+                snapshot.addBroker(brokerId, brokerIdToRackMap.get(brokerId), broker);
             }
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
                 int brokerId = entry.getKey();
                 if (snapshot.broker(brokerId) == null) {
                     continue;
                 }
-                for (TopicPartitionReplicaUpdater replicaUpdater : entry.getValue().values()) {
-                    TopicPartitionReplicaUpdater.TopicPartitionReplica replica = replicaUpdater.get(now - maxToleratedMetricsDelay);
+                for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
+                    TopicPartition tp = tpEntry.getKey();
+                    TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
+                            (TopicPartitionReplicaUpdater.TopicPartitionReplica) tpEntry.getValue().get(now - maxToleratedMetricsDelay);
                     if (replica == null) {
-                        logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, replicaUpdater.topicPartition());
+                        logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, tp);
                         snapshot.removeBroker(brokerIdToRackMap.get(brokerId), brokerId);
                         break;
                     }
-                    if (excludedTopics.contains(replica.getTopicPartition().topic())) {
+                    if (excludedTopics.contains(tp.topic())) {
                         continue;
                     }
-                    snapshot.addTopicPartition(brokerId, replica);
+                    replica.processMetrics();
+                    snapshot.addTopicPartition(brokerId, tp, replica);
                 }
             }
         } finally {
             clusterLock.unlock();
         }
 
-        if (aggregateBrokerLoad) {
-            snapshot.aggregate();
-        }
+        postProcess(snapshot);
 
         return snapshot;
+    }
+
+    public void postProcess(ClusterModelSnapshot snapshot) {
+        snapshot.aggregate();
     }
 
     public boolean updateBrokerMetrics(int brokerId, Map<RawMetricType, Double> metricsMap, long time) {
@@ -148,8 +153,7 @@ public class ClusterModel {
             if (brokerMap.containsKey(brokerId)) {
                 return;
             }
-            BrokerUpdater brokerUpdater = new BrokerUpdater(brokerId);
-            brokerUpdater.setActive(true);
+            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId);
             if (Utils.isBlank(rackId)) {
                 rackId = DEFAULT_RACK_ID;
             }
@@ -159,6 +163,10 @@ public class ClusterModel {
         } finally {
             clusterLock.unlock();
         }
+    }
+
+    public BrokerUpdater createBrokerUpdater(int brokerId) {
+        return new BrokerUpdater(brokerId, true);
     }
 
     public void unregisterBroker(int brokerId) {
@@ -233,10 +241,14 @@ public class ClusterModel {
             }
             topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
             TopicPartition tp = new TopicPartition(topicName, partitionId);
-            brokerReplicaMap.get(brokerId).put(tp, new TopicPartitionReplicaUpdater(tp));
+            brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
         } finally {
             clusterLock.unlock();
         }
+    }
+
+    public TopicPartitionReplicaUpdater createReplicaUpdater(TopicPartition tp) {
+        return new TopicPartitionReplicaUpdater(tp);
     }
 
     public void reassignPartition(Uuid topicId, int partitionId, int brokerId) {

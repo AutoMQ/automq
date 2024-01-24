@@ -15,19 +15,22 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.common.normalizer;
 
-import kafka.autobalancer.common.Resource;
+/**
+ * Linear normalizer that normalize the value to [0, 1]
+ */
+public class LinearNormalizer implements Normalizer {
+    public final double min;
+    public final double max;
 
-public class ModelUtils {
-
-    public static void moveReplicaLoad(BrokerUpdater.Broker src, BrokerUpdater.Broker dest,
-                                       TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
-        for (Resource resource : replica.getResources()) {
-            double delta = replica.load(resource);
-            src.setLoad(resource, src.load(resource) - delta);
-            dest.setLoad(resource, dest.load(resource) + delta);
-        }
+    public LinearNormalizer(double min, double max) {
+        this.min = min;
+        this.max = max;
     }
 
+    @Override
+    public double normalize(double value) {
+        return (value - min) / (max - min);
+    }
 }

@@ -18,7 +18,7 @@
 package kafka.server
 
 import com.automq.stream.s3.metadata.ObjectUtils
-import kafka.autobalancer.AutoBalancerManager
+import kafka.autobalancer.{AutoBalancerManager, AutoBalancerService}
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.cluster.Broker.ServerInfo
 import kafka.log.stream.s3.ConfigUtils
@@ -108,9 +108,9 @@ class ControllerServer(
   var controllerApis: ControllerApis = _
   var controllerApisHandlerPool: KafkaRequestHandlerPool = _
   var migrationSupport: Option[ControllerMigrationSupport] = None
-  var autoBalancerManager: AutoBalancerManager = _
+  var autoBalancerManager: Option[AutoBalancerService] = None
 
-  def buildAutoBalancerManager: AutoBalancerManager = {
+  protected def buildAutoBalancerManager: AutoBalancerService = {
     new AutoBalancerManager(time, config, controller, raftManager.client)
   }
 
@@ -304,10 +304,12 @@ class ControllerServer(
         s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
         DataPlaneAcceptor.ThreadPrefix)
 
-      if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
-        autoBalancerManager = buildAutoBalancerManager
-        autoBalancerManager.start()
+      autoBalancerManager = if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
+        Some(buildAutoBalancerManager)
+      } else {
+        None
       }
+      autoBalancerManager.foreach(_.start())
       /**
        * Enable the controller endpoint(s). If we are using an authorizer which stores
        * ACLs in the metadata log, such as StandardAuthorizer, we will be able to start
@@ -334,8 +336,7 @@ class ControllerServer(
       // Ensure that we're not the Raft leader prior to shutting down our socket server, for a
       // smoother transition.
       sharedServer.ensureNotRaftLeader()
-      if (autoBalancerManager != null)
-        CoreUtils.swallow(autoBalancerManager.shutdown(), logging = this)
+      autoBalancerManager.foreach(_.shutdown())
       if (socketServer != null)
         CoreUtils.swallow(socketServer.stopProcessingRequests(), this)
       migrationSupport.foreach(_.shutdown(this))
