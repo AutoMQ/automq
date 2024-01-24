@@ -195,6 +195,7 @@ class StreamsUpgradeTest(Test):
         processor.stop()
         processor.node.account.ssh_capture("grep SMOKE-TEST-CLIENT-CLOSED %s" % processor.STDOUT_FILE, allow_fail=False)
 
+    @ignore # Directly upgrade from local mode to AutoMQ is unsupported
     @cluster(num_nodes=6)
     @matrix(from_version=metadata_1_versions, to_version=[str(DEV_VERSION)])
     @matrix(from_version=metadata_2_versions, to_version=[str(DEV_VERSION)])
