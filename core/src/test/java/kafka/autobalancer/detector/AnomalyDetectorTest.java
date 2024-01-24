@@ -19,8 +19,8 @@ package kafka.autobalancer.detector;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import kafka.autobalancer.common.Action;
-import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
@@ -67,7 +67,7 @@ public class AnomalyDetectorTest {
             clusterModel.createTopic(topicId, topicName);
             for (int j = 0; j < partitionNumPerTopic; j++) {
                 clusterModel.createPartition(topicId, j, brokerIndex);
-                Map<RawMetricType, Double> metrics = generateRandomMetrics(r);
+                Map<Byte, Double> metrics = generateRandomMetrics(r);
                 clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics, System.currentTimeMillis());
                 currPartitionNum++;
                 if (currPartitionNum >= partitionNums[brokerIndex]) {
@@ -152,11 +152,11 @@ public class AnomalyDetectorTest {
         return partitionNums;
     }
 
-    private Map<RawMetricType, Double> generateRandomMetrics(Random r) {
-        Map<RawMetricType, Double> metrics = new HashMap<>();
-        metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_OUT, r.nextDouble(0, 1024 * 1024));
-        metrics.put(RawMetricType.TOPIC_PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
-        metrics.put(RawMetricType.PARTITION_SIZE, 0.0);
+    private Map<Byte, Double> generateRandomMetrics(Random r) {
+        Map<Byte, Double> metrics = new HashMap<>();
+        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, r.nextDouble(0, 1024 * 1024));
+        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
+        metrics.put(RawMetricTypes.PARTITION_SIZE, 0.0);
         return metrics;
     }
 }

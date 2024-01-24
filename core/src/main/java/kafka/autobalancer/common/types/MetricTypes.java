@@ -15,30 +15,8 @@
  * limitations under the License.
  */
 
-package kafka.autobalancer.metricsreporter.metric;
+package kafka.autobalancer.common.types;
 
-/**
- * An enum that list all the implementations of the interface. This id will be store in the serialized
- * metrics to help the metric sampler to decide using which class to deserialize the metric bytes.
- */
-public enum MetricClassId {
-    PARTITION_METRIC((byte) 0), BROKER_METRIC((byte) 1);
-
-    private final byte id;
-
-    MetricClassId(byte id) {
-        this.id = id;
-    }
-
-    static MetricClassId forId(byte id) {
-        if (id < values().length) {
-            return values()[id];
-        } else {
-            throw new IllegalArgumentException("MetricClassId " + id + " does not exist.");
-        }
-    }
-
-    public byte id() {
-        return id;
-    }
+public class MetricTypes {
+    public static final byte TOPIC_PARTITION_METRIC = (byte) 0;
 }

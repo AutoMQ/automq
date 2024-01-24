@@ -17,16 +17,14 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.RawMetricType;
 import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import org.apache.kafka.common.TopicPartition;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
-    private static final List<RawMetricType> MANDATORY_METRICS = RawMetricType.partitionMetricTypes();
     private final TopicPartitionReplica replica;
 
     public TopicPartitionReplicaUpdater(TopicPartition tp) {
@@ -38,8 +36,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected boolean validateMetrics(Map<RawMetricType, Double> metricsMap) {
-        return metricsMap.keySet().containsAll(MANDATORY_METRICS);
+    protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
+        return metricsMap.keySet().containsAll(RawMetricTypes.partitionMetrics());
     }
 
     @Override
@@ -66,15 +64,15 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
         @Override
         public void processMetrics() {
-            for (Map.Entry<RawMetricType, Double> entry : metricsMap.entrySet()) {
-                if (entry.getKey().metricScope() != RawMetricType.MetricScope.PARTITION) {
+            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+                if (!RawMetricTypes.partitionMetrics().contains(entry.getKey())) {
                     continue;
                 }
                 switch (entry.getKey()) {
-                    case TOPIC_PARTITION_BYTES_IN:
+                    case RawMetricTypes.TOPIC_PARTITION_BYTES_IN:
                         this.setLoad(Resource.NW_IN, entry.getValue());
                         break;
-                    case TOPIC_PARTITION_BYTES_OUT:
+                    case RawMetricTypes.TOPIC_PARTITION_BYTES_OUT:
                         this.setLoad(Resource.NW_OUT, entry.getValue());
                         break;
                     default:

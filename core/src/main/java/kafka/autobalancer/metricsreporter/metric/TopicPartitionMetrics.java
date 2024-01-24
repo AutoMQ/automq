@@ -20,7 +20,8 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import kafka.autobalancer.common.RawMetricType;
+import kafka.autobalancer.common.types.MetricTypes;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 import org.apache.kafka.common.TopicPartition;
 
@@ -40,13 +41,13 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
         this(time, brokerId, brokerRack, topic, partition, Collections.emptyMap());
     }
 
-    public TopicPartitionMetrics(long time, int brokerId, String brokerRack, String topic, int partition, Map<RawMetricType, Double> metricsMap) {
+    public TopicPartitionMetrics(long time, int brokerId, String brokerRack, String topic, int partition, Map<Byte, Double> metricsMap) {
         super(time, brokerId, brokerRack, metricsMap);
         this.topic = topic;
         this.partition = partition;
     }
 
-    static TopicPartitionMetrics fromBuffer(ByteBuffer buffer) throws UnknownVersionException {
+    public static TopicPartitionMetrics fromBuffer(ByteBuffer buffer) throws UnknownVersionException {
         byte version = buffer.get();
         if (version > METRIC_VERSION) {
             throw new UnknownVersionException("Cannot deserialize the topic metrics for version " + version + ". "
@@ -65,26 +66,27 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
         String topic = new String(buffer.array(), buffer.arrayOffset() + buffer.position(), topicLength, StandardCharsets.UTF_8);
         buffer.position(buffer.position() + topicLength);
         int partition = buffer.getInt();
-        Map<RawMetricType, Double> metricsMap = parseMetricsMap(buffer);
+        Map<Byte, Double> metricsMap = parseMetricsMap(buffer);
         return new TopicPartitionMetrics(time, brokerId, brokerRack, topic, partition, metricsMap);
     }
 
     @Override
-    public AutoBalancerMetrics put(RawMetricType type, double value) {
-        if (type.metricScope() != RawMetricType.MetricScope.PARTITION) {
-            throw new IllegalArgumentException(String.format("Cannot construct a PartitionMetric for %s whose scope is %s",
-                    type, type.metricScope()));
+    public AutoBalancerMetrics put(byte type, double value) {
+        if (!RawMetricTypes.partitionMetrics().contains(type)) {
+            throw new IllegalArgumentException("Cannot put non partition metric type " + type + " into a partition metric.");
         }
         return super.put(type, value);
     }
+
 
     @Override
     public String key() {
         return topic + "-" + partition;
     }
 
-    public MetricClassId metricClassId() {
-        return MetricClassId.PARTITION_METRIC;
+    @Override
+    public byte metricType() {
+        return MetricTypes.TOPIC_PARTITION_METRIC;
     }
 
     public String topic() {
@@ -143,8 +145,7 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
 
     @Override
     public String toString() {
-        return String.format("[%s,Time=%d,BrokerId=%d,Partition=%s,Key:Value=%s]",
-                MetricClassId.PARTITION_METRIC, time(), brokerId(),
-                new TopicPartition(topic(), partition()), buildKVString());
+        return String.format("[TopicPartitionMetrics,Time=%d,BrokerId=%d,Partition=%s,Key:Value=%s]",
+                time(), brokerId(), new TopicPartition(topic(), partition()), buildKVString());
     }
 }

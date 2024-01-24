@@ -20,11 +20,11 @@ package kafka.autobalancer;
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
+import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import kafka.autobalancer.model.ClusterModel;
@@ -70,16 +70,16 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class LoadRetriever implements BrokerStatusListener {
     public static final Random RANDOM = new Random();
-    private final Logger logger;
+    protected final Logger logger;
     private final Map<Integer, BrokerEndpoints> bootstrapServerMap;
     private final String metricReporterTopic;
     private final int metricReporterTopicPartition;
     private final long metricReporterTopicRetentionTime;
     private final String metricReporterTopicCleanupPolicy;
-    private final long consumerPollTimeout;
-    private final String consumerClientIdPrefix;
-    private final long consumerRetryBackOffMs;
-    private final ClusterModel clusterModel;
+    protected final long consumerPollTimeout;
+    protected final String consumerClientIdPrefix;
+    protected final long consumerRetryBackOffMs;
+    protected final ClusterModel clusterModel;
     private final Lock lock;
     private final Condition cond;
     private final Controller controller;
@@ -144,7 +144,7 @@ public class LoadRetriever implements BrokerStatusListener {
         logger.info("Shutdown completed");
     }
 
-    private KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
+    protected KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
         long randomToken = RANDOM.nextLong();
         Properties consumerProps = new Properties();
         consumerProps.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
@@ -410,20 +410,16 @@ public class LoadRetriever implements BrokerStatusListener {
         this.isLeader = isLeader;
     }
 
-    private void updateClusterModel(AutoBalancerMetrics metrics) {
-        switch (metrics.metricClassId()) {
-            case BROKER_METRIC:
-                BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
-                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricValueMap(), brokerMetrics.time());
-                break;
-            case PARTITION_METRIC:
+    protected void updateClusterModel(AutoBalancerMetrics metrics) {
+        switch (metrics.metricType()) {
+            case MetricTypes.TOPIC_PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
                         partitionMetrics.getMetricValueMap(), partitionMetrics.time());
                 break;
             default:
-                logger.error("Not supported metrics version {}", metrics.metricClassId());
+                logger.error("Not supported metrics version {}", metrics.metricType());
         }
     }
 }
