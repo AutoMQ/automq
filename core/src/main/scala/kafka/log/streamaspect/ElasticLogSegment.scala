@@ -350,10 +350,12 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def findOffsetByTimestamp(timestamp: Long, startingOffset: Long = baseOffset): Option[TimestampAndOffset] = {
+    // TODO: async the find to avoid blocking the thread
     // Get the index entry with a timestamp less than or equal to the target timestamp
     val timestampOffset = timeIndex.lookup(timestamp)
     // Search the timestamp
-    Option(_log.searchForTimestamp(timestamp, timestampOffset.offset))
+    val rst = Option(_log.searchForTimestamp(timestamp, timestampOffset.offset))
+    rst
   }
 
 

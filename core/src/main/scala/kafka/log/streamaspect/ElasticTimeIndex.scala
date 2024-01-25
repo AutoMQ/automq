@@ -96,7 +96,8 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
     var timestampOffset = tryGetEntryFromCache(n)
     if (timestampOffset == TimestampOffset.Unknown) {
       // cache missing, try read from remote and put it to cache.
-      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + 16 * 1024)).get()
+      // the index interval is 1MiB and the segment size is 1GB, so binary search only need 512 entries
+      val rst = stream.fetch(startOffset, Math.min(_entries * entrySize, startOffset + entrySize * 512)).get()
       val records = rst.recordBatchList()
       if (records.size() == 0) {
         throw new IllegalStateException(s"fetch empty from stream $stream at offset $startOffset")

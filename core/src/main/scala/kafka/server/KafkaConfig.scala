@@ -139,7 +139,7 @@ object Defaults {
   val LogCleanerMinCompactionLagMs = 0L
   val LogCleanerMaxCompactionLagMs = Long.MaxValue
   val LogIndexSizeMaxBytes = 10 * 1024 * 1024
-  val LogIndexIntervalBytes = 4096
+  val LogIndexIntervalBytes = 1024 * 1024
   val LogFlushIntervalMessages = Long.MaxValue
   val LogDeleteDelayMs = 60000
   val LogFlushSchedulerIntervalMs = Long.MaxValue
