@@ -17,12 +17,17 @@
 
 package org.apache.kafka.shell;
 
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import java.util.Arrays;
+import java.util.stream.Stream;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AccessControlEntryRecordJsonConverter;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord.EntityData;
@@ -30,23 +35,44 @@ import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecordJsonConverter;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecordJsonConverter;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.PartitionRecordJsonConverter;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RangeRecordJsonConverter;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecordJsonConverter;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecordJsonConverter;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecordJsonConverter;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.queue.EventQueue;
 import org.apache.kafka.queue.KafkaEventQueue;
 import org.apache.kafka.raft.Batch;
@@ -387,7 +413,7 @@ public final class MetadataNodeManager implements AutoCloseable {
                 break;
             }
             default:
-                throw new RuntimeException("Unhandled metadata record type");
+                handleExtCommitImpl(type, message);
         }
     }
 
@@ -402,5 +428,163 @@ public final class MetadataNodeManager implements AutoCloseable {
                 "<default>" : entry.getValue().entityName());
         }
         return result;
+    }
+
+    /**
+     * <h3>File Hierarchy for AutoMQ Custom Metadata</h3>
+     * <pre>
+     * .
+     * ├── kvRecords
+     * │   └── _kafka_FVWxwMClSYObxlUORZANzA
+     * │       └── 4IHvQLhZSJ6szHPcyady3Q
+     * │           └── 0
+     * ├── nodes
+     * │   ├── 1 - node id
+     * │   │   ├── s3StreamSetObjects
+     * │   │   │   └── 4 - object id
+     * │   │   │       ├── dataTimeInMs
+     * │   │   │       ├── orderId
+     * │   │   │       └── ranges
+     * │   │   └── walMetadata
+     * │   └── nextNodeId
+     * ├── s3Objects
+     * │   ├── 1 - object id
+     * │   └── nextObjectId
+     * └── s3Streams
+     *     ├── 0 - stream id
+     *     │   ├── ranges
+     *     │   │   └── 0
+     *     │   └── s3StreamObjects
+     *     │       └── 3
+     *     └── nextStreamId
+     * </pre>
+     */
+    private void handleExtCommitImpl(MetadataRecordType type, ApiMessage message) {
+        switch (type) {
+            // For AutoMQ-related records.
+            case S3_STREAM_RECORD: {
+                S3StreamRecord record = (S3StreamRecord) message;
+                DirectoryNode s3Streams = data.root.mkdirs("s3Streams");
+                DirectoryNode s3Stream = s3Streams.mkdirs(Long.toString(record.streamId()));
+                String data = S3StreamRecordJsonConverter.write(record, S3StreamRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString();
+                s3Stream.create("data").setContents(data);
+                break;
+            }
+            case REMOVE_S3_STREAM_RECORD: {
+                RemoveS3StreamRecord record = (RemoveS3StreamRecord) message;
+                data.root.rmrf("s3Streams", Long.toString(record.streamId()));
+                break;
+            }
+            case RANGE_RECORD: {
+                RangeRecord record = (RangeRecord) message;
+                DirectoryNode streams = data.root.mkdirs("s3Streams");
+                DirectoryNode stream = streams.mkdirs(Long.toString(record.streamId()));
+                DirectoryNode ranges = stream.mkdirs("ranges");
+                FileNode file = ranges.create(Integer.toString(record.rangeIndex()));
+                file.setContents(RangeRecordJsonConverter.write(record, RangeRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                break;
+            }
+            case REMOVE_RANGE_RECORD: {
+                RemoveRangeRecord record = (RemoveRangeRecord) message;
+                data.root.rmrf("s3Streams", Long.toString(record.streamId()), "ranges", Integer.toString(record.rangeIndex()));
+                break;
+            }
+            case S3_STREAM_OBJECT_RECORD: {
+                S3StreamObjectRecord record = (S3StreamObjectRecord) message;
+                DirectoryNode s3StreamObjects = data.root.mkdirs("s3Streams", Long.toString(record.streamId()), "s3StreamObjects");
+                FileNode file = s3StreamObjects.create(Long.toString(record.objectId()));
+                file.setContents(S3StreamObjectRecordJsonConverter.write(record, S3StreamObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                break;
+            }
+            case REMOVE_S3_STREAM_OBJECT_RECORD: {
+                RemoveS3StreamObjectRecord record = (RemoveS3StreamObjectRecord) message;
+                data.root.rmrf("s3Streams", Long.toString(record.streamId()), "s3StreamObjects", Long.toString(record.objectId()));
+                break;
+            }
+            case S3_STREAM_SET_OBJECT_RECORD: {
+                // TODO: a better solution is to convert it to a JSON string and store it in one file, but ranges will not be human-readable.
+                S3StreamSetObjectRecord record = (S3StreamSetObjectRecord) message;
+                DirectoryNode streamSetObject = data.root.mkdirs("nodes", Integer.toString(record.nodeId()), "s3StreamSetObjects", Long.toString(record.objectId()));
+                streamSetObject.create("orderId").setContents(Long.toString(record.orderId()));
+                streamSetObject.create("dataTimeInMs").setContents(Long.toString(record.dataTimeInMs()));
+                byte[] bytes = record.ranges();
+                // Decode ranges and convert it to human-readable string.
+                List<StreamOffsetRange> ranges = S3StreamSetObject.decode(bytes);
+                streamSetObject.create("ranges").setContents(ranges.toString());
+                break;
+            }
+            case REMOVE_STREAM_SET_OBJECT_RECORD: {
+                RemoveStreamSetObjectRecord record = (RemoveStreamSetObjectRecord) message;
+                data.root.rmrf("nodes", Integer.toString(record.nodeId()), "s3StreamSetObjects", Long.toString(record.objectId()));
+                break;
+            }
+            case S3_OBJECT_RECORD: {
+                S3ObjectRecord record = (S3ObjectRecord) message;
+                DirectoryNode s3Objects = data.root.mkdirs("s3Objects");
+                FileNode file = s3Objects.create(Long.toString(record.objectId()));
+                file.setContents(S3ObjectRecordJsonConverter.write(record, S3ObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                break;
+            }
+            case REMOVE_S3_OBJECT_RECORD: {
+                RemoveS3ObjectRecord record = (RemoveS3ObjectRecord) message;
+                data.root.rmrf("s3Objects", Long.toString(record.objectId()));
+                break;
+            }
+            case ASSIGNED_STREAM_ID_RECORD: {
+                AssignedStreamIdRecord record = (AssignedStreamIdRecord) message;
+                DirectoryNode streamIdsNode = data.root.mkdirs("s3Streams");
+                streamIdsNode.create("nextStreamId").setContents(Long.toString(record.assignedStreamId()));
+                break;
+            }
+            case ASSIGNED_S3_OBJECT_ID_RECORD: {
+                AssignedS3ObjectIdRecord record = (AssignedS3ObjectIdRecord) message;
+                DirectoryNode s3ObjectsNode = data.root.mkdirs("s3Objects");
+                s3ObjectsNode.create("nextObjectId").setContents(Long.toString(record.assignedS3ObjectId()));
+                break;
+            }
+            case NODE_WALMETADATA_RECORD: {
+                NodeWALMetadataRecord record = (NodeWALMetadataRecord) message;
+                DirectoryNode nodeId = data.root.mkdirs("nodes", Integer.toString(record.nodeId()));
+                FileNode file = nodeId.create("walMetadata");
+                file.setContents(NodeWALMetadataRecordJsonConverter.write(record, NodeWALMetadataRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                break;
+            }
+            case REMOVE_NODE_WALMETADATA_RECORD: {
+                RemoveNodeWALMetadataRecord record = (RemoveNodeWALMetadataRecord) message;
+                data.root.rmrf("nodes", Integer.toString(record.nodeId()), "walMetadata");
+                break;
+            }
+            case KVRECORD: {
+                KVRecord record = (KVRecord) message;
+                DirectoryNode kvRecords = data.root.mkdirs("kvRecords");
+                for (KVRecord.KeyValue kv : record.keyValues()) {
+                    DirectoryNode node = kvRecords;
+                    String fileName = kv.key();
+                    String[] filePathArray = kv.key().split("/");
+                    if (filePathArray.length > 1) {
+                        String[] dirPathArray = Arrays.copyOfRange(filePathArray, 0, filePathArray.length - 1);
+                        node = node.mkdirs(dirPathArray);
+                        fileName = filePathArray[filePathArray.length - 1];
+                    }
+                    node.create(fileName).setContents(Arrays.toString(kv.value()));
+                }
+                break;
+            }
+            case REMOVE_KVRECORD: {
+                RemoveKVRecord record = (RemoveKVRecord) message;
+                for (String key : record.keys()) {
+                    String[] pathArray = Stream.concat(Stream.of("kvRecords"), Stream.of(key.split("/"))).toArray(String[]::new);
+                    data.root.rmrf(pathArray);
+                }
+                break;
+            }
+            case UPDATE_NEXT_NODE_ID_RECORD: {
+                UpdateNextNodeIdRecord record = (UpdateNextNodeIdRecord) message;
+                DirectoryNode nodes = data.root.mkdirs("nodes");
+                nodes.create("nextNodeId").setContents(Integer.toString(record.nodeId()));
+                break;
+            }
+        }
+
     }
 }
