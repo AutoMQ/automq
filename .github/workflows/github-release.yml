@@ -28,7 +28,8 @@ jobs:
       - name: Get project version
         id: get_project_version
         run: |
-          echo "PROJECT_VERSION=$(./gradlew properties | grep \"version:\" | awk '{print $2}')" >> $GITHUB_OUTPUT
+          project_version=$(./gradlew properties | grep "version:" | awk '{print $2}')
+          echo "PROJECT_VERSION=${project_version}" >> $GITHUB_OUTPUT
 
       - name: Build TarGz
         run: |
