@@ -55,6 +55,9 @@ public class WriteBench implements AutoCloseable {
     private final WriteAheadLog log;
     private final TrimOffset trimOffset = new TrimOffset();
 
+    // Generate random payloads for this benchmark tool
+    private Random random = new Random();
+
     public WriteBench(Config config) throws IOException {
         BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(config.path, config.capacity);
         if (config.depth != null) {
@@ -177,7 +180,7 @@ public class WriteBench implements AutoCloseable {
         System.out.printf("Append task %d started\n", index);
 
         byte[] bytes = new byte[config.recordSizeBytes];
-        new Random().nextBytes(bytes);
+        random.nextBytes(bytes);
         ByteBuf payload = Unpooled.wrappedBuffer(bytes).retain();
         int intervalNanos = (int) TimeUnit.SECONDS.toNanos(1) / Math.max(1, config.throughputBytes / config.recordSizeBytes);
         long lastAppendTimeNanos = System.nanoTime();
