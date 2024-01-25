@@ -1,4 +1,6 @@
 ---
+# See https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/c3b2997563106e11d39f66eec629fde25dce2bdd/pkg/translator/prometheus/normalize_name.go
+# for unit translation from OT to Prometheus
 rules:
   # Broker Topic Metrics
   - bean: kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec,topic=*
@@ -10,11 +12,11 @@ rules:
         metric: kafka.message.count
         type: counter
         desc: The number of messages received by the broker
-        unit: "{messages}"
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=*
+  - bean: kafka.server:type=BrokerTopicPartitionMetrics,name=BytesInPerSec,topic=*,partition=*
     metricAttribute:
       topic: param(topic)
+      partition: param(partition)
       direction: const(int)
     mapping:
       Count:
@@ -23,9 +25,10 @@ rules:
         desc: The bytes received or sent by the broker
         unit: By
 
-  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,topic=*
+  - bean: kafka.server:type=BrokerTopicPartitionMetrics,name=BytesOutPerSec,topic=*,partition=*
     metricAttribute:
       topic: param(topic)
+      partition: param(partition)
       direction: const(out)
     mapping:
       Count:
@@ -43,7 +46,6 @@ rules:
         metric: kafka.topic.request.count
         type: counter
         desc: The number of requests received by the broker
-        unit: "{requests}"
 
   - bean: kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestsPerSec,topic=*
     metricAttribute:
@@ -54,7 +56,6 @@ rules:
         metric: kafka.topic.request.count
         type: counter
         desc: The number of requests received by the broker
-        unit: "{requests}"
 
   - bean: kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestsPerSec,topic=*
     metricAttribute:
@@ -65,7 +66,6 @@ rules:
         metric: kafka.topic.request.failed
         type: counter
         desc: The number of requests to the broker resulting in a failure
-        unit: "{requests}"
 
   - bean: kafka.server:type=BrokerTopicMetrics,name=FailedProduceRequestsPerSec,topic=*
     metricAttribute:
@@ -76,7 +76,6 @@ rules:
         metric: kafka.topic.request.failed
         type: counter
         desc: The number of requests to the broker resulting in a failure
-        unit: "{requests}"
 
   # Request Metrics
   - bean: kafka.network:type=RequestMetrics,name=RequestsPerSec,request=*,version=*
@@ -87,7 +86,46 @@ rules:
         metric: kafka.request.count
         type: counter
         desc: The total number of requests received by the broker
-        unit: "{requests}"
+
+  - bean: kafka.network:type=RequestMetrics,name=ErrorsPerSec,request=*,error=*
+    metricAttribute:
+      type: param(request)
+      error: param(error)
+    mapping:
+      Count:
+        metric: kafka.request.error.count
+        type: counter
+        desc: The total number of error requests processed by the broker, including NONE error type
+
+  - bean: kafka.network:type=RequestMetrics,name=RequestBytes,request=*
+    metricAttribute:
+      type: param(request)
+    mapping:
+      Count:
+        metric: kafka.request.size.total
+        type: counter
+        desc: The total size of requests received by the broker
+        unit: By
+      Mean:
+        metric: kafka.request.size.mean
+        type: gauge
+        desc: The average size of requests received by the broker
+        unit: By
+      50thPercentile:
+        metric: kafka.request.size.50p
+        type: gauge
+        desc: The 50th percentile size of requests received by the broker
+        unit: By
+      99thPercentile:
+        metric: kafka.request.size.99p
+        type: gauge
+        desc: The 99th percentile size of requests received by the broker
+        unit: By
+      Max:
+        metric: kafka.request.size.max
+        type: gauge
+        desc: The max size of requests received by the broker
+        unit: By
 
   - bean: kafka.network:type=RequestMetrics,name=TotalTimeMs,request=*
     metricAttribute:
@@ -165,7 +203,6 @@ rules:
         metric: kafka.request.queue.size
         type: gauge
         desc: Size of the request queue
-        unit: "{requests}"
 
   - bean: kafka.network:type=RequestChannel,name=ResponseQueueSize
     mapping:
@@ -173,7 +210,6 @@ rules:
         metric: kafka.response.queue.size
         type: gauge
         desc: Size of the response queue
-        unit: "{responses}"
 
   - beans:
       - kafka.server:type=DelayedOperationPurgatory,name=PurgatorySize,delayedOperation=Produce
@@ -185,7 +221,6 @@ rules:
         metric: kafka.purgatory.size
         type: gauge
         desc: The number of requests waiting in purgatory
-        unit: "{requests}"
 
   # Replica Metrics
   - bean: kafka.server:type=ReplicaManager,name=PartitionCount
@@ -194,7 +229,6 @@ rules:
         metric: kafka.partition.count
         type: gauge
         desc: The number of partitions on the broker
-        unit: "{partitions}"
 
   - bean: kafka.server:type=ReplicaManager,name=ReassigningPartitions
     mapping:
@@ -202,7 +236,6 @@ rules:
         metric: kafka.reassign.partition.count
         type: gauge
         desc: The number of partitions on the broker that are being reassigned
-        unit: "{partitions}"
 
   # Log metrics
   - bean: kafka.log:type=LogFlushStats,name=LogFlushRateAndTimeMs
@@ -229,7 +262,6 @@ rules:
         metric: kafka.log.end.offset
         type: gauge
         desc: Log end offset for topic-partition
-        unit: "{offsets}"
 
   - bean: kafka.log.streamaspect:type=Log,name=Size,topic=*,partition=*
     metricAttribute:
@@ -240,8 +272,8 @@ rules:
         metric: kafka.log.size
         type: gauge
         desc: Total message size for topic-partition
-        unit: "{size}"
 
+  # Group Metrics
   - bean: kafka.coordinator.group:type=GroupMetadata,name=CommitOffset,group=*,topic=*,partition=*
     metricAttribute:
       consumer_group: param(group)
@@ -252,4 +284,80 @@ rules:
         metric: kafka.group.commit.offset
         type: gauge
         desc: Group commit offset for topic-partition
-        unit: "{offsets}"
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroups
+    mapping:
+      Value:
+        metric: kafka.group.count
+        type: gauge
+        desc: Total number of group
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroupsPreparingRebalance
+    mapping:
+      Value:
+        metric: kafka.group.preparing.rebalance.count
+        type: gauge
+        desc: The number of groups that are preparing for rebalance
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroupsCompletingRebalance
+    mapping:
+      Value:
+        metric: kafka.group.completing.rebalance.count
+        type: gauge
+        desc: The number of groups that are awaiting state assignment from the leader
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroupsStable
+    mapping:
+      Value:
+        metric: kafka.group.stable.count
+        type: gauge
+        desc: The number of groups that are stable
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroupsDead
+    mapping:
+      Value:
+        metric: kafka.group.dead.count
+        type: gauge
+        desc: The number of groups that have no more members and its metadata is being removed
+
+  - bean: kafka.coordinator.group:type=GroupMetadataManager,name=NumGroupsEmpty
+    mapping:
+      Value:
+        metric: kafka.group.empty.count
+        type: gauge
+        desc: The number of groups that have no more members
+
+
+  # Network Metrics
+  - bean: kafka.server:type=socket-server-metrics,listener=*,networkProcessor=*
+    metricAttribute:
+      listener: param(listener)
+      network_processor: param(networkProcessor)
+    mapping:
+      connection-count:
+        metric: kafka.server.connection.count
+        type: gauge
+        desc: Current number of created connections
+      connection-creation-rate:
+        metric: kafka.server.connection.creation.rate
+        type: gauge
+        desc: Number of new connections per second
+
+  - bean: kafka.network:type=SocketServer,name=NetworkProcessorAvgIdlePercent
+    mapping:
+      Value:
+        metric: kafka.network.threads.idle.rate
+        type: gauge
+        desc: The fraction of time the network threads are idle
+
+  - bean: kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
+    mapping:
+      Count:
+        metric: kafka.io.threads.idle.time.total
+        type: counter
+        desc: The total time the io threads are idle
+        unit: ns
+      OneMinuteRate:
+        metric: kafka.io.threads.idle.rate.1m
+        type: gauge
+        desc: The fraction of time the io threads are idle for the last minute
