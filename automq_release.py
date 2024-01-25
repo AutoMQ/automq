@@ -140,12 +140,6 @@ def do_release(tag_version):
     cmd("Checking out to release branch", 'git checkout -b %s' % new_branch)
     print("Updating version numbers")
     release_version = tag_version.split("-")[0]
-    replace("gradle.properties", "version", "version=%s" % release_version)
-
-    print("updating E2E settings")
-    replace("tests/kafkatest/__init__.py", "__version__", "__version__ = '%s'" % release_version)
-    regexReplace("./tests/kafkatest/version.py", "^DEV_VERSION =.*",
-                 "DEV_VERSION = KafkaVersion(\"%s-SNAPSHOT\")" % release_version)
 
     print("updating docker compose")
     regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", "image: automqinc/kafka:%s" % tag_version)

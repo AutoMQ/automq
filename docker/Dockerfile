@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AWS_DEFAULT_REGION=us-east-1 \
     KAFKA_JVM_PERFORMANCE_OPTS="-server -XX:+UseZGC -XX:ZCollectionInterval=5"
 
-COPY "./kafka_*.tgz" /opt/kafka/kafka.tgz
+COPY "./automq-*.tgz" /opt/kafka/kafka.tgz
 RUN tar -xzvf "/opt/kafka/kafka.tgz" -C /opt/kafka/ --one-top-level=kafka --strip-components 1 && rm "/opt/kafka/kafka.tgz"
 COPY scripts /opt/kafka/scripts
 RUN chmod +x /opt/kafka/scripts/*.sh
