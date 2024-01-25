@@ -28,6 +28,8 @@ import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.exporter.logging.LoggingMetricExporter;
+import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter;
+import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporterBuilder;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporterBuilder;
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
@@ -45,6 +47,7 @@ import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
 import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReaderBuilder;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SpanProcessor;
@@ -103,10 +106,15 @@ public class TelemetryManager {
 
     private void init() {
         String nodeType = getNodeType();
-        Resource resource = Resource.empty().toBuilder()
+
+        Attributes baseAttributes = Attributes.builder()
                 .put(ResourceAttributes.SERVICE_NAMESPACE, clusterId)
                 .put(ResourceAttributes.SERVICE_NAME, nodeType)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
+                .build();
+
+        Resource resource = Resource.empty().toBuilder()
+                .putAll(baseAttributes)
                 .build();
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
@@ -259,15 +267,35 @@ public class TelemetryManager {
         }
         String otlpExporterHost = otlpExporterHostOpt.get();
 
-        OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
-                .setEndpoint(otlpExporterHost)
-                .setTimeout(Duration.ofMillis(30000));
-        MetricReader periodicReader = PeriodicMetricReader.builder(otlpExporterBuilder.build())
-                .setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs()))
-                .build();
+        PeriodicMetricReaderBuilder builder = null;
+        String protocol = kafkaConfig.s3ExporterOTLPProtocol();
+        switch (protocol) {
+            case "grpc":
+                OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
+                        .setEndpoint(otlpExporterHost)
+                        .setTimeout(Duration.ofMillis(30000));
+                builder = PeriodicMetricReader.builder(otlpExporterBuilder.build());
+                break;
+            case "http":
+                OtlpHttpMetricExporterBuilder otlpHttpExporterBuilder = OtlpHttpMetricExporter.builder()
+                        .setEndpoint(otlpExporterHost)
+                        .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
+                        .setTimeout(Duration.ofMillis(30000));
+                builder = PeriodicMetricReader.builder(otlpHttpExporterBuilder.build());
+                break;
+            default:
+                LOGGER.error("unsupported protocol: {}", protocol);
+                break;
+        }
+
+        if (builder == null) {
+            return;
+        }
+
+        MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
         metricReaderList.add(periodicReader);
         sdkMeterProviderBuilder.registerMetricReader(periodicReader);
-        LOGGER.info("OTLP exporter registered, endpoint: {}", otlpExporterHost);
+        LOGGER.info("OTLP exporter registered, endpoint: {}, protocol: {}", otlpExporterHost, protocol);
     }
 
     private void initLogExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
