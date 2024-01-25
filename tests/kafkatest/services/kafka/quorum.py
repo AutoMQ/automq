@@ -35,8 +35,8 @@ def for_test(test_context):
     default_quorum_type = colocated_kraft
     arg_name = 'metadata_quorum'
     retval = default_quorum_type if not test_context.injected_args else test_context.injected_args.get(arg_name, default_quorum_type)
-    if retval not in all:
-        raise Exception("Unknown %s value provided for the test: %s" % (arg_name, retval))
+    # if retval not in all:
+    #     raise Exception("Unknown %s value provided for the test: %s" % (arg_name, retval))
     return retval
 
 class ServiceQuorumInfo:

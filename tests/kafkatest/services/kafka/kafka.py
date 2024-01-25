@@ -328,9 +328,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 )
                 self.controller_quorum = self.remote_controller_quorum
 
-        if self.quorum_info.using_zk:
-            raise Exception("No need to test ZK mode")
-            
         Service.__init__(self, context, num_nodes)
         JmxMixin.__init__(self, num_nodes=num_nodes, jmx_object_names=jmx_object_names, jmx_attributes=(jmx_attributes or []),
                           root=KafkaService.PERSISTENT_ROOT)
@@ -865,7 +862,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.logger.info(prop_file)
         node.account.create_file(KafkaService.CONFIG_FILE, prop_file)
         node.account.create_file(self.LOG4J_CONFIG, self.render('log4j.properties', log_dir=KafkaService.OPERATIONAL_LOG_DIR))
-
         if self.quorum_info.using_kraft:
             # format log directories if necessary
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
