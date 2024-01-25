@@ -439,21 +439,24 @@ public final class MetadataNodeManager implements AutoCloseable {
      * │       └── 4IHvQLhZSJ6szHPcyady3Q
      * │           └── 0
      * ├── nodes
-     * │   └── 1 - node id
-     * │       ├── s3StreamSetObjects
-     * │       │   └── 4 - object id
-     * │       │       ├── dataTimeInMs
-     * │       │       ├── orderId
-     * │       │       └── ranges
-     * │       └── walMetadata
+     * │   ├── 1 - node id
+     * │   │   ├── s3StreamSetObjects
+     * │   │   │   └── 4 - object id
+     * │   │   │       ├── dataTimeInMs
+     * │   │   │       ├── orderId
+     * │   │   │       └── ranges
+     * │   │   └── walMetadata
+     * │   └── nextNodeId
      * ├── s3Objects
-     * │   └── 1 - object id
+     * │   ├── 1 - object id
+     * │   └── nextObjectId
      * └── s3Streams
-     *     └── 0 - stream id
-     *         ├── ranges
-     *         │   └── 0 - range index
-     *         └── s3StreamObjects
-     *             └── 3 - object id
+     *     ├── 0 - stream id
+     *     │   ├── ranges
+     *     │   │   └── 0
+     *     │   └── s3StreamObjects
+     *     │       └── 3
+     *     └── nextStreamId
      * </pre>
      */
     private void handleExtCommitImpl(MetadataRecordType type, ApiMessage message) {
@@ -499,6 +502,7 @@ public final class MetadataNodeManager implements AutoCloseable {
                 break;
             }
             case S3_STREAM_SET_OBJECT_RECORD: {
+                // TODO: a better solution is to convert it to a JSON string and store it in one file, but ranges will not be human-readable.
                 S3StreamSetObjectRecord record = (S3StreamSetObjectRecord) message;
                 DirectoryNode streamSetObject = data.root.mkdirs("nodes", Integer.toString(record.nodeId()), "s3StreamSetObjects", Long.toString(record.objectId()));
                 streamSetObject.create("orderId").setContents(Long.toString(record.orderId()));
@@ -529,14 +533,13 @@ public final class MetadataNodeManager implements AutoCloseable {
             case ASSIGNED_STREAM_ID_RECORD: {
                 AssignedStreamIdRecord record = (AssignedStreamIdRecord) message;
                 DirectoryNode streamIdsNode = data.root.mkdirs("s3Streams");
-                // Empty directory here. We just need to create the directory.
-                streamIdsNode.mkdirs(Long.toString(record.assignedStreamId()));
+                streamIdsNode.create("nextStreamId").setContents(Long.toString(record.assignedStreamId()));
                 break;
             }
             case ASSIGNED_S3_OBJECT_ID_RECORD: {
                 AssignedS3ObjectIdRecord record = (AssignedS3ObjectIdRecord) message;
                 DirectoryNode s3ObjectsNode = data.root.mkdirs("s3Objects");
-                s3ObjectsNode.create(Long.toString(record.assignedS3ObjectId()));
+                s3ObjectsNode.create("nextObjectId").setContents(Long.toString(record.assignedS3ObjectId()));
                 break;
             }
             case NODE_WALMETADATA_RECORD: {
@@ -577,7 +580,8 @@ public final class MetadataNodeManager implements AutoCloseable {
             }
             case UPDATE_NEXT_NODE_ID_RECORD: {
                 UpdateNextNodeIdRecord record = (UpdateNextNodeIdRecord) message;
-                data.root.mkdirs("nodes", Integer.toString(record.nodeId()));
+                DirectoryNode nodes = data.root.mkdirs("nodes");
+                nodes.create("nextNodeId").setContents(Integer.toString(record.nodeId()));
                 break;
             }
         }

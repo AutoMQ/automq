@@ -52,7 +52,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * This test is for the extended metadata node manager, only works for AutoMQ.
@@ -193,11 +192,7 @@ public class ExtMetadataNodeManagerTest {
         long streamId = 1L;
         AssignedStreamIdRecord record1 = new AssignedStreamIdRecord().setAssignedStreamId(streamId);
         metadataNodeManager.handleMessage(record1);
-        assertTrue(metadataNodeManager.getData().root().directory("s3Streams").children().containsKey(Long.toString(streamId)));
-
-        RemoveS3StreamRecord record2 = new RemoveS3StreamRecord().setStreamId(streamId);
-        metadataNodeManager.handleMessage(record2);
-        assertFalse(metadataNodeManager.getData().root().directory("s3Streams").children().containsKey(Long.toString(streamId)));
+        assertEquals(Long.toString(streamId), metadataNodeManager.getData().root().file("s3Streams", "nextStreamId").contents());
     }
 
     @Test
@@ -205,11 +200,7 @@ public class ExtMetadataNodeManagerTest {
         long objectId1 = 1L;
         AssignedS3ObjectIdRecord record1 = new AssignedS3ObjectIdRecord().setAssignedS3ObjectId(objectId1);
         metadataNodeManager.handleMessage(record1);
-        assertTrue(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId1)));
-
-        RemoveS3ObjectRecord record2 = new RemoveS3ObjectRecord().setObjectId(objectId1);
-        metadataNodeManager.handleMessage(record2);
-        assertFalse(metadataNodeManager.getData().root().directory("s3Objects").children().containsKey(Long.toString(objectId1)));
+        assertEquals(Long.toString(objectId1), metadataNodeManager.getData().root().file("s3Objects", "nextObjectId").contents());
     }
 
     @Test
@@ -254,6 +245,6 @@ public class ExtMetadataNodeManagerTest {
         int nodeId = 1;
         UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(1);
         metadataNodeManager.handleMessage(record);
-        assertTrue(metadataNodeManager.getData().root().directory("nodes").children().containsKey(Integer.toString(nodeId)));
+        assertEquals(Integer.toString(nodeId), metadataNodeManager.getData().root().file("nodes", "nextNodeId").contents());
     }
 }
