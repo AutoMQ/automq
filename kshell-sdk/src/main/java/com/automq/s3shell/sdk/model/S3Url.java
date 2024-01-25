@@ -16,6 +16,8 @@
  */
 package com.automq.s3shell.sdk.model;
 
+import software.amazon.awssdk.utils.StringUtils;
+
 public class S3Url {
 
     final String s3AccessKey;
@@ -53,6 +55,9 @@ public class S3Url {
     }
 
     public static S3Url parse(String s3Url) throws IllegalArgumentException {
+        if (StringUtils.isBlank(s3Url)) {
+            throw new IllegalArgumentException("s3Url required");
+        }
         // skip the first prefix "s3://"
         String s3Endpoint = s3Url.substring(5, s3Url.indexOf('?'));
 
