@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package kafka.server.es;
+package org.apache.kafka.controller.es;
 
 import java.util.Map;
 import org.apache.kafka.common.errors.PolicyViolationException;
@@ -23,7 +23,7 @@ import org.apache.kafka.server.policy.CreateTopicPolicy;
 /**
  * <p>A policy on create topic requests.
  */
-public class ElasticCreateTopicPolicy implements CreateTopicPolicy {
+public class AutoMQCreateTopicPolicy implements CreateTopicPolicy {
     @Override
     public void validate(RequestMetadata requestMetadata) throws PolicyViolationException {
         if (requestMetadata.replicationFactor() != null && requestMetadata.replicationFactor() != 1) {

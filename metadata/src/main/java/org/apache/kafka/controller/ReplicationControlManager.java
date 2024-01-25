@@ -82,6 +82,7 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.es.AutoMQCreateTopicPolicy;
 import org.apache.kafka.controller.es.CreatePartitionPolicy;
 import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
 import org.apache.kafka.controller.es.PartitionLeaderSelector;
@@ -327,6 +328,11 @@ public class ReplicationControlManager {
      * The policy to use to validate that topic assignments are valid, if one is present.
      */
     private final Optional<CreateTopicPolicy> createTopicPolicy;
+
+    /**
+     * The policy that must be validated before creating a topic.
+     */
+    private final CreateTopicPolicy autoMQCreateTopicPolicy = new AutoMQCreateTopicPolicy();
 
     /**
      * The policy to use to validate that partition assignments are valid, if one is present.
@@ -812,13 +818,15 @@ public class ReplicationControlManager {
     }
 
     private ApiError maybeCheckCreateTopicPolicy(Supplier<CreateTopicPolicy.RequestMetadata> supplier) {
-        if (createTopicPolicy.isPresent()) {
-            try {
-                createTopicPolicy.get().validate(supplier.get());
-            } catch (PolicyViolationException e) {
-                return new ApiError(Errors.POLICY_VIOLATION, e.getMessage());
-            }
+        // AutoMQ for Kafka inject start
+        try {
+            autoMQCreateTopicPolicy.validate(supplier.get());
+            createTopicPolicy.ifPresent(topicPolicy -> topicPolicy.validate(supplier.get()));
+        } catch (PolicyViolationException e) {
+            return new ApiError(Errors.POLICY_VIOLATION, e.getMessage());
         }
+        // AutoMQ for Kafka inject end
+
         return ApiError.NONE;
     }
 
