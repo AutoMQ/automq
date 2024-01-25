@@ -460,6 +460,8 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
     assertValidTransition(groupState)
     state = groupState
     currentStateTimestamp = Some(time.milliseconds())
+    if (groupState == Dead)
+      offsets.foreach(offset => removeOffsetMetric(offset._1))
   }
 
   def selectProtocol: String = {
