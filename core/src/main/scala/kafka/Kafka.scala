@@ -17,7 +17,7 @@
 
 package kafka
 
-import com.automq.s3shell.sdk.auth.CredentialsProviderHolder
+import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
 import com.automq.s3shell.sdk.model.S3Url
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
@@ -125,6 +125,7 @@ object Kafka extends Logging {
 
   def main(args: Array[String]): Unit = {
     try {
+      // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
       var s3UrlString = "";
       for (elem <- args) {
@@ -132,9 +133,14 @@ object Kafka extends Logging {
           s3UrlString = elem.split("=")(1)
         }
       }
-      val s3Url = S3Url.parse(s3UrlString)
-      CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)));
+      if (s3UrlString == null || s3UrlString.isEmpty) {
+        CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
+      } else {
+        val s3Url = S3Url.parse(s3UrlString)
+        CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)))
+      }
       val server = buildServer(serverProps)
+      // AutoMQ for Kafka inject end
 
       try {
         if (!OperatingSystem.IS_WINDOWS && !Java.isIbmJdk)
