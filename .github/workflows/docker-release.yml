@@ -28,20 +28,20 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2.9.0
+        uses: gradle/gradle-build-action@v2.12.0
+      - name: Get project version
+        id: get_project_version
+        run: |
+          echo "PROJECT_VERSION=$(./gradlew properties | grep \"version:\" | awk '{print $2}')" >> $GITHUB_OUTPUT
 
       - name: Build TarGz
         run: |
           ./gradlew --build-cache --refresh-dependencies clean releaseTarGz
-      - name: Rename TarGz
-        run: |
-          mv ./core/build/distributions/kafka_2.13-${{ steps.get_real_version.outputs.KAFKA_VERSION }}.tgz ./core/build/distributions/kafka_2.13-${{ github.ref_name }}.tgz
-          mv ./core/build/distributions/kafka_2.13-${{ steps.get_real_version.outputs.KAFKA_VERSION }}-site-docs.tgz ./core/build/distributions/kafka_2.13-${{ github.ref_name }}-site-docs.tgz
 
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
-          cp ./core/build/distributions/kafka_2.13-${{ github.ref_name }}.tgz ./docker/
+          cp ./core/build/distributions/kafka_2.13-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
