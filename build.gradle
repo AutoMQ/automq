@@ -1145,20 +1145,20 @@ project(':core') {
                                ':connect:mirror:genMirrorSourceConfigDocs', ':connect:mirror:genMirrorCheckpointConfigDocs',
                                ':connect:mirror:genMirrorHeartbeatConfigDocs'], type: Tar) {
     def prefix = project.findProperty('prefix') ?: ''
-    archiveBaseName = "${prefix}kafka_${versions.baseScala}"
+    archiveBaseName = "${prefix}kafka"
 
     archiveClassifier = 'site-docs'
     compression = Compression.GZIP
     from project.file("$rootDir/docs")
-    into "${prefix}kafka_${versions.baseScala}-${archiveVersion.get()}-site-docs"
+    into "${prefix}kafka-${archiveVersion.get()}-site-docs"
     duplicatesStrategy 'exclude'
   }
 
   tasks.create(name: "releaseTarGz", dependsOn: configurations.archives.artifacts, type: Tar) {
     def prefix = project.findProperty('prefix') ?: ''
-    archiveBaseName = "${prefix}kafka_${versions.baseScala}"
+    archiveBaseName = "${prefix}kafka"
 
-    into "${prefix}kafka_${versions.baseScala}-${archiveVersion.get()}"
+    into "${prefix}kafka-${archiveVersion.get()}"
     compression = Compression.GZIP
     from(project.file("$rootDir/bin")) { into "bin/" }
     from(project.file("$rootDir/config")) { into "config/" }

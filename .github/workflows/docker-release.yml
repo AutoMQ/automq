@@ -38,7 +38,7 @@ jobs:
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
-          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka_2.13-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
+          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
