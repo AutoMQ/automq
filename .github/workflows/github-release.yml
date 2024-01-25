@@ -45,4 +45,4 @@ jobs:
           draft: false
           generate_release_notes: true
           files: |
-            ./core/build/distributions/kafka_*.tgz
+            ./core/build/distributions/automq-*.tgz
