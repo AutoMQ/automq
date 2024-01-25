@@ -119,25 +119,25 @@ public class FileCache {
             if (entry == null) {
                 return Optional.empty();
             }
-            long filePosition = entry.getKey();
+            long cacheStartPosition = entry.getKey();
             Value value = entry.getValue();
             if (entry.getKey() + entry.getValue().dataLength < position + length) {
                 return Optional.empty();
             }
-            lru.touch(new Key(filePath, filePosition));
+            lru.touch(new Key(filePath, cacheStartPosition));
             MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
+            long nextPosition = position;
             int remaining = length;
-            long blockFilePosition = filePosition - blockSize;
-            for (int blockIndex : value.blocks) {
-                blockFilePosition += blockSize;
-                int blockCachePosition = blockIndex * blockSize;
-                if (blockCachePosition + blockSize < position) {
+            for (int i = 0; i < value.blocks.length; i++) {
+                long cacheBlockEndPosition = cacheStartPosition + (long) (i + 1) * blockSize;
+                if (cacheBlockEndPosition < nextPosition) {
                     continue;
                 }
-                int cachePosition = blockCachePosition + (int) (position - blockFilePosition);
-                buf.writeBytes(cacheByteBuffer.slice(cachePosition, Math.min(remaining, blockSize)));
-                remaining -= blockSize;
-                position = blockFilePosition + blockSize;
+                long cacheBlockStartPosition = cacheBlockEndPosition - blockSize;
+                int readSize = (int) Math.min(remaining, cacheBlockEndPosition - nextPosition);
+                buf.writeBytes(cacheByteBuffer.slice(value.blocks[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition), readSize));
+                remaining -= readSize;
+                nextPosition += readSize;
                 if (remaining <= 0) {
                     break;
                 }
