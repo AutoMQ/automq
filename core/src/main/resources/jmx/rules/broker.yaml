@@ -162,16 +162,16 @@ rules:
   - bean: kafka.network:type=RequestChannel,name=RequestQueueSize
     mapping:
       Value:
-        metric: kafka.request.queue
-        type: updowncounter
+        metric: kafka.request.queue.size
+        type: gauge
         desc: Size of the request queue
         unit: "{requests}"
 
   - bean: kafka.network:type=RequestChannel,name=ResponseQueueSize
     mapping:
       Value:
-        metric: kafka.response.queue
-        type: updowncounter
+        metric: kafka.response.queue.size
+        type: gauge
         desc: Size of the response queue
         unit: "{responses}"
 
@@ -183,7 +183,7 @@ rules:
     mapping:
       Value:
         metric: kafka.purgatory.size
-        type: updowncounter
+        type: gauge
         desc: The number of requests waiting in purgatory
         unit: "{requests}"
 
@@ -192,7 +192,7 @@ rules:
     mapping:
       Value:
         metric: kafka.partition.count
-        type: updowncounter
+        type: gauge
         desc: The number of partitions on the broker
         unit: "{partitions}"
 
@@ -200,7 +200,7 @@ rules:
     mapping:
       Value:
         metric: kafka.reassign.partition.count
-        type: updowncounter
+        type: gauge
         desc: The number of partitions on the broker that are being reassigned
         unit: "{partitions}"
 
@@ -208,14 +208,48 @@ rules:
   - bean: kafka.log:type=LogFlushStats,name=LogFlushRateAndTimeMs
     unit: ms
     type: gauge
-    prefix: kafka.logs.flush.
     mapping:
       Count:
+        metric: kafka.logs.flush.count
         type: counter
         desc: Log flush count
       50thPercentile:
-        metric: time.50p
+        metric: kafka.logs.flush.time.50p
         desc: Log flush time - 50th percentile
       99thPercentile:
-        metric: time.99p
+        metric: kafka.logs.flush.time.99p
         desc: Log flush time - 99th percentile
+
+  - bean: kafka.log.streamaspect:type=Log,name=LogEndOffset,topic=*,partition=*
+    metricAttribute:
+      topic: param(topic)
+      partition: param(partition)
+    mapping:
+      Value:
+        metric: kafka.log.end.offset
+        type: gauge
+        desc: Log end offset for topic-partition
+        unit: "{offsets}"
+
+  - bean: kafka.log.streamaspect:type=Log,name=Size,topic=*,partition=*
+    metricAttribute:
+      topic: param(topic)
+      partition: param(partition)
+    mapping:
+      Value:
+        metric: kafka.log.size
+        type: gauge
+        desc: Total message size for topic-partition
+        unit: "{size}"
+
+  - bean: kafka.coordinator.group:type=GroupMetadata,name=CommitOffset,group=*,topic=*,partition=*
+    metricAttribute:
+      consumer_group: param(group)
+      topic: param(topic)
+      partition: param(partition)
+    mapping:
+      Value:
+        metric: kafka.group.commit.offset
+        type: gauge
+        desc: Group commit offset for topic-partition
+        unit: "{offsets}"
