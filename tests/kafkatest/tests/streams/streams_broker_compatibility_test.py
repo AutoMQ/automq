@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from ducktape.mark import parametrize
+from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
@@ -62,7 +63,7 @@ class StreamsBrokerCompatibility(Test):
     def setUp(self):
         self.zk.start()
 
-
+    @ignore # AutoMQ won't release stream jar, so we only need AutoMQ can support stream
     @cluster(num_nodes=4)
     @parametrize(broker_version=str(LATEST_3_3))
     @parametrize(broker_version=str(LATEST_3_2))
@@ -96,6 +97,7 @@ class StreamsBrokerCompatibility(Test):
         self.consumer.stop()
         self.kafka.stop()
 
+    @ignore
     @cluster(num_nodes=4)
     @parametrize(broker_version=str(LATEST_3_3))
     @parametrize(broker_version=str(LATEST_3_2))
@@ -129,6 +131,7 @@ class StreamsBrokerCompatibility(Test):
         self.consumer.stop()
         self.kafka.stop()
 
+    @ignore
     @cluster(num_nodes=4)
     @parametrize(broker_version=str(LATEST_3_3))
     @parametrize(broker_version=str(LATEST_3_2))
@@ -154,6 +157,7 @@ class StreamsBrokerCompatibility(Test):
         self.consumer.stop()
         self.kafka.stop()
 
+    @ignore
     @cluster(num_nodes=4)
     @parametrize(broker_version=str(LATEST_0_10_2))
     @parametrize(broker_version=str(LATEST_0_10_1))
@@ -172,6 +176,7 @@ class StreamsBrokerCompatibility(Test):
 
         self.kafka.stop()
 
+    @ignore
     @cluster(num_nodes=4)
     @parametrize(broker_version=str(LATEST_2_4))
     @parametrize(broker_version=str(LATEST_2_3))
