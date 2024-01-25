@@ -17,15 +17,17 @@
 
 package kafka
 
-import java.util.Properties
-
+import com.automq.s3shell.sdk.auth.CredentialsProviderHolder
+import com.automq.s3shell.sdk.model.S3Url
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{CommandLineUtils, Exit, Logging}
-import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
+import org.apache.kafka.common.utils._
+import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 
+import java.util.Properties
 import scala.jdk.CollectionConverters._
 
 object Kafka extends Logging {
@@ -124,6 +126,14 @@ object Kafka extends Logging {
   def main(args: Array[String]): Unit = {
     try {
       val serverProps = getPropsFromArgs(args)
+      var s3UrlString = "";
+      for (elem <- args) {
+        if (elem.startsWith("s3-url")) {
+          s3UrlString = elem.split("=")(1)
+        }
+      }
+      val s3Url = S3Url.parse(s3UrlString)
+      CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)));
       val server = buildServer(serverProps)
 
       try {
