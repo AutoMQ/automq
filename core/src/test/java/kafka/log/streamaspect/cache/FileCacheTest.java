@@ -66,7 +66,7 @@ public class FileCacheTest {
 
         FileCache.Value value = fileCache.path2cache.get("test3").get(123L);
         assertEquals(2049, value.dataLength);
-        assertArrayEquals(new int[] {2, 3, 9}, value.blocks);
+        assertArrayEquals(new int[]{2, 3, 9}, value.blocks);
 
 
         rst = fileCache.get("test3", 123, 2049).get();
@@ -76,7 +76,7 @@ public class FileCacheTest {
         // expect evict test1-10 and test2-2048
         fileCache.put("test4", 123, genBuf((byte) 7, 2049));
         value = fileCache.path2cache.get("test4").get(123L);
-        assertArrayEquals(new int[] {0, 1, 4}, value.blocks);
+        assertArrayEquals(new int[]{0, 1, 4}, value.blocks);
         rst = fileCache.get("test4", 123, 2049).get();
         assertTrue(verify(rst, (byte) 7));
 
@@ -85,10 +85,15 @@ public class FileCacheTest {
         // expect occupy free blocks 5,6,7
         fileCache.put("test5", 123, genBuf((byte) 8, 2049));
         value = fileCache.path2cache.get("test5").get(123L);
-        assertArrayEquals(new int[] {5, 6, 7}, value.blocks);
+        assertArrayEquals(new int[]{5, 6, 7}, value.blocks);
         rst = fileCache.get("test5", 123, 2049).get();
         assertTrue(verify(rst, (byte) 8));
         assertEquals(1, fileCache.freeBlockCount);
+
+        fileCache.put("test6", 6666, genBuf((byte) 9, 3333));
+        rst = fileCache.get("test6", 6666L, 3333).get();
+        assertTrue(verify(rst, (byte) 9));
+
     }
 
     ByteBuf genBuf(byte data, int length) {
