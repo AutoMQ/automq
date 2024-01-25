@@ -1,6 +1,6 @@
 ---
-# See https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/c3b2997563106e11d39f66eec629fde25dce2bdd/pkg/translator/prometheus/normalize_name.go
-# for unit translation from OT to Prometheus
+# See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/translator/prometheus
+# for metrics convention from OTel to Prometheus
 rules:
   # Broker Topic Metrics
   - bean: kafka.server:type=BrokerTopicMetrics,name=MessagesInPerSec,topic=*
