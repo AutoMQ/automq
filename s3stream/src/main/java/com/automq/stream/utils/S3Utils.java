@@ -69,7 +69,7 @@ public class S3Utils {
             System.exit(1);
         }
 
-        try (MultipartObjectOperationTask task = new MultipartObjectOperationTask(context)) {
+        try (S3MultipartUploadTestTask task = new S3MultipartUploadTestTask(context)) {
             task.run();
         } catch (Throwable e) {
             System.out.println("ERROR: " + ExceptionUtils.getRootCause(e));
@@ -135,9 +135,11 @@ public class S3Utils {
         }
     }
 
-    private static class MultipartObjectOperationTask extends ObjectOperationTask {
-        public MultipartObjectOperationTask(S3Context context) {
-            super(context, MultipartObjectOperationTask.class.getSimpleName());
+    // This task is used to test s3 multipart upload
+    private static class S3MultipartUploadTestTask extends ObjectOperationTask {
+        private Random random = new Random();
+        public S3MultipartUploadTestTask(S3Context context) {
+            super(context, S3MultipartUploadTestTask.class.getSimpleName());
         }
 
         @Override
@@ -152,12 +154,12 @@ public class S3Utils {
                 int totalSize = data1Size + data2Size;
 
                 byte[] randomBytes = new byte[data1Size];
-                new Random().nextBytes(randomBytes);
+                random.nextBytes(randomBytes);
                 ByteBuf data1 = Unpooled.wrappedBuffer(randomBytes);
                 writePart(uploadId, path, bucketName, data1, 1).thenAccept(parts::add).get();
 
                 byte[] randomBytes2 = new byte[data2Size];
-                new Random().nextBytes(randomBytes2);
+                random.nextBytes(randomBytes2);
                 ByteBuf data2 = Unpooled.wrappedBuffer(randomBytes2);
                 writePart(uploadId, path, bucketName, data2, 2).thenAccept(parts::add).get();
 
