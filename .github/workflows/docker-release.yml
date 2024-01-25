@@ -16,10 +16,6 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Get real Kafka version
-        id: get_real_version
-        run: |
-          echo "KAFKA_VERSION=$(echo ${{ github.ref_name }} | cut -d'-' -f1)" >> $GITHUB_OUTPUT
       - name: Checkout Code
         uses: actions/checkout@v4
       - name: Set up JDK ${{ matrix.jdk }}
@@ -28,20 +24,21 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2.9.0
+        uses: gradle/gradle-build-action@v2.12.0
+      - name: Get project version
+        id: get_project_version
+        run: |
+          project_version=$(./gradlew properties | grep "version:" | awk '{print $2}')
+          echo "PROJECT_VERSION=${project_version}" >> $GITHUB_OUTPUT
 
       - name: Build TarGz
         run: |
-          ./gradlew --build-cache --refresh-dependencies clean releaseTarGz
-      - name: Rename TarGz
-        run: |
-          mv ./core/build/distributions/kafka_2.13-${{ steps.get_real_version.outputs.KAFKA_VERSION }}.tgz ./core/build/distributions/kafka_2.13-${{ github.ref_name }}.tgz
-          mv ./core/build/distributions/kafka_2.13-${{ steps.get_real_version.outputs.KAFKA_VERSION }}-site-docs.tgz ./core/build/distributions/kafka_2.13-${{ github.ref_name }}-site-docs.tgz
+          ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
 
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
-          cp ./core/build/distributions/kafka_2.13-${{ github.ref_name }}.tgz ./docker/
+          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
