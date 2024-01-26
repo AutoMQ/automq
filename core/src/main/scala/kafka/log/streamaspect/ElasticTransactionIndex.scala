@@ -41,7 +41,8 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
     if (stream.nextOffset() == 0) {
       None
     } else {
-      val record = stream.fetch(stream.nextOffset() - 1, 1, Int.MaxValue).get().recordBatchList().get(0)
+      val nextOffset = stream.nextOffset()
+      val record = stream.fetch(nextOffset - 1, nextOffset, Int.MaxValue).get().recordBatchList().get(0)
       val readBuf = record.rawPayload()
       val abortedTxn = new AbortedTxn(readBuf)
       Some(abortedTxn.lastOffset)
