@@ -105,7 +105,8 @@ class TransactionsTest(Test):
                     wait_until(lambda: len(self.kafka.pids(node)) == 0,
                                timeout_sec=brokerSessionTimeoutSecs + gracePeriodSecs,
                                err_msg="Failed to see timely disappearance of process for hard-killed broker %s" % str(node.account))
-                    time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
+                    # Do not sleep. Recover ASAP.
+                    # time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
                 self.kafka.start_node(node)
 
             self.kafka.await_no_under_replicated_partitions()
@@ -242,14 +243,9 @@ class TransactionsTest(Test):
             }
         }
 
-    # exclude hard_bounce for brokers
     @cluster(num_nodes=9)
     @matrix(failure_mode=["hard_bounce", "clean_bounce"],
-            bounce_target=["clients"],
-            check_order=[True, False],
-            use_group_metadata=[True, False])
-    @matrix(failure_mode=["clean_bounce"],
-            bounce_target=["brokers"],
+            bounce_target=["brokers", "clients"],
             check_order=[True, False],
             use_group_metadata=[True, False])
     def test_transactions(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.all):
