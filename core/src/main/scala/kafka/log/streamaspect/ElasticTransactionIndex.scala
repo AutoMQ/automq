@@ -41,7 +41,8 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
     if (stream.nextOffset() == 0) {
       None
     } else {
-      val record = stream.fetch(stream.nextOffset() - 1, 1, Int.MaxValue).get().recordBatchList().get(0)
+      val nextOffset = stream.nextOffset()
+      val record = stream.fetch(nextOffset - 1, nextOffset, Int.MaxValue).get().recordBatchList().get(0)
       val readBuf = record.rawPayload()
       val abortedTxn = new AbortedTxn(readBuf)
       Some(abortedTxn.lastOffset)
@@ -90,20 +91,23 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
   }
 
   override protected def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {
+    val endPosition = stream.nextOffset()
+    // await last append complete, usually the abort transaction is not frequent, so it's ok to block here.
+    this.lastAppend.get()
     var position = 0
     val queue: mutable.Queue[(AbortedTxn, Int)] = mutable.Queue()
     new Iterator[(AbortedTxn, Int)] {
       /**
        * Note that nextOffset in stream here actually represents the physical size (or position).
        */
-      override def hasNext: Boolean = queue.nonEmpty || stream.nextOffset() - position >= AbortedTxn.TotalSize
+      override def hasNext: Boolean = queue.nonEmpty || endPosition - position >= AbortedTxn.TotalSize
 
       override def next(): (AbortedTxn, Int) = {
         if (queue.nonEmpty) {
           return queue.dequeue()
         }
         try {
-          val rst = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).get()
+          val rst = stream.fetch(position, math.min(position + AbortedTxn.TotalSize * 128, endPosition)).get()
           val records = rst.recordBatchList()
           records.forEach(recordBatch => {
             val readBuf = Unpooled.wrappedBuffer(recordBatch.rawPayload())

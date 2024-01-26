@@ -133,10 +133,11 @@ class ThrottlingTest(ProduceConsumeValidateTest):
         self.logger.debug("Transfer took %d second. Estimated time : %ds",
                           time_taken,
                           estimated_throttled_time)
-        assert time_taken >= estimated_throttled_time * 0.9, \
-            ("Expected rebalance to take at least %ds, but it took %ds" % (
-                estimated_throttled_time,
-                time_taken))
+        # AutoMQ Kafka does not need to throttle reassignment
+        # assert time_taken >= estimated_throttled_time * 0.9, \
+        #     ("Expected rebalance to take at least %ds, but it took %ds" % (
+        #         estimated_throttled_time,
+        #         time_taken))
 
     @cluster(num_nodes=10)
     @parametrize(bounce_brokers=True)
