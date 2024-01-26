@@ -19,16 +19,12 @@ package kafka.s3shell.util;
 import com.automq.s3shell.sdk.constant.ServerConfigKey;
 import com.automq.s3shell.sdk.model.S3Url;
 import com.automq.s3shell.sdk.util.S3PropUtil;
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
-import org.apache.kafka.common.internals.FatalExitError;
-
 import java.io.IOException;
 import java.util.List;
 import java.util.Properties;
-
-import static com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider.ACCESS_KEY_NAME;
-import static com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider.SECRET_KEY_NAME;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
+import org.apache.kafka.common.internals.FatalExitError;
 
 public class S3ShellPropUtil {
 
@@ -85,11 +81,6 @@ public class S3ShellPropUtil {
             props.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
             props.put(ServerConfigKey.S3_BUCKET.getKeyName(), s3Url.getS3DataBucket());
             props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), String.valueOf(s3Url.isS3PathStyle()));
-
-            // override system env
-            // TODO: no need to override system env here, just set ak/sk to CredentialsProviderHolder
-            EnvUtil.setEnv(ACCESS_KEY_NAME, s3Url.getS3AccessKey());
-            EnvUtil.setEnv(SECRET_KEY_NAME, s3Url.getS3SecretKey());
         }
 
         if (options.has("override")) {
