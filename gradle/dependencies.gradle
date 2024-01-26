@@ -136,6 +136,7 @@ versions += [
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7",
   awsSdkAuth:"2.20.127",
+  awsSdkS3:"2.20.127",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -233,6 +234,7 @@ libs += [
   commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
   awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdkAuth",
+  awsSdkS3: "software.amazon.awssdk:s3:$versions.awsSdkS3",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",

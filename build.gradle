@@ -1859,6 +1859,8 @@ project(':kshell-sdk') {
 
   dependencies {
     compileOnly libs.awsSdkAuth
+    compileOnly libs.awsSdkS3
+    compileOnly libs.httpclient
   }
 }
 
