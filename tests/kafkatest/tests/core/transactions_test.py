@@ -242,9 +242,14 @@ class TransactionsTest(Test):
             }
         }
 
+    # exclude hard_bounce for brokers
     @cluster(num_nodes=9)
     @matrix(failure_mode=["hard_bounce", "clean_bounce"],
-            bounce_target=["brokers", "clients"],
+            bounce_target=["clients"],
+            check_order=[True, False],
+            use_group_metadata=[True, False])
+    @matrix(failure_mode=["clean_bounce"],
+            bounce_target=["brokers"],
             check_order=[True, False],
             use_group_metadata=[True, False])
     def test_transactions(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.all):

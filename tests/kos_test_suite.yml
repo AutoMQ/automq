@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# list all tests that are part of the suite under the test suite name:
-esk_test_suite:
+# list all core tests that are part of the suite under the test suite name:
+core_test_suite:
   included:
     - kafkatest/sanity_checks
     - kafkatest/tests/client
@@ -23,35 +23,32 @@ esk_test_suite:
 
   # exclude zk tests and other no-needed tests
   excluded:
-    # zk tests
+    # no lag in KOS
+    - kafkatest/tests/tools/replica_verification_test.py::ReplicaVerificationToolTest.test_replica_lags
+    # kafka 3.x not support message format v0 and v1. The original test forces inter.broker.protocol.version to 2.8 and is run in ZK mode.
     - kafkatest/tests/client/message_format_change_test.py::MessageFormatChangeTest.test_compatibility
-    - kafkatest/tests/core/group_mode_transactions_test.py::GroupModeTransactionsTest.test_transactions
-    - kafkatest/tests/core/transactions_test.py::TransactionsTest.test_transactions
+    # unclean election or truncation will not happen in KOS
+    - kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
+
+    # TODO: check the following tests
+    - kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
+    - kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_sasl_mechanism_phase_two
+    - kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_phase_two
+
+    # zk tests
     - kafkatest/tests/core/zookeeper_migration_test.py
     - kafkatest/tests/core/zookeeper_security_upgrade_test.py
     - kafkatest/tests/core/zookeeper_tls_encrypt_only_test.py
     - kafkatest/tests/core/zookeeper_tls_test.py
-    - kafkatest/tests/core/throttling_test.py::ThrottlingTest.test_throttled_reassignment
-    - kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure
-    - kafkatest/tests/core/security_rolling_upgrade_test.py
-    - kafkatest/tests/core/mirror_maker_test.py
-    - kafkatest/tests/core/produce_bench_test.py::ProduceBenchTest.test_produce_bench_transactions
-    - kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
-    - kafkatest/tests/client/client_compatibility_features_test.py::ClientCompatibilityFeaturesTest.run_compatibility_test
-    - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
-    - kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
-    - kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
-    - kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_version
-    - "kafkatest/tests/core/security_test.py::SecurityTest.test_quorum_ssl_endpoint_validation_failure@{\"metadata_quorum\": \"ZK\"}"
-    - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-256\"}"
-    - "kafkatest/sanity_checks/test_console_consumer.py::ConsoleConsumerTest.test_lifecycle@{\"security_protocol\": \"SASL_SSL\", \"sasl_mechanism\": \"SCRAM-SHA-512\"}"
-    - kafkatest/tests/core/network_degrade_test.py
-    - kafkatest/tests/core/produce_bench_test.py::ProduceBenchTest.test_produce_bench_transactions
 
-    # no-needed tests
-    # no lag in esk
-    - kafkatest/tests/tools/replica_verification_test.py::ReplicaVerificationToolTest.test_replica_lags
-    # esk does not support follower fetch
+    # cannot downgrade to official kafka
+    - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
+    # can not upgrade to AutoMQ Kafka
+    - kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
+    # It aims to test NetworkDegrade ability of Trogdor. Only zk nodes are started and tested
+    - kafkatest/tests/core/network_degrade_test.py
+
+    # kos does not support follower fetch since there is only one replica
     - kafkatest/tests/core/fetch_from_follower_test.py
     # can not reuse since there is only one replica
     - kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
@@ -61,3 +58,9 @@ esk_test_suite:
     # exclude kafka hanging or force shutdown tests
     - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_round_trip_workload_with_broker_partition
     - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_produce_consume_with_broker_pause
+
+    # can not test with server hard bounce
+    - "kafkatest/tests/core/group_mode_transactions_test.py::GroupModeTransactionsTest.test_transactions@{\"failure_mode\": \"hard_bounce\", \"bounce_target\": \"brokers\"}"
+
+    # skip since we do not write messages to log dir
+    - kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure
