@@ -456,11 +456,9 @@ public class S3Storage implements Storage {
             StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
-            List<CompletableFuture<Void>> tasksContainsStream = this.inflightWALUploadTasks.stream()
-                .filter(it -> it.cache.containsStream(streamId))
-                .map(it -> it.cf)
-                .toList();
-            FutureUtil.propagate(CompletableFuture.allOf(tasksContainsStream.toArray(new CompletableFuture[0])), cf);
+            FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
+                    .filter(it -> it.cache.containsStream(streamId))
+                    .map(it -> it.cf).toArray(CompletableFuture[]::new)), cf);
             if (LogCache.MATCH_ALL_STREAMS != streamId) {
                 callbackSequencer.tryFree(streamId);
             }

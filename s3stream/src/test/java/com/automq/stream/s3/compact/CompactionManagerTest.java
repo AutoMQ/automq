@@ -483,7 +483,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         assertEquals(1, request.getStreamRanges().size());
 
         Set<Long> compactedObjectIds = new HashSet<>(request.getCompactedObjectIds());
-        s3ObjectMetadata = s3ObjectMetadata.stream().filter(s -> compactedObjectIds.contains(s.objectId())).toList();
+        s3ObjectMetadata = s3ObjectMetadata.stream().filter(s -> compactedObjectIds.contains(s.objectId())).collect(Collectors.toList());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, s3ObjectMetadata, request));
     }
 

@@ -167,11 +167,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             .stream()
             .map(Pair::getRight)
             .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
-            .toList();
+            .collect(Collectors.toList());
         List<S3ObjectMetadata> streamObjectList = streamObjects.computeIfAbsent(streamId, id -> new LinkedList<>())
             .stream()
             .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
-            .toList();
+            .collect(Collectors.toList());
 
         List<S3ObjectMetadata> result = new ArrayList<>();
         result.addAll(streamSetObjectList);
@@ -182,7 +182,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             return Long.compare(startOffset1, startOffset2);
         });
 
-        return CompletableFuture.completedFuture(result.stream().limit(limit).toList());
+        return CompletableFuture.completedFuture(result.stream().limit(limit).collect(Collectors.toList()));
     }
 
     @Override
@@ -190,7 +190,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         List<S3ObjectMetadata> result = streamSetObjects.values()
             .stream()
             .filter(pair -> pair.getLeft() == NODE_ID_ALLOC.get())
-            .map(Pair::getRight).toList();
+            .map(Pair::getRight).collect(Collectors.toList());
         return CompletableFuture.completedFuture(result);
     }
 
@@ -201,18 +201,18 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             .stream()
             .filter(o -> o.getOffsetRanges().stream().anyMatch(r -> r.streamId() == streamId && r.endOffset() > startOffset && (r.startOffset() < endOffset || endOffset == -1)))
             .limit(limit)
-            .toList();
+            .collect(Collectors.toList());
         return CompletableFuture.completedFuture(streamObjectList);
     }
 
     @Override
     public synchronized CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
-        return CompletableFuture.completedFuture(streams.values().stream().filter(stream -> stream.state() == StreamState.OPENED).toList());
+        return CompletableFuture.completedFuture(streams.values().stream().filter(stream -> stream.state() == StreamState.OPENED).collect(Collectors.toList()));
     }
 
     @Override
     public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
-        return CompletableFuture.completedFuture(streamIds.stream().map(streams::get).filter(Objects::nonNull).toList());
+        return CompletableFuture.completedFuture(streamIds.stream().map(streams::get).filter(Objects::nonNull).collect(Collectors.toList()));
     }
 
     @Override
