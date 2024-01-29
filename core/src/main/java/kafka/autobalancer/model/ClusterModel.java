@@ -71,8 +71,9 @@ public class ClusterModel {
             long now = System.currentTimeMillis();
             for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
                 int brokerId = entry.getKey();
-                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get();
+                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get(now - maxToleratedMetricsDelay);
                 if (broker == null) {
+                    logger.warn("Broker {} metrics is out of sync, will be ignored in this round", brokerId);
                     continue;
                 }
                 if (excludedBrokerIds.contains(brokerId)) {
