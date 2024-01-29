@@ -18,6 +18,7 @@
 package kafka.log.streamaspect.cache;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
@@ -94,6 +95,43 @@ public class FileCacheTest {
         rst = fileCache.get("test6", 6666L, 3333).get();
         assertTrue(verify(rst, (byte) 9));
 
+    }
+
+    @Test
+    public void testMergePut() throws IOException {
+        FileCache fileCache = new FileCache("/tmp/file_cache_test", 10 * 1024, 1024);
+        {
+            CompositeByteBuf buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 1, 500));
+            buf.addComponent(true, genBuf((byte) 2, 500));
+            buf.addComponent(true, genBuf((byte) 3, 500));
+            fileCache.put("test", 3333L, buf);
+        }
+        assertEquals(1, fileCache.path2cache.get("test").size());
+        assertEquals(1500, fileCache.path2cache.get("test").get(3333L).dataLength);
+        {
+            CompositeByteBuf buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 4, 500));
+            buf.addComponent(true, genBuf((byte) 5, 500));
+            buf.addComponent(true, genBuf((byte) 6, 500));
+            fileCache.put("test", 3333L + 1000, buf);
+        }
+        assertEquals(1, fileCache.path2cache.get("test").size());
+        assertEquals(2500, fileCache.path2cache.get("test").get(3333L).dataLength);
+        {
+            CompositeByteBuf buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 7, 500));
+            fileCache.put("test", 3333L + 1000 + 1500, buf);
+        }
+        assertEquals(1, fileCache.path2cache.get("test").size());
+        assertEquals(3000, fileCache.path2cache.get("test").get(3333L).dataLength);
+
+        assertTrue(verify(fileCache.get("test", 3333L, 500).get(), (byte) 1));
+        assertTrue(verify(fileCache.get("test", 3333L + 500, 500).get(), (byte) 2));
+        assertTrue(verify(fileCache.get("test", 3333L + 1000, 500).get(), (byte) 4));
+        assertTrue(verify(fileCache.get("test", 3333L + 1500, 500).get(), (byte) 5));
+        assertTrue(verify(fileCache.get("test", 3333L + 2000, 500).get(), (byte) 6));
+        assertTrue(verify(fileCache.get("test", 3333L + 2500, 500).get(), (byte) 7));
     }
 
     ByteBuf genBuf(byte data, int length) {
