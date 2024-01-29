@@ -59,8 +59,5 @@ core_test_suite:
     - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_round_trip_workload_with_broker_partition
     - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_produce_consume_with_broker_pause
 
-    # can not test with server hard bounce
-    - "kafkatest/tests/core/group_mode_transactions_test.py::GroupModeTransactionsTest.test_transactions@{\"failure_mode\": \"hard_bounce\", \"bounce_target\": \"brokers\"}"
-
     # skip since we do not write messages to log dir
     - kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure
