@@ -35,10 +35,8 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
-    public List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
+    public List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
         List<Action> actions = new ArrayList<>();
-        Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);
-        calculateResourceBound(eligibleBrokers);
         List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
         for (BrokerUpdater.Broker broker : eligibleBrokers) {
             if (!isBrokerAcceptable(broker)) {
@@ -73,8 +71,6 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
         }
         return actions;
     }
-
-    protected abstract void calculateResourceBound(Set<BrokerUpdater.Broker> brokers);
 
     protected abstract boolean requireLessLoad(BrokerUpdater.Broker broker);
 
