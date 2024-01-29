@@ -65,7 +65,7 @@ public class ClusterModel {
     }
 
     public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics, long maxToleratedMetricsDelay) {
-        ClusterModelSnapshot snapshot = new ClusterModelSnapshot();
+        ClusterModelSnapshot snapshot = createSnapshot();
         clusterLock.lock();
         try {
             long now = System.currentTimeMillis();
@@ -109,6 +109,10 @@ public class ClusterModel {
         postProcess(snapshot);
 
         return snapshot;
+    }
+
+    protected ClusterModelSnapshot createSnapshot() {
+        return new ClusterModelSnapshot();
     }
 
     public void postProcess(ClusterModelSnapshot snapshot) {
