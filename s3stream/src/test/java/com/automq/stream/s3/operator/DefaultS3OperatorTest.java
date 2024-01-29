@@ -23,6 +23,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -70,7 +72,7 @@ class DefaultS3OperatorTest {
                         .map(o -> DeletedObject.builder()
                             .key(o.key())
                             .build())
-                        .toList())
+                            .collect(Collectors.toList()))
                     .build();
                 return CompletableFuture.completedFuture(response);
             });

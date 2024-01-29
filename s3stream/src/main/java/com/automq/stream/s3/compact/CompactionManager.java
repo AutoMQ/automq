@@ -149,7 +149,7 @@ public class CompactionManager {
     public CompletableFuture<Void> compact() {
         return this.objectManager.getServerObjects().thenComposeAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::streamId).distinct().toList();
+                .map(StreamOffsetRange::streamId).distinct().collect(Collectors.toList());
             return this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList ->
                 this.compact(streamMetadataList, objectMetadataList), compactThreadPool);
         }, compactThreadPool);
@@ -289,7 +289,7 @@ public class CompactionManager {
         //TODO: deal with metadata delay
         this.compactScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::streamId).distinct().toList();
+                .map(StreamOffsetRange::streamId).distinct().collect(Collectors.toList());
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
                 if (objectMetadataList.isEmpty()) {
                     logger.info("No stream set objects to force split");
@@ -370,7 +370,7 @@ public class CompactionManager {
             // prepare N stream objects at one time
             objectManager.prepareObject(batchGroup.size(), TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                 .thenComposeAsync(objectId -> {
-                    List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).toList();
+                    List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).collect(Collectors.toList());
                     DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator, compactionBucket, bucketCallbackScheduledExecutor);
                     // batch read
                     reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
@@ -478,7 +478,7 @@ public class CompactionManager {
 
         request.setCompactedObjectIds(new ArrayList<>(compactedObjectIds));
         List<S3ObjectMetadata> compactedObjectMetadata = objectsToCompact.stream()
-            .filter(e -> compactedObjectIds.contains(e.objectId())).toList();
+            .filter(e -> compactedObjectIds.contains(e.objectId())).collect(Collectors.toList());
         if (isSanityCheckFailed(streamMetadataList, compactedObjectMetadata, request)) {
             logger.error("Sanity check failed, compaction result is illegal");
             return null;
