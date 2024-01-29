@@ -42,23 +42,6 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
 
     protected abstract Resource resource();
 
-    private Optional<Action> getAcceptableAction(List<Map.Entry<Action, Double>> candidateActionScores) {
-        Action acceptableAction = null;
-        Optional<Map.Entry<Action, Double>> optionalEntry = candidateActionScores.stream()
-                .max(Comparator.comparingDouble(Map.Entry::getValue));
-        if (optionalEntry.isPresent() && optionalEntry.get().getValue() > POSITIVE_ACTION_SCORE_THRESHOLD) {
-            acceptableAction = optionalEntry.get().getKey();
-        }
-        return Optional.ofNullable(acceptableAction);
-    }
-
-    private double normalizeGoalsScore(Map<Goal, Double> scoreMap) {
-        int totalWeight = scoreMap.keySet().stream().mapToInt(e -> e.type().priority()).sum();
-        return scoreMap.entrySet().stream()
-                .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().type().priority() / totalWeight)
-                .sum();
-    }
-
     private Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
                                                  TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
                                                  BrokerUpdater.Broker srcBroker,
