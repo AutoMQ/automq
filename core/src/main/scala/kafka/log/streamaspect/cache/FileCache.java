@@ -42,6 +42,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class FileCache {
     private static final int BLOCK_SIZE = 4 * 1024;
+    private final int maxSize;
     private final int blockSize;
     private final BitSet freeBlocks;
     private final LRUCache<Key, Value> lru = new LRUCache<>();
@@ -56,6 +57,7 @@ public class FileCache {
     public FileCache(String path, int size, int blockSize) throws IOException {
         this.blockSize = blockSize;
         size = align(size);
+        this.maxSize = size;
         int blockCount = size / blockSize;
         this.freeBlocks = new BitSet(blockCount);
         this.freeBlocks.set(0, blockCount, true);
@@ -78,25 +80,48 @@ public class FileCache {
         writeLock.lock();
         try {
             int dataLength = data.readableBytes();
-            int[] blocks = ensureCapacity(dataLength);
-            if (blocks == null) {
-                return;
-            }
-            Key key = new Key(path, position);
-            Value value = new Value(blocks, dataLength);
-            lru.put(key, value);
             NavigableMap<Long, Value> cache = path2cache.computeIfAbsent(path, k -> new TreeMap<>());
-            cache.put(position, value);
+            Map.Entry<Long, Value> pos2value = cache.floorEntry(position);
+            long cacheStartPosition;
+            Value value;
+            if (pos2value == null || pos2value.getKey() + pos2value.getValue().dataLength < position) {
+                cacheStartPosition = position;
+                value = Value.EMPTY;
+            } else {
+                cacheStartPosition = pos2value.getKey();
+                value = pos2value.getValue();
+            }
+            // ensure the capacity, if the capacity change then update the cache index
+            int moreCapacity = (int) ((position + dataLength) - (cacheStartPosition + value.blocks.length * (long) blockSize));
+            int newDataLength = (int) (position + dataLength - cacheStartPosition);
+            if (moreCapacity > 0) {
+                int[] blocks = ensureCapacity(cacheStartPosition, moreCapacity);
+                if (blocks == null) {
+                    return;
+                }
+                int[] newBlocks = new int[value.blocks.length + blocks.length];
+                System.arraycopy(value.blocks, 0, newBlocks, 0, value.blocks.length);
+                System.arraycopy(blocks, 0, newBlocks, value.blocks.length, blocks.length);
+                value = new Value(newBlocks, newDataLength);
+            } else {
+                value = new Value(value.blocks, newDataLength);
+            }
+            cache.put(cacheStartPosition, value);
+            lru.put(new Key(path, cacheStartPosition), value);
 
+            // write data to cache
             ByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
+            int positionDelta = (int) (position - cacheStartPosition);
             int written = 0;
             ByteBuffer[] nioBuffers = data.nioBuffers();
+            int[] blocks = value.blocks;
             for (ByteBuffer nioBuffer : nioBuffers) {
                 ByteBuf buf = Unpooled.wrappedBuffer(nioBuffer);
                 while (buf.readableBytes() > 0) {
-                    int block = blocks[written / blockSize];
-                    cacheByteBuffer.position(block * blockSize + written % blockSize);
-                    int length = Math.min(buf.readableBytes(), blockSize - written % blockSize);
+                    int writePosition = positionDelta + written;
+                    int block = blocks[writePosition / blockSize];
+                    cacheByteBuffer.position(block * blockSize + writePosition % blockSize);
+                    int length = Math.min(buf.readableBytes(), blockSize - writePosition % blockSize);
                     cacheByteBuffer.put(buf.slice(buf.readerIndex(), length).nioBuffer());
                     buf.skipBytes(length);
                     written += length;
@@ -148,7 +173,17 @@ public class FileCache {
         }
     }
 
-    private int[] ensureCapacity(int size) {
+    /**
+     * Ensure the capacity of cache
+     *
+     * @param cacheStartPosition if the eviction entries contain the current cache, then ensure capacity will return null.
+     * @param size               size of data
+     * @return the cache blocks
+     */
+    private int[] ensureCapacity(long cacheStartPosition, int size) {
+        if (size > this.maxSize) {
+            return null;
+        }
         int requiredBlockCount = align(size) / blockSize;
         int[] blocks = new int[requiredBlockCount];
         int acquiringBlockIndex = 0;
@@ -160,6 +195,14 @@ public class FileCache {
             Key key = entry.getKey();
             Value value = entry.getValue();
             path2cache.get(key.path).remove(key.position);
+            if (key.position == cacheStartPosition) {
+                // eviction is conflict to current cache
+                for (int i = 0; i < acquiringBlockIndex; i++) {
+                    freeBlockCount++;
+                    freeBlocks.set(blocks[i], true);
+                }
+                return null;
+            }
             for (int blockIndex : value.blocks) {
                 if (acquiringBlockIndex < blocks.length) {
                     blocks[acquiringBlockIndex++] = blockIndex;
@@ -224,6 +267,8 @@ public class FileCache {
     }
 
     static class Value {
+        static final Value EMPTY = new Value(new int[0], 0);
+
         int[] blocks;
         int dataLength;
 
