@@ -23,46 +23,75 @@ from pathlib import Path
 if __name__ == '__main__':
     web_hook_url = os.getenv('WEB_HOOK_URL')
     show_results_url = os.getenv('SHOW_RESULTS_URL')
+    storage_path = os.getenv('STORAGE_PATH')
 
-    # Path object for the current file
-    current_file = Path(__file__)
-    # Get the directory of the current file
-    project_dir = current_file.parent.parent
-    base_path = project_dir.joinpath("results")
-    # get the latest e2e tests log folder in results folder
-    latest_tests_folder = os.readlink(os.path.join(base_path, "latest")).split('/')[-1]
+    # iterate all the folders in the storage path
+    base_path = Path(storage_path)
+    all_tests_folder = sorted(base_path.iterdir(), key=os.path.getmtime)
+
+    total_passed = 0
+    total_failed = 0
+    reports_dict = {}
+
+    for path in all_tests_folder:
+        if not path.is_dir():
+            continue
+        suite_id = path.name
+        with open(os.path.join(path, "report.json")) as f:
+            data = json.load(f)
+            total_failed += data['num_failed']
+            total_passed += data['num_passed']
+            reports_dict[suite_id] = {'num_passed': data['num_passed'], 'num_failed': data['num_failed'],
+                                      'run_time_seconds': data['run_time_seconds']}
+
+    if not reports_dict:
+        print("No reports found in %s" % storage_path)
+        exit(0)
 
     post_data = {"msg_type": "interactive", "card": {
         "header": {"template": "green",
                    "title": {"content": "🔈 E2E test results summary", "tag": "plain_text"}},
-        "elements": [{"fields": [
-            {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
-            {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
-            {"is_short": True, "text": {"content": "", "tag": "lark_md"}},
-            {"is_short": True, "text": {"content": "", "tag": "lark_md"}}], "tag": "div"},
+        "elements": [
+            {"fields": [
+                {"is_short": True,
+                 "text": {"content": "** ✅ Total Passed：**\n %d \n" % total_passed, "tag": "lark_md"}},
+                {"is_short": True,
+                 "text": {"content": "** ❎ Total Failed：**\n %d \n" % total_failed, "tag": "lark_md"}}],
+                "tag": "div"
+            },
+            {"tag": "hr"},
+        ]}}
+
+    for key, value in reports_dict.items():
+        post_data['card']['elements'].append(
+            {"fields": [
+                {"is_short": True, "text": {"content": "** ☕️ suite_id：**\n %s \n" % key, "tag": "lark_md"}},
+                {"is_short": True, "text": {"content": "** ▶ run_time_seconds：**\n %.2f \n" % value['run_time_seconds'],
+                                            "tag": "lark_md"}},
+                {"is_short": True,
+                 "text": {"content": "** ✅ Passed：**\n %d \n" % value['num_passed'], "tag": "lark_md"}},
+                {"is_short": True,
+                 "text": {"content": "** ❎ Failed：**\n %d \n" % value['num_failed'], "tag": "lark_md"}}],
+                "tag": "div"
+            }
+        )
+        post_data['card']['elements'].append(
             {
                 "actions": [{
                     "tag": "button",
                     "text": {
-                        "content": "See more details",
+                        "content": "See more details for %s" % key,
                         "tag": "lark_md"
                     },
-                    "url": "http://%s/kafka/" % show_results_url,
+                    "url": "http://%s/kafka/%s" % (show_results_url, key),
                     "type": "default",
                     "value": {}
                 }],
                 "tag": "action"
             }
-        ]}}
-    with open(os.path.join(base_path, latest_tests_folder, "report.json")) as f:
-        data = json.load(f)
-        post_data['card']['elements'][0]['fields'][0]['text']['content'] = "** ☕️ session_id：**\n %s \n" % \
-                                                                           data['session_context']['session_id']
-        post_data['card']['elements'][0]['fields'][1]['text']['content'] = "** ▶ run_time_seconds：**\n %.2f \n" % data[
-            'run_time_seconds']
-        post_data['card']['elements'][0]['fields'][2]['text']['content'] = "** ✅ Passed：**\n %d \n" % data['num_passed']
-        post_data['card']['elements'][0]['fields'][3]['text']['content'] = "** ❎ Failed：**\n %d \n" % data['num_failed']
-        post_data['card']['elements'][1]['actions'][0]['url'] += latest_tests_folder
+        )
+        post_data['card']['elements'].append({"tag": "hr"})
+
     headers = {'Content-Type': 'application/json'}
     r = requests.post(url=web_hook_url, json=post_data, headers=headers)
     print(r.text)
