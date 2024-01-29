@@ -28,7 +28,15 @@ import java.util.Set;
 
 public interface Goal extends Configurable, Comparable<Goal> {
 
-    List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
+    List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
+
+    default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
+        Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);
+        goalsByPriority.forEach(e -> e.initialize(eligibleBrokers));
+        return doOptimize(eligibleBrokers, cluster, goalsByPriority);
+    }
+
+    void initialize(Set<BrokerUpdater.Broker> brokers);
 
     void onBalanceFailed(BrokerUpdater.Broker broker);
 
