@@ -22,6 +22,7 @@ import com.automq.stream.utils.biniarysearch.ComparableItem;
 import io.netty.buffer.ByteBuf;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {
+    public static final int OBJECT_OVERHEAD = 52;
     private final long streamId;
     private final long epoch;
     private final long baseOffset;
