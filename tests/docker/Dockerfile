@@ -42,7 +42,10 @@ RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl 
 
 # setting mirrors
 RUN [ -z "${general_mirror_url}" ] || (pip install -i "https://${general_mirror_url}/pypi/web/simple" pip -U && pip config set global.index-url "https://${general_mirror_url}/pypi/web/simple")
-RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy awscli && pip3 install --upgrade "ducktape>0.8"
+RUN pip3 install --upgrade cffi virtualenv pyasn1 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
+# install awscliv2
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
+
 
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
