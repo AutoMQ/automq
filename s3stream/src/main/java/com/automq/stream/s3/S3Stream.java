@@ -285,7 +285,9 @@ public class S3Stream implements Stream {
             if (ex != null) {
                 LOGGER.error("{} trim fail", logIdent, ex);
             } else {
-                LOGGER.info("{} trim to {}", logIdent, newStartOffset);
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("{} trim to {}", logIdent, newStartOffset);
+                }
             }
         });
         return trimCf;
