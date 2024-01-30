@@ -126,6 +126,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   val configManager = new ConfigAdminManager(brokerId, config, configRepository)
 
   val asyncHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true))
+  val listOffsetHandleExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true))
 
   def close(): Unit = {
     aclApis.close()
@@ -1099,6 +1100,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (fetchRequest.isFromFollower) quotas.leader else UnboundedQuota
 
   def handleListOffsetRequest(request: RequestChannel.Request): Unit = {
+    // isolate to a separate thread pool to avoid blocking io thread (PRODUCE use io thread).
+    listOffsetHandleExecutor.execute(() => handleListOffsetRequest0(request))
+  }
+
+  def handleListOffsetRequest0(request: RequestChannel.Request): Unit = {
     val version = request.header.apiVersion
 
     val topics = if (version == 0)
