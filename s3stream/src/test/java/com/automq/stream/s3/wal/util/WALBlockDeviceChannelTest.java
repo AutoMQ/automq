@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
+import static com.automq.stream.s3.wal.util.WALChannelTest.TEST_BLOCK_DEVICE_KEY;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledOnOs(OS.LINUX)
 public class WALBlockDeviceChannelTest {
 
-    static final String TEST_BLOCK_DEVICE = System.getenv("WAL_TEST_BLOCK_DEVICE");
+    static final String TEST_BLOCK_DEVICE = System.getenv(TEST_BLOCK_DEVICE_KEY);
 
     private String getTestPath() {
         return Optional.ofNullable(TEST_BLOCK_DEVICE).orElse(TestUtils.tempFilePath());
