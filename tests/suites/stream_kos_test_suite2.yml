@@ -13,9 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# list all extra tests that are part of the suite under the test suite name:
-extra_test_suite:
+# list all streams tests that are part of the suite under the test suite name:
+streams_test_suite:
   included:
-    - kafkatest/benchmarks
-    - kafkatest/tests/connect
-    - kafkatest/tests/streams
+    - ../kafkatest/tests/streams/streams_standby_replica_test.py
+    - ../kafkatest/tests/streams/streams_static_membership_test.py
+    - ../kafkatest/tests/streams/streams_upgrade_test.py
+
+

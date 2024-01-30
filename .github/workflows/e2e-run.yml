@@ -2,11 +2,17 @@ name: Run E2E tests
 on:
   workflow_call:
     inputs:
+      runner:
+        required: true
+        type: string
       suite-id:
         required: true
         type: string
       test-yaml:
-        required: true
+        required: false
+        type: string
+      test-path:
+        required: false
         type: string
       storage-path:
         required: true
@@ -15,7 +21,9 @@ on:
 jobs:
   run_e2e:
     name: "Run E2E tests"
-    runs-on: [ self-hosted, e2e ]
+    runs-on: ${{ inputs.runner }}
+    env:
+      TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,12 +32,17 @@ jobs:
       - name: Clean last running results
         run: |
           rm -rf results
-      - name: Run E2E tests
+      - name: Run E2E tests with yaml
+        if: ${{ inputs.test-path == '' }}
         run: ./tests/docker/run_tests.sh
         env:
-          TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
-          DUCKER_TEST_OPTIONS: "-f"
           ESK_TEST_YML: ${{ inputs.test-yaml }}
+        shell: bash
+      - name: Run E2E tests with path
+        if: ${{ inputs.test-path != '' }}
+        run: ./tests/docker/run_tests.sh
+        env:
+          TC_PATHS: ${{ inputs.test-path }}
         shell: bash
       - name: Move results
         run: |
