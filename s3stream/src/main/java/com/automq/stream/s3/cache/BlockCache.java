@@ -39,6 +39,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.model.StreamRecordBatch.OBJECT_OVERHEAD;
+
 public class BlockCache implements DirectByteBufAlloc.OOMHandler {
     public static final Integer ASYNC_READ_AHEAD_NOOP_OFFSET = -1;
     static final int BLOCK_SIZE = 1024 * 1024;
@@ -91,6 +93,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
         }
 
         int size = records.stream().mapToInt(StreamRecordBatch::size).sum();
+        size += records.size() * OBJECT_OVERHEAD;
 
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] put block cache, stream={}, {}-{}, raAsyncOffset: {}, raEndOffset: {}, total bytes: {} ", streamId, startOffset, endOffset, raAsyncOffset, raEndOffset, size);
@@ -446,6 +449,7 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
             this.firstOffset = records.get(0).getBaseOffset();
             this.lastOffset = records.get(records.size() - 1).getLastOffset();
             this.size = records.stream().mapToInt(StreamRecordBatch::size).sum();
+            this.size += records.size() * OBJECT_OVERHEAD;
             this.readAheadRecord = readAheadRecord;
         }
 
