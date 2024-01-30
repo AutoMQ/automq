@@ -18,20 +18,16 @@
 package com.automq.stream.utils.biniarysearch;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
-import java.util.ArrayList;
+
 import java.util.List;
-import java.util.Objects;
 
 public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
 
-    private final List<ComparableStreamRecordBatch> records;
+    private final List<StreamRecordBatch> records;
     private final int size;
 
     public StreamRecordBatchList(List<StreamRecordBatch> records) {
-        this.records = new ArrayList<>(records.size());
-        for (StreamRecordBatch record : records) {
-            this.records.add(new ComparableStreamRecordBatch(record));
-        }
+        this.records = records;
         this.size = records.size();
     }
 
@@ -45,47 +41,4 @@ public class StreamRecordBatchList extends AbstractOrderedCollection<Long> {
         return records.get(index);
     }
 
-    private static final class ComparableStreamRecordBatch implements ComparableItem<Long> {
-        private final StreamRecordBatch recordBatch;
-
-        private ComparableStreamRecordBatch(StreamRecordBatch recordBatch) {
-            this.recordBatch = recordBatch;
-        }
-
-        @Override
-        public boolean isLessThan(Long value) {
-            return recordBatch.getLastOffset() <= value;
-        }
-
-        @Override
-        public boolean isGreaterThan(Long value) {
-            return recordBatch.getBaseOffset() > value;
-        }
-
-        public StreamRecordBatch recordBatch() {
-            return recordBatch;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this)
-                return true;
-            if (obj == null || obj.getClass() != this.getClass())
-                return false;
-            var that = (ComparableStreamRecordBatch) obj;
-            return Objects.equals(this.recordBatch, that.recordBatch);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(recordBatch);
-        }
-
-        @Override
-        public String toString() {
-            return "ComparableStreamRecordBatch[" +
-                "recordBatch=" + recordBatch + ']';
-        }
-
-    }
 }
