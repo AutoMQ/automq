@@ -24,6 +24,8 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+
 /**
  * There are two implementations of WALChannel:
  * 1. WALFileChannel based on file system, which calls fsync after each write to ensure data is flushed to disk.
@@ -86,7 +88,19 @@ public interface WALChannel {
      * This method will change the writer index of the given buffer to the end of the read bytes.
      * This method will not change the reader index of the given buffer.
      */
-    int read(ByteBuf dst, long position) throws IOException;
+    default int read(ByteBuf dst, long position) throws IOException {
+        return read(dst, position, dst.writableBytes());
+    }
+
+    /**
+     * Read bytes from the given position of the channel to the given buffer from the current writer index
+     * until reaching the given length or the end of the channel.
+     * This method will change the writer index of the given buffer to the end of the read bytes.
+     * This method will not change the reader index of the given buffer.
+     * If the given length is larger than the writable bytes of the given buffer, only the first
+     * {@code dst.writableBytes()} bytes will be read.
+     */
+    int read(ByteBuf dst, long position, int length) throws IOException;
 
     default boolean useDirectIO() {
         return this instanceof WALBlockDeviceChannel;
@@ -119,6 +133,7 @@ public interface WALChannel {
         }
 
         public WALChannelBuilder capacity(long capacity) {
+            assert capacity == CAPACITY_NOT_SET || WALUtil.isAligned(capacity);
             this.capacity = capacity;
             return this;
         }

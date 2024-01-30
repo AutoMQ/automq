@@ -128,11 +128,12 @@ public class WALFileChannel implements WALChannel {
     }
 
     @Override
-    public int read(ByteBuf dst, long position) throws IOException {
-        assert dst.writableBytes() + position <= capacity();
+    public int read(ByteBuf dst, long position, int length) throws IOException {
+        length = Math.min(length, dst.writableBytes());
+        assert position + length <= capacity();
         int bytesRead = 0;
         while (dst.isWritable()) {
-            int read = dst.writeBytes(fileChannel, position + bytesRead, dst.writableBytes());
+            int read = dst.writeBytes(fileChannel, position + bytesRead, length);
             if (read == -1) {
                 // EOF
                 break;

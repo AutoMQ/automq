@@ -17,19 +17,14 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import java.io.File;
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.NavigableSet;
-import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutorService;
@@ -40,10 +35,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.helper.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
+
+import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
+import static com.automq.stream.s3.wal.benchmark.BenchTool.recoverAndReset;
+import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
 
 /**
  * WriteBench is a tool for benchmarking write performance of {@link BlockWALService}
@@ -65,49 +62,16 @@ public class WriteBench implements AutoCloseable {
         }
         this.log = builder.build();
         this.log.start();
-        for (Iterator<WriteAheadLog.RecoverResult> it = this.log.recover(); it.hasNext(); ) {
-            it.next().record().release();
-        }
-        this.log.reset().join();
+        recoverAndReset(this.log);
     }
 
     public static void main(String[] args) throws IOException {
-        Namespace ns = null;
-        ArgumentParser parser = Config.parser();
-        try {
-            ns = parser.parseArgs(args);
-        } catch (HelpScreenException e) {
-            System.exit(0);
-        } catch (ArgumentParserException e) {
-            parser.handleError(e);
-            System.exit(1);
-        }
+        Namespace ns = parseArgs(Config.parser(), args);
         Config config = new Config(ns);
 
         resetWALHeader(config.path);
         try (WriteBench bench = new WriteBench(config)) {
             bench.run(config);
-        }
-    }
-
-    private static void resetWALHeader(String path) throws IOException {
-        System.out.println("Resetting WAL header");
-        if (path.startsWith(WALChannel.DEVICE_PREFIX)) {
-            // block device
-            int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-            WALChannel channel = WALChannel.builder(path).capacity(capacity).build();
-            channel.open();
-            ByteBuf buf = DirectByteBufAlloc.byteBuffer(capacity);
-            buf.writeZero(capacity);
-            channel.write(buf, 0);
-            buf.release();
-            channel.close();
-        } else {
-            // normal file
-            File file = new File(path);
-            if (file.isFile() && !file.delete()) {
-                throw new IOException("Failed to delete existing file " + file);
-            }
         }
     }
 
@@ -357,34 +321,6 @@ public class WriteBench implements AutoCloseable {
             public long elapsedTimeNanos() {
                 return elapsedTimeNanos;
             }
-
-            @Override
-            public boolean equals(Object obj) {
-                if (obj == this)
-                    return true;
-                if (obj == null || obj.getClass() != this.getClass())
-                    return false;
-                var that = (Result) obj;
-                return this.count == that.count &&
-                    this.costNanos == that.costNanos &&
-                    this.maxCostNanos == that.maxCostNanos &&
-                    this.elapsedTimeNanos == that.elapsedTimeNanos;
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(count, costNanos, maxCostNanos, elapsedTimeNanos);
-            }
-
-            @Override
-            public String toString() {
-                return "Result[" +
-                    "count=" + count + ", " +
-                    "costNanos=" + costNanos + ", " +
-                    "maxCostNanos=" + maxCostNanos + ", " +
-                    "elapsedTimeNanos=" + elapsedTimeNanos + ']';
-            }
-
         }
     }
 
