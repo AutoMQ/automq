@@ -201,12 +201,16 @@ public class DefaultS3Operator implements S3Operator {
     @Override
     public CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, ThrottleStrategy throttleStrategy) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        if (start >= end) {
+        if (start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
             cf.completeExceptionally(ex);
             return cf;
+        } else if (start == end) {
+            cf.complete(Unpooled.EMPTY_BUFFER);
+            return cf;
         }
+
         if (networkInboundBandwidthLimiter != null) {
             TimerUtil timerUtil = new TimerUtil();
             networkInboundBandwidthLimiter.consume(throttleStrategy, end - start).whenCompleteAsync((v, ex) -> {
