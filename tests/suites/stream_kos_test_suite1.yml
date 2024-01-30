@@ -16,12 +16,18 @@
 # list all streams tests that are part of the suite under the test suite name:
 streams_test_suite:
   included:
-    - kafkatest/tests/streams/base_streams_test.py
-    - kafkatest/tests/streams/streams_application_upgrade_test.py
-    - kafkatest/tests/streams/streams_broker_bounce_test.py
-    - kafkatest/tests/streams/streams_broker_compatibility_test.py
-    - kafkatest/tests/streams/streams_broker_down_resilience_test.py
-    - kafkatest/tests/streams/streams_cooperative_rebalance_upgrade_test.py
-    - kafkatest/tests/streams/streams_eos_test.py
+    - ../kafkatest/tests/streams/base_streams_test.py
+    - ../kafkatest/tests/streams/streams_application_upgrade_test.py
+    - ../kafkatest/tests/streams/streams_broker_bounce_test.py
+    - ../kafkatest/tests/streams/streams_broker_compatibility_test.py
+    - ../kafkatest/tests/streams/streams_broker_down_resilience_test.py
+    - ../kafkatest/tests/streams/streams_cooperative_rebalance_upgrade_test.py
+    - ../kafkatest/tests/streams/streams_eos_test.py
+    - ../kafkatest/tests/streams/streams_named_repartition_topic_test.py
+    - ../kafkatest/tests/streams/streams_optimized_test.py
+    - ../kafkatest/tests/streams/streams_relational_smoke_test.py
+    - ../kafkatest/tests/streams/streams_shutdown_deadlock_test.py
+    - ../kafkatest/tests/streams/streams_smoke_test.py
+
 
 

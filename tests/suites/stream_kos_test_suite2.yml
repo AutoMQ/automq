@@ -16,13 +16,8 @@
 # list all streams tests that are part of the suite under the test suite name:
 streams_test_suite:
   included:
-    - kafkatest/tests/streams/streams_named_repartition_topic_test.py
-    - kafkatest/tests/streams/streams_optimized_test.py
-    - kafkatest/tests/streams/streams_relational_smoke_test.py
-    - kafkatest/tests/streams/streams_shutdown_deadlock_test.py
-    - kafkatest/tests/streams/streams_smoke_test.py
-    - kafkatest/tests/streams/streams_standby_replica_test.py
-    - kafkatest/tests/streams/streams_static_membership_test.py
-    - kafkatest/tests/streams/streams_upgrade_test.py
+    - ../kafkatest/tests/streams/streams_standby_replica_test.py
+    - ../kafkatest/tests/streams/streams_static_membership_test.py
+    - ../kafkatest/tests/streams/streams_upgrade_test.py
 
 

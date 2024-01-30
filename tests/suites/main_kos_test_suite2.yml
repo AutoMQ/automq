@@ -16,45 +16,45 @@
 # list all core tests that are part of the suite under the test suite name:
 core_test_suite:
   included:
-    - kafkatest/tests/core
+    - ../kafkatest/tests/core
 
   # exclude zk tests and other no-needed tests
   excluded:
     # the following tests are included in main_kos_test_suite1.yml
-    - kafkatest/tests/core/authorizer_test.py
-    - kafkatest/tests/core/compatibility_test_new_broker_test.py
-    - kafkatest/tests/core/consume_bench_test.py
+    - ../kafkatest/tests/core/authorizer_test.py
+    - ../kafkatest/tests/core/compatibility_test_new_broker_test.py
+    - ../kafkatest/tests/core/consume_bench_test.py
 
     # cannot downgrade to official kafka
-    - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
+    - ../kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
 
     # TODO: check the following tests
-    - kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_sasl_mechanism_phase_two
-    - kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_phase_two
+    - ../kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_sasl_mechanism_phase_two
+    - ../kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_phase_two
 
     # zk tests
-    - kafkatest/tests/core/zookeeper_migration_test.py
-    - kafkatest/tests/core/zookeeper_security_upgrade_test.py
-    - kafkatest/tests/core/zookeeper_tls_encrypt_only_test.py
-    - kafkatest/tests/core/zookeeper_tls_test.py
+    - ../kafkatest/tests/core/zookeeper_migration_test.py
+    - ../kafkatest/tests/core/zookeeper_security_upgrade_test.py
+    - ../kafkatest/tests/core/zookeeper_tls_encrypt_only_test.py
+    - ../kafkatest/tests/core/zookeeper_tls_test.py
 
     # cannot downgrade to official kafka
-    - kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
+    - ../kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
     # can not upgrade to AutoMQ Kafka
-    - kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
+    - ../kafkatest/tests/core/upgrade_test.py::TestUpgrade.test_upgrade
     # It aims to test NetworkDegrade ability of Trogdor. Only zk nodes are started and tested
-    - kafkatest/tests/core/network_degrade_test.py
+    - ../kafkatest/tests/core/network_degrade_test.py
 
     # kos does not support follower fetch since there is only one replica
-    - kafkatest/tests/core/fetch_from_follower_test.py
+    - ../kafkatest/tests/core/fetch_from_follower_test.py
     # can not reuse since there is only one replica
-    - kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
+    - ../kafkatest/tests/core/replication_replica_failure_test.py::ReplicationReplicaFailureTest.test_replication_with_replica_failure
     # skip kraft upgrade test
-    - kafkatest/tests/core/kraft_upgrade_test.py
+    - ../kafkatest/tests/core/kraft_upgrade_test.py
 
     # exclude kafka hanging or force shutdown tests
-    - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_round_trip_workload_with_broker_partition
-    - kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_produce_consume_with_broker_pause
+    - ../kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_round_trip_workload_with_broker_partition
+    - ../kafkatest/tests/core/round_trip_fault_test.py::RoundTripFaultTest.test_produce_consume_with_broker_pause
 
     # skip since we do not write messages to log dir
-    - kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure
+    - ../kafkatest/tests/core/log_dir_failure_test.py::LogDirFailureTest.test_replication_with_disk_failure

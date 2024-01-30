@@ -16,22 +16,22 @@
 # list all core tests that are part of the suite under the test suite name:
 core_test_suite:
   included:
-    - kafkatest/sanity_checks
-    - kafkatest/tests/client
-    - kafkatest/tests/tools
-    - kafkatest/tests/core/authorizer_test.py
-    - kafkatest/tests/core/compatibility_test_new_broker_test.py
-    - kafkatest/tests/core/consume_bench_test.py
+    - ../kafkatest/sanity_checks
+    - ../kafkatest/tests/client
+    - ../kafkatest/tests/tools
+    - ../kafkatest/tests/core/authorizer_test.py
+    - ../kafkatest/tests/core/compatibility_test_new_broker_test.py
+    - ../kafkatest/tests/core/consume_bench_test.py
 
   # exclude zk tests and other no-needed tests
   excluded:
     # no lag in KOS
-    - kafkatest/tests/tools/replica_verification_test.py::ReplicaVerificationToolTest.test_replica_lags
+    - ../kafkatest/tests/tools/replica_verification_test.py::ReplicaVerificationToolTest.test_replica_lags
     # kafka 3.x not support message format v0 and v1. The original test forces inter.broker.protocol.version to 2.8 and is run in ZK mode.
-    - kafkatest/tests/client/message_format_change_test.py::MessageFormatChangeTest.test_compatibility
+    - ../kafkatest/tests/client/message_format_change_test.py::MessageFormatChangeTest.test_compatibility
     # unclean election or truncation will not happen in KOS
-    - kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
+    - ../kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
 
     # TODO: check the following tests
-    - kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
+    - ../kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
 
