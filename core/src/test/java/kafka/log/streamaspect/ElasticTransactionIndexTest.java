@@ -20,6 +20,7 @@ package kafka.log.streamaspect;
 import kafka.log.AbortedTxn;
 import kafka.log.streamaspect.cache.FileCache;
 import kafka.utils.TestUtils;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -30,6 +31,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static scala.collection.JavaConverters.seqAsJavaList;
 
+@Tag("S3Unit")
 public class ElasticTransactionIndexTest {
     @Test
     public void testPositionSetCorrectlyWhenOpened() throws IOException {

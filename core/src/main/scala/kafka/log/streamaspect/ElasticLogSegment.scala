@@ -423,6 +423,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 
 object ElasticLogSegment {
   var TxnCache: FileCache = _
+  var TimeCache: FileCache = _
 
   def apply(dir: File, meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
             time: Time, segmentEventListener: ElasticLogSegmentEventListener, logIdent: String = ""): ElasticLogSegment = {
@@ -430,7 +431,7 @@ object ElasticLogSegment {
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset, meta.logSize())
     val lastTimeIndexEntry = meta.timeIndexLastEntry().toTimestampOffset
-    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new DefaultStreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry)
+    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new DefaultStreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry, TimeCache)
     val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new DefaultStreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset, TxnCache)
 
     new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener, logIdent)
