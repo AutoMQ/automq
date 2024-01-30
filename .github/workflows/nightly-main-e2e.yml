@@ -18,7 +18,7 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     with:
       suite-id: "main2"
-      test-yaml: "tests/suites/extra_kos_test_suite2.yml"
+      test-yaml: "tests/suites/main_kos_test_suite2.yml"
       storage-path: "/data/github-actions/reports"
       runner: "main"
   e2e_summary:
