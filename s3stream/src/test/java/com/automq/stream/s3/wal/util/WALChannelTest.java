@@ -28,7 +28,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("S3Unit")
-class WALChannelTest {
+public class WALChannelTest {
+    public static final String TEST_BLOCK_DEVICE_KEY = "WAL_TEST_BLOCK_DEVICE";
+
     WALChannel walChannel;
 
     @BeforeEach

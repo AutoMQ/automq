@@ -55,6 +55,7 @@ import static com.automq.stream.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY
 import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
 import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
 import static com.automq.stream.s3.wal.WriteAheadLog.RecoverResult;
+import static com.automq.stream.s3.wal.util.WALChannelTest.TEST_BLOCK_DEVICE_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -64,7 +65,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 class BlockWALServiceTest {
 
-    static final String TEST_BLOCK_DEVICE = System.getenv("WAL_TEST_BLOCK_DEVICE");
+    static final String TEST_BLOCK_DEVICE = System.getenv(TEST_BLOCK_DEVICE_KEY);
 
     private static void testSingleThreadAppendBasic0(boolean mergeWrite,
         boolean directIO) throws IOException, OverCapacityException {

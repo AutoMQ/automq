@@ -295,12 +295,14 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     @Override
-    public int read(ByteBuf dst, long position) throws IOException {
+    public int read(ByteBuf dst, long position, int length) throws IOException {
         long start = position;
-        long end = position + dst.writableBytes();
+        length = Math.min(length, dst.writableBytes());
+        long end = position + length;
         long alignedStart = WALUtil.alignSmallByBlockSize(start);
         long alignedEnd = WALUtil.alignLargeByBlockSize(end);
         int alignedSize = (int) (alignedEnd - alignedStart);
+        // capacity may be CAPACITY_NOT_SET only when we call {@link CapacityReader#capacity} in recovery mode
         assert CAPACITY_NOT_SET == capacity() || alignedEnd <= capacity();
 
         ByteBuffer tmpBuf = getBuffer(alignedSize);
