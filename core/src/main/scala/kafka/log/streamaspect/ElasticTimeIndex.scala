@@ -29,7 +29,7 @@ import java.io.{File, IOException}
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 
-class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1, _initLastEntry: TimestampOffset = TimestampOffset.Unknown)
+class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier, baseOffset: Long, maxIndexSize: Int = -1, _initLastEntry: TimestampOffset = TimestampOffset.Unknown, val cache: FileCache)
   extends AbstractStreamIndex(__file, streamSegmentSupplier, baseOffset, maxIndexSize) with TimeIndex {
 
   @volatile private var _lastEntry = {
@@ -46,6 +46,7 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
 
   protected def entrySize: Int = 12
 
+  // from Kafka: We override the full check to reserve the last time index entry slot for the on roll call.
   override def isFull: Boolean = entries >= maxEntries - 1
 
   override def lastEntry: TimestampOffset = _lastEntry
@@ -81,10 +82,10 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
   }
 
   private def tryGetEntryFromCache(n: Int): TimestampOffset = {
-    val rst = ElasticTimeIndex.cache.get(file.getPath, n * entrySize.toLong, entrySize)
+    val rst = cache.get(file.getPath, n * entrySize.toLong, entrySize)
     if (rst.isPresent) {
       val buffer = rst.get()
-      TimestampOffset(buffer.readLong(), buffer.readInt())
+      TimestampOffset(buffer.readLong(), baseOffset + buffer.readInt())
     } else {
       TimestampOffset.Unknown
     }
@@ -106,9 +107,9 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
       records.forEach(record => {
         buf.writeBytes(record.rawPayload())
       })
-      ElasticTimeIndex.cache.put(file.getPath, startOffset, buf)
-      val indexEntry = Unpooled.wrappedBuffer(records.get(0).rawPayload());
-      timestampOffset = TimestampOffset(indexEntry.readLong(), indexEntry.readInt())
+      cache.put(file.getPath, startOffset, buf)
+      val indexEntry = Unpooled.wrappedBuffer(records.get(0).rawPayload())
+      timestampOffset = TimestampOffset(indexEntry.readLong(), baseOffset + indexEntry.readInt())
       rst.free()
     }
     timestampOffset
@@ -143,7 +144,9 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
         val relatedOffset = relativeOffset(offset)
         buffer.putInt(relatedOffset)
         buffer.flip()
+        val position = stream.nextOffset()
         lastAppend = stream.append(RawPayloadRecordBatch.of(buffer))
+        cache.put(__file.getPath, position, Unpooled.wrappedBuffer(buffer))
         _entries += 1
         _lastEntry = TimestampOffset(timestamp, offset)
       }
@@ -190,13 +193,5 @@ class ElasticTimeIndex(__file: File, streamSegmentSupplier: StreamSliceSupplier,
 
   def seal(): Unit = {
     stream.seal()
-  }
-}
-
-object ElasticTimeIndex {
-  var cache: FileCache = _
-
-  def setupCache(path: String, size: Int): Unit = {
-    cache = new FileCache(path, size)
   }
 }
