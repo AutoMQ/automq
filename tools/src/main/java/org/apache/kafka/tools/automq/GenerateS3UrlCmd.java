@@ -166,10 +166,10 @@ public class GenerateS3UrlCmd {
         //tips: Not add whitespace after \\
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
             + "--s3-url=\"%s\" \\%n"
-            + "--controller-address=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
-            + "--broker-address=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", GENERATE_START_COMMAND_CMD, s3Url
+            + "--controller-list=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
+            + "--broker-list=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", GENERATE_START_COMMAND_CMD, s3Url
         ));
-        System.out.println("TIPS: Replace the controller-address and broker-address with your real ip list.");
+        System.out.println("TIPS: Replace the controller-list and broker-list with your real ip list.");
 
         return s3Url;
     }
