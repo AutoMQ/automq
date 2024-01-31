@@ -24,6 +24,7 @@ jobs:
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, main ]
+    if: ${{ always() }}
     needs: [ main_e2e_1, main_e2e_2 ]
     steps:
       - name: Report results

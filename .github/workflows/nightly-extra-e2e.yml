@@ -18,7 +18,7 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     with:
       suite-id: "connect"
-      test-path: "tests/kafkatest/connect"
+      test-path: "tests/kafkatest/tests/connect"
       storage-path: "/data/github-actions/reports"
       runner: "extra"
   streams_e2e_1:
@@ -40,6 +40,7 @@ jobs:
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, extra ]
+    if: ${{ always() }}
     needs: [ benchmarks_e2e, connect_e2e, streams_e2e_1, streams_e2e_2 ]
     steps:
       - name: Report results
