@@ -51,6 +51,20 @@ public class S3Url {
         this.s3PathStyle = s3PathStyle;
     }
 
+    /**
+     *
+     * @param args input args to start AutoMQ
+     * @return s3Url value from args, or null if not found
+     */
+    public static String parseS3UrlValFromArgs(String[] args){
+        for (String arg : args) {
+            if (arg.startsWith("--s3-url=")) {
+                return arg.substring("--s3-url=".length());
+            }
+        }
+        return null;
+    }
+
     public static S3Url parse(String s3Url) throws IllegalArgumentException {
         if (StringUtils.isBlank(s3Url)) {
             throw new IllegalArgumentException("s3Url required");
