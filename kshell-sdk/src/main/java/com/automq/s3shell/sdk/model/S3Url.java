@@ -52,11 +52,10 @@ public class S3Url {
     }
 
     /**
-     *
      * @param args input args to start AutoMQ
      * @return s3Url value from args, or null if not found
      */
-    public static String parseS3UrlValFromArgs(String[] args){
+    public static String parseS3UrlValFromArgs(String[] args) {
         for (String arg : args) {
             if (arg.startsWith("--s3-url=")) {
                 return arg.substring("--s3-url=".length());
