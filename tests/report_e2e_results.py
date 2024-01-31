@@ -24,6 +24,8 @@ if __name__ == '__main__':
     web_hook_url = os.getenv('WEB_HOOK_URL')
     show_results_url = os.getenv('SHOW_RESULTS_URL')
     storage_path = os.getenv('STORAGE_PATH')
+    title_prefix = os.getenv('REPORT_TITLE_PREFIX')
+    title_prefix = title_prefix if title_prefix else ""
 
     # iterate all the folders in the storage path
     base_path = Path(storage_path)
@@ -50,7 +52,7 @@ if __name__ == '__main__':
 
     post_data = {"msg_type": "interactive", "card": {
         "header": {"template": "green",
-                   "title": {"content": "🔈 E2E test results summary", "tag": "plain_text"}},
+                   "title": {"content": "🔈 %s E2E test results summary" % title_prefix, "tag": "plain_text"}},
         "elements": [
             {"fields": [
                 {"is_short": True,
