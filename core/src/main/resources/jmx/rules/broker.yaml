@@ -17,7 +17,7 @@ rules:
     metricAttribute:
       topic: param(topic)
       partition: param(partition)
-      direction: const(int)
+      direction: const(in)
     mapping:
       Count:
         metric: kafka.network.io
