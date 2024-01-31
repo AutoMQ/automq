@@ -17,29 +17,25 @@
 
 package com.automq.stream.s3.trace.aop;
 
-import com.automq.stream.s3.trace.TraceUtils;
-import com.automq.stream.s3.trace.context.TraceContext;
-import io.opentelemetry.instrumentation.annotations.WithSpan;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.aspectj.lang.annotation.Pointcut;
 
 @Aspect
 public class S3StreamTraceAspect {
 
-    @Pointcut("@annotation(withSpan)")
-    public void trace(WithSpan withSpan) {
-    }
-
-    @Around(value = "trace(withSpan) && execution(* com.automq.stream..*(..))", argNames = "joinPoint,withSpan")
-    public Object createSpan(ProceedingJoinPoint joinPoint, WithSpan withSpan) throws Throwable {
-        Object[] args = joinPoint.getArgs();
-        if (args.length > 0 && args[0] instanceof TraceContext) {
-            TraceContext context = (TraceContext) args[0];
-            return TraceUtils.trace(context, joinPoint, withSpan);
-        }
-
-        return joinPoint.proceed();
-    }
+    // Commented out because it's costly to trace
+    //
+    // @Pointcut("@annotation(withSpan)")
+    // public void trace(WithSpan withSpan) {
+    // }
+    //
+    // @Around(value = "trace(withSpan) && execution(* com.automq.stream..*(..))", argNames = "joinPoint,withSpan")
+    // public Object createSpan(ProceedingJoinPoint joinPoint, WithSpan withSpan) throws Throwable {
+    //     Object[] args = joinPoint.getArgs();
+    //     if (args.length > 0 && args[0] instanceof TraceContext) {
+    //         TraceContext context = (TraceContext) args[0];
+    //         return TraceUtils.trace(context, joinPoint, withSpan);
+    //     }
+    //
+    //     return joinPoint.proceed();
+    // }
 }
