@@ -16,16 +16,14 @@
  */
 package org.apache.kafka.tools.automq;
 
-import com.automq.s3shell.sdk.model.AuthMethod;
 import com.automq.s3shell.sdk.model.EndpointProtocol;
 import com.automq.stream.utils.S3Utils;
+import java.util.List;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.common.Uuid;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-
-import java.util.List;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_START_COMMAND_CMD;
@@ -45,8 +43,6 @@ public class GenerateS3UrlCmd {
         final String s3AccessKey;
         final String s3SecretKey;
 
-        final AuthMethod s3AuthMethod;
-
         final String s3Region;
 
         final EndpointProtocol endpointProtocol;
@@ -62,12 +58,6 @@ public class GenerateS3UrlCmd {
         Parameter(Namespace res) {
             this.s3AccessKey = res.getString("s3-access-key");
             this.s3SecretKey = res.getString("s3-secret-key");
-            String authMethodName = res.getString("s3-auth-method");
-            if (authMethodName == null || authMethodName.trim().isEmpty()) {
-                this.s3AuthMethod = AuthMethod.KEY_FROM_ARGS;
-            } else {
-                this.s3AuthMethod = AuthMethod.getByName(authMethodName);
-            }
             this.s3Region = res.getString("s3-region");
             String endpointProtocolStr = res.get("s3-endpoint-protocol");
             this.endpointProtocol = EndpointProtocol.getByName(endpointProtocolStr);
@@ -101,14 +91,6 @@ public class GenerateS3UrlCmd {
             .dest("s3-secret-key")
             .metavar("S3-SECRET-KEY")
             .help("Your secretKey that used to access S3");
-        parser.addArgument("--s3-auth-method")
-            .action(store())
-            .required(false)
-            .setDefault(AuthMethod.KEY_FROM_ARGS.getKeyName())
-            .type(String.class)
-            .dest("s3-auth-method")
-            .metavar("S3-AUTH-METHOD")
-            .help("The auth method that used to access S3, default is key-from-env, other options are key-from-args and role");
         parser.addArgument("--s3-region")
             .action(store())
             .required(true)
@@ -200,7 +182,6 @@ public class GenerateS3UrlCmd {
             .append("?").append("s3-access-key=").append(parameter.s3AccessKey)
             .append("&").append("s3-secret-key=").append(parameter.s3SecretKey)
             .append("&").append("s3-region=").append(parameter.s3Region)
-            .append("&").append("s3-auth-method=").append(parameter.s3AuthMethod.getKeyName())
             .append("&").append("s3-endpoint-protocol=").append(parameter.endpointProtocol.getName())
             .append("&").append("s3-data-bucket=").append(parameter.s3DataBucket)
             .append("&").append("s3-path-style=").append(parameter.s3PathStyle)

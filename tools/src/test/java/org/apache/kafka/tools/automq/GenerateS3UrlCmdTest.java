@@ -33,8 +33,6 @@ class GenerateS3UrlCmdTest {
 
                 "s3-secret-key", "mysk",
 
-                "s3-auth-method", "key-from-args",
-
                 "s3-region", "cn-northwest-1",
 
                 "s3-endpoint-protocol", "https",
@@ -48,6 +46,6 @@ class GenerateS3UrlCmdTest {
         );
         GenerateS3UrlCmd.Parameter parameter = new GenerateS3UrlCmd.Parameter(namespace);
         GenerateS3UrlCmd cmd = new GenerateS3UrlCmd(parameter);
-        Assertions.assertTrue(cmd.run().startsWith("s3://s3.amazonaws.com?s3-access-key=myak&s3-secret-key=mysk&s3-region=cn-northwest-1&s3-auth-method=key-from-args&s3-endpoint-protocol=https&s3-data-bucket=automq-data-bucket&s3-ops-bucket=automq-ops-bucket&cluster-id="));
+        Assertions.assertTrue(cmd.run().startsWith("s3://s3.amazonaws.com?s3-access-key=myak&s3-secret-key=mysk&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=automq-data-bucket&s3-ops-bucket=automq-ops-bucket&cluster-id="));
     }
 }
