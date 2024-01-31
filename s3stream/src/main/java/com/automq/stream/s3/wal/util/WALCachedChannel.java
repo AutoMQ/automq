@@ -58,10 +58,17 @@ public class WALCachedChannel implements WALChannel {
             // If we don't know the capacity now, we can't cache.
             return channel.read(dst, position, length);
         }
+
         long start = position;
         length = Math.min(length, dst.writableBytes());
         long end = position + length;
+
         ByteBuf cache = getCache();
+        if (length > cache.capacity()) {
+            // If the length is larger than the cache capacity, we can't cache.
+            return channel.read(dst, position, length);
+        }
+
         boolean fallWithinCache = cachePosition >= 0 && cachePosition <= start && end <= cachePosition + cache.readableBytes();
         if (!fallWithinCache) {
             cache.clear();
@@ -70,6 +77,7 @@ public class WALCachedChannel implements WALChannel {
             int cacheLength = (int) Math.min(cache.writableBytes(), channel.capacity() - cachePosition);
             channel.read(cache, cachePosition, cacheLength);
         }
+
         // Now the cache is ready.
         int relativePosition = (int) (start - cachePosition);
         dst.writeBytes(cache, relativePosition, length);
