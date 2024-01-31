@@ -2,6 +2,7 @@ receivers:
   otlp:
     protocols:
       grpc:
+      http:
   zipkin:
 processors:
   memory_limiter:
@@ -14,9 +15,10 @@ exporters:
     verbosity: basic
   prometheus:
     endpoint: "0.0.0.0:8890"
-    namespace: default
+    metric_expiration: 10s
+    add_metric_suffixes: true
     resource_to_telemetry_conversion:
-      enabled: true
+      enabled: false
   otlp:
     endpoint: host.docker.internal:4320
     tls:
@@ -25,10 +27,10 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, memory_limiter]
       exporters: [otlp]
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, memory_limiter]
       exporters: [prometheus]
 

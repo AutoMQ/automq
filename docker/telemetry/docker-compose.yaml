@@ -26,6 +26,7 @@ services:
       - "--storage.tsdb.retention.time=3d" # set the expire time to three day
       - "--config.file=/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      - "--enable-feature=otlp-write-receiver"
     volumes:
       - ./prometheus/prometheus.yml:/prometheus/prometheus.yml
       - ${DATA_PATH}/prometheus/data:/prometheus
