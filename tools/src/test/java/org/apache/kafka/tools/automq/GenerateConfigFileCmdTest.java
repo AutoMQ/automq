@@ -46,9 +46,9 @@ class GenerateConfigFileCmdTest {
             Map.of(
                 "s3-url", "myak",
 
-                "broker-address", "mysk",
+                "broker-list", "mysk",
 
-                "controller-address", "192.168.0.1:9093",
+                "controller-list", "192.168.0.1:9093",
 
                 "network-baseline-bandwidth-mb", 100,
 
