@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 9,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -119,11 +119,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_namespace, service_name, service_instance_id, type) (rate(${namespace}kafka_request_count_total{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, type) (rate(kafka_request_count_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_{{type}}",
+          "legendFormat": "node-{{instance}}_{{type}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -219,11 +219,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}kafka_request_time_mean_milliseconds{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", type=~\"Fetch|Produce\"}",
+          "expr": "kafka_request_time_mean_milliseconds{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", type=~\"Fetch|Produce\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_{{type}}",
+          "legendFormat": "node-{{instance}}_{{type}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -330,12 +330,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}jvm_cpu_recent_utilization_ratio{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}",
+          "expr": "jvm_cpu_recent_utilization_ratio{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}",
+          "legendFormat": "node-{{instance}}",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -411,7 +411,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "${__field.labels.service_name}_${__field.labels.service_instance_id}"
+                "value": "node_${__field.labels.instance}"
               }
             ]
           }
@@ -444,12 +444,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_used_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
+          "expr": "sum by(job, instance) (jvm_memory_used_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}",
+          "legendFormat": "node-{{instance}}",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -461,12 +461,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_name, service_instance_id, service_namespace) (${namespace}jvm_memory_limit_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"})",
+          "expr": "sum by(job, instance) (jvm_memory_limit_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}",
+          "legendFormat": "node-{{instance}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -533,7 +533,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -594,12 +595,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, service_name, service_instance_id, jvm_gc_action) (rate(${namespace}jvm_gc_duration_seconds_bucket{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, job, instance, jvm_gc_action) (rate(jvm_gc_duration_seconds_bucket{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_{{jvm_gc_action}}",
+          "legendFormat": "node-{{instance}}_{{jvm_gc_action}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -611,12 +612,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(jvm_gc_action, service_name, service_instance_id) (rate(${namespace}jvm_gc_duration_seconds_count{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(jvm_gc_action, job, instance) (rate(jvm_gc_duration_seconds_count{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_{{jvm_gc_action}}",
+          "legendFormat": "node-{{instance}}_{{jvm_gc_action}}",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -672,7 +673,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -728,12 +730,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_limit_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "expr": "sum by(job, instance) (jvm_memory_limit_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_limit",
+          "legendFormat": "node-{{instance}}_limit",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -745,12 +747,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(service_namespace, service_name, service_instance_id) (${namespace}jvm_memory_used_bytes{service_namespace=\"$cluster_id\", service_name=~\"$node_type\", service_instance_id=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "expr": "sum by(job, instance) (jvm_memory_used_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{service_name}}_{{service_instance_id}}_usage",
+          "legendFormat": "node-{{instance}}_usage",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -819,7 +821,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -857,7 +860,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(operation_name, operation_type) (rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval]))",
+          "expr": "sum by(operation_name, operation_type) (rate(kafka_stream_operation_latency_nanoseconds_count{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -930,7 +933,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(status) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\", status=~\".*\"})",
+          "expr": "sum by(status) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", status=~\".*\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -990,7 +993,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1029,7 +1033,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=~\"$OperationType\", operation_name!~\"append_wal|read_block_cache|read_log_cache\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1102,7 +1106,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1140,7 +1145,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_log_cache|append_callback|append_wal_full\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_log_cache|append_callback|append_wal_full\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1156,7 +1161,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_wal\", stage=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"append_wal\", stage=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1173,7 +1178,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}operation_count_total{operation_type=\"S3Storage\", operation_name=\"append_log_cache_full\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_operation_count_total{operation_type=\"S3Storage\", operation_name=\"append_log_cache_full\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1234,7 +1239,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1273,7 +1279,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, stage) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"append_wal\", stage=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"append_wal\", stage=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1289,7 +1295,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"append_callback|append_log_cache\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"append_callback|append_log_cache\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1350,7 +1356,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1388,7 +1395,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1448,7 +1455,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1487,7 +1495,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=~\"read_log_cache\", status=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1547,7 +1555,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1586,7 +1595,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}wal_start_offset{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_wal_start_offset{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -1603,7 +1612,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "${namespace}${prefix}wal_trimmed_offset{service_namespace=\"$cluster_id\"}",
+          "expr": "kafka_stream_wal_trimmed_offset{job=~\"$cluster_id/$node_type\"}",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -1630,7 +1639,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "default_kafka_stream_delta_wal_cache_size_bytes{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_delta_wal_cache_size_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "hide": false,
           "instant": false,
           "legendFormat": "delta wal cache",
@@ -1701,7 +1710,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1739,7 +1749,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1799,7 +1809,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1838,7 +1849,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_block_cache\", status=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1898,7 +1909,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1937,7 +1949,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_ahead\", status=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Storage\", operation_name=\"read_ahead\", status=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1997,7 +2009,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2036,7 +2049,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "rate(default_kafka_stream_read_ahead_size_bytes_sum{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(default_kafka_stream_read_ahead_size_bytes_sum{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2096,7 +2109,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2135,12 +2149,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}block_cache_size_bytes{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_block_cache_size_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "size",
+          "legendFormat": "node-{{instance}}_size",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2196,7 +2210,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2235,11 +2250,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}available_inflight_read_ahead_size_bytes{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_available_inflight_read_ahead_size_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "node-{{instance}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2308,7 +2323,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2347,11 +2363,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}network_inbound_usage_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_network_inbound_usage_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "inbound",
+          "legendFormat": "node-{{instance}}_inbound",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2363,12 +2379,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}network_outbound_usage_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_network_outbound_usage_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "outbound",
+          "legendFormat": "node-{{instance}}_outbound",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -2424,7 +2440,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2463,11 +2480,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}download_size_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_download_size_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "download",
+          "legendFormat": "node-{{instance}}_download",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2479,12 +2496,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}upload_size_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_upload_size_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "upload",
+          "legendFormat": "node-{{instance}}_upload",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -2540,7 +2557,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2579,11 +2597,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}network_inbound_available_bandwidth_bytes{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_network_inbound_available_bandwidth_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "inbound",
+          "legendFormat": "node-{{instance}}_inbound",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2595,12 +2613,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}network_outbound_available_bandwidth_bytes{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_network_outbound_available_bandwidth_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "outbound",
+          "legendFormat": "node-{{instance}}_outbound",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -2656,7 +2674,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2695,11 +2714,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}${prefix}network_inbound_limiter_queue_time_nanoseconds_bucket{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, job, instance) (rate(kafka_stream_network_inbound_limiter_queue_time_nanoseconds_bucket{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "inbound",
+          "legendFormat": "node-{{instance}}_inbound",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2711,12 +2730,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(le, cluster_id, node_id, node_type) (rate(${namespace}${prefix}network_outbound_limiter_queue_time_nanoseconds_bucket{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, job, instance) (rate(kafka_stream_network_outbound_limiter_queue_time_nanoseconds_bucket{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "outbound",
+          "legendFormat": "node-{{instance}}_outbound",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -2772,7 +2791,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2811,12 +2831,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}available_s3_inflight_read_quota{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_available_s3_inflight_read_quota{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "read",
+          "legendFormat": "node-{{instance}}_read",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2828,12 +2848,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}available_s3_inflight_write_quota{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_available_s3_inflight_write_quota{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "write",
+          "legendFormat": "node-{{instance}}_write",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -2889,7 +2909,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2928,11 +2949,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}network_inbound_limiter_queue_size{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_network_inbound_limiter_queue_size{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "inbound",
+          "legendFormat": "node-{{instance}}_inbound",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -2944,12 +2965,12 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "${namespace}${prefix}network_outbound_limiter_queue_size{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}",
+          "expr": "kafka_stream_network_outbound_limiter_queue_size{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "outbound",
+          "legendFormat": "node-{{instance}}_outbound",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -3018,7 +3039,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3056,11 +3078,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}object_count_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_object_count_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "object_count",
+          "legendFormat": "node-{{instance}}_object_count",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -3116,7 +3138,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3154,12 +3177,12 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(${namespace}${prefix}object_stage_cost_nanoseconds_bucket{stage=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "editorMode": "builder",
+          "expr": "histogram_quantile(0.99, sum by(stage, le, instance, job) (rate(kafka_stream_object_stage_cost_nanoseconds_bucket{stage=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{stage}}",
+          "legendFormat": "node-{{instance}}_{{stage}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -3228,11 +3251,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(size) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"})",
+          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{size}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -3288,7 +3311,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3327,7 +3351,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, size) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=\"get_object\", size=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, operation_type, operation_name, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=\"get_object\", size=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3400,7 +3424,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "sum by(size) (${namespace}${prefix}operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"})",
+          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3460,7 +3484,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3499,7 +3524,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, size) (rate(${namespace}${prefix}operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", size=~\".*\", service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", size=~\".*\", job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3572,7 +3597,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3610,12 +3636,12 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}compaction_read_size_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "editorMode": "builder",
+          "expr": "rate(kafka_stream_compaction_read_size_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "compaction_read",
+          "legendFormat": "node-{{instance}}_compaction_read",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -3626,13 +3652,13 @@
             "uid": "${datasource}"
           },
           "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "rate(${namespace}${prefix}compaction_write_size_bytes_total{service_namespace=\"$cluster_id\", service_instance_id=~\"$node_id\", service_name=~\"$node_type\"}[$__rate_interval])",
+          "editorMode": "builder",
+          "expr": "rate(kafka_stream_compaction_write_size_bytes_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "compaction_write",
+          "legendFormat": "node-{{instance}}_compaction_write",
           "range": true,
           "refId": "B",
           "useBackend": false
@@ -3649,16 +3675,15 @@
     "list": [
       {
         "current": {
-          "isNone": true,
           "selected": false,
-          "text": "None",
-          "value": ""
+          "text": "xJGnLhprSXareHmTpNkpHg",
+          "value": "xJGnLhprSXareHmTpNkpHg"
         },
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(default_jvm_cpu_recent_utilization_ratio,service_namespace)",
+        "definition": "label_values(jvm_cpu_count,job)",
         "hide": 0,
         "includeAll": false,
         "label": "cluster_id",
@@ -3667,52 +3692,14 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_namespace)",
+          "query": "label_values(jvm_cpu_count,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
-        "regex": "",
+        "regex": "/(?<value>[^\"]+)\\//",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "default_",
-          "value": "default_"
-        },
-        "hide": 0,
-        "name": "namespace",
-        "options": [
-          {
-            "selected": true,
-            "text": "default_",
-            "value": "default_"
-          }
-        ],
-        "query": "default_",
-        "skipUrlSync": false,
-        "type": "textbox"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "kafka_stream_",
-          "value": "kafka_stream_"
-        },
-        "hide": 0,
-        "name": "prefix",
-        "options": [
-          {
-            "selected": true,
-            "text": "kafka_stream_",
-            "value": "kafka_stream_"
-          }
-        ],
-        "query": "kafka_stream_",
-        "skipUrlSync": false,
-        "type": "textbox"
       },
       {
         "allValue": "S3Stream|S3Storage|S3Request",
@@ -3770,7 +3757,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(default_jvm_cpu_recent_utilization_ratio,service_instance_id)",
+        "definition": "label_values(jvm_cpu_count,instance)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
@@ -3778,11 +3765,11 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_instance_id)",
+          "query": "label_values(jvm_cpu_count,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
-        "regex": "",
+        "regex": "/(?<value>\\b\\d+\\b)/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
@@ -3801,7 +3788,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(default_jvm_cpu_recent_utilization_ratio,service_name)",
+        "definition": "label_values(jvm_cpu_count,job)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
@@ -3809,11 +3796,11 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(default_jvm_cpu_recent_utilization_ratio,service_name)",
+          "query": "label_values(jvm_cpu_count,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
-        "regex": "",
+        "regex": "/\\/(?<value>[^\"]+)/",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
@@ -3844,8 +3831,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "automq-for-kafka",
-  "uid": "c25319fc-1031-4843-aaca-813f9d2b8438",
-  "version": 32,
+  "title": "automq-for-kafka-1",
+  "uid": "c25319fc-1031-4843-aaca-813f9d2b8439",
+  "version": 1,
   "weekStart": ""
 }
