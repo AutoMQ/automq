@@ -127,13 +127,8 @@ object Kafka extends Logging {
     try {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
-      var s3UrlString = "";
-      for (elem <- args) {
-        if (elem.startsWith("s3-url")) {
-          s3UrlString = elem.split("=")(1)
-        }
-      }
-      if (s3UrlString == null || s3UrlString.isEmpty) {
+      val s3UrlString = S3Url.parseS3UrlValFromArgs(args)
+      if (s3UrlString == null ) {
         CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
       } else {
         val s3Url = S3Url.parse(s3UrlString)

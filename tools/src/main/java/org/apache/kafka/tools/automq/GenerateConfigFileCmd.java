@@ -58,8 +58,8 @@ public class GenerateConfigFileCmd {
 
         Parameter(Namespace res) {
             this.s3Url = res.getString("s3-url");
-            this.brokerAddress = res.getString("broker-address");
-            this.controllerAddress = res.getString("controller-address");
+            this.brokerAddress = res.getString("broker-list");
+            this.controllerAddress = res.getString("controller-list");
             this.networkBaselineBandwidthMB = res.getString("network-baseline-bandwidth-mb");
             this.controllerOnlyMode = res.getBoolean("controller-only-mode");
         }
@@ -76,19 +76,19 @@ public class GenerateConfigFileCmd {
             .dest("s3-url")
             .metavar("S3-URL")
             .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", GENERATE_S3_URL_CMD));
-        parser.addArgument("--controller-address")
+        parser.addArgument("--controller-list")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("controller-address")
-            .metavar("CONTROLLER-ADDRESS")
+            .dest("controller-list")
+            .metavar("CONTROLLER-LIST")
             .help("Your controller ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
         parser.addArgument("--broker-address")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("broker-address")
-            .metavar("BROKER-ADDRESS")
+            .dest("broker-list")
+            .metavar("BROKER-LIST")
             .help("Your broker ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
         parser.addArgument("--controller-only-mode")
             .action(store())
