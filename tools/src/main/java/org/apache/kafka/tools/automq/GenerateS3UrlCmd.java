@@ -140,7 +140,7 @@ public class GenerateS3UrlCmd {
             .help("The bucket name of S3 that used to store kafka's stream data");
         parser.addArgument("--s3-ops-bucket")
             .action(store())
-            .required(false)
+            .required(true)
             .type(String.class)
             .dest("s3-ops-bucket")
             .metavar("S3-OPS-BUCKET")
