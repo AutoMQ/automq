@@ -2,7 +2,7 @@ name: Nightly Extra E2E tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '0 16 * * *'
 
 jobs:
   benchmarks_e2e:
