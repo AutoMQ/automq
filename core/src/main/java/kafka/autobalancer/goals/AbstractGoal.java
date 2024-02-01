@@ -23,7 +23,11 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -81,6 +85,35 @@ public abstract class AbstractGoal implements Goal {
             return score <= POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
         }
         return score;
+    }
+
+    /**
+     * Calculate the weighted score of an action based on its scores from all goals.
+     *
+     * @param scoreMap score map from all goals
+     * @return the final score
+     */
+    protected double normalizeGoalsScore(Map<Goal, Double> scoreMap) {
+        int totalWeight = scoreMap.keySet().stream().mapToInt(e -> e.type().priority()).sum();
+        return scoreMap.entrySet().stream()
+                .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().type().priority() / totalWeight)
+                .sum();
+    }
+
+    /**
+     * Get the acceptable action with the highest score.
+     *
+     * @param candidateActionScores candidate actions with scores
+     * @return the acceptable action with the highest score
+     */
+    protected Optional<Action> getAcceptableAction(List<Map.Entry<Action, Double>> candidateActionScores) {
+        Action acceptableAction = null;
+        Optional<Map.Entry<Action, Double>> optionalEntry = candidateActionScores.stream()
+                .max(Comparator.comparingDouble(Map.Entry::getValue));
+        if (optionalEntry.isPresent() && optionalEntry.get().getValue() > POSITIVE_ACTION_SCORE_THRESHOLD) {
+            acceptableAction = optionalEntry.get().getKey();
+        }
+        return Optional.ofNullable(acceptableAction);
     }
 
     @Override

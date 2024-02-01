@@ -1,0 +1,56 @@
+name: Run E2E tests
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      suite-id:
+        required: true
+        type: string
+      test-yaml:
+        required: false
+        type: string
+      test-path:
+        required: false
+        type: string
+      storage-path:
+        required: true
+        type: string
+
+jobs:
+  run_e2e:
+    name: "Run E2E tests"
+    runs-on: ${{ inputs.runner }}
+    env:
+      TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2.12.0
+      - name: Clean last running results
+        run: |
+          rm -rf results
+      - name: Run E2E tests with yaml
+        if: ${{ inputs.test-path == '' }}
+        run: ./tests/docker/run_tests.sh
+        env:
+          ESK_TEST_YML: ${{ inputs.test-yaml }}
+        shell: bash
+      - name: Run E2E tests with path
+        if: ${{ inputs.test-path != '' }}
+        run: ./tests/docker/run_tests.sh
+        env:
+          TC_PATHS: ${{ inputs.test-path }}
+        shell: bash
+      - name: Move results
+        run: |
+          results_path="$(pwd)/results/$(readlink results/latest | cut -d'/' -f5)"
+          rm -rf "${{ inputs.storage-path }}/${{ inputs.suite-id }}";mv "${results_path}" "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
+        if: ${{ always() }}
+        shell: bash
+      - name: Bring down docker containers
+        run: ./tests/docker/ducker-ak down
+        shell: bash
+        if: ${{ always() }}

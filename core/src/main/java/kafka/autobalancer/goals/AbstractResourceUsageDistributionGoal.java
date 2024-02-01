@@ -36,7 +36,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     private double usageDistUpperBound;
 
     @Override
-    protected void calculateResourceBound(Set<BrokerUpdater.Broker> brokers) {
+    public void initialize(Set<BrokerUpdater.Broker> brokers) {
         Resource resource = resource();
         usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviation));

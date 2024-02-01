@@ -20,6 +20,7 @@ package kafka.log.streamaspect
 import ElasticLogManager.NAMESPACE
 import com.automq.stream.api.Client
 import com.automq.stream.s3.metadata.ObjectUtils
+import kafka.log.streamaspect.cache.FileCache
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
 import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.log.{LogConfig, ProducerStateManagerConfig}
@@ -149,7 +150,8 @@ object ElasticLogManager {
     context.brokerServer = broker
     INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
     INSTANCE.foreach(_.startup())
-    ElasticTimeIndex.setupCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)
+    ElasticLogSegment.TxnCache = new FileCache(config.logDirs.head + "/" + "txnindex-cache", 100 * 1024 * 1024)
+    ElasticLogSegment.TimeCache = new FileCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)
     true
   }
 

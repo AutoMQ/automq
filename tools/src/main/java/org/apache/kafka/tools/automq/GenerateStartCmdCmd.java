@@ -36,9 +36,9 @@ public class GenerateStartCmdCmd {
 
     static class Parameter {
         final String s3Url;
-        final String controllerAddress;
+        final String controllerList;
 
-        final String brokerAddress;
+        final String brokerList;
 
         final String networkBaselineBandwidthMB;
 
@@ -46,8 +46,8 @@ public class GenerateStartCmdCmd {
 
         Parameter(Namespace res) {
             this.s3Url = res.getString("s3-url");
-            this.brokerAddress = res.getString("broker-address");
-            this.controllerAddress = res.getString("controller-address");
+            this.brokerList = res.getString("broker-list");
+            this.controllerList = res.getString("controller-list");
             this.networkBaselineBandwidthMB = res.getString("network-baseline-bandwidth-mb");
             this.controllerOnlyMode = res.getBoolean("controller-only-mode");
         }
@@ -64,19 +64,19 @@ public class GenerateStartCmdCmd {
             .dest("s3-url")
             .metavar("S3-URL")
             .help(String.format("AutoMQ use s3 url to access your s3 and create AutoMQ cluster. You can generate s3 url with cmd 'bin/automq-kafka-admin.sh %s'", GENERATE_S3_URL_CMD));
-        parser.addArgument("--controller-address")
+        parser.addArgument("--controller-list")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("controller-address")
-            .metavar("CONTROLLER-ADDRESS")
+            .dest("controller-list")
+            .metavar("CONTROLLER-LIST")
             .help("Your controller ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
-        parser.addArgument("--broker-address")
+        parser.addArgument("--broker-list")
             .action(store())
             .required(true)
             .type(String.class)
-            .dest("broker-address")
-            .metavar("BROKER-ADDRESS")
+            .dest("broker-list")
+            .metavar("BROKER-LIST")
             .help("Your broker ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
         parser.addArgument("--controller-only-mode")
             .action(store())
@@ -98,8 +98,8 @@ public class GenerateStartCmdCmd {
     }
 
     public void run() throws IOException {
-        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerAddress, parameter.controllerOnlyMode);
-        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerAddress, controllerGroupConfig);
+        ServerGroupConfig controllerGroupConfig = ConfigParserUtil.genControllerConfig(parameter.controllerList, parameter.controllerOnlyMode);
+        ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerList, controllerGroupConfig);
 
         System.out.println("##############  START CMD LIST ###########");
         System.out.println("You can copy the command to where your AutoMQ tgz located and run following command to start a AutoMQ kafka server: \n");

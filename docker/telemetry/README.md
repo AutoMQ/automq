@@ -41,7 +41,7 @@ due to performance and security concerns.
     # enable metrics recording
     s3.telemetry.metrics.enable=true
    
-    # use OTLP exporter to export metrics to OTel Collector
+    # use OTLP exporter to export metrics to backend service that supports OTLP protocol
     s3.telemetry.metrics.exporter.type=otlp
    
     # or expose metrics for Prometheus backend to scrape
@@ -55,8 +55,17 @@ due to performance and security concerns.
     s3.telemetry.tracer.span.max.queue.size=5120
     s3.telemetry.tracer.span.max.batch.size=1024
    
-    # OTel Collector endpoint
-    s3.telemetry.exporter.otlp.endpoint=http://${your_host_name}:4317
+    # OTLP backend endpoint (if using OTLP exporter)
+    s3.telemetry.exporter.otlp.endpoint=http://${your_endpoint}
+   
+    # Protocol of OTLP exporter (http or grpc)
+    s3.telemetry.exporter.otlp.protocol=http
+   
+    # Sample OTLP endpoints
+    # OTel Collector (gRPC): http://${endpoint}:4317
+    # OTel Collector (HTTP): http://${endpoint}:4318
+    # Prometheus OTLP receiver: http://${endpoint}:9090/api/v1/otlp/v1/metrics
+   
     # Metrics report interval
     s3.telemetry.exporter.report.interval.ms=5000
     ```

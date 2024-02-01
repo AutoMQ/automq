@@ -65,14 +65,15 @@ public class ClusterModel {
     }
 
     public ClusterModelSnapshot snapshot(Set<Integer> excludedBrokerIds, Set<String> excludedTopics, long maxToleratedMetricsDelay) {
-        ClusterModelSnapshot snapshot = new ClusterModelSnapshot();
+        ClusterModelSnapshot snapshot = createSnapshot();
         clusterLock.lock();
         try {
             long now = System.currentTimeMillis();
             for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
                 int brokerId = entry.getKey();
-                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get();
+                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get(now - maxToleratedMetricsDelay);
                 if (broker == null) {
+                    logger.warn("Broker {} metrics is out of sync, will be ignored in this round", brokerId);
                     continue;
                 }
                 if (excludedBrokerIds.contains(brokerId)) {
@@ -109,6 +110,10 @@ public class ClusterModel {
         postProcess(snapshot);
 
         return snapshot;
+    }
+
+    protected ClusterModelSnapshot createSnapshot() {
+        return new ClusterModelSnapshot();
     }
 
     public void postProcess(ClusterModelSnapshot snapshot) {

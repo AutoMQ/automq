@@ -18,6 +18,7 @@
 package kafka.log.streamaspect
 
 import kafka.log._
+import kafka.log.streamaspect.cache.FileCache
 import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{FetchDataInfo, LogOffsetMetadata}
 import kafka.utils.{CoreUtils, nonthreadsafe, threadsafe}
@@ -350,10 +351,12 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
   }
 
   override def findOffsetByTimestamp(timestamp: Long, startingOffset: Long = baseOffset): Option[TimestampAndOffset] = {
+    // TODO: async the find to avoid blocking the thread
     // Get the index entry with a timestamp less than or equal to the target timestamp
     val timestampOffset = timeIndex.lookup(timestamp)
     // Search the timestamp
-    Option(_log.searchForTimestamp(timestamp, timestampOffset.offset))
+    val rst = Option(_log.searchForTimestamp(timestamp, timestampOffset.offset))
+    rst
   }
 
 
@@ -419,14 +422,17 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
 }
 
 object ElasticLogSegment {
+  var TxnCache: FileCache = _
+  var TimeCache: FileCache = _
+
   def apply(dir: File, meta: ElasticStreamSegmentMeta, sm: ElasticStreamSliceManager, logConfig: LogConfig,
             time: Time, segmentEventListener: ElasticLogSegmentEventListener, logIdent: String = ""): ElasticLogSegment = {
     val baseOffset = meta.baseOffset
     val suffix = meta.streamSuffix
     val log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log), baseOffset, meta.logSize())
     val lastTimeIndexEntry = meta.timeIndexLastEntry().toTimestampOffset
-    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry)
-    val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new StreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset)
+    val timeIndex = new ElasticTimeIndex(UnifiedLog.timeIndexFile(dir, baseOffset, suffix), new DefaultStreamSliceSupplier(sm, "tim" + suffix, meta.time), baseOffset, logConfig.maxIndexSize, lastTimeIndexEntry, TimeCache)
+    val txnIndex = new ElasticTransactionIndex(UnifiedLog.transactionIndexFile(dir, baseOffset, suffix), new DefaultStreamSliceSupplier(sm, "txn" + suffix, meta.txn), baseOffset, TxnCache)
 
     new ElasticLogSegment(meta, log, timeIndex, txnIndex, baseOffset, logConfig.indexInterval, logConfig.segmentJitterMs, time, segmentEventListener, logIdent)
   }

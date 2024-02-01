@@ -88,7 +88,7 @@ public class AbstractGoalTest extends GoalTestBase {
 
         Goal goal = goalMap.get(NetworkInUsageDistributionGoal.class.getSimpleName());
         AbstractResourceDistributionGoal distributionGoal = (AbstractResourceDistributionGoal) goal;
-        distributionGoal.calculateResourceBound(Set.of(broker0, broker1, broker2));
+        distributionGoal.initialize(Set.of(broker0, broker1, broker2));
 
         Assertions.assertEquals(0.3, goal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 1), cluster), 0.001);
         Assertions.assertEquals(0.3, goal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 0), 0, 2), cluster), 0.001);

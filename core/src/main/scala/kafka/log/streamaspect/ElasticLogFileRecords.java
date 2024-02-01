@@ -137,7 +137,7 @@ public class ElasticLogFileRecords {
             return CompletableFuture.completedFuture(null);
         }
         return fetch0(context, nextFetchOffset, endOffset, maxSize)
-                .thenApply(rst -> PooledMemoryRecords.of(rst, context.readOptions().pooledBuf()));
+                .thenApply(rst -> PooledMemoryRecords.of(baseOffset, rst, context.readOptions().pooledBuf()));
     }
 
     private CompletableFuture<LinkedList<FetchResult>> fetch0(FetchContext context, long startOffset, long endOffset, int maxSize) {
@@ -305,13 +305,15 @@ public class ElasticLogFileRecords {
     }
 
     public static class PooledMemoryRecords extends AbstractRecords implements PooledResource {
+        private final long logBaseOffset;
         private final ByteBuf pack;
         private final MemoryRecords memoryRecords;
         private final long lastOffset;
         private final boolean pooled;
         private boolean freed;
 
-        private PooledMemoryRecords(List<FetchResult> fetchResults, boolean pooled) {
+        private PooledMemoryRecords(long logBaseOffset, List<FetchResult> fetchResults, boolean pooled) {
+            this.logBaseOffset = logBaseOffset;
             this.pooled = pooled;
             long lastOffset = 0;
             int size = 0;
@@ -335,11 +337,11 @@ public class ElasticLogFileRecords {
             fetchResults.forEach(FetchResult::free);
             fetchResults.clear();
             this.memoryRecords = MemoryRecords.readableRecords(pack.nioBuffer());
-            this.lastOffset = lastOffset;
+            this.lastOffset = logBaseOffset + lastOffset;
         }
 
-        public static PooledMemoryRecords of(List<FetchResult> fetchResults, boolean pooled) {
-            return new PooledMemoryRecords(fetchResults, pooled);
+        public static PooledMemoryRecords of(long logBaseOffset, List<FetchResult> fetchResults, boolean pooled) {
+            return new PooledMemoryRecords(logBaseOffset, fetchResults, pooled);
         }
 
         @Override

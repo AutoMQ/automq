@@ -18,6 +18,7 @@
 package kafka.log.streamaspect
 
 import io.netty.buffer.Unpooled
+import kafka.log.streamaspect.cache.FileCache
 import kafka.log.{AbortedTxn, TransactionIndex}
 import org.apache.kafka.common.KafkaException
 
@@ -27,8 +28,8 @@ import java.util.concurrent.CompletableFuture
 import scala.collection.mutable
 
 
-class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long)
-  extends TransactionIndex(startOffset, __file) {
+class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSupplier, startOffset: Long, val cache: FileCache)
+  extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
   @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
@@ -41,7 +42,8 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
     if (stream.nextOffset() == 0) {
       None
     } else {
-      val record = stream.fetch(stream.nextOffset() - 1, 1, Int.MaxValue).get().recordBatchList().get(0)
+      val nextOffset = stream.nextOffset()
+      val record = stream.fetch(nextOffset - 1, nextOffset, Int.MaxValue).get().recordBatchList().get(0)
       val readBuf = record.rawPayload()
       val abortedTxn = new AbortedTxn(readBuf)
       Some(abortedTxn.lastOffset)
@@ -57,7 +59,9 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
           s"${abortedTxn.lastOffset} is not greater than current last offset $offset of index ${file.getAbsolutePath}")
     }
     lastOffset = Some(abortedTxn.lastOffset)
+    val position = stream.nextOffset()
     lastAppend = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer.duplicate()))
+    cache.put(_file.getPath, position, Unpooled.wrappedBuffer(abortedTxn.buffer))
   }
 
   override def flush(): Unit = {
@@ -90,38 +94,46 @@ class ElasticTransactionIndex(__file: File, streamSliceSupplier: StreamSliceSupp
   }
 
   override protected def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {
+    val endPosition = stream.nextOffset()
+    // await last append complete, usually the abort transaction is not frequent, so it's ok to block here.
+    this.lastAppend.get()
     var position = 0
     val queue: mutable.Queue[(AbortedTxn, Int)] = mutable.Queue()
     new Iterator[(AbortedTxn, Int)] {
       /**
        * Note that nextOffset in stream here actually represents the physical size (or position).
        */
-      override def hasNext: Boolean = queue.nonEmpty || stream.nextOffset() - position >= AbortedTxn.TotalSize
+      override def hasNext: Boolean = queue.nonEmpty || endPosition - position >= AbortedTxn.TotalSize
 
       override def next(): (AbortedTxn, Int) = {
         if (queue.nonEmpty) {
-          return queue.dequeue()
+          val item = queue.dequeue()
+          if (item._1.version > AbortedTxn.CurrentVersion)
+            throw new KafkaException(s"Unexpected aborted transaction version ${item._1.version} " +
+              s"in transaction index ${file.getAbsolutePath}, current version is ${AbortedTxn.CurrentVersion}")
+          return item
         }
         try {
-          val rst = stream.fetch(position, stream.nextOffset(), AbortedTxn.TotalSize * 128).get()
-          val records = rst.recordBatchList()
-          records.forEach(recordBatch => {
-            val readBuf = Unpooled.wrappedBuffer(recordBatch.rawPayload())
-            val size = readBuf.readableBytes()
-            while (readBuf.readableBytes() != 0) {
-              val buffer = allocate()
-              readBuf.readBytes(buffer)
-              buffer.flip()
-              val abortedTxn = new AbortedTxn(buffer)
-              if (abortedTxn.version > AbortedTxn.CurrentVersion)
-                throw new KafkaException(s"Unexpected aborted transaction version ${abortedTxn.version} " +
-                  s"in transaction index ${file.getAbsolutePath}, current version is ${AbortedTxn.CurrentVersion}")
-              val nextEntry = (abortedTxn, position)
-              queue.enqueue(nextEntry)
-            }
-            position += size
-          })
-          rst.free()
+          val getLength = math.min(position + AbortedTxn.TotalSize * 128, endPosition)
+          val cacheDataOpt = cache.get(_file.getPath, position, getLength.toInt)
+          val buf = if (cacheDataOpt.isPresent) {
+            cacheDataOpt.get()
+          } else {
+            val records = stream.fetch(position, getLength).get()
+            val txnListBuf = Unpooled.buffer(records.recordBatchList().size() * AbortedTxn.TotalSize)
+            records.recordBatchList().forEach(r => {
+              txnListBuf.writeBytes(r.rawPayload())
+            })
+            cache.put(_file.getPath, position, txnListBuf)
+            records.free()
+            txnListBuf
+          }
+          while (buf.readableBytes() > 0) {
+            val abortedTxn = new AbortedTxn(buf.slice(buf.readerIndex(), AbortedTxn.TotalSize).nioBuffer())
+            queue.enqueue((abortedTxn, position))
+            position += AbortedTxn.TotalSize
+            buf.skipBytes(AbortedTxn.TotalSize)
+          }
           queue.dequeue()
         } catch {
           case e: IOException =>
