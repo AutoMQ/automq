@@ -23,16 +23,14 @@ import kafka.server.epoch.LeaderEpochFileCache
 import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata, RequestLocal}
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.record.{MemoryRecords, RecordBatch, RecordVersion, Records}
-import org.apache.kafka.common.utils.{ThreadUtils, Time, Utils}
+import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
+import org.apache.kafka.common.utils.ThreadUtils
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.MetadataVersion
 
 import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.{CompletableFuture, Executors}
-import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
 import scala.util.{Failure, Success, Try}
 
 class ElasticUnifiedLog(_logStartOffset: Long,
@@ -184,52 +182,6 @@ object ElasticUnifiedLog extends Logging {
   private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
   private val MinCheckpointIntervalMs = 10 * 1000
 
-  def rebuildProducerState(producerStateManager: ProducerStateManager,
-                           segments: LogSegments,
-                           logStartOffset: Long,
-                           lastOffset: Long,
-                           time: Time,
-                           reloadFromCleanShutdown: Boolean,
-                           logPrefix: String): Unit = {
-    val offsetsToSnapshot = {
-      if (segments.nonEmpty) {
-        val lastSegmentBaseOffset = segments.lastSegment.get.baseOffset
-        val nextLatestSegmentBaseOffset = segments.lowerSegment(lastSegmentBaseOffset).map(_.baseOffset)
-        Seq(nextLatestSegmentBaseOffset, Some(lastSegmentBaseOffset), Some(lastOffset))
-      } else {
-        Seq(Some(lastOffset))
-      }
-    }
-
-    info(s"Reloading from producer snapshot and rebuilding producer state from offset $lastOffset")
-    val isEmptyBeforeTruncation = producerStateManager.isEmpty && producerStateManager.mapEndOffset >= lastOffset
-    val producerStateLoadStart = time.milliseconds()
-    producerStateManager.truncateAndReload(logStartOffset, lastOffset, time.milliseconds())
-    val segmentRecoveryStart = time.milliseconds()
-
-    if (lastOffset > producerStateManager.mapEndOffset && !isEmptyBeforeTruncation) {
-      segments.values(producerStateManager.mapEndOffset, lastOffset).foreach { segment =>
-        val startOffset = Utils.max(segment.baseOffset, producerStateManager.mapEndOffset, logStartOffset)
-        producerStateManager.updateMapEndOffset(startOffset)
-
-        if (offsetsToSnapshot.contains(Some(segment.baseOffset)))
-          producerStateManager.takeSnapshot()
-
-        val maxPosition = segment.size
-
-        val fetchDataInfo = segment.read(startOffset,
-          maxSize = Int.MaxValue,
-          maxPosition = maxPosition)
-        if (fetchDataInfo != null)
-          loadProducersFromRecords(producerStateManager, fetchDataInfo.records)
-      }
-    }
-    producerStateManager.updateMapEndOffset(lastOffset)
-    producerStateManager.takeSnapshot()
-    info(s"${logPrefix}Producer state recovery took ${segmentRecoveryStart - producerStateLoadStart}ms for snapshot load " +
-      s"and ${time.milliseconds() - segmentRecoveryStart}ms for segment recovery from offset $lastOffset")
-  }
-
   /**
    * If the recordVersion is >= RecordVersion.V2, then create and return a LeaderEpochFileCache.
    * Otherwise, the message format is considered incompatible and return None.
@@ -250,33 +202,5 @@ object ElasticUnifiedLog extends Logging {
     } else {
       Some(newLeaderEpochFileCache())
     }
-  }
-
-  private def loadProducersFromRecords(producerStateManager: ProducerStateManager, records: Records): Unit = {
-    val loadedProducers = mutable.Map.empty[Long, ProducerAppendInfo]
-    val completedTxns = ListBuffer.empty[CompletedTxn]
-    records.batches.forEach { batch =>
-      if (batch.hasProducerId) {
-        val maybeCompletedTxn = updateProducers(
-          producerStateManager,
-          batch,
-          loadedProducers,
-          firstOffsetMetadata = None,
-          origin = AppendOrigin.Replication)
-        maybeCompletedTxn.foreach(completedTxns += _)
-      }
-    }
-    loadedProducers.values.foreach(producerStateManager.update)
-    completedTxns.foreach(producerStateManager.completeTxn)
-  }
-
-  private def updateProducers(producerStateManager: ProducerStateManager,
-                              batch: RecordBatch,
-                              producers: mutable.Map[Long, ProducerAppendInfo],
-                              firstOffsetMetadata: Option[LogOffsetMetadata],
-                              origin: AppendOrigin): Option[CompletedTxn] = {
-    val producerId = batch.producerId
-    val appendInfo = producers.getOrElseUpdate(producerId, producerStateManager.prepareUpdate(producerId, origin))
-    appendInfo.append(batch, firstOffsetMetadata)
   }
 }

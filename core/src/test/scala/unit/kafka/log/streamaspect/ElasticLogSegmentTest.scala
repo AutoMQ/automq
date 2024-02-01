@@ -26,7 +26,7 @@ import kafka.utils.{MockTime, TestUtils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.utils.{Time, Utils}
-import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse}
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertNull}
 import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
 import kafka.log.streamaspect.client.Context
 
@@ -86,6 +86,7 @@ class ElasticLogSegmentTest {
 
     @BeforeEach
     def setup(): Unit = {
+        ReadHint.markReadAll()
         segments.clear()
         logDir = TestUtils.tempDir()
         Context.enableTestMode()
@@ -107,7 +108,7 @@ class ElasticLogSegmentTest {
     def testReadOnEmptySegment(): Unit = {
         val seg = getOrCreateSegment(40)
         val read = seg.read(startOffset = 40, maxSize = 300)
-        assertFalse(read.records.records().iterator().hasNext)
+        assertNull(read, "Read beyond the last offset in the segment should be null")
     }
 
     /**
@@ -131,8 +132,8 @@ class ElasticLogSegmentTest {
         val seg = getOrCreateSegment(40)
         val ms = records(40, "hello", "there")
         seg.append(41, RecordBatch.NO_TIMESTAMP, -1L, ms)
-        val read = seg.read(startOffset = 52, maxSize = 200).records
-        assertFalse(read.records().iterator().hasNext, "Read beyond the last offset in the segment should give no data")
+        val read = seg.read(startOffset = 52, maxSize = 200)
+        assertNull(read, "Read beyond the last offset in the segment should give null")
     }
 
     /**
