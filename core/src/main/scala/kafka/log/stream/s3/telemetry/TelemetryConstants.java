@@ -14,6 +14,7 @@ package kafka.log.stream.s3.telemetry;
 import io.opentelemetry.api.common.AttributeKey;
 
 public class TelemetryConstants {
+    public static final String COMMON_JMX_YAML_CONFIG_PATH = "/jmx/rules/common.yaml";
     public static final String BROKER_JMX_YAML_CONFIG_PATH = "/jmx/rules/broker.yaml";
     public static final String CONTROLLER_JMX_YAML_CONFIG_PATH = "/jmx/rules/controller.yaml";
     public static final String TELEMETRY_SCOPE_NAME = "automq_for_kafka";
