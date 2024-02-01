@@ -61,6 +61,7 @@ class ElasticUnifiedLogTest {
 
     @BeforeEach
     def setUp(): Unit = {
+        ReadHint.markReadAll()
         val props = TestUtils.createSimpleEsBrokerConfig()
         config = KafkaConfig.fromProps(props)
         Context.enableTestMode()
@@ -2624,8 +2625,12 @@ class ElasticUnifiedLogTest {
             minOneMessage = false)
 
         // We do not check relativePositionInSegment because it is a fake value.
-        assertEquals(offsetMetadata.segmentBaseOffset, readInfo.fetchOffsetMetadata.segmentBaseOffset)
-        assertEquals(offsetMetadata.messageOffset, readInfo.fetchOffsetMetadata.messageOffset)
+        if (offsetMetadata.relativePositionInSegment < segment.size) {
+            assertEquals(offsetMetadata.segmentBaseOffset, readInfo.fetchOffsetMetadata.segmentBaseOffset)
+            assertEquals(offsetMetadata.messageOffset, readInfo.fetchOffsetMetadata.messageOffset)
+        } else {
+            assertNull(readInfo)
+        }
     }
 
     @Test
