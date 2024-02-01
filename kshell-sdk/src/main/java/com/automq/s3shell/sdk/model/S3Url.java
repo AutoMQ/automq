@@ -115,7 +115,7 @@ public class S3Url {
                     clusterId = value;
                     break;
                 case "s3-path-style":
-                    s3PathStyle = Boolean.valueOf(value);
+                    s3PathStyle = Boolean.parseBoolean(value);
                     break;
                 default:
                     throw new IllegalArgumentException("Unknown parameter: " + key);
