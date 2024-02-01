@@ -24,7 +24,6 @@ import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
@@ -34,7 +33,6 @@ import kafka.log.stream.s3.telemetry.TelemetryConstants;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
-import org.apache.kafka.common.record.DefaultRecordBatch;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.LogInputStream;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -109,6 +107,9 @@ public class ElasticLogFileRecords {
     }
 
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
+        if (startOffset >= maxOffset) {
+            return CompletableFuture.completedFuture(MemoryRecords.EMPTY);
+        }
         if (ReadHint.isReadAll()) {
             ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).pooledBuf(true).build();
             FetchContext fetchContext = ContextUtils.creaetFetchContext();
@@ -134,7 +135,7 @@ public class ElasticLogFileRecords {
         long nextFetchOffset = startOffset - baseOffset;
         long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
         if (nextFetchOffset >= endOffset) {
-            return CompletableFuture.completedFuture(null);
+            return CompletableFuture.completedFuture(MemoryRecords.EMPTY);
         }
         return fetch0(context, nextFetchOffset, endOffset, maxSize)
                 .thenApply(rst -> PooledMemoryRecords.of(baseOffset, rst, context.readOptions().pooledBuf()));
@@ -512,27 +513,25 @@ public class ElasticLogFileRecords {
             if (sizeInBytes != -1) {
                 return;
             }
-            Records records = null;
+            Records records;
             try {
                 records = elasticLogFileRecords.readAll0(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }
-            sizeInBytes = 0;
-            CompositeByteBuf allRecordsBuf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
-            RecordBatch lastBatch = null;
-            for (RecordBatch batch : records.batches()) {
-                sizeInBytes += batch.sizeInBytes();
-                ByteBuffer buffer = ((DefaultRecordBatch) batch).buffer().duplicate();
-                allRecordsBuf.addComponent(true, Unpooled.wrappedBuffer(buffer));
-                lastBatch = batch;
-            }
-            if (lastBatch != null) {
-                lastOffset = lastBatch.lastOffset() + 1;
-            } else {
+            sizeInBytes = records.sizeInBytes();
+            if (records instanceof PooledMemoryRecords) {
+                memoryRecords = MemoryRecords.readableRecords(((PooledMemoryRecords) records).pack.nioBuffer());
+                lastOffset = ((PooledMemoryRecords) records).lastOffset();
+            } else if (records instanceof MemoryRecords) {
+                memoryRecords = (MemoryRecords) records;
                 lastOffset = startOffset;
+                for (RecordBatch batch: records.batches()) {
+                    lastOffset = batch.lastOffset() + 1;
+                }
+            } else {
+                throw new IllegalArgumentException("unknown records type " + records.getClass());
             }
-            memoryRecords = MemoryRecords.readableRecords(allRecordsBuf.nioBuffer());
         }
     }
 

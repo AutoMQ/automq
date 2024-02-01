@@ -173,6 +173,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
                     maxPosition: Long = size,
                     maxOffset: Long = Long.MaxValue,
                          minOneMessage: Boolean = false): CompletableFuture[FetchDataInfo] = {
+    // TODO: isolate the log clean read to another method
     if (maxSize < 0)
       return CompletableFuture.failedFuture(new IllegalArgumentException(s"Invalid max size $maxSize for log read from segment $log"))
     // Note that relativePositionInSegment here is a fake value. There are no 'position' in elastic streams.
@@ -184,7 +185,7 @@ class ElasticLogSegment(val _meta: ElasticStreamSegmentMeta,
     // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
     _log.read(startOffset, maxOffset, maxSize)
       .thenApply(records => {
-        if (records == null) {
+        if (ReadHint.isReadAll() && records.sizeInBytes() == 0) {
           // After topic compact, the read request might be out of range. Segment should return null and log will retry read next segment.
           null
         } else {
