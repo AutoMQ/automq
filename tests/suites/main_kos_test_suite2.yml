@@ -28,10 +28,6 @@ core_test_suite:
     # cannot downgrade to official kafka
     - ../kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
 
-    # TODO: check the following tests
-    - ../kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_sasl_mechanism_phase_two
-    - ../kafkatest/tests/core/security_rolling_upgrade_test.py::TestSecurityRollingUpgrade.test_rolling_upgrade_phase_two
-
     # zk tests
     - ../kafkatest/tests/core/zookeeper_migration_test.py
     - ../kafkatest/tests/core/zookeeper_security_upgrade_test.py
