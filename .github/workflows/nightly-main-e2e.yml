@@ -2,7 +2,7 @@ name: Nightly Main E2E tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 19 * * *'
+    - cron: '0 16 * * *'
 
 jobs:
   main_e2e_1:
@@ -18,12 +18,13 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     with:
       suite-id: "main2"
-      test-yaml: "tests/suites/extra_kos_test_suite2.yml"
+      test-yaml: "tests/suites/main_kos_test_suite2.yml"
       storage-path: "/data/github-actions/reports"
       runner: "main"
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, main ]
+    if: ${{ always() }}
     needs: [ main_e2e_1, main_e2e_2 ]
     steps:
       - name: Report results
@@ -32,3 +33,4 @@ jobs:
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
           SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
           STORAGE_PATH: "/data/github-actions/reports"
+          REPORT_TITLE_PREFIX: "Main"
