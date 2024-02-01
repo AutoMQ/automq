@@ -660,6 +660,30 @@ class ElasticLogTest {
         assertThrows(classOf[KafkaException], () => log.roll())
     }
 
+    @Test
+    def testAbortTxn_withRoll(): Unit = {
+        var keyValues = Seq(KeyValue("a=", "1"))
+        appendRecords(kvsToRecords(keyValues), initialOffset = 0)
+        keyValues = Seq(KeyValue("a=", "2"))
+        appendRecords(kvsToRecords(keyValues), initialOffset = 1)
+        log.roll()
+        keyValues = Seq(KeyValue("a=", "3"))
+        appendRecords(kvsToRecords(keyValues), initialOffset = 2)
+        log.segments.activeSegment.updateTxnIndex(new CompletedTxn(1, 2, 2, true), 1)
+        keyValues = Seq(KeyValue("a=", "4"))
+        appendRecords(kvsToRecords(keyValues), initialOffset = 3)
+        keyValues = Seq(KeyValue("a=", "5"))
+        appendRecords(kvsToRecords(keyValues), initialOffset = 4)
+        log.segments.activeSegment.updateTxnIndex(new CompletedTxn(1, 4, 4, true), 4)
+        ReadHint.markReadAll()
+        val fetchDataInfo = log.read(2, 1024, true, log.logEndOffsetMetadata, true)
+        assertEquals(3L, fetchDataInfo.records.records.asScala.size)
+        val abortedTxns = fetchDataInfo.abortedTransactions.get.toArray
+        assertEquals(2, abortedTxns.size)
+        assertEquals(2L, abortedTxns(0).firstOffset)
+        assertEquals(4L, abortedTxns(1).firstOffset())
+    }
+
     private def createElasticLogWithActiveSegment(dir: File = logDir,
         config: LogConfig,
         //        segments: LogSegments = new LogSegments(topicPartition),
