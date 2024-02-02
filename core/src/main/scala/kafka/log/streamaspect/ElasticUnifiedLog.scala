@@ -19,8 +19,8 @@ package kafka.log.streamaspect
 
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
+import kafka.server._
 import kafka.server.epoch.LeaderEpochFileCache
-import kafka.server.{BrokerTopicStats, FetchDataInfo, FetchHighWatermark, FetchIsolation, FetchLogEnd, FetchTxnCommitted, LogOffsetMetadata, RequestLocal}
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
@@ -30,7 +30,9 @@ import org.apache.kafka.server.common.MetadataVersion
 
 import java.nio.ByteBuffer
 import java.util
-import java.util.concurrent.{CompletableFuture, Executors}
+import java.util.concurrent.atomic.LongAdder
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors}
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
 class ElasticUnifiedLog(_logStartOffset: Long,
@@ -43,10 +45,13 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
     _leaderEpochCache, producerStateManager, __topicId, false) {
 
+  ElasticUnifiedLog.Logs.put(elasticLog.topicPartition, this)
+
   var confirmOffsetChangeListener: Option[() => Unit] = None
 
   elasticLog.confirmOffsetChangeListener = Some(() => confirmOffsetChangeListener.map(_.apply()))
 
+  // fuzzy interval bytes for checkpoint, it's ok not thread safe
   var checkpointIntervalBytes = 0
   var lastCheckpointTimestamp = time.milliseconds()
 
@@ -56,7 +61,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
 
   override def appendAsLeader(records: MemoryRecords, leaderEpoch: Int, origin: AppendOrigin, interBrokerProtocolVersion: MetadataVersion, requestLocal: RequestLocal): LogAppendInfo = {
-    checkpointIntervalBytes += records.sizeInBytes()
+    val size = records.sizeInBytes()
+    checkpointIntervalBytes += size
+    ElasticUnifiedLog.DirtyBytes.add(size)
     val rst = super.appendAsLeader(records, leaderEpoch, origin, interBrokerProtocolVersion, requestLocal)
     if (checkpointIntervalBytes > MaxCheckpointIntervalBytes && time.milliseconds() - lastCheckpointTimestamp > MinCheckpointIntervalMs) {
       checkpointIntervalBytes = 0
@@ -64,6 +71,14 @@ class ElasticUnifiedLog(_logStartOffset: Long,
       CheckpointExecutor.execute(() => checkpoint())
     }
     rst
+  }
+
+  def tryCheckpoint(): Unit = {
+    if (checkpointIntervalBytes > 0) {
+      checkpointIntervalBytes = 0
+      lastCheckpointTimestamp = time.milliseconds()
+      checkpoint()
+    }
   }
 
   private def checkpoint(): Unit = {
@@ -139,6 +154,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   override def close(): CompletableFuture[Void] = {
+    ElasticUnifiedLog.Logs.remove(elasticLog.topicPartition, this)
     val closeFuture = lock synchronized {
       maybeFlushMetadataFile()
       elasticLog.checkIfMemoryMappedBufferClosed()
@@ -178,9 +194,29 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
-  private val CheckpointExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
+  private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
   private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
   private val MinCheckpointIntervalMs = 10 * 1000
+  private val Logs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
+  // fuzzy dirty bytes for checkpoint, it's ok not thread safe
+  private val DirtyBytes = new LongAdder()
+  private val MaxDirtyBytes = 5L * 1024 * 1024 * 1024 // 5GiB, when the object size is 500MiB, the log recover only need to read at most 10 objects
+
+  CheckpointExecutor.scheduleWithFixedDelay(() => fullCheckpoint(), 1, 1, java.util.concurrent.TimeUnit.MINUTES)
+
+  private def fullCheckpoint(): Unit = {
+    if (DirtyBytes.sum() < MaxDirtyBytes) {
+      return
+    }
+    DirtyBytes.reset()
+    for (log <- Logs.values().asScala) {
+      try {
+        log.tryCheckpoint()
+      } catch {
+        case e: Throwable => error("Error while checkpoint", e)
+      }
+    }
+  }
 
   /**
    * If the recordVersion is >= RecordVersion.V2, then create and return a LeaderEpochFileCache.
