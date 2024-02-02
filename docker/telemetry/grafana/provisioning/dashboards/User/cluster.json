@@ -1706,7 +1706,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(instance) (rate(kafka_topic_request_count_total{job=~\"$cluster_id/.*\", type=\"produce\"}[$__rate_interval]))",
+          "expr": "sum by(instance) (rate(kafka_request_count_total{job=~\"$cluster_id/.*\", type=\"Produce\"}[$__rate_interval]))",
           "format": "table",
           "fullMetaSearch": false,
           "hide": false,
@@ -1725,7 +1725,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(instance) (rate(kafka_topic_request_count_total{job=~\"$cluster_id/.*\", type=\"fetch\"}[$__rate_interval]))",
+          "expr": "sum by(instance) (rate(kafka_request_count_total{job=~\"$cluster_id/.*\", type=\"Fetch\"}[$__rate_interval]))",
           "format": "table",
           "fullMetaSearch": false,
           "hide": false,
@@ -1944,6 +1944,6 @@
   "timezone": "",
   "title": "Cluster Overview",
   "uid": "f719833b-0a35-4fb3-9b84-3815726006e7",
-  "version": 3,
+  "version": 5,
   "weekStart": ""
 }

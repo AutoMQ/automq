@@ -1029,7 +1029,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, topic) (rate(kafka_topic_request_count_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", type=\"produce\"}[$__rate_interval]))",
+          "expr": "sum by(instance, topic) (rate(kafka_request_count_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", type=\"Produce\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1133,7 +1133,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, topic) (rate(kafka_topic_request_count_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", type=\"fetch\"}[$__rate_interval]))",
+          "expr": "sum by(instance, topic) (rate(kafka_request_count_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", type=\"Fetch\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1580,6 +1580,6 @@
   "timezone": "",
   "title": "Broker Metrics",
   "uid": "e97dc219-c0c7-4bbe-9616-cdafb3451a3b",
-  "version": 2,
+  "version": 5,
   "weekStart": ""
 }
