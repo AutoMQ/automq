@@ -51,6 +51,12 @@ import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
  */
 public class SlidingWindowService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlidingWindowService.class.getSimpleName());
+    /**
+     * The minimum interval between two scheduled write operations. At most 1000 per second.
+     *
+     * @see this#pollBlockScheduler
+     */
+    private static final long MIN_SCHEDULED_WRITE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1) / 1000;
     private final int ioThreadNums;
     private final long upperLimit;
     private final long scaleUnit;
@@ -121,9 +127,12 @@ public class SlidingWindowService {
         this.windowCoreData = new WindowCoreData(windowMaxLength, windowStartOffset, windowStartOffset);
         this.ioExecutor = Threads.newFixedThreadPoolWithMonitor(ioThreadNums,
             "block-wal-io-thread", false, LOGGER);
+
+        long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, minWriteIntervalNanos);
         this.pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
-        pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, minWriteIntervalNanos, TimeUnit.NANOSECONDS);
+        pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, scheduledInterval, TimeUnit.NANOSECONDS);
+
         initialized.set(true);
     }
 
