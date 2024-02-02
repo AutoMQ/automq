@@ -96,9 +96,7 @@ public interface WALChannel {
      */
     int read(ByteBuf dst, long position, int length) throws IOException;
 
-    default boolean useDirectIO() {
-        return this instanceof WALBlockDeviceChannel;
-    }
+    boolean useDirectIO();
 
     interface CapacityReader {
         /**

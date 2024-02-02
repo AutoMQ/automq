@@ -131,4 +131,9 @@ public class WALCachedChannel implements WALChannel {
     public void flush() throws IOException {
         this.channel.flush();
     }
+
+    @Override
+    public boolean useDirectIO() {
+        return channel.useDirectIO();
+    }
 }
