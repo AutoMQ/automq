@@ -148,4 +148,9 @@ public class WALFileChannel implements WALChannel {
         }
         return bytesWritten;
     }
+
+    @Override
+    public boolean useDirectIO() {
+        return false;
+    }
 }

@@ -318,4 +318,9 @@ public class WALBlockDeviceChannel implements WALChannel {
         }
         return bytesRead;
     }
+
+    @Override
+    public boolean useDirectIO() {
+        return true;
+    }
 }
