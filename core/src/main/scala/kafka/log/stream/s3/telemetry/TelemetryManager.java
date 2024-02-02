@@ -156,6 +156,7 @@ public class TelemetryManager {
         MetricConfiguration conf = new MetricConfiguration();
 
         Set<KafkaRaftServer.ProcessRole> roles = kafkaConfig.processRoles();
+        buildMetricConfiguration(conf, TelemetryConstants.COMMON_JMX_YAML_CONFIG_PATH);
         if (roles.contains(KafkaRaftServer.BrokerRole$.MODULE$)) {
             buildMetricConfiguration(conf, TelemetryConstants.BROKER_JMX_YAML_CONFIG_PATH);
         }
