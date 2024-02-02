@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 18,
+  "id": 5,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -419,7 +419,7 @@
           "useBackend": false
         }
       ],
-      "title": "Message Size",
+      "title": "Size",
       "type": "timeseries"
     },
     {
@@ -614,7 +614,7 @@
         {
           "id": "calculateField",
           "options": {
-            "alias": "Consumer Log",
+            "alias": "Consumer Lag",
             "binary": {
               "left": "Value #B",
               "operator": "-",
@@ -739,6 +739,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 4,
+  "version": 3,
   "weekStart": ""
 }
