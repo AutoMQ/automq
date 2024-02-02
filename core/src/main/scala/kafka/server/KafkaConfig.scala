@@ -696,12 +696,8 @@ object KafkaConfig {
   val S3BucketProp = "s3.bucket"
   val S3WALPathProp = "s3.wal.path"
   val S3WALCapacityProp = "s3.wal.capacity"
-  val S3WALHeaderFlushIntervalSecondsProp = "s3.wal.header.flush.interval.seconds"
   val S3WALThreadProp = "s3.wal.thread"
-  val S3WALQueueProp = "s3.wal.queue"
-  val S3WALWindowInitialProp = "s3.wal.window.initial"
-  val S3WALWindowIncrementProp = "s3.wal.window.increment"
-  val S3WALWindowMaxProp = "s3.wal.window.max"
+  val S3WALIOPSProp = "s3.wal.iops"
   val S3WALCacheSizeProp = "s3.wal.cache.size"
   val S3WALUploadThresholdProp = "s3.wal.upload.threshold"
   val S3StreamSplitSizeProp = "s3.stream.object.split.size"
@@ -745,12 +741,8 @@ object KafkaConfig {
   val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
   val S3WALPathDoc = "The S3 WAL path. It could be a block device like /dev/xxx or file path in file system"
   val S3WALCapacityDoc = "The S3 WAL capacity. The value should be larger than s3.wal.cache.size cause of log storage format may not compact."
-  val S3WALHeaderFlushIntervalSecondsDoc = "The S3 WAL header flush interval in seconds."
   val S3WALThreadDoc = "The IO thread count for S3 WAL."
-  val S3WALQueueDoc = "The max queue size for S3 WAL."
-  val S3WALWindowInitialDoc = "The initial S3 WAL window size in bytes."
-  val S3WALWindowIncrementDoc = "The increment of S3 WAL window size in bytes."
-  val S3WALWindowMaxDoc = "The max S3 WAL window size in bytes."
+  val S3WALIOPSDoc = "The max iops for S3 WAL."
   val S3WALCacheSizeDoc = "The S3 storage max WAL cache size. When WAL cache is full, storage will hang the request, \n" +
     "until WAL cache is free by S3 WAL upload."
   val S3WALUploadThresholdDoc = "The S3 WAL trigger upload (bytes) threshold."
@@ -1594,12 +1586,8 @@ object KafkaConfig {
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, 2147483648L, MEDIUM, S3WALCacheSizeDoc)
       .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
-      .define(S3WALHeaderFlushIntervalSecondsProp, INT, 10, MEDIUM, S3WALHeaderFlushIntervalSecondsDoc)
       .define(S3WALThreadProp, INT, 8, MEDIUM, S3WALThreadDoc)
-      .define(S3WALQueueProp, INT, 10000, MEDIUM, S3WALQueueDoc)
-      .define(S3WALWindowInitialProp, LONG, 1048576L, MEDIUM, S3WALWindowInitialDoc)
-      .define(S3WALWindowIncrementProp, LONG, 4194304L, MEDIUM, S3WALWindowIncrementDoc)
-      .define(S3WALWindowMaxProp, LONG, 536870912L, MEDIUM, S3WALWindowMaxDoc)
+      .define(S3WALIOPSProp, INT, 3000, MEDIUM, S3WALIOPSDoc)
       .define(S3WALUploadThresholdProp, LONG, 524288000L, MEDIUM, S3WALUploadThresholdDoc)
       .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
@@ -2176,12 +2164,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
   val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
-  val s3WALHeaderFlushIntervalSeconds = getInt(KafkaConfig.S3WALHeaderFlushIntervalSecondsProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
-  val s3WALQueue = getInt(KafkaConfig.S3WALQueueProp)
-  val s3WALWindowInitial = getLong(KafkaConfig.S3WALWindowInitialProp)
-  val s3WALWindowIncrement = getLong(KafkaConfig.S3WALWindowIncrementProp)
-  val s3WALWindowMax = getLong(KafkaConfig.S3WALWindowMaxProp)
+  val s3WALIOPS = getInt(KafkaConfig.S3WALIOPSProp)
   val s3WALUploadThreshold = getLong(KafkaConfig.S3WALUploadThresholdProp)
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
