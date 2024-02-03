@@ -227,8 +227,7 @@ public class ControllerRequestSenderTest {
             ClientResponse clientResponse = new ClientResponse(
                 null, null, null, -1, -1, false, null, null, response);
             // first time sleep 3s
-            Thread.sleep(3000);
-            handler.onComplete(clientResponse);
+            CompletableFuture.delayedExecutor(3, TimeUnit.SECONDS).execute(() -> handler.onComplete(clientResponse));
             return null;
         }).doAnswer(ink -> {
             CreateStreamsRequest.Builder requestBuilder = ink.getArgument(0);
