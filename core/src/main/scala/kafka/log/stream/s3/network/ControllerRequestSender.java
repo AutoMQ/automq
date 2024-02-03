@@ -156,7 +156,7 @@ public class ControllerRequestSender {
         public RequestAccumulator() {
         }
 
-        void send(RequestTask task) {
+        synchronized void send(RequestTask task) {
             if (task != null) {
                 requestQueue.add(task);
             }
@@ -166,9 +166,6 @@ public class ControllerRequestSender {
         }
 
         void send0() {
-            if (requestQueue.isEmpty()) {
-                return;
-            }
             List<RequestTask> inflight = new ArrayList<>();
             requestQueue.drainTo(inflight);
             Builder builder = inflight.get(0).request.toRequestBuilder();
@@ -176,6 +173,14 @@ public class ControllerRequestSender {
             RequestCtx requestCtx = new RequestCtx() {
                 @Override
                 void onSuccess(AbstractResponse response) {
+                    try {
+                        onSuccess0(response);
+                    } catch (Exception e) {
+                        LOGGER.error("[UNEXPECTED]", e);
+                    }
+                }
+
+                void onSuccess0(AbstractResponse response) {
                     if (!(response instanceof AbstractBatchResponse)) {
                         LOGGER.error("Unexpected response type: {} while sending request: {}",
                                 response.getClass().getSimpleName(), builder);
@@ -209,6 +214,14 @@ public class ControllerRequestSender {
 
                 @Override
                 void onError(Throwable e) {
+                    try {
+                        onError0(e);
+                    } catch (Exception ex) {
+                        LOGGER.error("[UNEXPECTED]", ex);
+                    }
+                }
+
+                void onError0(Throwable e) {
                     if (e instanceof TimeoutException) {
                         RequestAccumulator.this.inflight.compareAndSet(true, false);
                         inflight.forEach(ControllerRequestSender.this::retryTask);
