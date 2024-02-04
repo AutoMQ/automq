@@ -32,6 +32,3 @@ core_test_suite:
     # unclean election or truncation will not happen in KOS
     - ../kafkatest/tests/client/truncation_test.py::TruncationTest.test_offset_truncate
 
-    # TODO: check the following tests
-    - ../kafkatest/tests/client/quota_test.py::QuotaTest.test_quota
-
