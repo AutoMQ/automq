@@ -209,7 +209,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic, partition) (increase(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
+          "expr": "sum by(topic, partition) (rate(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -739,6 +739,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
