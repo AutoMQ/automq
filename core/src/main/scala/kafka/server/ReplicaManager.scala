@@ -1077,7 +1077,8 @@ class ReplicaManager(val config: KafkaConfig,
                    _: RecordTooLargeException |
                    _: RecordBatchTooLargeException |
                    _: CorruptRecordException |
-                   _: KafkaStorageException) =>
+                   _: KafkaStorageException |
+                   _: DuplicateSequenceException) =>
             (topicPartition, LogAppendResult(LogAppendInfo.UnknownLogAppendInfo, Some(e)))
           case rve: RecordValidationException =>
             val logStartOffset = processFailedRecord(topicPartition, rve.invalidException)
