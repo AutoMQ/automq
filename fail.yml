@@ -1,2 +1,0 @@
-2024-02-03--001:
-- tests/kafkatest/tests/core/mirror_maker_test.py::TestMirrorMakerService.test_bounce@{"clean_shutdown":false,"security_protocol":"PLAINTEXT"}
