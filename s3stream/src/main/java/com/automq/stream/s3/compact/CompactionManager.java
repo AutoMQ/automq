@@ -56,6 +56,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 
 public class CompactionManager {
+    private static final int MIN_COMPACTION_DELAY_MS = 60000;
     private final Logger logger;
     private final Logger s3ObjectLogger;
     private final ObjectManager objectManager;
@@ -129,7 +130,7 @@ public class CompactionManager {
             } catch (Exception ex) {
                 logger.error("Error while compacting objects ", ex);
             }
-            long nextDelay = Math.max(0, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+            long nextDelay = Math.max(MIN_COMPACTION_DELAY_MS, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             scheduleNextCompaction(nextDelay);
         }, delayMillis, TimeUnit.MILLISECONDS);
     }
