@@ -83,7 +83,7 @@ public class GenerateConfigFileCmd {
             .dest("controller-list")
             .metavar("CONTROLLER-LIST")
             .help("Your controller ip:port list, split by ':'. Example: 192.168.0.1:9092;192.168.0.2:9092");
-        parser.addArgument("--broker-address")
+        parser.addArgument("--broker-list")
             .action(store())
             .required(true)
             .type(String.class)
