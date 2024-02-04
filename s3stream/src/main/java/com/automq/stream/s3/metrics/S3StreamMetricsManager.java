@@ -46,6 +46,7 @@ public class S3StreamMetricsManager {
     private static LongHistogram networkOutboundLimiterQueueTime = new NoopLongHistogram();
     private static LongHistogram allocateByteBufSize = new NoopLongHistogram();
     private static LongHistogram readAheadSize = new NoopLongHistogram();
+    private static LongHistogram readAheadLimierQueueTime = new NoopLongHistogram();
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalTrimmedOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalCacheSize = new NoopObservableLongGauge();
@@ -181,6 +182,12 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .build();
+        readAheadLimierQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.READ_AHEAD_QUEUE_TIME_METRIC_NAME)
+            .setDescription("Read ahead limiter queue time")
+            .setUnit("nanoseconds")
+            .ofLongs()
+            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
+            .build();
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
             .setDescription("Delta WAL start offset")
             .ofLongs()
@@ -220,7 +227,7 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                     result.record((long) availableInflightReadAheadSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
@@ -433,6 +440,14 @@ public class S3StreamMetricsManager {
             return metric;
         }
 
+    }
+
+    public static HistogramMetric buildReadAheadLimiterQueueTimeMetric() {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsConfig, readAheadLimierQueueTime);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
+        }
     }
 
     public static CounterMetric buildCompactionReadSizeMetric() {

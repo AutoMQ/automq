@@ -164,9 +164,11 @@ public class StreamReader {
                 totalReserveSize, uuid, streamId, startOffset, endOffset, maxBytes);
         }
 
+        TimerUtil throttleTimer = new TimerUtil();
         CompletableFuture<Void> throttleCf = inflightReadThrottle.acquire(traceContext, uuid, totalReserveSize);
         return throttleCf.thenComposeAsync(nil -> {
             // concurrently read all data blocks
+            StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(MetricsLevel.INFO, throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
             for (int i = 0; i < streamDataBlocksToRead.size(); i++) {
                 Pair<ObjectReader, StreamDataBlock> pair = streamDataBlocksToRead.get(i);
                 ObjectReader objectReader = pair.getLeft();
@@ -360,7 +362,9 @@ public class StreamReader {
                     reserveResult.reserveSize(), uuid, streamId, startOffset, endOffset, maxBytes);
             }
             if (reserveResult.reserveSize() > 0) {
+                TimerUtil throttleTimer = new TimerUtil();
                 inflightReadThrottle.acquire(TraceContext.DEFAULT, uuid, reserveResult.reserveSize()).thenAcceptAsync(nil -> {
+                    StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(MetricsLevel.INFO, throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
                     // read data block
                     if (context.taskKeySet.contains(taskKey)) {
                         setInflightReadAheadStatus(taskKey, DefaultS3BlockCache.ReadBlockCacheStatus.WAIT_FETCH_DATA);
