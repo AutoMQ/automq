@@ -42,7 +42,8 @@ class MirrorMaker(KafkaPathResolverMixin, Service):
 
     def __init__(self, context, num_nodes, source, target, whitelist=None, num_streams=1,
                  consumer_timeout_ms=None, offsets_storage="kafka",
-                 offset_commit_interval_ms=60000, log_level="DEBUG", producer_interceptor_classes=None):
+                 offset_commit_interval_ms=60000, log_level="DEBUG", producer_interceptor_classes=None,
+                 consumer_session_timeout_ms=None, consumer_rebalance_timeout_ms=None):
         """
         MirrorMaker mirrors messages from one or more source clusters to a single destination cluster.
 
@@ -81,6 +82,8 @@ class MirrorMaker(KafkaPathResolverMixin, Service):
         # These properties are potentially used by third-party tests.
         self.source_auto_offset_reset = None
         self.partition_assignment_strategy = None
+        self.consumer_session_timeout_ms = consumer_session_timeout_ms
+        self.consumer_rebalance_timeout_ms = consumer_rebalance_timeout_ms
 
     def start_cmd(self, node):
         cmd = "export LOG_DIR=%s;" % MirrorMaker.LOG_DIR
@@ -122,6 +125,10 @@ class MirrorMaker(KafkaPathResolverMixin, Service):
         # Create, upload one consumer config file for source cluster
         consumer_props = self.render("mirror_maker_consumer.properties")
         consumer_props += str(self.security_config)
+        if self.consumer_timeout_ms:
+            consumer_props += "consumer.timeout.ms=%d\n" % self.consumer_timeout_ms
+        if self.consumer_rebalance_timeout_ms:
+            consumer_props += "rebalance.timeout.ms=%d\n" % self.consumer_rebalance_timeout_ms
 
         node.account.create_file(MirrorMaker.CONSUMER_CONFIG, consumer_props)
         self.logger.info("Mirrormaker consumer props:\n" + consumer_props)

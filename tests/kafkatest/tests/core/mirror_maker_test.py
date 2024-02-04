@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from ducktape.cluster.remoteaccount import LogMonitor
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
@@ -46,7 +46,8 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
         self.producer = VerifiableProducer(test_context, num_nodes=1, kafka=self.source_kafka, topic=self.topic,
                                            throughput=1000)
         self.mirror_maker = MirrorMaker(test_context, num_nodes=1, source=self.source_kafka, target=self.target_kafka,
-                                        whitelist=self.topic, offset_commit_interval_ms=1000)
+                                        whitelist=self.topic, offset_commit_interval_ms=1000,
+                                        consumer_session_timeout_ms=20000, consumer_rebalance_timeout_ms=30000)
         # This will consume from target kafka cluster
         self.consumer = ConsoleConsumer(test_context, num_nodes=1, kafka=self.target_kafka, topic=self.topic,
                                         message_validator=is_int, consumer_timeout_ms=60000)
@@ -101,6 +102,10 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
             self.logger.info("Bringing mirror maker nodes back up...")
             for node in self.mirror_maker.nodes:
                 self.mirror_maker.start_node(node)
+
+            with self.mirror_maker.nodes[0].account.monitor_log(self.mirror_maker.LOG_FILE) as monitor:
+                monitor.wait_until("Received FETCH response from node", timeout_sec=60,
+                                   err_msg="MirrorMaker did not rejoin the group in a reasonable amount of time.")
 
             # Ensure new messages are once again showing up on the target cluster
             wait_until(lambda: len(self.consumer.messages_consumed[1]) > num_consumed + 100, timeout_sec=60)
@@ -164,8 +169,9 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
 
         # Wait until mirror maker has reset fetch offset at least once before continuing with the rest of the test
         mm_node = self.mirror_maker.nodes[0]
-        with mm_node.account.monitor_log(self.mirror_maker.LOG_FILE) as monitor:
-            monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
+        # force to watch from offset 1 since the monitor may be launched after the mirror maker has reset the offset
+        monitor = LogMonitor(mm_node.account, self.mirror_maker.LOG_FILE, 1)
+        monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
 
         self.run_produce_consume_validate(core_test_action=lambda: self.bounce(clean_shutdown=clean_shutdown))
         self.mirror_maker.stop()
