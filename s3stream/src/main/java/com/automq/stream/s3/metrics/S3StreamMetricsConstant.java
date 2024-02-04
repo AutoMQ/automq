@@ -86,6 +86,7 @@ public class S3StreamMetricsConstant {
     public static final String DELTA_WAL_CACHE_SIZE = "delta_wal_cache_size";
     public static final String BLOCK_CACHE_SIZE = "block_cache_size";
     public static final String AVAILABLE_INFLIGHT_READ_AHEAD_SIZE_METRIC_NAME = "available_inflight_read_ahead_size";
+    public static final String READ_AHEAD_QUEUE_TIME_METRIC_NAME = "read_ahead_limiter_queue_time";
     public static final String AVAILABLE_S3_INFLIGHT_READ_QUOTA_METRIC_NAME = "available_s3_inflight_read_quota";
     public static final String AVAILABLE_S3_INFLIGHT_WRITE_QUOTA_METRIC_NAME = "available_s3_inflight_write_quota";
     public static final String INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME = "inflight_wal_upload_tasks_count";
