@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from ducktape.cluster.remoteaccount import LogMonitor
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
@@ -23,6 +22,7 @@ from kafkatest.services.console_consumer import ConsoleConsumer
 from kafkatest.services.verifiable_producer import VerifiableProducer
 from kafkatest.services.mirror_maker import MirrorMaker
 from kafkatest.services.security.minikdc import MiniKdc
+from kafkatest.tests.monitor_util import get_monitor_with_offset
 from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int
 
@@ -170,8 +170,8 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
         # Wait until mirror maker has reset fetch offset at least once before continuing with the rest of the test
         mm_node = self.mirror_maker.nodes[0]
         # force to watch from offset 1 since the monitor may be launched after the mirror maker has reset the offset
-        monitor = LogMonitor(mm_node.account, self.mirror_maker.LOG_FILE, 1)
-        monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
+        with get_monitor_with_offset(mm_node.account, self.mirror_maker.LOG_FILE, 1) as monitor:
+            monitor.wait_until("Resetting offset for partition", timeout_sec=30, err_msg="Mirrormaker did not reset fetch offset in a reasonable amount of time.")
 
         self.run_produce_consume_validate(core_test_action=lambda: self.bounce(clean_shutdown=clean_shutdown))
         self.mirror_maker.stop()

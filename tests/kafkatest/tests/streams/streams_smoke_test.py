@@ -20,6 +20,8 @@ from kafkatest.services.kafka import quorum
 from kafkatest.tests.kafka_test import KafkaTest
 from kafkatest.services.streams import StreamsSmokeTestDriverService, StreamsSmokeTestJobRunnerService
 
+from kafkatest.tests.monitor_util import get_monitor_with_offset
+
 
 class StreamsSmokeTest(KafkaTest):
     """
@@ -56,52 +58,52 @@ class StreamsSmokeTest(KafkaTest):
         processor2 = StreamsSmokeTestJobRunnerService(self.test_context, self.kafka, processing_guarantee)
         processor3 = StreamsSmokeTestJobRunnerService(self.test_context, self.kafka, processing_guarantee)
 
-        monitor1 = LogMonitor(processor1.node.account, processor1.STDOUT_FILE, 1)
-        processor1.start()
-        monitor1.wait_until('REBALANCING -> RUNNING',
-                            timeout_sec=60,
-                            err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor1.node.account)
-                            )
+        with get_monitor_with_offset(processor1.node.account, processor1.STDOUT_FILE, 1) as monitor1:
+            processor1.start()
+            monitor1.wait_until('REBALANCING -> RUNNING',
+                                timeout_sec=60,
+                                err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor1.node.account)
+                                )
 
-        self.driver.start()
+            self.driver.start()
 
-        monitor1.wait_until('processed',
-                            timeout_sec=30,
-                            err_msg="Didn't see any processing messages " + str(processor1.node.account)
-                            )
+            monitor1.wait_until('processed',
+                                timeout_sec=30,
+                                err_msg="Didn't see any processing messages " + str(processor1.node.account)
+                                )
 
-        # make sure we're not already done processing (which would invalidate the test)
-        self.driver.node.account.ssh("! grep 'Result Verification' %s" % self.driver.STDOUT_FILE, allow_fail=False)
+            # make sure we're not already done processing (which would invalidate the test)
+            self.driver.node.account.ssh("! grep 'Result Verification' %s" % self.driver.STDOUT_FILE, allow_fail=False)
 
-        processor1.stop_nodes(not crash)
+            processor1.stop_nodes(not crash)
 
-        monitor2 = LogMonitor(processor2.node.account, processor2.STDOUT_FILE, 1)
-        processor2.start()
-        monitor2.wait_until('REBALANCING -> RUNNING',
-                            timeout_sec=120,
-                            err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor2.node.account)
-                            )
-        monitor2.wait_until('processed',
-                            timeout_sec=30,
-                            err_msg="Didn't see any processing messages " + str(processor2.node.account)
-                            )
+        with get_monitor_with_offset(processor2.node.account, processor2.STDOUT_FILE, 1) as monitor2:
+            processor2.start()
+            monitor2.wait_until('REBALANCING -> RUNNING',
+                                timeout_sec=120,
+                                err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor2.node.account)
+                                )
+            monitor2.wait_until('processed',
+                                timeout_sec=30,
+                                err_msg="Didn't see any processing messages " + str(processor2.node.account)
+                                )
 
         # make sure we're not already done processing (which would invalidate the test)
         self.driver.node.account.ssh("! grep 'Result Verification' %s" % self.driver.STDOUT_FILE, allow_fail=False)
 
         processor2.stop_nodes(not crash)
 
-        monitor3 = LogMonitor(processor3.node.account, processor3.STDOUT_FILE, 1)
-        processor3.start()
-        monitor3.wait_until('REBALANCING -> RUNNING',
-                            timeout_sec=120,
-                            err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor3.node.account)
-                            )
-        # there should still be some data left for this processor to work on.
-        monitor3.wait_until('processed',
-                            timeout_sec=30,
-                            err_msg="Didn't see any processing messages " + str(processor3.node.account)
-                            )
+        with get_monitor_with_offset(processor3.node.account, processor3.STDOUT_FILE, 1) as monitor3:
+            processor3.start()
+            monitor3.wait_until('REBALANCING -> RUNNING',
+                                timeout_sec=120,
+                                err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor3.node.account)
+                                )
+            # there should still be some data left for this processor to work on.
+            monitor3.wait_until('processed',
+                                timeout_sec=30,
+                                err_msg="Didn't see any processing messages " + str(processor3.node.account)
+                                )
 
         self.driver.wait()
         self.driver.stop()
