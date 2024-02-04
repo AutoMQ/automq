@@ -42,6 +42,7 @@ import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReaderBuilder;
+import io.opentelemetry.sdk.metrics.internal.SdkMeterProviderUtil;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SpanProcessor;
@@ -289,7 +290,8 @@ public class TelemetryManager {
 
         MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
         metricReaderList.add(periodicReader);
-        sdkMeterProviderBuilder.registerMetricReader(periodicReader);
+        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
+                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("OTLP exporter registered, endpoint: {}, protocol: {}", otlpExporterHost, protocol);
     }
 
@@ -302,7 +304,8 @@ public class TelemetryManager {
         metricReaderList.add(periodicReader);
         metricsLogger = java.util.logging.Logger.getLogger(LoggingMetricExporter.class.getName());
         metricsLogger.setLevel(Level.FINEST);
-        sdkMeterProviderBuilder.registerMetricReader(periodicReader);
+        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
+                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("Log exporter registered");
     }
 
@@ -317,7 +320,8 @@ public class TelemetryManager {
                 .setHost(promExporterHost)
                 .setPort(promExporterPort)
                 .build();
-        sdkMeterProviderBuilder.registerMetricReader(prometheusHttpServer);
+        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, prometheusHttpServer,
+                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("Prometheus exporter registered, host: {}, port: {}", promExporterHost, promExporterPort);
     }
 
