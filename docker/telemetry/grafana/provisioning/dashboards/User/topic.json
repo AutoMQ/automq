@@ -109,7 +109,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic) (rate(kafka_message_count_total{job=~\"$cluster_id/.*\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
+          "expr": "sum by(topic) (rate(kafka_message_count_total{job=\"$cluster_id\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -209,7 +209,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic, partition) (rate(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
+          "expr": "sum by(topic, partition) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", topic=~\"$topic\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -309,7 +309,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic, partition) (rate(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", topic=~\"$topic\", direction=\"out\"}[$__rate_interval]))",
+          "expr": "sum by(topic, partition) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", topic=~\"$topic\", direction=\"out\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -409,7 +409,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic) (kafka_log_size{job=~\"$cluster_id/.*\", topic=~\"$topic\"})",
+          "expr": "sum by(topic) (kafka_log_size{job=\"$cluster_id\", topic=~\"$topic\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -575,7 +575,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition, consumer_group) (kafka_group_commit_offset{job=~\"$cluster_id/.*\", topic=~\"$topic\"})",
+          "expr": "sum by(topic, partition, consumer_group) (kafka_group_commit_offset{job=\"$cluster_id\", topic=~\"$topic\"})",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -593,7 +593,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=~\"$cluster_id/.*\", topic=~\"$topic\"})",
+          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\"})",
           "format": "table",
           "fullMetaSearch": false,
           "hide": false,
@@ -679,7 +679,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(job)",
+        "definition": "label_values(jvm_cpu_count,job)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster Id",
@@ -688,11 +688,11 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(job)",
+          "query": "label_values(jvm_cpu_count,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "/(?<value>[^\"]+)\\//",
+        "regex": "",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
@@ -701,10 +701,10 @@
         "current": {
           "selected": true,
           "text": [
-            "test-topic"
+            "__auto_balancer_metrics"
           ],
           "value": [
-            "test-topic"
+            "__auto_balancer_metrics"
           ]
         },
         "datasource": {
@@ -739,6 +739,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 4,
+  "version": 8,
   "weekStart": ""
 }
