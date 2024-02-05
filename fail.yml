@@ -1,0 +1,4 @@
+2024-02-04--001:
+#- tests/kafkatest/tests/core/group_mode_transactions_test.py::GroupModeTransactionsTest.test_transactions@{"failure_mode":"hard_bounce","bounce_target":"brokers"}
+- tests/kafkatest/tests/client/quota_test.py::QuotaTest.test_quota@{"quota_type":"client-id","old_client_throttling_behavior":true}
+
