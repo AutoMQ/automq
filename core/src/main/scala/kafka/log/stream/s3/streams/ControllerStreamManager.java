@@ -211,6 +211,8 @@ public class ControllerStreamManager implements StreamManager {
                     LOGGER.error("Unexpected error while opening stream: {}, epoch {}, code: {}", streamId, epoch, code);
                     throw code.exception();
                 case STREAM_NOT_CLOSED:
+                    LOGGER.warn("open stream fail: {}, epoch {}, code: STREAM_NOT_CLOSED, retry later", streamId, epoch);
+                    return ResponseHandleResult.withRetry();
                 default:
                     LOGGER.error("Error while opening stream: {}, epoch {}, code: {}, retry later", streamId, epoch, code);
                     return ResponseHandleResult.withRetry();
