@@ -327,9 +327,6 @@ public class TelemetryManager {
         if (StringUtils.isBlank(endpoint)) {
             return Optional.empty();
         }
-        if (!endpoint.startsWith("http://")) {
-            endpoint = "https://" + endpoint;
-        }
         return Optional.of(endpoint);
     }
 
