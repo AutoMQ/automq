@@ -63,8 +63,8 @@ due to performance and security concerns.
    
     # Sample OTLP endpoints
     # OTel Collector (gRPC): http://${endpoint}:4317
-    # OTel Collector (HTTP): http://${endpoint}:4318
-    # Prometheus OTLP receiver: http://${endpoint}:9090/api/v1/otlp/v1/metrics
+    # OTel Collector (HTTP): http://${endpoint}:4318/v1/metrics
+    # Prometheus (OpenSource) OTLP receiver: http://${endpoint}:9090/api/v1/otlp/v1/metrics
    
     # Metrics report interval
     s3.telemetry.exporter.report.interval.ms=5000
