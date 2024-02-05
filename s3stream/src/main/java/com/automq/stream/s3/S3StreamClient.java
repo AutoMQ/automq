@@ -98,7 +98,7 @@ public class S3StreamClient implements StreamClient {
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             List<S3Stream> operationStreams = new LinkedList<>(openedStreams.values());
             operationStreams.forEach(stream -> {
-                StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager)
+                StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(stream)
                     .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
                 task.compact();
             });
