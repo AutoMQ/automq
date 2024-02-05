@@ -996,7 +996,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
       def release(): Unit = {
         partitions.values().forEach(data => {
-          if (data.records() != null) {
+          if (data.records() != null && data.records().isInstanceOf[PooledResource]) {
             data.records().asInstanceOf[PooledResource].release()
           }
         })
