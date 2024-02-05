@@ -290,7 +290,11 @@ public class BlockWALService implements WriteAheadLog {
         walHeaderReady(header);
 
         started.set(true);
+        LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
+        return this;
+    }
 
+    private void registerMetrics() {
         S3StreamMetricsManager.registerDeltaWalOffsetSupplier(() -> {
             try {
                 return this.getCurrentStartOffset();
@@ -299,9 +303,6 @@ public class BlockWALService implements WriteAheadLog {
                 return 0L;
             }
         }, () -> walHeader.getFlushedTrimOffset());
-
-        LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
-        return this;
     }
 
     private long getCurrentStartOffset() {
@@ -480,7 +481,14 @@ public class BlockWALService implements WriteAheadLog {
             slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), recoveryCompleteOffset);
         }
         LOGGER.info("reset sliding window to offset: {}", recoveryCompleteOffset);
-        return trim(recoveryCompleteOffset - 1, true).thenRun(() -> resetFinished.set(true));
+        CompletableFuture<Void> cf = trim(recoveryCompleteOffset - 1, true)
+            .thenRun(() -> resetFinished.set(true));
+
+        if (!recoveryMode) {
+            // Only register metrics when not in recovery mode
+            return cf.thenRun(this::registerMetrics);
+        }
+        return cf;
     }
 
     @Override
