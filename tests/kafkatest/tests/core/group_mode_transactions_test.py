@@ -112,7 +112,8 @@ class GroupModeTransactionsTest(Test):
 
             self.kafka.await_no_under_replicated_partitions()
 
-    def create_and_start_message_copier(self, input_topic, output_topic, transactional_id):
+    def create_and_start_message_copier(self, input_topic, output_topic, transactional_id,
+                                        producer_block_timeout_ms):
         message_copier = TransactionalMessageCopier(
             context=self.test_context,
             num_nodes=1,
@@ -126,7 +127,8 @@ class GroupModeTransactionsTest(Test):
             transaction_size=self.transaction_size,
             transaction_timeout=self.transaction_timeout,
             use_group_metadata=True,
-            group_mode=True
+            group_mode=True,
+            producer_block_timeout_ms=producer_block_timeout_ms
         )
         message_copier.start()
         wait_until(lambda: message_copier.alive(message_copier.nodes[0]),
@@ -145,13 +147,14 @@ class GroupModeTransactionsTest(Test):
                                                         str(copier.progress_percent())))
                 copier.restart(clean_shutdown)
 
-    def create_and_start_copiers(self, input_topic, output_topic, num_copiers):
+    def create_and_start_copiers(self, input_topic, output_topic, num_copiers, producer_block_timeout_ms):
         copiers = []
         for i in range(0, num_copiers):
             copiers.append(self.create_and_start_message_copier(
                 input_topic=input_topic,
                 output_topic=output_topic,
-                transactional_id="copier-" + str(i)
+                transactional_id="copier-" + str(i),
+                producer_block_timeout_ms=producer_block_timeout_ms
             ))
         return copiers
 
@@ -227,9 +230,14 @@ class GroupModeTransactionsTest(Test):
 
         It returns the concurrently consumed messages.
         """
+        producer_block_timeout_ms = None
+        if failure_mode != "clean_bounce" and bounce_target == "brokers":
+            # change from the default 60s to 90s to wait for broker recovery
+            producer_block_timeout_ms = 90000
         copiers = self.create_and_start_copiers(input_topic=input_topic,
                                                 output_topic=output_topic,
-                                                num_copiers=num_copiers)
+                                                num_copiers=num_copiers,
+                                                producer_block_timeout_ms=producer_block_timeout_ms)
         concurrent_consumer = self.start_consumer(output_topic,
                                                   group_id="concurrent_consumer")
         clean_shutdown = False

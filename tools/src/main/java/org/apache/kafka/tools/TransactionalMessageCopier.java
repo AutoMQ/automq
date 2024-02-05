@@ -151,6 +151,15 @@ public class TransactionalMessageCopier {
                 .dest("transactionalId")
                 .help("The transactionalId to assign to the producer");
 
+        parser.addArgument("--producer-block-timeout-ms")
+                .action(store())
+                .required(false)
+                .setDefault(60000)
+                .type(Integer.class)
+                .metavar("PRODUCER-BLOCK-TIMEOUT-MS")
+                .dest("producerBlockTimeoutMs")
+                .help("The maximum time in milliseconds the producer will block for during a send request.");
+
         parser.addArgument("--enable-random-aborts")
                 .action(storeTrue())
                 .type(Boolean.class)
@@ -190,6 +199,7 @@ public class TransactionalMessageCopier {
         props.put(ProducerConfig.BATCH_SIZE_CONFIG, "512");
         props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
         props.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, parsedArgs.getInt("transactionTimeout"));
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, parsedArgs.getInt("producerBlockTimeoutMs"));
 
         return new KafkaProducer<>(props);
     }
