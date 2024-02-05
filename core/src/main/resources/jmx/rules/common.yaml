@@ -25,7 +25,7 @@ rules:
   - bean: kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
     mapping:
       Count:
-        metric: kafka.io.threads.idle.time.total
+        metric: kafka.io.threads.idle.time
         type: counter
         desc: The total time the io threads are idle
         unit: ns

@@ -122,7 +122,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "jvm_cpu_recent_utilization_ratio{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}",
+          "expr": "jvm_cpu_recent_utilization_ratio{job=\"$cluster_id\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -277,7 +277,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by(le, jvm_gc_action, instance) (rate(jvm_gc_duration_seconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(le, jvm_gc_action, instance) (rate(jvm_gc_duration_seconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -294,7 +294,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(jvm_gc_action, instance) (rate(jvm_gc_duration_seconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(jvm_gc_action, instance) (rate(jvm_gc_duration_seconds_count{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -404,7 +404,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(jvm_memory_type, instance) (jvm_memory_used_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "expr": "sum by(jvm_memory_type, instance) (jvm_memory_used_bytes{job=\"$cluster_id\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -421,7 +421,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(jvm_memory_type, instance) (jvm_memory_limit_bytes{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
+          "expr": "sum by(jvm_memory_type, instance) (jvm_memory_limit_bytes{job=\"$cluster_id\", instance=~\"$node_id\", jvm_memory_type=\"heap\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -546,7 +546,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_count_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job, type) (rate(kafka_request_count_total{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -647,7 +647,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_99p_milliseconds{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job, type) (rate(kafka_request_time_99p_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -664,7 +664,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_50p_milliseconds{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job, type) (rate(kafka_request_time_50p_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -681,7 +681,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_mean_milliseconds{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job, type) (rate(kafka_request_time_mean_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -782,7 +782,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_io_threads_idle_time_nanoseconds_total{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"}[$__rate_interval])) / 1000000000",
+          "expr": "sum by(instance, job) (rate(kafka_io_threads_idle_time_nanoseconds_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])) / 1000000000",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -883,7 +883,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (kafka_network_threads_idle_rate{job=~\"$cluster_id/$node_type\", instance=~\"$node_id\"})",
+          "expr": "sum by(instance, job) (kafka_network_threads_idle_rate{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -997,7 +997,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1097,7 +1097,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1113,7 +1113,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -1228,7 +1228,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(operation_name, instance) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_type=\"S3Request\", status=\"failed\"}[$__rate_interval]))",
+          "expr": "sum by(operation_name, instance) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", status=\"failed\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1329,7 +1329,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1432,7 +1432,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1448,7 +1448,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -1562,7 +1562,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1662,7 +1662,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"append_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1775,7 +1775,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"append_log_cache|append_log_cache_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache|append_log_cache_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1791,7 +1791,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_type=\"S3Storage\", operation_name=\"read_log_cache\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Storage\", operation_name=\"read_log_cache\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -1892,7 +1892,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1908,7 +1908,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -1969,7 +1969,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2008,7 +2009,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2068,7 +2069,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2107,7 +2109,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2180,7 +2182,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2219,7 +2222,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2279,7 +2282,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2318,7 +2322,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2378,7 +2382,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2417,7 +2422,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2477,7 +2482,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2516,7 +2522,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_bytes_sum{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_bytes_sum{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2576,7 +2582,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2615,7 +2622,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2675,7 +2682,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2714,7 +2722,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance) (kafka_stream_available_inflight_read_ahead_size_bytes{job=~\"$cluster_id/.*\", instance=~\"$node_id\"})",
+          "expr": "sum by(job, instance) (kafka_stream_available_inflight_read_ahead_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2775,7 +2783,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2814,7 +2823,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, le) (rate(kafka_stream_read_ahead_limiter_queue_time{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, le) (rate(kafka_stream_read_ahead_limiter_queue_time{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2891,7 +2900,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2930,7 +2940,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_stream_network_inbound_usage_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job) (rate(kafka_stream_network_inbound_usage_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -2946,7 +2956,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_stream_network_outbound_usage_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])) * -1",
+          "expr": "sum by(instance, job) (rate(kafka_stream_network_outbound_usage_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])) * -1",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3011,7 +3021,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3050,7 +3061,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_stream_download_size_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job) (rate(kafka_stream_download_size_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3067,7 +3078,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_stream_upload_size_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])) * -1",
+          "expr": "sum by(instance, job) (rate(kafka_stream_upload_size_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])) * -1",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3084,7 +3095,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, direction) (rate(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", direction=\"in\"}[$__rate_interval]))",
+          "expr": "sum by(instance, job, direction) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3101,7 +3112,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, direction) (rate(kafka_network_io_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\", direction=\"out\"}[$__rate_interval])) * -1",
+          "expr": "sum by(instance, job, direction) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\", direction=\"out\"}[$__rate_interval])) * -1",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3166,7 +3177,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3205,7 +3217,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (kafka_stream_network_inbound_available_bandwidth_bytes{job=~\"$cluster_id/.*\", instance=~\"$node_id\"})",
+          "expr": "sum by(instance, job) (kafka_stream_network_inbound_available_bandwidth_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3221,7 +3233,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (kafka_stream_network_outbound_available_bandwidth_bytes{job=~\"$cluster_id/.*\", instance=~\"$node_id\"})",
+          "expr": "sum by(instance, job) (kafka_stream_network_outbound_available_bandwidth_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3286,7 +3298,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3325,7 +3338,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_inbound_limiter_queue_time_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_inbound_limiter_queue_time_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3341,7 +3354,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_outbound_limiter_queue_time_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_outbound_limiter_queue_time_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -3428,7 +3441,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", job=~\"$cluster_id/.*\", instance=~\"$node_id\"})",
+          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3488,7 +3501,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3527,7 +3541,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -3600,7 +3614,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", job=~\"$cluster_id/.*\", instance=~\"$node_id\"})",
+          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3660,7 +3674,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3699,7 +3714,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=~\"$cluster_id/.*\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"}[$__rate_interval])))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -3772,7 +3787,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               }
             ]
           },
@@ -3807,7 +3823,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "rate(kafka_stream_compaction_read_size_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval])",
+          "expr": "rate(kafka_stream_compaction_read_size_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -3823,7 +3839,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "rate(kafka_stream_compaction_write_size_bytes_total{job=~\"$cluster_id/.*\", instance=~\"$node_id\"}[$__rate_interval]) * -1",
+          "expr": "rate(kafka_stream_compaction_write_size_bytes_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]) * -1",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -3871,7 +3887,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(job)",
+        "definition": "label_values(jvm_cpu_count,job)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster Id",
@@ -3880,18 +3896,18 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(job)",
+          "query": "label_values(jvm_cpu_count,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "/(?<value>[^\"]+)\\//",
+        "regex": "",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
             "All"
           ],
@@ -3903,39 +3919,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(job)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Node Type",
-        "multi": true,
-        "name": "node_type",
-        "options": [],
-        "query": {
-          "qryType": 1,
-          "query": "label_values(job)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "/\\/(?<value>[^\"]+)/",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": [
-            "0"
-          ],
-          "value": [
-            "0"
-          ]
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(instance)",
+        "definition": "label_values(jvm_cpu_count,instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Node Id",
@@ -3944,23 +3928,23 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(instance)",
+          "query": "label_values(jvm_cpu_count,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "/(?<value>\\b\\d\\b)/",
+        "regex": "",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
-            "Fetch"
+            "Produce"
           ],
           "value": [
-            "Fetch"
+            "Produce"
           ]
         },
         "datasource": {
@@ -3987,7 +3971,7 @@
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
             "append"
           ],
@@ -4019,12 +4003,12 @@
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
-            "All"
+            "put_object"
           ],
           "value": [
-            "$__all"
+            "put_object"
           ]
         },
         "datasource": {
@@ -4052,13 +4036,13 @@
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 11,
+  "version": 23,
   "weekStart": ""
 }

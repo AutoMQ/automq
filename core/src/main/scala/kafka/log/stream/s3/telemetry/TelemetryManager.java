@@ -100,12 +100,10 @@ public class TelemetryManager {
     }
 
     private void init() {
-        String nodeType = getNodeType();
-
         Attributes baseAttributes = Attributes.builder()
-                .put(ResourceAttributes.SERVICE_NAMESPACE, clusterId)
-                .put(ResourceAttributes.SERVICE_NAME, nodeType)
+                .put(ResourceAttributes.SERVICE_NAME, clusterId)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
+                .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
                 .build();
 
         Resource resource = Resource.empty().toBuilder()
