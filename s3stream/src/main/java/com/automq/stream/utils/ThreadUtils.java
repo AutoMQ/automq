@@ -13,6 +13,7 @@ package com.automq.stream.utils;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.Logger;
 
 /**
  * Utilities for working with threads.
@@ -43,6 +44,16 @@ public class ThreadUtils {
                 Thread thread = new Thread(r, threadName);
                 thread.setDaemon(daemon);
                 return thread;
+            }
+        };
+    }
+
+    public static Runnable wrapRunnable(Runnable runnable, Logger logger) {
+        return () -> {
+            try {
+                runnable.run();
+            } catch (Throwable throwable) {
+                logger.error("[FATAL] Uncaught exception in executor thread {}", Thread.currentThread().getName(), throwable);
             }
         };
     }
