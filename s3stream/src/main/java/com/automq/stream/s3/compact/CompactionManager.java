@@ -138,7 +138,7 @@ public class CompactionManager {
     public void shutdown() {
         this.compactScheduledExecutor.shutdown();
         this.bucketCallbackScheduledExecutor.shutdown();
-        this.uploader.stop();
+        this.uploader.shutdown();
     }
 
     public CompletableFuture<Void> compact() {
