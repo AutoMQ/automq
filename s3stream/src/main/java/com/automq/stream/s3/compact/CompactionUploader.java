@@ -38,6 +38,7 @@ public class CompactionUploader {
     private CompletableFuture<Long> streamSetObjectIdCf = null;
     private DataBlockWriter streamSetObjectWriter = null;
     private volatile boolean isAborted = false;
+    private volatile boolean isShutdown = false;
 
     public CompactionUploader(ObjectManager objectManager, S3Operator s3Operator, Config config) {
         this.objectManager = objectManager;
@@ -49,7 +50,8 @@ public class CompactionUploader {
             ThreadUtils.createThreadFactory("compaction-stream-set-object-uploader-%d", true), LOGGER);
     }
 
-    public void stop() {
+    public void shutdown() {
+        this.isShutdown = true;
         this.streamSetObjectUploadPool.shutdown();
         this.streamObjectUploadPool.shutdown();
     }
@@ -106,7 +108,12 @@ public class CompactionUploader {
                     return streamObject;
                 }).whenComplete((ret, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("write to stream object {} failed", objectId, ex);
+                        if (isShutdown) {
+                            // TODO: remove this when we're able to abort object uploading gracefully
+                            LOGGER.warn("write to stream object {} failed", objectId, ex);
+                        } else {
+                            LOGGER.error("write to stream object {} failed", objectId, ex);
+                        }
                         dataBlockWriter.release();
                         compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
                     }
