@@ -49,6 +49,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -220,7 +221,7 @@ public class DefaultS3Operator implements S3Operator {
             rangeRead0(path, start, end, cf);
         }
 
-        Timeout timeout = timeoutDetect.newTimeout((t) -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 1, TimeUnit.MINUTES);
+        Timeout timeout = timeoutDetect.newTimeout((t) -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 3, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
 
@@ -302,6 +303,17 @@ public class DefaultS3Operator implements S3Operator {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start + 1;
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
+        Consumer<Throwable> failHandler = (ex) -> {
+            if (isUnrecoverable(ex)) {
+                LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
+                cf.completeExceptionally(ex);
+            } else {
+                LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
+                scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
+            }
+            S3OperationStats.getInstance().getObjectStats(size, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        };
+
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 S3ObjectStats.getInstance().objectDownloadSizeStats.record(MetricsLevel.INFO, size);
@@ -317,17 +329,14 @@ public class DefaultS3Operator implements S3Operator {
                     S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
                     S3OperationStats.getInstance().getObjectStats(size, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     cf.complete(buf);
+                }).exceptionally(ex -> {
+                    buf.release();
+                    failHandler.accept(ex);
+                    return null;
                 });
             })
             .exceptionally(ex -> {
-                S3OperationStats.getInstance().getObjectStats(size, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                if (isUnrecoverable(ex)) {
-                    LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
-                    cf.completeExceptionally(ex);
-                } else {
-                    LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
-                    scheduler.schedule(() -> mergedRangeRead0(path, start, end, cf), 100, TimeUnit.MILLISECONDS);
-                }
+                failHandler.accept(ex);
                 return null;
             });
     }
