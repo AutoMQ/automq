@@ -21,27 +21,19 @@ jobs:
       test-path: "tests/kafkatest/tests/connect"
       storage-path: "/data/github-actions/reports"
       runner: "extra"
-  streams_e2e_1:
-    name: "Run streams E2E Tests 1"
+  streams_e2e:
+    name: "Run streams E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
     with:
-      suite-id: "streams1"
-      test-yaml: "tests/suites/stream_kos_test_suite1.yml"
-      storage-path: "/data/github-actions/reports"
-      runner: "extra"
-  streams_e2e_2:
-    name: "Run streams E2E Tests 2"
-    uses: ./.github/workflows/e2e-run.yml
-    with:
-      suite-id: "streams2"
-      test-yaml: "tests/suites/stream_kos_test_suite2.yml"
+      suite-id: "streams"
+      test-path: "tests/kafkatest/tests/streams"
       storage-path: "/data/github-actions/reports"
       runner: "extra"
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, extra ]
     if: ${{ always() }}
-    needs: [ benchmarks_e2e, connect_e2e, streams_e2e_1, streams_e2e_2 ]
+    needs: [ benchmarks_e2e, connect_e2e, streams_e2e ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
