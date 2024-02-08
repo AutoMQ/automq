@@ -211,7 +211,7 @@ class StreamObjectCompactorTest {
     public void testCompact_groupBlocks() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
 
-        CompactStreamObjectRequest req = new StreamObjectCompactor.StreamObjectGroupCompactor(streamId, 14L,
+        CompactStreamObjectRequest req = new StreamObjectCompactor.StreamObjectGroupCompactor(streamId, 0L, 14L,
             objects.subList(0, 2), 5, 5000, s3Operator).compact().get();
         // verify compact request
         assertEquals(5, req.getObjectId());

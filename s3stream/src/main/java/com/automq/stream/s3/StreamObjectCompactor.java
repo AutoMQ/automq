@@ -77,8 +77,8 @@ public class StreamObjectCompactor {
                 continue;
             }
             long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
-            Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, startOffset,
-                objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
+            Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, stream.streamEpoch(),
+                startOffset, objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
             if (requestOpt.isPresent()) {
                 CompactStreamObjectRequest request = requestOpt.get();
                 objectManager.compactStreamObject(request).get();
@@ -97,15 +97,17 @@ public class StreamObjectCompactor {
     static class StreamObjectGroupCompactor {
         private final List<S3ObjectMetadata> objectGroup;
         private final long streamId;
+        private final long streamEpoch;
         private final long startOffset;
         // compact object group to the new object
         private final long objectId;
         private final S3Operator s3Operator;
         private final int dataBlockGroupSizeThreshold;
 
-        public StreamObjectGroupCompactor(long streamId, long startOffset, List<S3ObjectMetadata> objectGroup,
+        public StreamObjectGroupCompactor(long streamId, long streamEpoch, long startOffset, List<S3ObjectMetadata> objectGroup,
             long objectId, int dataBlockGroupSizeThreshold, S3Operator s3Operator) {
             this.streamId = streamId;
+            this.streamEpoch = streamEpoch;
             this.startOffset = startOffset;
             this.objectGroup = objectGroup;
             this.objectId = objectId;
@@ -177,7 +179,8 @@ public class StreamObjectCompactor {
             objectSize += indexBlockAndFooter.readableBytes();
             writer.write(indexBlockAndFooter.duplicate());
             writer.close().get();
-            return Optional.of(new CompactStreamObjectRequest(objectId, objectSize, streamId, compactedStartOffset, compactedEndOffset, compactedObjectIds));
+            return Optional.of(new CompactStreamObjectRequest(objectId, objectSize, streamId, streamEpoch,
+                compactedStartOffset, compactedEndOffset, compactedObjectIds));
         }
 
     }
