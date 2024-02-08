@@ -684,6 +684,7 @@ public class StreamControlManager {
         long nodeEpoch = data.nodeEpoch();
         long streamObjectId = data.objectId();
         long streamId = data.streamId();
+        long streamEpoch = data.streamEpoch();
         long startOffset = data.startOffset();
         long endOffset = data.endOffset();
         long objectSize = data.objectSize();
@@ -698,6 +699,16 @@ public class StreamControlManager {
             log.warn("[CommitStreamObject]: nodeId={}'s epoch={} check failed, code: {}",
                     nodeId, nodeEpoch, nodeEpochCheckResult.code());
             return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
+        // skip outdated request
+        if (streamEpoch != -1L) {
+            // verify stream ownership
+            Errors authResult = streamOwnershipCheck(streamId, streamEpoch, nodeId, "CommitStreamObject");
+            if (authResult != Errors.NONE) {
+                resp.setErrorCode(authResult.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
         }
 
         // commit object

@@ -86,6 +86,11 @@ public class MemoryClient implements Client {
         }
 
         @Override
+        public long streamEpoch() {
+            return 0L;
+        }
+
+        @Override
         public long startOffset() {
             return 0;
         }

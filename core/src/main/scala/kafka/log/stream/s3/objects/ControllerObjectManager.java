@@ -156,6 +156,7 @@ public class ControllerObjectManager implements ObjectManager {
                 .setObjectId(compactStreamObjectRequest.getObjectId())
                 .setObjectSize(compactStreamObjectRequest.getObjectSize())
                 .setStreamId(compactStreamObjectRequest.getStreamId())
+                .setStreamEpoch(compactStreamObjectRequest.getStreamEpoch())
                 .setStartOffset(compactStreamObjectRequest.getStartOffset())
                 .setEndOffset(compactStreamObjectRequest.getEndOffset())
                 .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
@@ -184,6 +185,10 @@ public class ControllerObjectManager implements ObjectManager {
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
                     throw code.exception();
+                case STREAM_NOT_EXIST:
+                case STREAM_FENCED:
+                    LOGGER.error("Stream fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while committing stream object: {}, code: {}, retry later", request, code);
                     return ResponseHandleResult.withRetry();

@@ -633,6 +633,23 @@ public class StreamControlManagerTest {
     }
 
     @Test
+    public void testCommitStreamObjectForFencedStream() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        long streamId = createStream();
+        openStream(BROKER0, EPOCH1, streamId);
+        CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
+                .setObjectId(3L)
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(400L)
+                .setObjectSize(999)
+                .setSourceObjectIds(List.of(1L, 2L));
+        ControllerResult<CommitStreamObjectResponseData> result = manager.commitStreamObject(streamObjectRequest);
+        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
+    }
+
+    @Test
     public void testCommitStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
                 .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
@@ -723,6 +740,7 @@ public class StreamControlManagerTest {
         streamObjectRequest = new CommitStreamObjectRequestData()
                 .setObjectId(5L)
                 .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
                 .setStartOffset(400L)
                 .setEndOffset(1000L)
                 .setObjectSize(999)

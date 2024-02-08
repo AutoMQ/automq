@@ -72,6 +72,14 @@
       "type": "[]int64",
       "versions": "0+",
       "about": "The IDs of the source S3 objects"
+    },
+    {
+      "name": "StreamEpoch",
+      "type": "int64",
+      "versions": "0+",
+      "entityType": "streamEpoch",
+      "default": "-1",
+      "about": "The epoch of the requesting stream in the requesting broker"
     }
   ]
 }
