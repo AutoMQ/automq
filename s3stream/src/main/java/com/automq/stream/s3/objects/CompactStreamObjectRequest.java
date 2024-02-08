@@ -19,18 +19,20 @@ public class CompactStreamObjectRequest {
     private long streamId;
     private long startOffset;
     private long endOffset;
+    private final long streamEpoch;
     /**
      * The source objects' id of the stream object.
      */
     private List<Long> sourceObjectIds;
 
-    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long startOffset, long endOffset,
-        List<Long> sourceObjectIds) {
+    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long streamEpoch, long startOffset,
+        long endOffset, List<Long> sourceObjectIds) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
+        this.streamEpoch = streamEpoch;
         this.sourceObjectIds = sourceObjectIds;
     }
 
@@ -74,6 +76,10 @@ public class CompactStreamObjectRequest {
         this.endOffset = endOffset;
     }
 
+    public long getStreamEpoch() {
+        return streamEpoch;
+    }
+
     public List<Long> getSourceObjectIds() {
         return sourceObjectIds;
     }
@@ -90,6 +96,7 @@ public class CompactStreamObjectRequest {
             ", streamId=" + streamId +
             ", startOffset=" + startOffset +
             ", endOffset=" + endOffset +
+            ", streamEpoch=" + streamEpoch +
             ", sourceObjectIds=" + sourceObjectIds +
             '}';
     }

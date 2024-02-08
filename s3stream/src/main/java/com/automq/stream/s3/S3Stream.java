@@ -110,6 +110,11 @@ public class S3Stream implements Stream {
     }
 
     @Override
+    public long streamEpoch() {
+        return this.epoch;
+    }
+
+    @Override
     public long startOffset() {
         return this.startOffset;
     }
