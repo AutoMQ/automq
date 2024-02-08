@@ -282,6 +282,11 @@ class AlwaysSuccessClientTest {
             }
 
             @Override
+            public long streamEpoch() {
+                return 0L;
+            }
+
+            @Override
             public long startOffset() {
                 return 0;
             }

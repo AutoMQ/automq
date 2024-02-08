@@ -85,6 +85,11 @@ public class LazyStream implements Stream {
     }
 
     @Override
+    public long streamEpoch() {
+        return epoch;
+    }
+
+    @Override
     public long startOffset() {
         return inner.startOffset();
     }
@@ -156,6 +161,11 @@ public class LazyStream implements Stream {
         @Override
         public long streamId() {
             return NOOP_STREAM_ID;
+        }
+
+        @Override
+        public long streamEpoch() {
+            return 0L;
         }
 
         @Override
