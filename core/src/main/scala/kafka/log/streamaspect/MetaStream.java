@@ -91,6 +91,11 @@ public class MetaStream implements Stream {
     }
 
     @Override
+    public long streamEpoch() {
+        return innerStream.streamEpoch();
+    }
+
+    @Override
     public long startOffset() {
         return innerStream.startOffset();
     }

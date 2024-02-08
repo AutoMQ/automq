@@ -212,6 +212,11 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
+        public long streamEpoch() {
+            return stream.streamEpoch();
+        }
+
+        @Override
         public long startOffset() {
             return stream.startOffset();
         }
