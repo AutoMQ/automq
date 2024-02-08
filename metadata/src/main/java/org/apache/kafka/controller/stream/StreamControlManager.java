@@ -743,13 +743,15 @@ public class StreamControlManager {
                     .min(Long::compareTo).get();
         }
 
-        // generate stream object record
-        records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
-                .setObjectId(streamObjectId)
-                .setStreamId(streamId)
-                .setStartOffset(startOffset)
-                .setEndOffset(endOffset)
-                .setDataTimeInMs(dataTs), (short) 0));
+        if (streamObjectId != NOOP_OBJECT_ID) {
+            // generate stream object record
+            records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
+                    .setObjectId(streamObjectId)
+                    .setStreamId(streamId)
+                    .setStartOffset(startOffset)
+                    .setEndOffset(endOffset)
+                    .setDataTimeInMs(dataTs), (short) 0));
+        }
 
         // generate compacted objects' remove record
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
