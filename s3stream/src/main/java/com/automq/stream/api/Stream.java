@@ -27,6 +27,11 @@ public interface Stream {
     long streamId();
 
     /**
+     * Get stream epoch.
+     */
+    long streamEpoch();
+
+    /**
      * Get stream start offset.
      */
     long startOffset();

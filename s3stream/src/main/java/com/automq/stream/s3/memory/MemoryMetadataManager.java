@@ -136,6 +136,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         long streamId = request.getStreamId();
         StreamMetadata stream = streams.get(streamId);
         assert stream != null;
+        if (stream.epoch() != request.getStreamEpoch()) {
+            throw new IllegalArgumentException("stream " + streamId + " epoch " + stream.epoch() + " is not equal to request " + request.getStreamEpoch());
+        }
         if (stream.endOffset() < request.getEndOffset()) {
             throw new IllegalArgumentException("stream " + streamId + " end offset " + stream.endOffset() + " is lesser than request " + request.getEndOffset());
         }
