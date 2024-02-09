@@ -211,7 +211,9 @@ object ElasticUnifiedLog extends Logging {
     DirtyBytes.reset()
     for (log <- Logs.values().asScala) {
       try {
-        log.tryCheckpoint()
+        log.lock synchronized {
+          log.tryCheckpoint()
+        }
       } catch {
         case e: Throwable => error("Error while checkpoint", e)
       }
