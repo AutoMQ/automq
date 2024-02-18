@@ -365,7 +365,6 @@ public class StreamControlManager {
     }
 
     public ControllerResult<TrimStreamResponse> trimStream(int nodeId, long nodeEpoch, TrimStreamRequest request) {
-        // TODO: speed up offset updating
         long epoch = request.streamEpoch();
         long streamId = request.streamId();
         long newStartOffset = request.newStartOffset();
@@ -449,30 +448,6 @@ public class StreamControlManager {
                     .setEndOffset(range.endOffset())
                     .setEpoch(range.epoch())
                     .setRangeIndex(rangeIndex), (short) 0));
-        });
-        // remove stream object
-        streamMetadata.streamObjects().entrySet().stream().forEach(it -> {
-            Long objectId = it.getKey();
-            S3StreamObject streamObject = it.getValue();
-            long streamStartOffset = streamObject.streamOffsetRange().startOffset();
-            long streamEndOffset = streamObject.streamOffsetRange().endOffset();
-            if (newStartOffset <= streamStartOffset) {
-                return;
-            }
-            if (newStartOffset >= streamEndOffset) {
-                // remove stream object
-                records.add(new ApiMessageAndVersion(new RemoveS3StreamObjectRecord()
-                        .setStreamId(streamId)
-                        .setObjectId(objectId), (short) 0));
-                ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(
-                        Collections.singletonList(objectId));
-                if (!markDestroyResult.response()) {
-                    log.error("[TrimStream] Mark destroy stream object: {} failed", objectId);
-                    resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-                    return;
-                }
-                records.addAll(markDestroyResult.records());
-            }
         });
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
