@@ -850,7 +850,7 @@ public class StreamControlManagerTest {
         assertEquals(1, rangeMetadata.rangeIndex());
         assertEquals(60, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
-        assertEquals(0, streamMetadata.streamObjects().size());
+        assertEquals(1, streamMetadata.streamObjects().size());
 
         // 3. trim stream0 to [100, ..)
         trimRequest = new TrimStreamRequest()
@@ -869,7 +869,7 @@ public class StreamControlManagerTest {
         assertEquals(1, rangeMetadata.rangeIndex());
         assertEquals(70, rangeMetadata.startOffset());
         assertEquals(70, rangeMetadata.endOffset());
-        assertEquals(0, streamMetadata.streamObjects().size());
+        assertEquals(1, streamMetadata.streamObjects().size());
 
         // 5. commit stream set object with stream0-[70, 100)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
