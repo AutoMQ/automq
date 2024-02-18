@@ -187,7 +187,7 @@ public class ControllerObjectManager implements ObjectManager {
                     throw code.exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
-                    LOGGER.error("Stream fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    LOGGER.warn("Stream fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 default:
                     LOGGER.error("Error while committing stream object: {}, code: {}, retry later", request, code);

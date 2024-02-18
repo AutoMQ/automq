@@ -283,7 +283,7 @@ public class MetaStream implements Stream {
             return CompletableFuture.completedFuture(null);
         }
         double hollowRate = 1 - (double) metaCache.size() / size;
-        if (!force && hollowRate >= COMPACTION_HOLLOW_RATE) {
+        if (!force && hollowRate < COMPACTION_HOLLOW_RATE) {
             return CompletableFuture.completedFuture(null);
         }
         MetadataValue last = null;
@@ -307,10 +307,7 @@ public class MetaStream implements Stream {
         CompletableFuture<Void> overwriteCf = CompletableFuture.allOf(overwrite.stream().map(this::append).toArray(CompletableFuture[]::new));
         return overwriteCf.thenAccept(nil -> {
             OptionalLong minOffset = metaCache.values().stream().mapToLong(v -> v.offset).min();
-            minOffset.ifPresent(offset -> {
-                trim(offset);
-                LOGGER.info("compact streamId={} done, compact from [{}, {}) to [{}, {})", streamId(), startOffset, endOffset, offset, nextOffset());
-            });
+            minOffset.ifPresent(this::trim);
         });
     }
 
