@@ -82,8 +82,17 @@ class ElasticUnifiedLog(_logStartOffset: Long,
   }
 
   private def checkpoint(): Unit = {
-    producerStateManager.asInstanceOf[ElasticProducerStateManager].takeSnapshotAndRemoveExpired(elasticLog.recoveryPoint)
-    flush(true)
+    val snapshotCf = lock.synchronized {
+      // https://github.com/AutoMQ/automq-for-kafka/issues/798
+      // guard snapshot with log lock
+      val confirmOffset = elasticLog.confirmOffset
+      val cf = producerStateManager.asInstanceOf[ElasticProducerStateManager].takeSnapshotAndRemoveExpired(elasticLog.recoveryPoint)
+      if (confirmOffset != null) {
+        elasticLog.updateRecoveryPoint(confirmOffset.messageOffset)
+      }
+      cf
+    }
+    snapshotCf.get()
     elasticLog.persistRecoverOffsetCheckpoint()
   }
 

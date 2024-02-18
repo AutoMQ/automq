@@ -108,12 +108,8 @@ class ElasticProducerStateManager(
     // If not a new offset, then it is not worth taking another snapshot
     if (lastMapOffset > lastSnapOffset) {
       val snapshotFile = SnapshotFile(UnifiedLog.producerSnapshotFile(_logDir, lastMapOffset))
-      val start = time.hiResClockMs()
       val rst = writeSnapshot(snapshotFile.offset, producers)
       snapshots.put(snapshotFile.offset, snapshotFile)
-      info(s"Wrote producer snapshot at offset $lastMapOffset with ${producers.size} producer ids in ${time.hiResClockMs() - start} ms.")
-
-
       // Update the last snap offset according to the serialized map
       lastSnapOffset = lastMapOffset
       rst
