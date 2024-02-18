@@ -49,7 +49,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,7 +65,6 @@ public class S3Stream implements Stream {
     private final Storage storage;
     private final StreamManager streamManager;
     private final Status status;
-    private final Consumer<Long> closeHook;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -79,13 +77,12 @@ public class S3Stream implements Stream {
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, Consumer<Long> closeHook) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, closeHook, null, null);
+        StreamManager streamManager) {
+        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null);
     }
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, Consumer<Long> closeHook,
-        AsyncNetworkBandwidthLimiter networkInboundLimiter, AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
+        StreamManager streamManager, AsyncNetworkBandwidthLimiter networkInboundLimiter, AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -95,7 +92,6 @@ public class S3Stream implements Stream {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
-        this.closeHook = closeHook;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
     }
@@ -260,9 +256,7 @@ public class S3Stream implements Stream {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
-                cf.whenComplete((nil, ex) -> {
-                    StreamOperationStats.getInstance().trimStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                });
+                cf.whenComplete((nil, ex) -> StreamOperationStats.getInstance().trimStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
                 return cf;
             }, LOGGER, "trim");
         } finally {
@@ -328,8 +322,7 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> close0() {
         return storage.forceUpload(streamId)
-            .thenCompose(nil -> streamManager.closeStream(streamId, epoch))
-            .whenComplete((nil, ex) -> closeHook.accept(streamId));
+            .thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
     @Override
@@ -352,7 +345,6 @@ public class S3Stream implements Stream {
 
     private CompletableFuture<Void> destroy0() {
         status.markDestroy();
-        closeHook.accept(streamId);
         startOffset = this.confirmOffset.get();
         return streamManager.deleteStream(streamId, epoch);
     }
