@@ -42,8 +42,7 @@ public class S3StreamTest {
     public void setup() {
         storage = mock(Storage.class);
         streamManager = mock(StreamManager.class);
-        stream = new S3Stream(233, 1, 100, 233, storage, streamManager, v -> {
-        });
+        stream = new S3Stream(233, 1, 100, 233, storage, streamManager);
     }
 
     @Test

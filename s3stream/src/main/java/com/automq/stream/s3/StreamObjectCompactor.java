@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.api.Stream;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -20,22 +21,29 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
+
 /**
  * Stream objects compaction task.
- * It intends to compact some stream objects with the same stream ID into one new stream object.
+ * It intends to:
+ * 1. Clean up expired stream objects.
+ * 2. Compact some stream objects with the same stream ID into bigger stream objects.
  */
 public class StreamObjectCompactor {
     /**
-     * max object count in one group, the group count will limit the compact request size to kraft and multi-part object
+     * max object count in one group, the group count will limit the compact request size to kraft and multipart object
      * part count (less than {@code Writer.MAX_PART_COUNT}).
      */
     private static final int MAX_OBJECT_GROUP_COUNT = Math.min(5000, Writer.MAX_PART_COUNT / 2);
@@ -43,12 +51,12 @@ public class StreamObjectCompactor {
     public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
-    private final S3Stream stream;
+    private final Stream stream;
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final int dataBlockGroupSizeThreshold;
 
-    private StreamObjectCompactor(ObjectManager objectManager, S3Operator s3Operator, S3Stream stream,
+    private StreamObjectCompactor(ObjectManager objectManager, S3Operator s3Operator, Stream stream,
         long maxStreamObjectSize, int dataBlockGroupSizeThreshold) {
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -61,16 +69,55 @@ public class StreamObjectCompactor {
 
     public void compact() {
         try {
-            compact0();
+            compact0(false);
         } catch (Throwable e) {
             LOGGER.error("Failed to compact {} stream objects", stream.streamId(), e);
         }
     }
 
-    void compact0() throws ExecutionException, InterruptedException {
-        List<List<S3ObjectMetadata>> objectGroups = group();
+    /**
+     * Cleanup expired stream objects
+     */
+    public void cleanup() {
+        try {
+            compact0(true);
+        } catch (Throwable e) {
+            LOGGER.error("Failed to compact {} stream objects", stream.streamId(), e);
+        }
+    }
+
+    void compact0(boolean onlyCleanup) throws ExecutionException, InterruptedException {
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
+
+        List<S3ObjectMetadata> objects = objectManager.getStreamObjects(stream.streamId(), 0L, stream.confirmOffset(), Integer.MAX_VALUE).get();
+        List<S3ObjectMetadata> expiredObjects = new ArrayList<>(objects.size());
+        List<S3ObjectMetadata> livingObjects = new ArrayList<>(objects.size());
+        for (S3ObjectMetadata object : objects) {
+            if (object.endOffset() <= startOffset) {
+                expiredObjects.add(object);
+            } else {
+                livingObjects.add(object);
+            }
+        }
+
+        // clean up the expired objects
+        if (!expiredObjects.isEmpty()) {
+            List<Long> compactedObjectIds = expiredObjects.stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList());
+            CompactStreamObjectRequest request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
+                streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds);
+            objectManager.compactStreamObject(request).get();
+            if (s3ObjectLogger.isTraceEnabled()) {
+                s3ObjectLogger.trace("{}", request);
+            }
+        }
+
+        if (onlyCleanup) {
+            return;
+        }
+
+        // compact the living objects
+        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects, maxStreamObjectSize);
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
             // the object group is single object and there is no data block need to be removed.
             if (objectGroup.size() == 1 && objectGroup.get(0).startOffset() >= startOffset) {
@@ -89,11 +136,6 @@ public class StreamObjectCompactor {
         }
     }
 
-    List<List<S3ObjectMetadata>> group() throws ExecutionException, InterruptedException {
-        List<S3ObjectMetadata> objects = objectManager.getStreamObjects(stream.streamId(), stream.startOffset(), stream.confirmOffset(), Integer.MAX_VALUE).get();
-        return group0(objects, maxStreamObjectSize);
-    }
-
     static class StreamObjectGroupCompactor {
         private final List<S3ObjectMetadata> objectGroup;
         private final long streamId;
@@ -104,7 +146,8 @@ public class StreamObjectCompactor {
         private final S3Operator s3Operator;
         private final int dataBlockGroupSizeThreshold;
 
-        public StreamObjectGroupCompactor(long streamId, long streamEpoch, long startOffset, List<S3ObjectMetadata> objectGroup,
+        public StreamObjectGroupCompactor(long streamId, long streamEpoch, long startOffset,
+            List<S3ObjectMetadata> objectGroup,
             long objectId, int dataBlockGroupSizeThreshold, S3Operator s3Operator) {
             this.streamId = streamId;
             this.streamEpoch = streamEpoch;
@@ -203,7 +246,7 @@ public class StreamObjectCompactor {
             if (groupNextOffset != object.startOffset()
                 // the group object size is less than maxStreamObjectSize
                 || (groupSize + object.objectSize() > maxStreamObjectSize && !group.isEmpty())
-                // object count in group is larger than MAX_OBJECT_GROUP_COUNT
+                // object count in a group is larger than MAX_OBJECT_GROUP_COUNT
                 || group.size() >= MAX_OBJECT_GROUP_COUNT
                 || partCount + objectPartCount > Writer.MAX_PART_COUNT
             ) {
@@ -233,7 +276,7 @@ public class StreamObjectCompactor {
     public static class Builder {
         private ObjectManager objectManager;
         private S3Operator s3Operator;
-        private S3Stream stream;
+        private Stream stream;
         private long maxStreamObjectSize;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
 
@@ -247,7 +290,7 @@ public class StreamObjectCompactor {
             return this;
         }
 
-        public Builder stream(S3Stream stream) {
+        public Builder stream(Stream stream) {
             this.stream = stream;
             return this;
         }

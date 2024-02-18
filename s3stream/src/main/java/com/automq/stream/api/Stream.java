@@ -63,10 +63,10 @@ public interface Stream {
      * Fetch recordBatch list from stream. Note the startOffset may be in the middle in the first recordBatch.
      * It is strongly recommended to handle the completion of the returned CompletableFuture in a separate thread.
      *
+     * @param context     fetch context, {@link FetchContext}.
      * @param startOffset  start offset, if the startOffset in middle of a recordBatch, the recordBatch will be returned.
      * @param endOffset    exclusive end offset, if the endOffset in middle of a recordBatch, the recordBatch will be returned.
      * @param maxBytesHint max fetch data size hint, the real return data size may be larger than maxBytesHint.
-     * @param readOptions  {@link ReadOptions}.
      * @return - complete success with {@link FetchResult}, when fetch success.
      * - complete exception with {@link StreamClientException}, when startOffset is bigger than stream end offset.
      */

@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -118,7 +119,7 @@ class StreamObjectCompactorTest {
     @Test
     public void testCompact() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
-        when(objectManager.getStreamObjects(eq(streamId), eq(14L), eq(32L), eq(Integer.MAX_VALUE)))
+        when(objectManager.getStreamObjects(eq(streamId), eq(0L), eq(32L), eq(Integer.MAX_VALUE)))
             .thenReturn(CompletableFuture.completedFuture(objects));
         AtomicLong nextObjectId = new AtomicLong(5);
         doAnswer(invocationOnMock -> CompletableFuture.completedFuture(nextObjectId.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
@@ -205,6 +206,34 @@ class StreamObjectCompactorTest {
             }
             objectReader.close();
         }
+    }
+
+    @Test
+    public void testCleanup() throws ExecutionException, InterruptedException {
+        List<S3ObjectMetadata> objects = prepareData();
+        when(objectManager.getStreamObjects(eq(streamId), eq(0L), eq(32L), eq(Integer.MAX_VALUE)))
+            .thenReturn(CompletableFuture.completedFuture(objects));
+        AtomicLong nextObjectId = new AtomicLong(5);
+        doAnswer(invocationOnMock -> CompletableFuture.completedFuture(nextObjectId.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.startOffset()).thenReturn(17L);
+        when(stream.confirmOffset()).thenReturn(32L);
+
+        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
+            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
+        task.compact();
+
+        ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager, times(3)).compactStreamObject(ac.capture());
+        CompactStreamObjectRequest clean = ac.getAllValues().get(0);
+        assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
+        assertEquals(List.of(1L), clean.getSourceObjectIds());
+
+        CompactStreamObjectRequest compact0 = ac.getAllValues().get(1);
+        assertEquals(5, compact0.getObjectId());
+        CompactStreamObjectRequest compact1 = ac.getAllValues().get(2);
+        assertEquals(6, compact1.getObjectId());
     }
 
     @Test
