@@ -48,16 +48,21 @@ public class Threads {
 
     public static ScheduledExecutorService newSingleThreadScheduledExecutor(String name, boolean daemon,
         Logger logger) {
-        return newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory(name, true), logger, false);
+        return newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory(name, true), logger, false, true);
     }
 
     public static ScheduledExecutorService newSingleThreadScheduledExecutor(ThreadFactory threadFactory,
         Logger logger) {
-        return newSingleThreadScheduledExecutor(threadFactory, logger, false);
+        return newSingleThreadScheduledExecutor(threadFactory, logger, false, true);
     }
 
     public static ScheduledExecutorService newSingleThreadScheduledExecutor(ThreadFactory threadFactory,
         Logger logger, boolean removeOnCancelPolicy) {
+        return newSingleThreadScheduledExecutor(threadFactory, logger, removeOnCancelPolicy, true);
+    }
+
+    public static ScheduledExecutorService newSingleThreadScheduledExecutor(ThreadFactory threadFactory,
+        Logger logger, boolean removeOnCancelPolicy, boolean executeExistingDelayedTasksAfterShutdownPolicy) {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, threadFactory) {
             @Override
             public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
@@ -80,6 +85,7 @@ public class Threads {
             }
         };
         executor.setRemoveOnCancelPolicy(removeOnCancelPolicy);
+        executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(executeExistingDelayedTasksAfterShutdownPolicy);
         return executor;
     }
 

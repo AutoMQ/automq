@@ -18,6 +18,7 @@ import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
+import com.automq.stream.s3.memory.MemoryMetadataManager;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
@@ -25,10 +26,13 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.DefaultS3Operator;
+import com.automq.stream.s3.operator.MemoryS3Operator;
+import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -40,6 +44,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +52,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -54,6 +60,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -479,6 +486,73 @@ public class CompactionManagerTest extends CompactionTestBase {
         Set<Long> compactedObjectIds = new HashSet<>(request.getCompactedObjectIds());
         s3ObjectMetadata = s3ObjectMetadata.stream().filter(s -> compactedObjectIds.contains(s.objectId())).collect(Collectors.toList());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, s3ObjectMetadata, request));
+    }
+
+    @Test
+    public void testCompactionShutdown() throws Throwable {
+        streamManager = Mockito.mock(MemoryMetadataManager.class);
+        when(streamManager.getStreams(Mockito.anyList())).thenReturn(CompletableFuture.completedFuture(
+            List.of(new StreamMetadata(STREAM_0, 0, 0, 200, StreamState.OPENED))));
+
+        objectManager = Mockito.spy(MemoryMetadataManager.class);
+        s3Operator = Mockito.spy(MemoryS3Operator.class);
+        List<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new ArrayList<>();
+        when(s3Operator.rangeRead(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.eq(ThrottleStrategy.THROTTLE_2)))
+            .thenAnswer(invocation -> {
+                CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+                invocations.add(Pair.of(invocation, cf));
+                return cf;
+            });
+
+        List<S3ObjectMetadata> s3ObjectMetadataList = new ArrayList<>();
+        // stream data for object 0
+        objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
+            assertEquals(OBJECT_0, objectId);
+            ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
+            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 80, TestUtils.random(80));
+            objectWriter.write(STREAM_0, List.of(r1));
+            objectWriter.close().join();
+            List<StreamOffsetRange> streamsIndices = List.of(
+                new StreamOffsetRange(STREAM_0, 0, 80)
+            );
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, S3ObjectType.STREAM_SET, streamsIndices, System.currentTimeMillis(),
+                System.currentTimeMillis(), objectWriter.size(), OBJECT_0);
+            s3ObjectMetadataList.add(objectMetadata);
+            r1.release();
+        }).join();
+
+        // stream data for object 1
+        objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
+            assertEquals(OBJECT_1, objectId);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
+            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_0, 0, 80, 120, TestUtils.random(120));
+            objectWriter.write(STREAM_0, List.of(r2));
+            objectWriter.close().join();
+            List<StreamOffsetRange> streamsIndices = List.of(
+                new StreamOffsetRange(STREAM_0, 80, 120)
+            );
+            S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_1, S3ObjectType.STREAM_SET, streamsIndices, System.currentTimeMillis(),
+                System.currentTimeMillis(), objectWriter.size(), OBJECT_1);
+            s3ObjectMetadataList.add(objectMetadata);
+            r2.release();
+        }).join();
+
+        doReturn(CompletableFuture.completedFuture(s3ObjectMetadataList)).when(objectManager).getServerObjects();
+
+        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        
+        CompletableFuture<Void> cf = compactionManager.compact();
+        Thread.sleep(2000);
+        compactionManager.shutdown();
+        for (Pair<InvocationOnMock, CompletableFuture<ByteBuf>> pair : invocations) {
+            CompletableFuture<ByteBuf> realCf = (CompletableFuture<ByteBuf>) pair.getLeft().callRealMethod();
+            pair.getRight().complete(realCf.get());
+        }
+        try {
+            cf.join();
+        } catch (Exception e) {
+            fail("Should not throw exception");
+        }
     }
 
     private boolean checkDataIntegrity(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> s3ObjectMetadata,
