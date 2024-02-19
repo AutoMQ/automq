@@ -128,8 +128,9 @@ public class S3StreamClient implements StreamClient {
         }
         streamObjectCompactionScheduler.shutdown();
         try {
-            if (streamObjectCompactionScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+            if (!streamObjectCompactionScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
                 LOGGER.warn("await streamObjectCompactionExecutor timeout 10s");
+                streamObjectCompactionScheduler.shutdownNow();
             }
         } catch (InterruptedException e) {
             streamObjectCompactionScheduler.shutdownNow();

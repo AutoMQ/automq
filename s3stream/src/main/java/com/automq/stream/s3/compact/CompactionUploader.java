@@ -53,7 +53,20 @@ public class CompactionUploader {
     public void shutdown() {
         this.isShutdown = true;
         this.streamSetObjectUploadPool.shutdown();
+        try {
+            if (!this.streamSetObjectUploadPool.awaitTermination(10, TimeUnit.SECONDS)) {
+                this.streamSetObjectUploadPool.shutdownNow();
+            }
+        } catch (InterruptedException ignored) {
+        }
+
         this.streamObjectUploadPool.shutdown();
+        try {
+            if (!this.streamObjectUploadPool.awaitTermination(10, TimeUnit.SECONDS)) {
+                this.streamObjectUploadPool.shutdownNow();
+            }
+        } catch (InterruptedException ignored) {
+        }
     }
 
     public CompletableFuture<Void> chainWriteStreamSetObject(CompletableFuture<Void> prev,
@@ -108,10 +121,7 @@ public class CompactionUploader {
                     return streamObject;
                 }).whenComplete((ret, ex) -> {
                     if (ex != null) {
-                        if (isShutdown) {
-                            // TODO: remove this when we're able to abort object uploading gracefully
-                            LOGGER.warn("write to stream object {} failed", objectId, ex);
-                        } else {
+                        if (!isShutdown) {
                             LOGGER.error("write to stream object {} failed", objectId, ex);
                         }
                         dataBlockWriter.release();

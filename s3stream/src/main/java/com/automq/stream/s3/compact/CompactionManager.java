@@ -44,12 +44,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -63,7 +65,7 @@ public class CompactionManager {
     private final StreamManager streamManager;
     private final S3Operator s3Operator;
     private final CompactionAnalyzer compactionAnalyzer;
-    private final ScheduledExecutorService compactScheduledExecutor;
+    private final ScheduledExecutorService compactionScheduledExecutor;
     private final ScheduledExecutorService bucketCallbackScheduledExecutor;
     private final ExecutorService compactThreadPool;
     private final ExecutorService forceSplitThreadPool;
@@ -77,6 +79,9 @@ public class CompactionManager {
     private final long networkBandwidth;
     private final boolean s3ObjectLogEnable;
     private final long compactionCacheSize;
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private volatile CompletableFuture<Void> forceSplitCf = null;
+    private volatile CompletableFuture<Void> compactionCf = null;
     private Bucket compactionBucket = null;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager,
@@ -100,12 +105,13 @@ public class CompactionManager {
         maxStreamObjectNumPerCommit = config.maxStreamObjectNumPerCommit();
         this.compactionAnalyzer = new CompactionAnalyzer(compactionCacheSize, streamSplitSize, maxStreamNumPerStreamSetObject,
             maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.nodeId())));
-        this.compactScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger);
+        this.compactionScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger, true, false);
         this.bucketCallbackScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger);
+            ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger, true, false);
         this.compactThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("object-compaction-manager"));
         this.forceSplitThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("force-split-executor"));
+        this.running.set(true);
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +
                 "streamSplitSize: {} bytes, forceSplitObjectPeriod: {} min, maxObjectNumToCompact: {}, maxStreamNumInStreamSet: {}, maxStreamObjectNum: {}",
             compactionInterval, compactionCacheSize, streamSplitSize, forceSplitObjectPeriod, maxObjectNumToCompact, maxStreamNumPerStreamSetObject, maxStreamObjectNumPerCommit);
@@ -115,9 +121,13 @@ public class CompactionManager {
         scheduleNextCompaction((long) this.compactionInterval * 60 * 1000);
     }
 
-    private void scheduleNextCompaction(long delayMillis) {
+    void scheduleNextCompaction(long delayMillis) {
+        if (!running.get()) {
+            logger.info("Compaction manager is shutdown, skip scheduling next compaction");
+            return;
+        }
         logger.info("Next Compaction started in {} ms", delayMillis);
-        this.compactScheduledExecutor.schedule(() -> {
+        this.compactionScheduledExecutor.schedule(() -> {
             TimerUtil timerUtil = new TimerUtil();
             try {
                 logger.info("Compaction started");
@@ -136,9 +146,37 @@ public class CompactionManager {
     }
 
     public void shutdown() {
-        this.compactScheduledExecutor.shutdown();
+        if (!running.compareAndSet(true, false)) {
+            logger.warn("Compaction manager is already shutdown");
+            return;
+        }
+        logger.info("Shutting down compaction manager");
+        synchronized (this) {
+            if (forceSplitCf != null) {
+                // prevent block-waiting for force splitting objects
+                forceSplitCf.cancel(true);
+            }
+            if (compactionCf != null) {
+                // prevent block-waiting for uploading compacted objects
+                compactionCf.cancel(true);
+            }
+        }
+        this.compactionScheduledExecutor.shutdown();
+        try {
+            if (!this.compactionScheduledExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                this.compactionScheduledExecutor.shutdownNow();
+            }
+        } catch (InterruptedException ignored) {
+        }
         this.bucketCallbackScheduledExecutor.shutdown();
+        try {
+            if (!this.bucketCallbackScheduledExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                this.bucketCallbackScheduledExecutor.shutdownNow();
+            }
+        } catch (InterruptedException ignored) {
+        }
         this.uploader.shutdown();
+        logger.info("Compaction manager shutdown complete");
     }
 
     public CompletableFuture<Void> compact() {
@@ -152,6 +190,10 @@ public class CompactionManager {
 
     private void compact(List<StreamMetadata> streamMetadataList,
         List<S3ObjectMetadata> objectMetadataList) throws CompletionException {
+        if (!running.get()) {
+            logger.info("Compaction manager is shutdown, skip compaction");
+            return;
+        }
         logger.info("Get {} stream set objects from metadata", objectMetadataList.size());
         if (objectMetadataList.isEmpty()) {
             return;
@@ -188,6 +230,10 @@ public class CompactionManager {
         logger.info("Force split {} stream set objects", objectsToForceSplit.size());
         TimerUtil timerUtil = new TimerUtil();
         for (int i = 0; i < objectsToForceSplit.size(); i++) {
+            if (!running.get()) {
+                logger.info("Compaction manager is shutdown, abort force split progress");
+                return;
+            }
             timerUtil.reset();
             S3ObjectMetadata objectToForceSplit = objectsToForceSplit.get(i);
             logger.info("Force split progress {}/{}, splitting object {}, object size {}", i + 1, objectsToForceSplit.size(),
@@ -222,6 +268,10 @@ public class CompactionManager {
 
     private void compactObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToCompact)
         throws CompletionException {
+        if (!running.get()) {
+            logger.info("Compaction manager is shutdown, skip compacting objects");
+            return;
+        }
         if (objectsToCompact.isEmpty()) {
             return;
         }
@@ -234,6 +284,10 @@ public class CompactionManager {
         logger.info("Compact {} stream set objects", objectsToCompact.size());
         TimerUtil timerUtil = new TimerUtil();
         CommitStreamSetObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
+        if (!running.get()) {
+            logger.info("Compaction manager is shutdown, skip committing compaction request");
+            return;
+        }
         if (request == null) {
             return;
         }
@@ -282,7 +336,7 @@ public class CompactionManager {
     public CompletableFuture<Void> forceSplitAll() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
-        this.compactScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
+        this.compactionScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
             List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
                 .map(StreamOffsetRange::streamId).distinct().collect(Collectors.toList());
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
@@ -408,8 +462,7 @@ public class CompactionManager {
     }
 
     CommitStreamSetObjectRequest buildSplitRequest(List<StreamMetadata> streamMetadataList,
-        S3ObjectMetadata objectToSplit)
-        throws CompletionException {
+        S3ObjectMetadata objectToSplit) throws CompletionException {
         List<CompletableFuture<StreamObject>> cfs = new ArrayList<>();
         boolean status = splitStreamSetObject(streamMetadataList, objectToSplit, cfs);
         if (!status) {
@@ -421,6 +474,20 @@ public class CompactionManager {
         request.setObjectId(-1L);
 
         // wait for all force split objects to complete
+        synchronized (this) {
+            if (!running.get()) {
+                logger.info("Compaction manager is shutdown, skip waiting for force splitting objects");
+                return null;
+            }
+            forceSplitCf = CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0]));
+        }
+        try {
+            forceSplitCf.join();
+        } catch (CancellationException exception) {
+            logger.info("Force split objects cancelled");
+            return null;
+        }
+        forceSplitCf = null;
         cfs.stream().map(e -> {
             try {
                 return e.join();
@@ -463,6 +530,12 @@ public class CompactionManager {
         logCompactionPlans(compactionPlans, excludedObjectIds);
         objectsToCompact = objectsToCompact.stream().filter(e -> !excludedObjectIds.contains(e.objectId())).collect(Collectors.toList());
         executeCompactionPlans(request, compactionPlans, objectsToCompact);
+
+        if (!running.get()) {
+            logger.info("Compaction manager is shutdown, skip constructing compaction request");
+            return null;
+        }
+
         compactionPlans.forEach(c -> c.streamDataBlocksMap().values().forEach(v -> v.forEach(b -> compactedObjectIds.add(b.getObjectId()))));
 
         // compact out-dated objects directly
@@ -576,6 +649,10 @@ public class CompactionManager {
             .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
         List<StreamDataBlock> sortedStreamDataBlocks = new ArrayList<>();
         for (int i = 0; i < compactionPlans.size(); i++) {
+            if (!running.get()) {
+                logger.info("Compaction manager is shutdown, abort compaction progress");
+                return;
+            }
             // iterate over each compaction plan
             CompactionPlan compactionPlan = compactionPlans.get(i);
             long totalSize = compactionPlan.streamDataBlocksMap().values().stream().flatMap(List::stream)
@@ -602,18 +679,31 @@ public class CompactionManager {
             List<CompletableFuture<?>> cfList = new ArrayList<>();
             cfList.add(streamSetObjectChainWriteCf);
             cfList.addAll(streamObjectCfList);
-            // wait for all stream objects and stream set object part to be uploaded
-            CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
-                .thenAccept(v -> uploader.forceUploadStreamSetObject())
-                .exceptionally(ex -> {
-                    logger.error("Error while uploading compaction objects", ex);
-                    uploader.release().thenAccept(v -> {
-                        for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
-                            compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                        }
-                    }).join();
-                    throw new IllegalStateException("Error while uploading compaction objects", ex);
-                }).join();
+            synchronized (this) {
+                if (!running.get()) {
+                    logger.info("Compaction manager is shutdown, skip waiting for uploading objects");
+                    return;
+                }
+                // wait for all stream objects and stream set object part to be uploaded
+                compactionCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
+                    .thenAccept(v -> uploader.forceUploadStreamSetObject())
+                    .exceptionally(ex -> {
+                        uploader.release().thenAccept(v -> {
+                            for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                                compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                            }
+                        }).join();
+                        throw new IllegalStateException("Error while uploading compaction objects", ex);
+                    });
+            }
+            try {
+                compactionCf.join();
+            } catch (CancellationException ex) {
+                logger.warn("Compaction progress {}/{} is cancelled", i + 1, compactionPlans.size());
+                return;
+            }
+            compactionCf = null;
+
             streamObjectCfList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
         }
         List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRangeFromGroup(
