@@ -223,7 +223,7 @@ public class S3StorageTest {
         );
 
         List<StreamMetadata> openingStreams = List.of(new StreamMetadata(233L, 0L, 0L, 11L, StreamState.OPENED));
-        LogCache.LogCacheBlock cacheBlock = storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        LogCache.LogCacheBlock cacheBlock = S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
         // ignore closed stream and noncontinuous records.
         assertEquals(1, cacheBlock.records().size());
         List<StreamRecordBatch> streamRecords = cacheBlock.records().get(233L);
@@ -231,16 +231,41 @@ public class S3StorageTest {
         assertEquals(11L, streamRecords.get(0).getBaseOffset());
         assertEquals(12L, streamRecords.get(1).getBaseOffset());
 
-        //
+        // simulate data loss
         openingStreams = List.of(
             new StreamMetadata(233L, 0L, 0L, 5L, StreamState.OPENED));
         boolean exception = false;
         try {
-            storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+            S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
         } catch (IllegalStateException e) {
             exception = true;
         }
         Assertions.assertTrue(exception);
+    }
+
+    @Test
+    public void testRecoverOutOfOrderRecords() {
+        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 9L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 10L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 13L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 11L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 12L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 14L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 20L)))
+        );
+
+        List<StreamMetadata> openingStreams = List.of(new StreamMetadata(42L, 0L, 0L, 10L, StreamState.OPENED));
+        LogCache.LogCacheBlock cacheBlock = S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        // ignore closed stream and noncontinuous records.
+        assertEquals(1, cacheBlock.records().size());
+        List<StreamRecordBatch> streamRecords = cacheBlock.records().get(42L);
+        assertEquals(5, streamRecords.size());
+        assertEquals(10L, streamRecords.get(0).getBaseOffset());
+        assertEquals(11L, streamRecords.get(1).getBaseOffset());
+        assertEquals(12L, streamRecords.get(2).getBaseOffset());
+        assertEquals(13L, streamRecords.get(3).getBaseOffset());
+        assertEquals(14L, streamRecords.get(4).getBaseOffset());
     }
 
     @Test
