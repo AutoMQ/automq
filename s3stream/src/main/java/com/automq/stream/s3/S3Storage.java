@@ -41,6 +41,7 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -48,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -136,12 +138,39 @@ public class S3Storage implements Storage {
         return recoverContinuousRecords(it, openingStreams, LOGGER);
     }
 
+    /**
+     * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
+     * It will filter out
+     * <ul>
+     *     <li>the records that are not in the opening streams</li>
+     *     <li>the records that have been committed</li>
+     *     <li>the records that are not continuous, which means, all records after the first discontinuous record</li>
+     * </ul>
+     *
+     * It throws {@link IllegalStateException} if the start offset of the first recovered record mismatches
+     * the end offset of any opening stream, which indicates data loss.
+     * <p>
+     * If there are out of order records (which should never happen or there is a BUG), it will try to re-order them.
+     * <p>
+     * For example, if we recover following records from the WAL in a stream:
+     * <pre>    1, 2, 3, 5, 4, 6, 10, 11</pre>
+     * and the {@link StreamMetadata#endOffset()} of this stream is 3. Then the returned {@link LogCache.LogCacheBlock}
+     * will contain records
+     * <pre>    3, 4, 5, 6</pre>
+     * Here,
+     * <ul>
+     *     <li>The record 1 and 2 are discarded because they have been committed (less than 3, the end offset of the stream)</li>
+     *     <li>The record 10 and 11 are discarded because they are not continuous (10 is not 7, the next offset of 6)</li>
+     *     <li>The record 5 and 4 are reordered because they are out of order, and we handle this bug here</li>
+     * </ul>
+     */
     static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
         List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
         long logEndOffset = -1L;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
+        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
         while (it.hasNext()) {
             WriteAheadLog.RecoverResult recoverResult = it.next();
             logEndOffset = recoverResult.recordOffset();
@@ -159,15 +188,48 @@ public class S3Storage implements Storage {
                 recordBuf.release();
                 continue;
             }
+
             Long expectNextOffset = streamNextOffsets.get(streamId);
+            Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
             if (expectNextOffset == null || expectNextOffset == streamRecordBatch.getBaseOffset()) {
+                // continuous record, put it into cache.
                 cacheBlock.put(streamRecordBatch);
-                streamNextOffsets.put(streamRecordBatch.getStreamId(), streamRecordBatch.getLastOffset());
+                expectNextOffset = streamRecordBatch.getLastOffset();
+                // check if there are some out of order records in the queue.
+                if (discontinuousRecords != null) {
+                    while (!discontinuousRecords.isEmpty()) {
+                        StreamRecordBatch peek = discontinuousRecords.peek();
+                        if (peek.getBaseOffset() == expectNextOffset) {
+                            // should never happen, log it.
+                            logger.error("[BUG] recover an out of order record, streamId={}, expectNextOffset={}, record={}", streamId, expectNextOffset, peek);
+                            cacheBlock.put(peek);
+                            discontinuousRecords.poll();
+                            expectNextOffset = peek.getLastOffset();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                // update next offset.
+                streamNextOffsets.put(streamRecordBatch.getStreamId(), expectNextOffset);
             } else {
-                logger.error("unexpected WAL record, streamId={}, expectNextOffset={}, record={}", streamId, expectNextOffset, streamRecordBatch);
-                streamRecordBatch.release();
+                // unexpected record, put it into discontinuous records queue.
+                if (discontinuousRecords == null) {
+                    discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(StreamRecordBatch::getBaseOffset));
+                    streamDiscontinuousRecords.put(streamId, discontinuousRecords);
+                }
+                discontinuousRecords.add(streamRecordBatch);
             }
         }
+        // release all discontinuous records.
+        streamDiscontinuousRecords.values().forEach(queue -> {
+            if (queue.isEmpty()) {
+                return;
+            }
+            logger.info("drop discontinuous records, records={}", queue);
+            queue.forEach(StreamRecordBatch::release);
+        });
+
         if (logEndOffset >= 0L) {
             cacheBlock.confirmOffset(logEndOffset);
         }
