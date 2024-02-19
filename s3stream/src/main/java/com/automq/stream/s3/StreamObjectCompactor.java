@@ -71,7 +71,7 @@ public class StreamObjectCompactor {
         try {
             compact0(false);
         } catch (Throwable e) {
-            LOGGER.error("Failed to compact {} stream objects", stream.streamId(), e);
+            handleCompactException(e);
         }
     }
 
@@ -82,7 +82,15 @@ public class StreamObjectCompactor {
         try {
             compact0(true);
         } catch (Throwable e) {
-            LOGGER.error("Failed to compact {} stream objects", stream.streamId(), e);
+            handleCompactException(e);
+        }
+    }
+
+    private void handleCompactException(Throwable e) {
+        if (stream instanceof S3StreamClient.StreamWrapper && ((S3StreamClient.StreamWrapper) stream).isClosed()) {
+            LOGGER.warn("[STREAM_OBJECT_COMPACT_FAIL],[STREAM_CLOSED],{}", stream.streamId(), e);
+        } else {
+            LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{}", stream.streamId(), e);
         }
     }
 
