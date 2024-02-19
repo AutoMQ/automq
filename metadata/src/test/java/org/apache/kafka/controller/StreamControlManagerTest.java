@@ -297,7 +297,7 @@ public class StreamControlManagerTest {
     }
 
     @Test
-    public void testCommitWalBasic() {
+    public void testCommitStreamSetObjectBasic() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
@@ -397,6 +397,99 @@ public class StreamControlManagerTest {
         request = new GetOpeningStreamsRequestData()
                 .setNodeId(BROKER0).setNodeEpoch(0L);
         assertEquals(0, manager.getOpeningStreams(request).response().streamMetadataList().size());
+    }
+
+    @Test
+    public void testCommitStreamSetObject_compactWithDeletedStream() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(
+                    List.of(
+                            new ApiMessageAndVersion(
+                                    new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
+                                    (short) 0
+                            )
+                    ),
+                    true);
+        });
+        when(objectControlManager.markDestroyObjects(anyList())).then(args -> {
+            List<Long> objectIds = args.getArgument(0);
+            return ControllerResult.of(
+                    objectIds
+                            .stream()
+                            .map(id ->
+                                    new ApiMessageAndVersion(
+                                            new S3ObjectRecord().setObjectId(id).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()),
+                                            (short) 0
+                                    )
+                            )
+                            .collect(Collectors.toList()),
+                    true);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+
+        // 1. create and open stream_0
+        CreateStreamRequest request0 = new CreateStreamRequest();
+        ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
+        replay(manager, result0.records());
+        ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, 0,
+                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        replay(manager, result2.records());
+
+        // 2. setup compacted object
+        for (int i = 0; i < 2; i++) {
+            ControllerResult<CommitStreamSetObjectResponseData> rst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData()
+                    .setObjectId(i)
+                    .setNodeId(BROKER0)
+                    .setObjectSize(999)
+                    .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                            .setStreamId(STREAM0)
+                            .setStreamEpoch(EPOCH0)
+                            .setStartOffset(i)
+                            .setEndOffset(i + 1))));
+            replay(manager, rst.records());
+        }
+
+
+        // 2. compact stream set object
+        List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(2L));
+        // STREAM1 is not exist
+        List<StreamObject> streamObjects = List.of(new StreamObject().setStreamId(STREAM1).setObjectId(233).setObjectSize(111).setStartOffset(111).setEndOffset(200));
+
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
+                .setObjectId(2L)
+                .setNodeId(BROKER0)
+                .setObjectSize(999)
+                .setObjectStreamRanges(streamRanges0)
+                .setStreamObjects(streamObjects).setCompactedObjectIds(List.of(0L, 1L));
+        ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result3.response().errorCode());
+        replay(manager, result3.records());
+
+        List<ApiMessageAndVersion> records = result3.records();
+        assertEquals(7, records.size());
+        assertEquals(2, ((S3ObjectRecord) records.get(0).message()).objectId());
+        assertEquals(S3ObjectState.COMMITTED.toByte(), ((S3ObjectRecord) records.get(0).message()).objectState());
+
+        assertEquals(0, ((S3ObjectRecord) records.get(1).message()).objectId());
+        assertEquals(S3ObjectState.MARK_DESTROYED.toByte(), ((S3ObjectRecord) records.get(1).message()).objectState());
+
+        assertEquals(1, ((S3ObjectRecord) records.get(2).message()).objectId());
+        assertEquals(S3ObjectState.MARK_DESTROYED.toByte(), ((S3ObjectRecord) records.get(2).message()).objectState());
+
+        assertEquals(2, ((S3StreamSetObjectRecord) records.get(3).message()).objectId());
+
+        // STREAM1 stream object should fast delete
+        assertEquals(233, ((S3ObjectRecord) records.get(4).message()).objectId());
+        assertEquals(S3ObjectState.MARK_DESTROYED.toByte(), ((S3ObjectRecord) records.get(4).message()).objectState());
+
+        assertEquals(0, ((RemoveStreamSetObjectRecord) records.get(5).message()).objectId());
+
+        assertEquals(1, ((RemoveStreamSetObjectRecord) records.get(6).message()).objectId());
     }
 
     private long createStream() {
@@ -1082,6 +1175,8 @@ public class StreamControlManagerTest {
                     break;
                 case REMOVE_S3_STREAM_OBJECT_RECORD:
                     manager.replay((RemoveS3StreamObjectRecord) message);
+                    break;
+                case S3_OBJECT_RECORD:
                     break;
                 default:
                     throw new IllegalStateException("Unknown metadata record type " + type);
