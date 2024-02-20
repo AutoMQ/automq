@@ -394,7 +394,14 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(e);
             return false;
         }
-        appendResult.future().thenAccept(nil -> handleAppendCallback(request));
+        appendResult.future().whenComplete((nil, ex) -> {
+            if (ex != null) {
+                // no exception should be thrown from the WAL
+                LOGGER.error("[UNEXPECTED] append WAL fail, request {}", request, ex);
+                return;
+            }
+            handleAppendCallback(request);
+        });
         return false;
     }
 

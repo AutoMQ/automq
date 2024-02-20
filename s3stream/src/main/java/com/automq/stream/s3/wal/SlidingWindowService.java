@@ -21,7 +21,6 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
-import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.PriorityQueue;
@@ -348,17 +347,17 @@ public class SlidingWindowService {
         return writingBlocks.peek();
     }
 
-    private void writeBlockData(BlockBatch blocks) throws IOException {
+    private void writeBlockData(BlockBatch blocks) {
         TimerUtil timer = new TimerUtil();
         for (Block block : blocks.blocks()) {
             long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
-            walChannel.write(block.data(), position);
+            walChannel.retryWrite(block.data(), position);
         }
-        walChannel.flush();
+        walChannel.retryFlush();
         StorageOperationStats.getInstance().appendWALWriteStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
-    private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
+    private void makeWriteOffsetMatchWindow(long newWindowEndOffset) {
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getStartOffset();
@@ -372,7 +371,7 @@ public class SlidingWindowService {
     }
 
     public interface WALHeaderFlusher {
-        void flush() throws IOException;
+        void flush();
     }
 
     public static class RecordHeaderCoreData {
@@ -500,7 +499,7 @@ public class SlidingWindowService {
             this.startOffset.accumulateAndGet(offset, Math::max);
         }
 
-        public void scaleOutWindow(WALHeaderFlusher flusher, long newMaxLength) throws IOException {
+        public void scaleOutWindow(WALHeaderFlusher flusher, long newMaxLength) {
             boolean scaleWindowHappened = false;
             scaleOutLock.lock();
             try {
@@ -535,36 +534,37 @@ public class SlidingWindowService {
         @Override
         public void run() {
             StorageOperationStats.getInstance().appendWALAwaitStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
-            writeBlock(this.blocks);
-        }
-
-        private void writeBlock(BlockBatch blocks) {
             try {
-                makeWriteOffsetMatchWindow(blocks.endOffset());
-                writeBlockData(blocks);
-
-                TimerUtil timer = new TimerUtil();
-                // Update the start offset of the sliding window after finishing writing the record.
-                windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
-
-                FutureUtil.complete(blocks.futures(), new AppendResult.CallbackResult() {
-                    @Override
-                    public long flushedOffset() {
-                        return windowCoreData.getStartOffset();
-                    }
-
-                    @Override
-                    public String toString() {
-                        return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
-                    }
-                });
-                StorageOperationStats.getInstance().appendWALAfterStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+                writeBlock(this.blocks);
             } catch (Exception e) {
+                // should not happen, but just in case
                 FutureUtil.completeExceptionally(blocks.futures(), e);
                 LOGGER.error(String.format("failed to write blocks, startOffset: %s", blocks.startOffset()), e);
             } finally {
                 blocks.release();
             }
+        }
+
+        private void writeBlock(BlockBatch blocks) {
+            makeWriteOffsetMatchWindow(blocks.endOffset());
+            writeBlockData(blocks);
+
+            TimerUtil timer = new TimerUtil();
+            // Update the start offset of the sliding window after finishing writing the record.
+            windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
+
+            FutureUtil.complete(blocks.futures(), new AppendResult.CallbackResult() {
+                @Override
+                public long flushedOffset() {
+                    return windowCoreData.getStartOffset();
+                }
+
+                @Override
+                public String toString() {
+                    return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
+                }
+            });
+            StorageOperationStats.getInstance().appendWALAfterStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
         }
     }
 }

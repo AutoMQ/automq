@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.wal.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.WALNotInitializedException;
+import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import org.slf4j.Logger;
@@ -27,7 +28,10 @@ import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
  */
 public interface WALChannel {
 
+    Logger LOGGER = LoggerFactory.getLogger(WALChannel.class);
+
     String DEVICE_PREFIX = "/dev/";
+    long DEFAULT_RETRY_INTERVAL = 100L;
 
     static WALChannelBuilder builder(String path) {
         return new WALChannelBuilder(path);
@@ -63,10 +67,48 @@ public interface WALChannel {
      */
     void write(ByteBuf src, long position) throws IOException;
 
+    default void retryWrite(ByteBuf src, long position) {
+        retryWrite(src, position, DEFAULT_RETRY_INTERVAL);
+    }
+
+    /**
+     * Retry {@link #write(ByteBuf, long)} with the given interval until success.
+     */
+    default void retryWrite(ByteBuf src, long position, long retryIntervalMillis) {
+        while (true) {
+            try {
+                write(src, position);
+                break;
+            } catch (IOException e) {
+                LOGGER.error("Failed to write, retrying in {}ms", retryIntervalMillis, e);
+                Threads.sleep(retryIntervalMillis);
+            }
+        }
+    }
+
     /**
      * Flush to disk.
      */
     void flush() throws IOException;
+
+    default void retryFlush() {
+        retryFlush(DEFAULT_RETRY_INTERVAL);
+    }
+
+    /**
+     * Retry {@link #flush()} with the given interval until success.
+     */
+    default void retryFlush(long retryIntervalMillis) {
+        while (true) {
+            try {
+                flush();
+                break;
+            } catch (IOException e) {
+                LOGGER.error("Failed to flush, retrying in {}ms", retryIntervalMillis, e);
+                Threads.sleep(retryIntervalMillis);
+            }
+        }
+    }
 
     /**
      * Call {@link #write(ByteBuf, long)} and {@link #flush()}.
@@ -74,6 +116,25 @@ public interface WALChannel {
     default void writeAndFlush(ByteBuf src, long position) throws IOException {
         write(src, position);
         flush();
+    }
+
+    default void retryWriteAndFlush(ByteBuf src, long position) {
+        retryWriteAndFlush(src, position, DEFAULT_RETRY_INTERVAL);
+    }
+
+    /**
+     * Retry {@link #writeAndFlush(ByteBuf, long)} with the given interval until success.
+     */
+    default void retryWriteAndFlush(ByteBuf src, long position, long retryIntervalMillis) {
+        while (true) {
+            try {
+                writeAndFlush(src, position);
+                break;
+            } catch (IOException e) {
+                LOGGER.error("Failed to write and flush, retrying in {}ms", retryIntervalMillis, e);
+                Threads.sleep(retryIntervalMillis);
+            }
+        }
     }
 
     /**
@@ -86,6 +147,24 @@ public interface WALChannel {
         return read(dst, position, dst.writableBytes());
     }
 
+    default int retryRead(ByteBuf dst, long position) {
+        return retryRead(dst, position, DEFAULT_RETRY_INTERVAL);
+    }
+
+    /**
+     * Retry {@link #read(ByteBuf, long)} with the given interval until success.
+     */
+    default int retryRead(ByteBuf dst, long position, long retryIntervalMillis) {
+        while (true) {
+            try {
+                return read(dst, position);
+            } catch (IOException e) {
+                LOGGER.error("Failed to read, retrying in {}ms", retryIntervalMillis, e);
+                Threads.sleep(retryIntervalMillis);
+            }
+        }
+    }
+
     /**
      * Read bytes from the given position of the channel to the given buffer from the current writer index
      * until reaching the given length or the end of the channel.
@@ -95,6 +174,24 @@ public interface WALChannel {
      * {@code dst.writableBytes()} bytes will be read.
      */
     int read(ByteBuf dst, long position, int length) throws IOException;
+
+    default int retryRead(ByteBuf dst, long position, int length) {
+        return retryRead(dst, position, length, DEFAULT_RETRY_INTERVAL);
+    }
+
+    /**
+     * Retry {@link #read(ByteBuf, long, int)} with the given interval until success.
+     */
+    default int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis) {
+        while (true) {
+            try {
+                return read(dst, position, length);
+            } catch (IOException e) {
+                LOGGER.error("Failed to read, retrying in {}ms", retryIntervalMillis, e);
+                Threads.sleep(retryIntervalMillis);
+            }
+        }
+    }
 
     boolean useDirectIO();
 
