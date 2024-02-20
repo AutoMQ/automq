@@ -607,22 +607,22 @@ public class StreamControlManager {
         if (streamObjects != null && !streamObjects.isEmpty()) {
             // commit objects
             for (StreamObject streamObject : streamObjects) {
-                ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
-                        streamObject.objectSize(), committedTs);
-                if (streamObjectCommitResult.response() != Errors.NONE) {
-                    log.error("[CommitStreamSetObject]: stream object={} not exist when commit stream set object: {}", streamObject.objectId(), objectId);
-                    resp.setErrorCode(streamObjectCommitResult.response().code());
-                    return ControllerResult.of(Collections.emptyList(), resp);
+                if (streamsMetadata.containsKey(streamObject.streamId())) {
+                    ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
+                            streamObject.objectSize(), committedTs);
+                    if (streamObjectCommitResult.response() != Errors.NONE) {
+                        log.error("[CommitStreamSetObject]: stream object={} not exist when commit stream set object: {}", streamObject.objectId(), objectId);
+                        resp.setErrorCode(streamObjectCommitResult.response().code());
+                        return ControllerResult.of(Collections.emptyList(), resp);
+                    }
+                    records.addAll(streamObjectCommitResult.records());
+                    records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset(), committedTs).toRecord());
+                } else {
+                    log.info("streamId={} is already deleted, then fast delete the stream object={} from compaction", streamObject.streamId(), streamObject);
+                    ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()));
+                    records.addAll(deleteRst.records());
                 }
-                records.addAll(streamObjectCommitResult.records());
             }
-            // create stream object records
-            streamObjects.forEach(obj -> {
-                long streamId = obj.streamId();
-                long startOffset = obj.startOffset();
-                long endOffset = obj.endOffset();
-                records.add(new S3StreamObject(obj.objectId(), streamId, startOffset, endOffset, committedTs).toRecord());
-            });
         }
         // generate compacted objects' remove record
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
@@ -929,7 +929,7 @@ public class StreamControlManager {
             if (!clusterControlManager.isActive(nodeId)) {
                 Collection<S3StreamSetObject> objects = nodeMetadata.streamSetObjects().values();
                 boolean alive = false;
-                for (S3StreamSetObject object: objects) {
+                for (S3StreamSetObject object : objects) {
                     if (alive) {
                         // if the last object is not expired, the likelihood of the subsequent object expiring is also quite low.
                         break;
@@ -1043,8 +1043,7 @@ public class StreamControlManager {
             long streamId = index.streamId();
             S3StreamMetadata metadata = this.streamsMetadata.get(streamId);
             if (metadata == null) {
-                // ignore it
-                LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] cannot find streamId={} metadata", streamId);
+                // ignore it, the stream may be deleted
                 return;
             }
             RangeMetadata rangeMetadata = metadata.currentRangeMetadata();
@@ -1053,15 +1052,11 @@ public class StreamControlManager {
                 LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] cannot find streamId={} stream range metadata", streamId);
                 return;
             }
-            if (rangeMetadata.endOffset() < index.startOffset()) {
-                LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
-                        rangeMetadata.endOffset(), index.startOffset());
-                return;
-            } else if (rangeMetadata.endOffset() > index.startOffset()) {
-                // ignore it, the stream set object is the compacted stream set object.
-                return;
+            if (rangeMetadata.endOffset() < index.endOffset()) {
+                // the offset continuous is ensured by the process layer
+                // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
+                rangeMetadata.setEndOffset(index.endOffset());
             }
-            rangeMetadata.setEndOffset(index.endOffset());
         });
     }
 
@@ -1096,15 +1091,11 @@ public class StreamControlManager {
             LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] cannot find streamId={} stream range metadata", streamId);
             return;
         }
-        if (rangeMetadata.endOffset() < startOffset) {
-            LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] streamId={} offset is not continuous, expect {} real {}", streamId,
-                    rangeMetadata.endOffset(), startOffset);
-            return;
-        } else if (rangeMetadata.endOffset() > startOffset) {
-            // ignore it, the stream set object compact and stream compact may generate this StreamObjectRecord.
-            return;
+        if (rangeMetadata.endOffset() < endOffset) {
+            // the offset continuous is ensured by the process layer
+            // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
+            rangeMetadata.setEndOffset(endOffset);
         }
-        rangeMetadata.setEndOffset(endOffset);
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {

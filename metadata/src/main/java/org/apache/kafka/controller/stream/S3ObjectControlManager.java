@@ -68,7 +68,6 @@ public class S3ObjectControlManager {
     private static final long DEFAULT_INITIAL_DELAY_MS = 5000L;
 
     private final QuorumController quorumController;
-    private final SnapshotRegistry snapshotRegistry;
     private final Logger log;
 
     private final TimelineHashMap<Long/*objectId*/, S3Object> objectsMetadata;
@@ -103,7 +102,6 @@ public class S3ObjectControlManager {
         Config config,
         S3Operator operator) {
         this.quorumController = quorumController;
-        this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(S3ObjectControlManager.class);
         this.clusterId = clusterId;
         this.config = config;
@@ -227,7 +225,6 @@ public class S3ObjectControlManager {
             record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
             S3ObjectState.fromByte(record.objectState()));
         objectsMetadata.put(record.objectId(), object);
-        // TODO: recover the prepared objects and mark destroyed objects when restart the controller
         if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
             preparedObjects.add(object.getObjectId());
         } else {
