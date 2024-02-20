@@ -24,6 +24,8 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 
+import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
+
 public class BenchTool {
 
     public static Namespace parseArgs(ArgumentParser parser, String[] args) {
@@ -51,7 +53,7 @@ public class BenchTool {
 
     public static void resetWALHeader(String path) throws IOException {
         System.out.println("Resetting WAL header");
-        if (path.startsWith(WALChannel.DEVICE_PREFIX)) {
+        if (isBlockDevice(path)) {
             // block device
             int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
             WALChannel channel = WALChannel.builder(path).capacity(capacity).build();

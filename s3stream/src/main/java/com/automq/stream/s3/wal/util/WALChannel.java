@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
 /**
  * There are two implementations of WALChannel:
@@ -30,7 +31,6 @@ public interface WALChannel {
 
     Logger LOGGER = LoggerFactory.getLogger(WALChannel.class);
 
-    String DEVICE_PREFIX = "/dev/";
     long DEFAULT_RETRY_INTERVAL = 100L;
 
     static WALChannelBuilder builder(String path) {
@@ -248,7 +248,7 @@ public interface WALChannel {
             if (direct != null) {
                 // Set by user.
                 useDirect = direct;
-            } else if (path.startsWith(DEVICE_PREFIX)) {
+            } else if (isBlockDevice(path)) {
                 // We can only use direct IO for block devices.
                 useDirect = true;
             } else if (directNotAvailableMsg == null) {

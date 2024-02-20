@@ -20,6 +20,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
+import jnr.posix.POSIXFactory;
 
 public class WALUtil {
     public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
@@ -115,5 +116,18 @@ public class WALUtil {
             throw new ExecutionException("get block device capacity fail: " + result, null);
         }
         return Long.parseLong(result.stdout().trim());
+    }
+
+    /**
+     * Check if the given path is a block device.
+     * It returns false if the path does not exist.
+     */
+    public static boolean isBlockDevice(String path) {
+        if (!new File(path).exists()) {
+            return false;
+        }
+        return POSIXFactory.getPOSIX()
+            .stat(path)
+            .isBlockDev();
     }
 }
