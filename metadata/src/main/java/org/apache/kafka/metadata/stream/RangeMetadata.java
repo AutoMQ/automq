@@ -67,6 +67,10 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
         return this.rangeIndex - o.rangeIndex;
     }
 
+    public long streamId() {
+        return streamId;
+    }
+
     public long epoch() {
         return epoch;
     }
@@ -85,10 +89,6 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
 
     public int nodeId() {
         return nodeId;
-    }
-
-    public void setEndOffset(long endOffset) {
-        this.endOffset = endOffset;
     }
 
     public ApiMessageAndVersion toRecord() {
