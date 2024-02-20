@@ -48,7 +48,7 @@ public class ConfigUtils {
                 .objectLogEnable(s.s3ObjectLogEnable())
                 .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
                 .refillPeriodMs(s.s3RefillPeriodMsProp())
-                .objectRetentionTimeInSecond(s.s3ObjectRetentionTimeInSecond())
+                .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond())
                 .forcePathStyle(s.s3PathStyle());
     }
 
