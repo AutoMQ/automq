@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
 public class WALBlockDeviceChannel implements WALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
@@ -98,7 +99,7 @@ public class WALBlockDeviceChannel implements WALChannel {
             return "java.nio.DirectByteBuffer.<init>(long, int) not available." +
                 " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
         }
-        if (!path.startsWith(DEVICE_PREFIX)) {
+        if (!isBlockDevice(path)) {
             String reason = tryOpenFileWithDirectIO(String.format(CHECK_DIRECT_IO_AVAILABLE_FORMAT, path));
             if (null != reason) {
                 return "O_DIRECT not supported by the file system, path: " + path + ", reason: " + reason;
@@ -109,23 +110,27 @@ public class WALBlockDeviceChannel implements WALChannel {
 
     /**
      * Try to open a file with O_DIRECT flag to check whether the file system supports O_DIRECT.
-     * NOTE: The file is not actually created.
+     * The file will be deleted after the test.
      *
      * @return null if the file is opened successfully, otherwise the reason why it's not available
      */
     private static String tryOpenFileWithDirectIO(String path) {
+        File file = new File(path);
         try {
-            DirectRandomAccessFile randomAccessFile = new DirectRandomAccessFile(new File(path), "rw");
+            DirectRandomAccessFile randomAccessFile = new DirectRandomAccessFile(file, "rw");
             randomAccessFile.close();
             return null;
         } catch (IOException e) {
             return e.getMessage();
+        } finally {
+            // the file may be created in {@link DirectRandomAccessFile(File, String)}, so delete it
+            file.delete();
         }
     }
 
     @Override
     public void open(CapacityReader reader) throws IOException {
-        if (!path.startsWith(WALChannel.DEVICE_PREFIX)) {
+        if (!isBlockDevice(path)) {
             openAndCheckFile();
         } else {
             try {
