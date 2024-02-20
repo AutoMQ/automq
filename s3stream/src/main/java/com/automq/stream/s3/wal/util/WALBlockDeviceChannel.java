@@ -98,28 +98,28 @@ public class WALBlockDeviceChannel implements WALChannel {
             return "java.nio.DirectByteBuffer.<init>(long, int) not available." +
                 " Add --add-opens=java.base/java.nio=ALL-UNNAMED and -Dio.netty.tryReflectionSetAccessible=true to JVM options may fix this.";
         }
-        if (!path.startsWith(DEVICE_PREFIX) && !tryOpenFileWithDirectIO(String.format(CHECK_DIRECT_IO_AVAILABLE_FORMAT, path))) {
-            return "O_DIRECT not supported by the file system, path: " + path;
+        if (!path.startsWith(DEVICE_PREFIX)) {
+            String reason = tryOpenFileWithDirectIO(String.format(CHECK_DIRECT_IO_AVAILABLE_FORMAT, path));
+            if (null != reason) {
+                return "O_DIRECT not supported by the file system, path: " + path + ", reason: " + reason;
+            }
         }
         return null;
     }
 
     /**
-     * Try to create a file with O_DIRECT flag to check whether the file system supports O_DIRECT.
-     * The file will be deleted after created.
+     * Try to open a file with O_DIRECT flag to check whether the file system supports O_DIRECT.
+     * NOTE: The file is not actually created.
      *
-     * @return true if the file is created successfully, otherwise false
+     * @return null if the file is opened successfully, otherwise the reason why it's not available
      */
-    private static boolean tryOpenFileWithDirectIO(String path) {
-        File file = new File(path);
+    private static String tryOpenFileWithDirectIO(String path) {
         try {
-            DirectRandomAccessFile randomAccessFile = new DirectRandomAccessFile(file, "rw");
+            DirectRandomAccessFile randomAccessFile = new DirectRandomAccessFile(new File(path), "rw");
             randomAccessFile.close();
-            return true;
+            return null;
         } catch (IOException e) {
-            return false;
-        } finally {
-            file.delete();
+            return e.getMessage();
         }
     }
 
