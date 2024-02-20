@@ -1034,7 +1034,17 @@ class ReplicaManager(val config: KafkaConfig,
       val logStartOffset = onlinePartition(topicPartition).map(_.logStartOffset).getOrElse(-1L)
       brokerTopicStats.topicStats(topicPartition.topic).failedProduceRequestRate.mark()
       brokerTopicStats.allTopicsStats.failedProduceRequestRate.mark()
-      error(s"Error processing append operation on partition $topicPartition", t)
+      if (t.isInstanceOf[OutOfOrderSequenceException]) {
+        // The following situation can cause OutOfOrderSequenceException, but it could recover from producer retry:
+        // 1. Producer send msg1 to partition1 (on broker0) and the msg1 is inflight (fail after step 3);
+        // 2. Partition1 move to broker1, and broker1 expect msg1;
+        // 3. Producer send msg2 to partition1 (on broker1); (Producer allow 5 inflight messages)
+        // 4. Broker1 expect msg1 but receive msg2, so it will throw OutOfOrderSequenceException;
+        // 5. [Recover] Producer resend msg1 and msg2 to broker1, and broker2 move the seq to msg3;
+        warn(s"[OUT_OF_ORDER] processing append operation on partition $topicPartition", t)
+      } else {
+        error(s"Error processing append operation on partition $topicPartition", t)
+      }
 
       logStartOffset
     }
