@@ -37,4 +37,13 @@ public class WalWriteRequest implements Comparable<WalWriteRequest> {
     public int compareTo(WalWriteRequest o) {
         return record.compareTo(o.record);
     }
+
+    @Override
+    public String toString() {
+        return "WalWriteRequest{" +
+            "record=" + record +
+            ", offset=" + offset +
+            ", persisted=" + persisted +
+            '}';
+    }
 }
