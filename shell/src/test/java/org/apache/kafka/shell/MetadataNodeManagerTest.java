@@ -54,6 +54,7 @@ import java.util.Collections;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 public class MetadataNodeManagerTest {
@@ -83,20 +84,23 @@ public class MetadataNodeManagerTest {
             metadataNodeManager.getData().root().directory("brokers", "1").file("registration").contents());
         assertEquals("true",
             metadataNodeManager.getData().root().directory("brokers", "1").file("isFenced").contents());
+        assertEquals(1, metadataNodeManager.getClusterSummary().getBrokerNum());
 
         // Unregister broker
         UnregisterBrokerRecord unregisterBrokerRecord = new UnregisterBrokerRecord()
             .setBrokerId(1);
         metadataNodeManager.handleMessage(unregisterBrokerRecord);
         assertFalse(metadataNodeManager.getData().root().directory("brokers").children().containsKey("1"));
+        assertEquals(0, metadataNodeManager.getClusterSummary().getBrokerNum());
     }
 
     @Test
     public void testTopicRecordAndRemoveTopicRecord() {
         // Add topic
+        Uuid topicId = Uuid.fromString("GcaQDl2UTsCNs1p9s37XkQ");
         TopicRecord topicRecord = new TopicRecord()
             .setName("topicName")
-            .setTopicId(Uuid.fromString("GcaQDl2UTsCNs1p9s37XkQ"));
+            .setTopicId(topicId);
 
         metadataNodeManager.handleMessage(topicRecord);
 
@@ -108,6 +112,9 @@ public class MetadataNodeManagerTest {
             metadataNodeManager.getData().root().directory("topicIds", "GcaQDl2UTsCNs1p9s37XkQ").file("name").contents());
         assertEquals("GcaQDl2UTsCNs1p9s37XkQ",
             metadataNodeManager.getData().root().directory("topicIds", "GcaQDl2UTsCNs1p9s37XkQ").file("id").contents());
+        assertEquals(1, metadataNodeManager.getClusterSummary().topicPartitionMap().size());
+        assertTrue(metadataNodeManager.getClusterSummary().topicPartitionMap().containsKey(topicId));
+        assertTrue(metadataNodeManager.getClusterSummary().topicPartitionMap().get(topicId).isEmpty());
 
         // Remove topic
         RemoveTopicRecord removeTopicRecord = new RemoveTopicRecord()
@@ -119,12 +126,14 @@ public class MetadataNodeManagerTest {
             metadataNodeManager.getData().root().directory("topicIds").children().containsKey("GcaQDl2UTsCNs1p9s37XkQ"));
         assertFalse(
             metadataNodeManager.getData().root().directory("topics").children().containsKey("topicName"));
+        assertTrue(metadataNodeManager.getClusterSummary().topicPartitionMap().isEmpty());
     }
 
     @Test
     public void testPartitionRecord() {
+        Uuid topicId = Uuid.fromString("GcaQDl2UTsCNs1p9s37XkQ");
         PartitionRecord record = new PartitionRecord()
-            .setTopicId(Uuid.fromString("GcaQDl2UTsCNs1p9s37XkQ"))
+            .setTopicId(topicId)
             .setPartitionId(0)
             .setLeaderEpoch(1)
             .setReplicas(Arrays.asList(1, 2, 3))
@@ -134,6 +143,9 @@ public class MetadataNodeManagerTest {
         assertEquals(
             PartitionRecordJsonConverter.write(record, PartitionRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString(),
             metadataNodeManager.getData().root().directory("topicIds", "GcaQDl2UTsCNs1p9s37XkQ", "0").file("data").contents());
+        assertEquals(1, metadataNodeManager.getClusterSummary().topicPartitionMap().size());
+        assertTrue(metadataNodeManager.getClusterSummary().topicPartitionMap().containsKey(topicId));
+        assertTrue(metadataNodeManager.getClusterSummary().topicPartitionMap().get(topicId).contains(0));
     }
 
     @Test
