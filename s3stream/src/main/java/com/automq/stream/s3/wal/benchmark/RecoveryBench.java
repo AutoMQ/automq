@@ -101,8 +101,8 @@ public class RecoveryBench implements AutoCloseable {
         Config(Namespace ns) {
             this.path = ns.getString("path");
             this.capacity = ns.getLong("capacity");
-            this.numRecords = ns.getInt("numRecords");
-            this.recordSizeBytes = ns.getInt("recordSizeBytes");
+            this.numRecords = ns.getInt("records");
+            this.recordSizeBytes = ns.getInt("recordSize");
         }
 
         static ArgumentParser parser() {
@@ -123,6 +123,7 @@ public class RecoveryBench implements AutoCloseable {
                 .setDefault(1 << 20)
                 .help("number of records to write");
             parser.addArgument("--record-size")
+                .dest("recordSize")
                 .type(Integer.class)
                 .setDefault(1 << 10)
                 .help("size of each record in bytes");
