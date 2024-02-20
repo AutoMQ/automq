@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.stream.Stream;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
@@ -163,12 +164,14 @@ public final class MetadataNodeManager implements AutoCloseable {
 
         @Override
         public void beginShutdown() {
+            data.root.create("summary").setContents(clusterSummary.toString());
             log.debug("Metadata log listener sent beginShutdown");
         }
     }
 
     private final Data data = new Data();
     private final LogListener logListener = new LogListener();
+    private final ClusterSummary clusterSummary = new ClusterSummary();
     private final ObjectMapper objectMapper;
     private final KafkaEventQueue queue;
 
@@ -197,6 +200,10 @@ public final class MetadataNodeManager implements AutoCloseable {
     // VisibleForTesting
     Data getData() {
         return data;
+    }
+
+    ClusterSummary getClusterSummary() {
+        return clusterSummary;
     }
 
     @Override
@@ -251,11 +258,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 FileNode registrationNode = brokerNode.create("registration");
                 registrationNode.setContents(record.toString());
                 brokerNode.create("isFenced").setContents("true");
+                clusterSummary.setBrokerNum(clusterSummary.getBrokerNum() + 1);
                 break;
             }
             case UNREGISTER_BROKER_RECORD: {
                 UnregisterBrokerRecord record = (UnregisterBrokerRecord) message;
                 data.root.rmrf("brokers", Integer.toString(record.brokerId()));
+                clusterSummary.setBrokerNum(clusterSummary.getBrokerNum() - 1);
                 break;
             }
             case TOPIC_RECORD: {
@@ -266,6 +275,7 @@ public final class MetadataNodeManager implements AutoCloseable {
                 topicDirectory.create("name").setContents(record.name().toString());
                 DirectoryNode topicIdsDirectory = data.root.mkdirs("topicIds");
                 topicIdsDirectory.addChild(record.topicId().toString(), topicDirectory);
+                clusterSummary.topicPartitionMap().putIfAbsent(record.topicId(), new HashSet<>());
                 break;
             }
             case PARTITION_RECORD: {
@@ -277,6 +287,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 JsonNode node = PartitionRecordJsonConverter.
                     write(record, PartitionRecord.HIGHEST_SUPPORTED_VERSION);
                 partitionDirectory.create("data").setContents(node.toPrettyString());
+                clusterSummary.topicPartitionMap().compute(record.topicId(), (k, v) -> {
+                    if (v == null) {
+                        v = new HashSet<>();
+                    }
+                    v.add(record.partitionId());
+                    return v;
+                });
                 break;
             }
             case CONFIG_RECORD: {
@@ -359,6 +376,7 @@ public final class MetadataNodeManager implements AutoCloseable {
                 String name = topicsDirectory.file("name").contents();
                 data.root.rmrf("topics", name);
                 data.root.rmrf("topicIds", record.topicId().toString());
+                clusterSummary.topicPartitionMap().remove(record.topicId());
                 break;
             }
             case CLIENT_QUOTA_RECORD: {
@@ -468,11 +486,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 DirectoryNode s3Stream = s3Streams.mkdirs(Long.toString(record.streamId()));
                 String data = S3StreamRecordJsonConverter.write(record, S3StreamRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString();
                 s3Stream.create("data").setContents(data);
+                clusterSummary.setStreamNum(clusterSummary.getStreamNum() + 1);
                 break;
             }
             case REMOVE_S3_STREAM_RECORD: {
                 RemoveS3StreamRecord record = (RemoveS3StreamRecord) message;
                 data.root.rmrf("s3Streams", Long.toString(record.streamId()));
+                clusterSummary.setStreamNum(clusterSummary.getStreamNum() - 1);
                 break;
             }
             case RANGE_RECORD: {
@@ -494,11 +514,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 DirectoryNode s3StreamObjects = data.root.mkdirs("s3Streams", Long.toString(record.streamId()), "s3StreamObjects");
                 FileNode file = s3StreamObjects.create(Long.toString(record.objectId()));
                 file.setContents(S3StreamObjectRecordJsonConverter.write(record, S3StreamObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                clusterSummary.setStreamObjectNum(clusterSummary.getStreamObjectNum() + 1);
                 break;
             }
             case REMOVE_S3_STREAM_OBJECT_RECORD: {
                 RemoveS3StreamObjectRecord record = (RemoveS3StreamObjectRecord) message;
                 data.root.rmrf("s3Streams", Long.toString(record.streamId()), "s3StreamObjects", Long.toString(record.objectId()));
+                clusterSummary.setStreamObjectNum(clusterSummary.getStreamObjectNum() - 1);
                 break;
             }
             case S3_STREAM_SET_OBJECT_RECORD: {
@@ -511,11 +533,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 // Decode ranges and convert it to human-readable string.
                 List<StreamOffsetRange> ranges = S3StreamSetObject.decode(bytes);
                 streamSetObject.create("ranges").setContents(ranges.toString());
+                clusterSummary.setStreamSetObjectNum(clusterSummary.getStreamSetObjectNum() + 1);
                 break;
             }
             case REMOVE_STREAM_SET_OBJECT_RECORD: {
                 RemoveStreamSetObjectRecord record = (RemoveStreamSetObjectRecord) message;
                 data.root.rmrf("nodes", Integer.toString(record.nodeId()), "s3StreamSetObjects", Long.toString(record.objectId()));
+                clusterSummary.setStreamSetObjectNum(clusterSummary.getStreamSetObjectNum() - 1);
                 break;
             }
             case S3_OBJECT_RECORD: {
@@ -523,11 +547,13 @@ public final class MetadataNodeManager implements AutoCloseable {
                 DirectoryNode s3Objects = data.root.mkdirs("s3Objects");
                 FileNode file = s3Objects.create(Long.toString(record.objectId()));
                 file.setContents(S3ObjectRecordJsonConverter.write(record, S3ObjectRecord.HIGHEST_SUPPORTED_VERSION).toPrettyString());
+                clusterSummary.s3ObjectSizeMap().putIfAbsent(record.objectId(), record.objectSize());
                 break;
             }
             case REMOVE_S3_OBJECT_RECORD: {
                 RemoveS3ObjectRecord record = (RemoveS3ObjectRecord) message;
                 data.root.rmrf("s3Objects", Long.toString(record.objectId()));
+                clusterSummary.s3ObjectSizeMap().remove(record.objectId());
                 break;
             }
             case ASSIGNED_STREAM_ID_RECORD: {
