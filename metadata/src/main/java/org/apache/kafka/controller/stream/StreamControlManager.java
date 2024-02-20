@@ -1046,17 +1046,9 @@ public class StreamControlManager {
                 // ignore it, the stream may be deleted
                 return;
             }
-            RangeMetadata rangeMetadata = metadata.currentRangeMetadata();
-            if (rangeMetadata == null) {
-                // ignore it
-                LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] cannot find streamId={} stream range metadata", streamId);
-                return;
-            }
-            if (rangeMetadata.endOffset() < index.endOffset()) {
-                // the offset continuous is ensured by the process layer
-                // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
-                rangeMetadata.setEndOffset(index.endOffset());
-            }
+            // the offset continuous is ensured by the process layer
+            // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
+            metadata.updateEndOffset(index.endOffset());
         });
     }
 
@@ -1085,17 +1077,9 @@ public class StreamControlManager {
             return;
         }
         streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
-        // update range
-        RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
-        if (rangeMetadata == null) {
-            LOGGER.error("[REPLAY_STREAM_SET_OBJECT_FAIL] cannot find streamId={} stream range metadata", streamId);
-            return;
-        }
-        if (rangeMetadata.endOffset() < endOffset) {
-            // the offset continuous is ensured by the process layer
-            // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
-            rangeMetadata.setEndOffset(endOffset);
-        }
+        // the offset continuous is ensured by the process layer
+        // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
+        streamMetadata.updateEndOffset(endOffset);
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {

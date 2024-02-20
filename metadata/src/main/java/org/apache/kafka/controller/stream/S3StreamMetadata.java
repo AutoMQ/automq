@@ -24,10 +24,13 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineInteger;
 import org.apache.kafka.timeline.TimelineLong;
 import org.apache.kafka.timeline.TimelineObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
 public class S3StreamMetadata {
+    private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamMetadata.class);
 
     // current epoch, when created but not open, use -1 represent
     private final TimelineLong currentEpoch;
@@ -92,6 +95,24 @@ public class S3StreamMetadata {
 
     public RangeMetadata currentRangeMetadata() {
         return ranges.get(currentRangeIndex.get());
+    }
+
+    public void updateEndOffset(long newEndOffset) {
+        RangeMetadata rangeMetadata = ranges.get(currentRangeIndex.get());
+        if (rangeMetadata == null) {
+            LOGGER.error("[UNEXPECTED] cannot find range={}", currentRangeIndex.get());
+            return;
+        }
+        if (rangeMetadata.endOffset() < newEndOffset) {
+            ranges.put(rangeMetadata.rangeIndex(), new RangeMetadata(
+                    rangeMetadata.streamId(),
+                    rangeMetadata.epoch(),
+                    rangeMetadata.rangeIndex(),
+                    rangeMetadata.startOffset(),
+                    newEndOffset,
+                    rangeMetadata.nodeId()
+            ));
+        }
     }
 
     public Map<Long, S3StreamObject> streamObjects() {
