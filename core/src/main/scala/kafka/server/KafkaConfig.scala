@@ -318,7 +318,7 @@ object Defaults {
   val S3StreamSetObjectCompactionMaxObjectNum: Int = 500
   val S3MaxStreamNumPerStreamSetObject: Int = 10000
   val S3MaxStreamObjectNumPerCommit: Int = 10000
-  val S3ObjectRetentionMinutes: Long = 30 // 30min
+  val S3ObjectDeleteRetentionMinutes: Long = 10 // 10min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
   val S3RefillPeriodMs: Int = 1000 // 1s
   val S3MetricsExporterReportIntervalMs = 30000 // 30s
@@ -716,7 +716,7 @@ object KafkaConfig {
   val S3MaxStreamNumPerStreamSetObjectProp = "s3.max.stream.num.per.stream.set.object"
   val S3MaxStreamObjectNumPerCommit = "s3.max.stream.object.num.per.commit"
   val S3MockEnableProp = "s3.mock.enable"
-  val S3ObjectRetentionMinutes = "s3.object.retention.minutes"
+  val S3ObjectDeleteRetentionMinutes = "s3.object.delete.retention.minutes"
   val S3ObjectLogEnableProp = "s3.object.log.enable"
   val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
   val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
@@ -762,7 +762,7 @@ object KafkaConfig {
   val S3MaxStreamNumPerStreamSetObjectDoc = "The maximum number of streams allowed in single stream set object"
   val S3MaxStreamObjectNumPerCommitDoc = "The maximum number of stream objects in single commit request"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
-  val S3ObjectRetentionTimeInSecondDoc = "The S3 object retention time in second, default is 10 minutes (600s)."
+  val S3ObjectDeleteRetentionMinutesDoc = "The marked-for-deletion S3 object retention time in minutes, default is 10 minutes (600s)."
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
   val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
@@ -1605,7 +1605,7 @@ object KafkaConfig {
       .define(S3MaxStreamNumPerStreamSetObjectProp, INT, Defaults.S3MaxStreamNumPerStreamSetObject, MEDIUM, S3MaxStreamNumPerStreamSetObjectDoc)
       .define(S3MaxStreamObjectNumPerCommit, INT, Defaults.S3MaxStreamObjectNumPerCommit, MEDIUM, S3MaxStreamObjectNumPerCommitDoc)
       .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
-      .define(S3ObjectRetentionMinutes, LONG, Defaults.S3ObjectRetentionMinutes, MEDIUM, S3ObjectRetentionTimeInSecondDoc)
+      .define(S3ObjectDeleteRetentionMinutes, LONG, Defaults.S3ObjectDeleteRetentionMinutes, MEDIUM, S3ObjectDeleteRetentionMinutesDoc)
       .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
       .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3NetworkBaselineBandwidth, MEDIUM, S3NetworkBaselineBandwidthDoc)
       .define(S3RefillPeriodMsProp, INT, Defaults.S3RefillPeriodMs, MEDIUM, S3RefillPeriodMsDoc)
@@ -2185,7 +2185,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3MaxStreamNumPerStreamSetObject = getInt(KafkaConfig.S3MaxStreamNumPerStreamSetObjectProp)
   val s3MaxStreamObjectNumPerCommit = getInt(KafkaConfig.S3MaxStreamObjectNumPerCommit)
   val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
-  val s3ObjectRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectRetentionMinutes) * 60
+  val s3ObjectDeleteRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectDeleteRetentionMinutes) * 60
   val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
   val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
   val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
