@@ -13,6 +13,7 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.log.stream.s3.telemetry.metrics.S3StreamKafkaMetricsManager;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.utils.Utils;
@@ -21,7 +22,9 @@ import org.slf4j.Logger;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -42,6 +45,7 @@ public class ClusterModel {
     private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
     private final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
     private final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
+    private final Map<Integer, Long> brokerMetricTimeMap = new ConcurrentHashMap<>();
 
     public ClusterModel() {
         this(null);
@@ -52,6 +56,21 @@ public class ClusterModel {
             logContext = new LogContext("[ClusterModel]");
         }
         logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+        S3StreamKafkaMetricsManager.setAutoBalancerMetricsTimeMapSupplier(() -> {
+            clusterLock.lock();
+            try {
+                Map<Integer, Long> tmpMap = new HashMap<>();
+                for (Map.Entry<Integer, Long> entry : brokerMetricTimeMap.entrySet()) {
+                    BrokerUpdater brokerUpdater = brokerMap.get(entry.getKey());
+                    if (brokerUpdater != null && brokerUpdater.isValidInstance()) {
+                        tmpMap.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                return tmpMap;
+            } finally {
+                clusterLock.unlock();
+            }
+        });
     }
 
     public ClusterModelSnapshot snapshot() {
@@ -123,7 +142,16 @@ public class ClusterModel {
             clusterLock.unlock();
         }
         if (brokerUpdater != null) {
-            return brokerUpdater.update(metricsMap, time);
+            boolean ret = brokerUpdater.update(metricsMap, time);
+            if (ret) {
+                brokerMetricTimeMap.compute(brokerId, (k, v) -> {
+                    if (v == null) {
+                        return time;
+                    }
+                    return Math.max(v, time);
+                });
+            }
+            return ret;
         }
         return false;
     }
@@ -140,7 +168,14 @@ public class ClusterModel {
             clusterLock.unlock();
         }
         if (replicaUpdater != null) {
-            return replicaUpdater.update(metricsMap, time);
+            boolean ret = replicaUpdater.update(metricsMap, time);
+            brokerMetricTimeMap.compute(brokerId, (k, v) -> {
+                if (v == null) {
+                    return time;
+                }
+                return Math.max(v, time);
+            });
+            return ret;
         }
         return false;
     }
@@ -158,6 +193,7 @@ public class ClusterModel {
             brokerIdToRackMap.putIfAbsent(brokerId, rackId);
             brokerMap.putIfAbsent(brokerId, brokerUpdater);
             brokerReplicaMap.put(brokerId, new HashMap<>());
+            brokerMetricTimeMap.put(brokerId, 0L);
         } finally {
             clusterLock.unlock();
         }
@@ -173,6 +209,7 @@ public class ClusterModel {
             brokerIdToRackMap.remove(brokerId);
             brokerMap.remove(brokerId);
             brokerReplicaMap.remove(brokerId);
+            brokerMetricTimeMap.remove(brokerId);
         } finally {
             clusterLock.unlock();
         }
@@ -183,6 +220,12 @@ public class ClusterModel {
         try {
             brokerMap.computeIfPresent(brokerId, (id, brokerUpdater) -> {
                 brokerUpdater.setActive(active);
+                brokerMetricTimeMap.compute(brokerId, (k, v) -> {
+                    if (!active) {
+                        return null;
+                    }
+                    return Objects.requireNonNullElse(v, 0L);
+                });
                 return brokerUpdater;
             });
         } finally {

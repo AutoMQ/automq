@@ -374,7 +374,9 @@ public class LoadRetriever implements BrokerStatusListener {
                     }
                     updateClusterModel(record.value());
                 }
-                logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
+                }
             } catch (InvalidTopicException e) {
                 checkAndCreateTopic();
             } catch (Exception e) {

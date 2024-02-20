@@ -48,6 +48,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.semconv.ResourceAttributes;
+import kafka.log.stream.s3.telemetry.metrics.S3StreamKafkaMetricsManager;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaRaftServer;
 import org.apache.commons.lang3.StringUtils;
@@ -140,6 +141,9 @@ public class TelemetryManager {
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
             S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty()));
             S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+
+            S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty()));
+            S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
         }
 
         LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",

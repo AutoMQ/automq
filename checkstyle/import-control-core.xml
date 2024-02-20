@@ -145,6 +145,7 @@
     <allow pkg="kafka.test" />
     <allow pkg="org.apache.directory" />
     <allow pkg="org.mockito" />
+    <allow pkg="kafka.log" />
   </subpackage>
 
   <subpackage name="s3shell">
