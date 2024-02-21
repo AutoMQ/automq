@@ -78,7 +78,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_controller_active_count{job=\"$cluster_id\"}",
+          "expr": "sum by(job) (kafka_controller_active_count{job=\"$cluster_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -146,7 +146,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_broker_fenced_count{job=\"$cluster_id\"}",
+          "expr": "kafka_broker_fenced_count{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -210,7 +210,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_topic_count{job=\"$cluster_id\"}",
+          "expr": "kafka_topic_count{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -505,7 +505,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_broker_active_count{job=\"$cluster_id\"}",
+          "expr": "kafka_broker_active_count{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -569,7 +569,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_partition_total_count{job=\"$cluster_id\"}",
+          "expr": "kafka_partition_total_count{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -1323,7 +1323,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               }
             ]
           }
@@ -1519,7 +1520,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green"
+                      "color": "green",
+                      "value": null
                     },
                     {
                       "color": "red",
@@ -1546,7 +1548,8 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green"
+                      "color": "green",
+                      "value": null
                     },
                     {
                       "color": "red",
@@ -1921,15 +1924,32 @@
         "type": "datasource"
       },
       {
+        "current": {
+          "selected": false,
+          "text": "1",
+          "value": "1"
+        },
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "${datasource}"
         },
-        "filters": [],
+        "definition": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
         "hide": 0,
-        "name": "Filters",
+        "includeAll": false,
+        "label": "Active Controller",
+        "multi": false,
+        "name": "active_controller",
+        "options": [],
+        "query": {
+          "qryType": 3,
+          "query": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/instance=\"(?<text>[^\"]+)/g",
         "skipUrlSync": false,
-        "type": "adhoc"
+        "sort": 0,
+        "type": "query"
       }
     ]
   },
@@ -1941,6 +1961,6 @@
   "timezone": "",
   "title": "Cluster Overview",
   "uid": "f719833b-0a35-4fb3-9b84-3815726006e7",
-  "version": 13,
+  "version": 15,
   "weekStart": ""
 }
