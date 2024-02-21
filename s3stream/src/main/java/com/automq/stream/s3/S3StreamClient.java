@@ -239,7 +239,7 @@ public class S3StreamClient implements StreamClient {
             }
             try {
                 compacting = true;
-                StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(stream)
+                StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
                     .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
                 if (onlyCleanup) {
                     task.cleanup();
