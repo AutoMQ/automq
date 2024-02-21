@@ -14,8 +14,8 @@ package kafka.log.stream.s3.telemetry;
 import io.opentelemetry.api.common.AttributeKey;
 
 public class TelemetryConstants {
-    // The maximum number of combinations of attributes for a single metric
-    public static final int CARDINALITY_LIMIT = 10000;
+    // The maximum number of unique attribute combinations for a single metric
+    public static final int CARDINALITY_LIMIT = 20000;
     public static final String COMMON_JMX_YAML_CONFIG_PATH = "/jmx/rules/common.yaml";
     public static final String BROKER_JMX_YAML_CONFIG_PATH = "/jmx/rules/broker.yaml";
     public static final String CONTROLLER_JMX_YAML_CONFIG_PATH = "/jmx/rules/controller.yaml";

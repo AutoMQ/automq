@@ -316,7 +316,7 @@ object Defaults {
   val S3StreamSetObjectCompactionStreamSplitSize: Long = 8 * 1024 * 1024 // 8MB
   val S3StreamSetObjectCompactionForceSplitMinutes: Int = 120 // 120min
   val S3StreamSetObjectCompactionMaxObjectNum: Int = 500
-  val S3MaxStreamNumPerStreamSetObject: Int = 10000
+  val S3MaxStreamNumPerStreamSetObject: Int = 100000
   val S3MaxStreamObjectNumPerCommit: Int = 10000
   val S3ObjectDeleteRetentionMinutes: Long = 10 // 10min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
