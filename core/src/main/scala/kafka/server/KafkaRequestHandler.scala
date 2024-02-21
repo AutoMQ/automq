@@ -367,8 +367,18 @@ class BrokerTopicStats extends Logging {
 
   def removeMetrics(topic: String): Unit = {
     val metrics = stats.remove(topic)
-    if (metrics != null)
+    if (metrics != null) {
       metrics.close()
+    }
+    val tpToRemove = partitionStats.keys.filter(_.topic() == topic)
+    tpToRemove.foreach(removeMetrics)
+  }
+
+  def removeMetrics(topicPartition: TopicPartition) :Unit = {
+    val metrics = partitionStats.remove(topicPartition)
+    if (metrics != null) {
+      metrics.close()
+    }
   }
 
   def updateBytesOut(topic: String, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
