@@ -1538,16 +1538,23 @@ class ReplicaManager(val config: KafkaConfig,
     while (partitionIndex < readPartitionInfo.size) {
       val tp = readPartitionInfo(partitionIndex)._1
       val partitionData = readPartitionInfo(partitionIndex)._2
-      val partition = getPartitionAndCheckTopicId(tp)
-      // TODO: As the cf will be completed immediately when `limitBytes` set to 0 (see [[ElasticLogSegment.readAsync]]),
-      // we can avoid using `CompletableFuture` here.
-      val readCf = read(partition, tp, partitionData, 0, minOneMessage.get())
-      remainingCfArray += readCf.thenAccept(rst => {
-        result.synchronized {
-          result += (tp -> rst)
-        }
-        remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
-      })
+      try {
+        val partition = getPartitionAndCheckTopicId(tp)
+        // TODO: As the cf will be completed immediately when `limitBytes` set to 0 (see [[ElasticLogSegment.readAsync]]),
+        // we can avoid using `CompletableFuture` here.
+        val readCf = read(partition, tp, partitionData, 0, minOneMessage.get())
+        remainingCfArray += readCf.thenAccept(rst => {
+          result.synchronized {
+            result += (tp -> rst)
+          }
+          remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
+        })
+      } catch {
+        case e: Throwable =>
+          val readResult = exception2LogReadResult(e, tp, partitionData, 0)
+          handleReadResult(tp, readResult)
+      }
+
       partitionIndex += 1
     }
     CompletableFuture.allOf(remainingCfArray.toArray: _*).get()
