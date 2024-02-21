@@ -38,6 +38,7 @@ public class S3StreamKafkaMetricsManager {
         BASE_ATTRIBUTES_LISTENERS.add(S3_OBJECT_ATTRIBUTES);
     }
 
+    private static Supplier<Boolean> isActiveSupplier = () -> false;
     private static ObservableLongGauge autoBalancerMetricsTimeDelay = new NoopObservableLongGauge();
     private static Supplier<Map<Integer, Long>> autoBalancerMetricsTimeMapSupplier = Collections::emptyMap;
     private static ObservableLongGauge s3ObjectCountMetrics = new NoopObservableLongGauge();
@@ -65,7 +66,7 @@ public class S3StreamKafkaMetricsManager {
                 .setUnit("ms")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    if (shouldRecordMetrics()) {
                         Map<Integer, Long> metricsTimeDelayMap = autoBalancerMetricsTimeMapSupplier.get();
                         for (Map.Entry<Integer, Long> entry : metricsTimeDelayMap.entrySet()) {
                             long timestamp = entry.getValue();
@@ -78,7 +79,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total count of s3 objects in different states")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    if (shouldRecordMetrics()) {
                         Map<String, Integer> s3ObjectCountMap = s3ObjectCountMapSupplier.get();
                         for (Map.Entry<String, Integer> entry : s3ObjectCountMap.entrySet()) {
                             result.record(entry.getValue(), S3_OBJECT_ATTRIBUTES.get(entry.getKey()));
@@ -90,7 +91,7 @@ public class S3StreamKafkaMetricsManager {
                 .setUnit("bytes")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    if (shouldRecordMetrics()) {
                         result.record(s3ObjectSizeSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
@@ -98,7 +99,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total number of stream set objects")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    if (shouldRecordMetrics()) {
                         Map<String, Integer> streamSetObjectNumMap = streamSetObjectNumSupplier.get();
                         for (Map.Entry<String, Integer> entry : streamSetObjectNumMap.entrySet()) {
                             result.record(entry.getValue(), BROKER_ATTRIBUTES.get(entry.getKey()));
@@ -109,10 +110,18 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total number of stream objects")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    if (shouldRecordMetrics()) {
                         result.record(streamObjectNumSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
+    }
+
+    private static boolean shouldRecordMetrics() {
+        return MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get();
+    }
+
+    public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
+        S3StreamKafkaMetricsManager.isActiveSupplier = isActiveSupplier;
     }
 
     public static void setAutoBalancerMetricsTimeMapSupplier(Supplier<Map<Integer, Long>> autoBalancerMetricsTimeMapSupplier) {
