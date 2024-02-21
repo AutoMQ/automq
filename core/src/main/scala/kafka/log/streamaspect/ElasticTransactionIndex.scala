@@ -32,7 +32,7 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   extends TransactionIndex(startOffset, _file) {
 
   var stream: ElasticStreamSlice = streamSliceSupplier.get()
-  @volatile private var lastAppend: CompletableFuture[_] = CompletableFuture.completedFuture(null)
+  @volatile private var lastAppend: (Long, CompletableFuture[_]) = (stream.nextOffset(), CompletableFuture.completedFuture(null))
   private var closed = false
 
   /**
@@ -60,12 +60,13 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
     }
     lastOffset = Some(abortedTxn.lastOffset)
     val position = stream.nextOffset()
-    lastAppend = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer.duplicate()))
+    val cf = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer.duplicate()))
+    lastAppend = (stream.nextOffset(), cf)
     cache.put(_file.getPath, position, Unpooled.wrappedBuffer(abortedTxn.buffer))
   }
 
   override def flush(): Unit = {
-    lastAppend.get()
+    lastAppend._2.get()
   }
 
   override def file: File = new File("mock")
@@ -94,9 +95,9 @@ class ElasticTransactionIndex(_file: File, streamSliceSupplier: StreamSliceSuppl
   }
 
   override protected def iterator(allocate: () => ByteBuffer = () => ByteBuffer.allocate(AbortedTxn.TotalSize)): Iterator[(AbortedTxn, Int)] = {
-    val endPosition = stream.nextOffset()
     // await last append complete, usually the abort transaction is not frequent, so it's ok to block here.
-    this.lastAppend.get()
+    val (endPosition, lastAppendCf) = this.lastAppend
+    lastAppendCf.get()
     var position = 0
     val queue: mutable.Queue[(AbortedTxn, Int)] = mutable.Queue()
     new Iterator[(AbortedTxn, Int)] {
