@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
@@ -46,6 +47,8 @@ import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
@@ -91,6 +94,7 @@ public class S3ObjectControlManager {
     private final ScheduledExecutorService lifecycleCheckTimer;
 
     private final ObjectCleaner objectCleaner;
+    private final AtomicLong s3ObjectSize = new AtomicLong(0);
 
     public S3ObjectControlManager(
             QuorumController quorumController,
@@ -114,6 +118,12 @@ public class S3ObjectControlManager {
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
                 DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         this.objectCleaner = new ObjectCleaner();
+        S3StreamKafkaMetricsManager.setS3ObjectCountMapSupplier(() -> Map.of(
+                S3StreamKafkaMetricsConstants.S3_OBJECT_PREPARED_STATE, preparedObjects.size(),
+                S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects.size(),
+                S3StreamKafkaMetricsConstants.S3_OBJECT_COMMITTED_STATE, objectsMetadata.size()
+                        - preparedObjects.size() - markDestroyedObjects.size()));
+        S3StreamKafkaMetricsManager.setS3ObjectSizeSupplier(s3ObjectSize::get);
     }
 
     private void triggerCheckEvent() {
@@ -230,12 +240,18 @@ public class S3ObjectControlManager {
             preparedObjects.remove(object.getObjectId());
             if (object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 markDestroyedObjects.add(object.getObjectId());
+            } else {
+                // object committed
+                s3ObjectSize.addAndGet(record.objectSize());
             }
         }
     }
 
     public void replay(RemoveS3ObjectRecord record) {
-        objectsMetadata.remove(record.objectId());
+        S3Object object = objectsMetadata.remove(record.objectId());
+        if (object != null) {
+            s3ObjectSize.addAndGet(-object.getObjectSize());
+        }
         markDestroyedObjects.remove(record.objectId());
         preparedObjects.remove(record.objectId());
     }
