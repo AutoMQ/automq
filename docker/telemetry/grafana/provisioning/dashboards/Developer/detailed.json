@@ -3467,7 +3467,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(state) (kafka_stream_s3_object_count{job=\"$cluster_id\", instance=\"$active_controller\"})",
+          "expr": "sum by(state) (kafka_stream_s3_object_count{job=\"$cluster_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3567,7 +3567,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_stream_s3_object_size_bytes{job=\"$cluster_id\", instance=\"$active_controller\"}",
+          "expr": "kafka_stream_s3_object_size_bytes{job=\"$cluster_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3666,7 +3666,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(node_id) (kafka_stream_stream_set_object_num{job=\"$cluster_id\", instance=\"$active_controller\", node_id=~\"$node_id\"})",
+          "expr": "sum by(node_id) (kafka_stream_stream_set_object_num{job=\"$cluster_id\", node_id=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -3765,7 +3765,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_stream_stream_object_num{job=\"$cluster_id\", instance=\"$active_controller\"}",
+          "expr": "kafka_stream_stream_object_num{job=\"$cluster_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -4350,7 +4350,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_stream_auto_balancer_metrics_time_delay_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\"}",
+          "expr": "kafka_stream_auto_balancer_metrics_time_delay_milliseconds{job=\"$cluster_id\", node_id=~\"$node_id\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -4542,34 +4542,6 @@
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "1",
-          "value": "1"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Active Controller",
-        "multi": false,
-        "name": "active_controller",
-        "options": [],
-        "query": {
-          "qryType": 3,
-          "query": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 1,
-        "regex": "/instance=\"(?<text>[^\"]+)/g",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
       }
     ]
   },
@@ -4581,6 +4553,6 @@
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 31,
+  "version": 32,
   "weekStart": ""
 }
