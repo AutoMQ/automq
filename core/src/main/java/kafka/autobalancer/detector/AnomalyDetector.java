@@ -93,8 +93,20 @@ public class AnomalyDetector {
     }
 
     public void detect() {
+        long nextExecutionDelay = detectInterval;
+        try {
+            nextExecutionDelay = detect0();
+        } catch (Exception e) {
+            logger.error("Detect error", e);
+        }
+        logger.info("Detect finished, next detect will be after {} ms", nextExecutionDelay);
+        this.executorService.schedule(this::detect, nextExecutionDelay, TimeUnit.MILLISECONDS);
+    }
+
+    long detect0() {
         if (!this.running) {
-            return;
+            logger.info("Not active controller, skip detect");
+            return detectInterval;
         }
         logger.info("Start detect");
         // The delay in processing kraft log could result in outdated cluster snapshot
@@ -124,8 +136,6 @@ public class AnomalyDetector {
             }
         }
 
-        long nextDelay = (maxActionsNumPerExecution - availableActionNum) * this.coolDownIntervalPerActionMs + this.detectInterval;
-        this.executorService.schedule(this::detect, nextDelay, TimeUnit.MILLISECONDS);
-        logger.info("Detect finished, next detect will be after {} ms", nextDelay);
+        return (maxActionsNumPerExecution - availableActionNum) * this.coolDownIntervalPerActionMs + this.detectInterval;
     }
 }
