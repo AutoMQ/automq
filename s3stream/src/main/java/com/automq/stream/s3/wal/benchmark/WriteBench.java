@@ -54,6 +54,9 @@ public class WriteBench implements AutoCloseable {
         if (config.depth != null) {
             builder.ioThreadNums(config.depth);
         }
+        if (config.iops != null) {
+            builder.writeRateLimit(config.iops);
+        }
         this.log = builder.build();
         this.log.start();
         recoverAndReset(this.log);
@@ -194,6 +197,7 @@ public class WriteBench implements AutoCloseable {
         final String path;
         final Long capacity;
         final Integer depth;
+        final Integer iops;
 
         // following fields are benchmark configuration
         final Integer threads;
@@ -205,6 +209,7 @@ public class WriteBench implements AutoCloseable {
             this.path = ns.getString("path");
             this.capacity = ns.getLong("capacity");
             this.depth = ns.getInt("depth");
+            this.iops = ns.getInt("iops");
             this.threads = ns.getInt("threads");
             this.throughputBytes = ns.getInt("throughput");
             this.recordSizeBytes = ns.getInt("recordSize");
@@ -227,6 +232,9 @@ public class WriteBench implements AutoCloseable {
             parser.addArgument("-d", "--depth")
                 .type(Integer.class)
                 .help("IO depth of the WAL");
+            parser.addArgument("--iops")
+                .type(Integer.class)
+                .help("IOPS of the WAL");
             parser.addArgument("--threads")
                 .type(Integer.class)
                 .setDefault(1)
