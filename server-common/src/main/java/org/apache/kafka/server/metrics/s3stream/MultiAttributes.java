@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.log.stream.s3.telemetry.metrics;
+package org.apache.kafka.server.metrics.s3stream;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;

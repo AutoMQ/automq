@@ -368,6 +368,7 @@
     <subpackage name="metrics">
       <allow pkg="com.yammer.metrics" />
       <allow pkg="org.apache.kafka.server.metrics" />
+      <allow pkg="io.opentelemetry" />
     </subpackage>
 
     <subpackage name="log">

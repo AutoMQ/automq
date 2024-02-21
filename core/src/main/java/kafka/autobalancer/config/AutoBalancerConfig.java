@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 public class AutoBalancerConfig extends AbstractConfig {
     protected static final ConfigDef CONFIG;
-    private static final String PREFIX = "autobalancer";
+    private static final String PREFIX = "autobalancer.";
 
     /* Configurations */
     public static final String AUTO_BALANCER_TOPIC_CONFIG = PREFIX + "topic";

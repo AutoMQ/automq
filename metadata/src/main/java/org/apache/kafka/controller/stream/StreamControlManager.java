@@ -60,6 +60,7 @@ import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineLong;
@@ -70,6 +71,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -131,6 +133,17 @@ public class StreamControlManager {
         this.clusterControlManager = clusterControlManager;
 
         this.cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
+
+        S3StreamKafkaMetricsManager.setStreamSetObjectNumSupplier(() -> {
+            Map<String, Integer> numMap = new HashMap<>();
+            for (NodeMetadata nodeMetadata : nodesMetadata.values()) {
+                numMap.put(String.valueOf(nodeMetadata.getNodeId()), nodeMetadata.streamSetObjects().size());
+            }
+            return numMap;
+        });
+        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> {
+            return streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum();
+        });
     }
 
     public ControllerResult<CreateStreamResponse> createStream(int nodeId, long nodeEpoch, CreateStreamRequest request) {

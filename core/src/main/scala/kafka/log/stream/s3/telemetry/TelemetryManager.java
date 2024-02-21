@@ -48,7 +48,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.semconv.ResourceAttributes;
-import kafka.log.stream.s3.telemetry.metrics.S3StreamKafkaMetricsManager;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaRaftServer;
 import org.apache.commons.lang3.StringUtils;
