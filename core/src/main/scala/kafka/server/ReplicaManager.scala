@@ -512,6 +512,7 @@ class ReplicaManager(val config: KafkaConfig,
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
+              brokerTopicStats.removeMetrics(topicPartition)
               maybeRemoveTopicMetrics(topicPartition.topic)
               // AutoMQ for Kafka inject start
               if (ElasticLogManager.enabled()) {
@@ -1538,16 +1539,23 @@ class ReplicaManager(val config: KafkaConfig,
     while (partitionIndex < readPartitionInfo.size) {
       val tp = readPartitionInfo(partitionIndex)._1
       val partitionData = readPartitionInfo(partitionIndex)._2
-      val partition = getPartitionAndCheckTopicId(tp)
-      // TODO: As the cf will be completed immediately when `limitBytes` set to 0 (see [[ElasticLogSegment.readAsync]]),
-      // we can avoid using `CompletableFuture` here.
-      val readCf = read(partition, tp, partitionData, 0, minOneMessage.get())
-      remainingCfArray += readCf.thenAccept(rst => {
-        result.synchronized {
-          result += (tp -> rst)
-        }
-        remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
-      })
+      try {
+        val partition = getPartitionAndCheckTopicId(tp)
+        // TODO: As the cf will be completed immediately when `limitBytes` set to 0 (see [[ElasticLogSegment.readAsync]]),
+        // we can avoid using `CompletableFuture` here.
+        val readCf = read(partition, tp, partitionData, 0, minOneMessage.get())
+        remainingCfArray += readCf.thenAccept(rst => {
+          result.synchronized {
+            result += (tp -> rst)
+          }
+          remainingBytes.getAndAdd(-rst.info.records.sizeInBytes)
+        })
+      } catch {
+        case e: Throwable =>
+          val readResult = exception2LogReadResult(e, tp, partitionData, 0)
+          handleReadResult(tp, readResult)
+      }
+
       partitionIndex += 1
     }
     CompletableFuture.allOf(remainingCfArray.toArray: _*).get()
@@ -2358,6 +2366,7 @@ class ReplicaManager(val config: KafkaConfig,
       partitionsWithOfflineFutureReplica.foreach(partition => partition.removeFutureLocalReplica(deleteFromLogDir = false))
       newOfflinePartitions.foreach { topicPartition =>
         markPartitionOffline(topicPartition)
+        brokerTopicStats.removeMetrics(topicPartition)
       }
       newOfflinePartitions.map(_.topic).foreach { topic: String =>
         maybeRemoveTopicMetrics(topic)
@@ -2400,6 +2409,7 @@ class ReplicaManager(val config: KafkaConfig,
       // These partitions should first be made offline to remove topic metrics.
       newOfflinePartitions.foreach { topicPartition =>
         markPartitionOffline(topicPartition)
+        brokerTopicStats.removeMetrics(topicPartition)
       }
       newOfflinePartitions.map(_.topic).foreach { topic: String =>
         maybeRemoveTopicMetrics(topic)
