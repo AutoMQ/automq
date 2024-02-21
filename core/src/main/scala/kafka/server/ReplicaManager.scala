@@ -512,6 +512,7 @@ class ReplicaManager(val config: KafkaConfig,
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
+              brokerTopicStats.removeMetrics(topicPartition)
               maybeRemoveTopicMetrics(topicPartition.topic)
               // AutoMQ for Kafka inject start
               if (ElasticLogManager.enabled()) {
@@ -2358,6 +2359,7 @@ class ReplicaManager(val config: KafkaConfig,
       partitionsWithOfflineFutureReplica.foreach(partition => partition.removeFutureLocalReplica(deleteFromLogDir = false))
       newOfflinePartitions.foreach { topicPartition =>
         markPartitionOffline(topicPartition)
+        brokerTopicStats.removeMetrics(topicPartition)
       }
       newOfflinePartitions.map(_.topic).foreach { topic: String =>
         maybeRemoveTopicMetrics(topic)
@@ -2400,6 +2402,7 @@ class ReplicaManager(val config: KafkaConfig,
       // These partitions should first be made offline to remove topic metrics.
       newOfflinePartitions.foreach { topicPartition =>
         markPartitionOffline(topicPartition)
+        brokerTopicStats.removeMetrics(topicPartition)
       }
       newOfflinePartitions.map(_.topic).foreach { topic: String =>
         maybeRemoveTopicMetrics(topic)
