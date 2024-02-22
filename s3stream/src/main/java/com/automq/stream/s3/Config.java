@@ -45,7 +45,7 @@ public class Config {
     private long streamSetObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
     private int streamSetObjectCompactionForceSplitPeriod = 120;
     private int streamSetObjectCompactionMaxObjectNum = 500;
-    private int maxStreamNumPerStreamSetObject = 10000;
+    private int maxStreamNumPerStreamSetObject = 100000;
     private int maxStreamObjectNumPerCommit = 10000;
     private boolean mockEnable = false;
     private boolean objectLogEnable = false;
