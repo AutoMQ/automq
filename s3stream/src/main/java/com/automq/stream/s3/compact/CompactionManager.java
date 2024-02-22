@@ -59,6 +59,8 @@ import org.slf4j.Logger;
 
 public class CompactionManager {
     private static final int MIN_COMPACTION_DELAY_MS = 60000;
+    // Max refill rate for Bucket: 1 token per nanosecond
+    private static final int MAX_THROTTLE_BYTES_PER_SEC = 1000000000;
     private final Logger logger;
     private final Logger s3ObjectLogger;
     private final ObjectManager objectManager;
@@ -209,13 +211,19 @@ public class CompactionManager {
         long expectReadBytesPerSec;
         if (expectCompleteTime > 0) {
             expectReadBytesPerSec = totalSize / expectCompleteTime / 60;
-            compactionBucket = Bucket.builder().addLimit(limit -> limit
-                .capacity(expectReadBytesPerSec)
-                .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
-            logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
-                expectReadBytesPerSec, expectCompleteTime);
+            if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
+                compactionBucket = Bucket.builder().addLimit(limit -> limit
+                    .capacity(expectReadBytesPerSec)
+                    .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
+                logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
+                    expectReadBytesPerSec, expectCompleteTime);
+            } else {
+                logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
+                compactionBucket = null;
+            }
         } else {
-            logger.warn("Compaction interval {}min is too small, there will be no throttle for compaction", compactionInterval);
+            logger.warn("Compaction interval {}min is too small, there will be no throttle for compaction this time", compactionInterval);
+            compactionBucket = null;
         }
 
         if (!objectsToForceSplit.isEmpty()) {
