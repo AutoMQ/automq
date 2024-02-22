@@ -451,12 +451,7 @@ public class KafkaChannel implements AutoCloseable {
             return 0;
 
         midWrite = true;
-        try {
-            return send.writeTo(transportLayer);
-        } catch (IOException e) {
-            send.release();
-            throw e;
-        }
+        return send.writeTo(transportLayer);
     }
 
     /**
