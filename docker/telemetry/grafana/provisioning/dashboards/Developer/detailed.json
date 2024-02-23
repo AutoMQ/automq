@@ -1562,7 +1562,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\", stage=\"complete\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -4553,6 +4553,6 @@
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 32,
+  "version": 33,
   "weekStart": ""
 }
