@@ -125,7 +125,6 @@ public class S3Storage implements Storage {
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
         this.deltaWALCache = new LogCache(config.walCacheSize(), config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
-        DirectByteBufAlloc.registerOOMHandlers(new LogCacheEvictOOMHandler());
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.s3Operator = s3Operator;
@@ -687,7 +686,7 @@ public class S3Storage implements Storage {
             System.err.println("Unexpected exception when commit stream set object");
             //noinspection CallToPrintStackTrace
             ex.printStackTrace();
-            System.exit(1);
+            Runtime.getRuntime().halt(1);
             return null;
         });
     }
