@@ -183,7 +183,11 @@ public class AutoBalancerManager implements AutoBalancerService {
                         Batch<ApiMessageAndVersion> batch = reader.next();
                         List<ApiMessageAndVersion> messages = batch.records();
                         for (ApiMessageAndVersion apiMessage : messages) {
-                            handleMessage(apiMessage.message());
+                            try {
+                                handleMessage(apiMessage.message());
+                            } catch (Exception e) {
+                                logger.error("Failed to handle message", e);
+                            }
                         }
                     }
                 }
@@ -198,7 +202,11 @@ public class AutoBalancerManager implements AutoBalancerService {
                         Batch<ApiMessageAndVersion> batch = reader.next();
                         List<ApiMessageAndVersion> messages = batch.records();
                         for (ApiMessageAndVersion apiMessage : messages) {
-                            handleMessage(apiMessage.message());
+                            try {
+                                handleMessage(apiMessage.message());
+                            } catch (Exception e) {
+                                logger.error("Failed to handle message", e);
+                            }
                         }
                     }
                 }

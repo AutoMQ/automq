@@ -63,19 +63,19 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onPartitionCreate(PartitionRecord record) {
-        if (record.replicas().size() != 1) {
-            logger.error("Illegal replica size {} for {}-{}", record.replicas().size(), record.topicId(), record.partitionId());
+        if (record.leader() < 0) {
+            logger.error("Illegal replica leader {} for {}-{}", record.leader(), record.topicId(), record.partitionId());
             return;
         }
-        createPartition(record.topicId(), record.partitionId(), record.replicas().iterator().next());
+        createPartition(record.topicId(), record.partitionId(), record.leader());
     }
 
     @Override
     public void onPartitionChange(PartitionChangeRecord record) {
-        if (record.replicas().size() != 1) {
-            logger.error("Illegal replica size {} for {}-{}", record.replicas().size(), record.topicId(), record.partitionId());
+        if (record.leader() < 0) {
+            // simply ignore the record if the leader is illegal
             return;
         }
-        reassignPartition(record.topicId(), record.partitionId(), record.replicas().iterator().next());
+        reassignPartition(record.topicId(), record.partitionId(), record.leader());
     }
 }
