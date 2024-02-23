@@ -47,7 +47,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Tag("S3Unit")
@@ -166,14 +165,14 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setName(TOPIC_0)
                 .setTopicId(testTopicId));
         clusterModel.onPartitionCreate(new PartitionRecord()
-                .setReplicas(List.of(brokerConfig.brokerId()))
+                .setLeader(brokerConfig.brokerId())
                 .setTopicId(testTopicId)
                 .setPartitionId(0));
         clusterModel.onTopicCreate(new TopicRecord()
                 .setName(METRIC_TOPIC)
                 .setTopicId(metricTopicId));
         clusterModel.onPartitionCreate(new PartitionRecord()
-                .setReplicas(List.of(brokerConfig.brokerId()))
+                .setLeader(brokerConfig.brokerId())
                 .setTopicId(metricTopicId)
                 .setPartitionId(0));
         loadRetriever.onBrokerRegister(record);
