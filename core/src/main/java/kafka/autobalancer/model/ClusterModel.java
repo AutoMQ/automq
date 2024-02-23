@@ -22,9 +22,7 @@ import org.slf4j.Logger;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -45,7 +43,6 @@ public class ClusterModel {
     private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
     private final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
     private final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
-    private final Map<Integer, Long> brokerMetricTimeMap = new ConcurrentHashMap<>();
 
     public ClusterModel() {
         this(null);
@@ -56,21 +53,39 @@ public class ClusterModel {
             logContext = new LogContext("[ClusterModel]");
         }
         logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-        S3StreamKafkaMetricsManager.setAutoBalancerMetricsTimeMapSupplier(() -> {
-            clusterLock.lock();
-            try {
-                Map<Integer, Long> tmpMap = new HashMap<>();
-                for (Map.Entry<Integer, Long> entry : brokerMetricTimeMap.entrySet()) {
-                    BrokerUpdater brokerUpdater = brokerMap.get(entry.getKey());
-                    if (brokerUpdater != null && brokerUpdater.isValidInstance()) {
-                        tmpMap.put(entry.getKey(), entry.getValue());
+        S3StreamKafkaMetricsManager.setAutoBalancerMetricsTimeMapSupplier(this::calculateBrokerLatestMetricsTime);
+    }
+
+    Map<Integer, Long> calculateBrokerLatestMetricsTime() {
+        clusterLock.lock();
+        try {
+            Map<Integer, Long> metricsTimeMap = new HashMap<>();
+            // Record latest broker metric time
+            for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
+                int brokerId = entry.getKey();
+                BrokerUpdater brokerUpdater = entry.getValue();
+                if (brokerUpdater.isValidInstance()) {
+                    metricsTimeMap.put(brokerId, brokerUpdater.instance().getTimestamp());
+                }
+            }
+            // Record minimum latest topic partition metric time
+            for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
+                int brokerId = entry.getKey();
+                if (!metricsTimeMap.containsKey(brokerId)) {
+                    continue;
+                }
+                Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = entry.getValue();
+                for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : replicaMap.entrySet()) {
+                    TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
+                    if (replicaUpdater.isValidInstance()) {
+                        metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.instance().getTimestamp()));
                     }
                 }
-                return tmpMap;
-            } finally {
-                clusterLock.unlock();
             }
-        });
+            return metricsTimeMap;
+        } finally {
+            clusterLock.unlock();
+        }
     }
 
     public ClusterModelSnapshot snapshot() {
@@ -142,16 +157,7 @@ public class ClusterModel {
             clusterLock.unlock();
         }
         if (brokerUpdater != null) {
-            boolean ret = brokerUpdater.update(metricsMap, time);
-            if (ret) {
-                brokerMetricTimeMap.compute(brokerId, (k, v) -> {
-                    if (v == null) {
-                        return time;
-                    }
-                    return Math.max(v, time);
-                });
-            }
-            return ret;
+            return brokerUpdater.update(metricsMap, time);
         }
         return false;
     }
@@ -168,14 +174,7 @@ public class ClusterModel {
             clusterLock.unlock();
         }
         if (replicaUpdater != null) {
-            boolean ret = replicaUpdater.update(metricsMap, time);
-            brokerMetricTimeMap.compute(brokerId, (k, v) -> {
-                if (v == null) {
-                    return time;
-                }
-                return Math.max(v, time);
-            });
-            return ret;
+            return replicaUpdater.update(metricsMap, time);
         }
         return false;
     }
@@ -193,7 +192,6 @@ public class ClusterModel {
             brokerIdToRackMap.putIfAbsent(brokerId, rackId);
             brokerMap.putIfAbsent(brokerId, brokerUpdater);
             brokerReplicaMap.put(brokerId, new HashMap<>());
-            brokerMetricTimeMap.put(brokerId, 0L);
         } finally {
             clusterLock.unlock();
         }
@@ -209,7 +207,6 @@ public class ClusterModel {
             brokerIdToRackMap.remove(brokerId);
             brokerMap.remove(brokerId);
             brokerReplicaMap.remove(brokerId);
-            brokerMetricTimeMap.remove(brokerId);
         } finally {
             clusterLock.unlock();
         }
@@ -220,12 +217,6 @@ public class ClusterModel {
         try {
             brokerMap.computeIfPresent(brokerId, (id, brokerUpdater) -> {
                 brokerUpdater.setActive(active);
-                brokerMetricTimeMap.compute(brokerId, (k, v) -> {
-                    if (!active) {
-                        return null;
-                    }
-                    return Objects.requireNonNullElse(v, 0L);
-                });
                 return brokerUpdater;
             });
         } finally {
