@@ -267,6 +267,7 @@ class ReplicaManager(val config: KafkaConfig,
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  val delayedFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
    */
@@ -1246,8 +1247,7 @@ class ReplicaManager(val config: KafkaConfig,
         fetchPartitionStatus = fetchPartitionStatus,
         replicaManager = this,
         quota = quota,
-        // always use the fast fetch limiter in delayed fetch operations
-        limiter = fastFetchLimiter,
+        limiter = delayedFetchLimiter,
         responseCallback = responseCallback
       )
 

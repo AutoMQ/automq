@@ -196,6 +196,9 @@ class DelayedFetch(
       quota,
       readFromPurgatory = true,
       limiter = limiter,
+      // TODO: Delayed fetch should only accept fast read requests. If it goes into the slow path, it should
+      //  return an empty response.
+      timeoutMs = params.maxWaitMs,
     )
     ReadHint.clear()
     // AutoMQ for Kafka inject end
