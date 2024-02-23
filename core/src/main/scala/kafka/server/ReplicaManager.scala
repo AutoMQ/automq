@@ -73,7 +73,6 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
-import scala.util.Using
 
 /*
  * Result metadata of a log append operation on the log
@@ -268,6 +267,7 @@ class ReplicaManager(val config: KafkaConfig,
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  val delayedFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
    */
@@ -1234,13 +1234,20 @@ class ReplicaManager(val config: KafkaConfig,
           fetchPartitionStatus += (topicIdPartition -> FetchPartitionStatus(logOffsetMetadata, partitionData))
         })
       }
+      // release records before delay fetch
+      logReadResults.foreach { case (_, logReadResult) =>
+        logReadResult.info.records match {
+          case r: PooledResource =>
+            r.release()
+          case _ =>
+        }
+      }
       val delayedFetch = new DelayedFetch(
         params = params,
         fetchPartitionStatus = fetchPartitionStatus,
         replicaManager = this,
         quota = quota,
-        // always use the fast fetch limiter in delayed fetch operations
-        limiter = fastFetchLimiter,
+        limiter = delayedFetchLimiter,
         responseCallback = responseCallback
       )
 
@@ -1292,8 +1299,31 @@ class ReplicaManager(val config: KafkaConfig,
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       emptyResult()
     } else {
-      Using.resource(handler) { _ =>
-        readFromLocalLogV2(params, readPartitionInfo, quota, readFromPurgatory)
+      try {
+        var logReadResults = readFromLocalLogV2(params, readPartitionInfo, quota, readFromPurgatory)
+        if (logReadResults.isEmpty) {
+          // release the handler if no logReadResults
+          handler.close()
+        } else {
+          logReadResults.indexWhere(_._2.info.records.sizeInBytes > 0) match {
+            case -1 => // no non-empty read result
+              handler.close()
+            case i => // the first non-empty read result
+              // replace it with a wrapper to release the handler
+              val oldReadResult = logReadResults(i)._2
+              val oldInfo = oldReadResult.info
+              val oldRecords = oldInfo.records
+              val newRecords = new PooledRecords(oldRecords, () => handler.close())
+              val newInfo = oldInfo.copy(records = newRecords)
+              val newReadResult = oldReadResult.copy(info = newInfo)
+              logReadResults = logReadResults.updated(i, logReadResults(i)._1 -> newReadResult)
+          }
+        }
+        logReadResults
+      } catch {
+        case e: Throwable =>
+          handler.close()
+          throw e
       }
     }
   }
