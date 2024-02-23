@@ -51,7 +51,6 @@ public class BlockCache implements DirectByteBufAlloc.OOMHandler {
 
     public BlockCache(long maxSize) {
         this.maxSize = maxSize;
-        DirectByteBufAlloc.registerOOMHandlers(this);
         S3StreamMetricsManager.registerBlockCacheSizeSupplier(size::get);
     }
 
