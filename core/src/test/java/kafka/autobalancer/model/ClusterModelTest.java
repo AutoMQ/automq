@@ -31,6 +31,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Tag("S3Unit")
 public class ClusterModelTest {
 
@@ -225,5 +228,54 @@ public class ClusterModelTest {
     @Test
     public void testSnapshot() {
 
+    }
+
+    @Test
+    public void testMetricsTime() {
+        RecordClusterModel clusterModel = new RecordClusterModel();
+        String topicName = "testTopic";
+        Uuid topicId = Uuid.randomUuid();
+        int partition = 0;
+        int partition1 = 1;
+        int brokerId = 1;
+
+        RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
+                .setBrokerId(brokerId);
+        clusterModel.onBrokerRegister(registerBrokerRecord);
+        TopicRecord topicRecord = new TopicRecord()
+                .setName(topicName)
+                .setTopicId(topicId);
+        clusterModel.onTopicCreate(topicRecord);
+        PartitionRecord partitionRecord = new PartitionRecord()
+                .setLeader(brokerId)
+                .setTopicId(topicId)
+                .setPartitionId(partition);
+        clusterModel.onPartitionCreate(partitionRecord);
+        PartitionRecord partitionRecord1 = new PartitionRecord()
+                .setLeader(brokerId)
+                .setTopicId(topicId)
+                .setPartitionId(partition1);
+        clusterModel.onPartitionCreate(partitionRecord1);
+
+        long now = System.currentTimeMillis();
+
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, new HashMap<>(), now));
+        TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now - 1000, brokerId, "", topicName, partition);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
+        Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+
+        topicPartitionMetrics = new TopicPartitionMetrics(now - 2000, brokerId, "", topicName, partition1);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
+        Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
+                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+
+        Map<Integer, Long> metricsTimeMap = clusterModel.calculateBrokerLatestMetricsTime();
+        Assertions.assertEquals(1, metricsTimeMap.size());
+        Assertions.assertEquals(now - 2000, metricsTimeMap.get(brokerId));
     }
 }
