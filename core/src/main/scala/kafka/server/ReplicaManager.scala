@@ -1233,6 +1233,14 @@ class ReplicaManager(val config: KafkaConfig,
           fetchPartitionStatus += (topicIdPartition -> FetchPartitionStatus(logOffsetMetadata, partitionData))
         })
       }
+      // release records before delay fetch
+      logReadResults.foreach { case (_, logReadResult) =>
+        logReadResult.info.records match {
+          case r: PooledResource =>
+            r.release()
+          case _ =>
+        }
+      }
       val delayedFetch = new DelayedFetch(
         params = params,
         fetchPartitionStatus = fetchPartitionStatus,
