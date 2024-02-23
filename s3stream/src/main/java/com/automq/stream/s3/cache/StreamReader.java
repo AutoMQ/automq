@@ -405,7 +405,6 @@ public class StreamReader {
         if (context.objectIndex >= context.objects.size()) {
             getObjectsCf = objectManager
                 .getObjects(streamId, context.nextStartOffset, endOffset, READ_OBJECT_INDEX_STEP)
-                .orTimeout(1, TimeUnit.MINUTES)
                 .thenApply(objects -> {
                     context.objects = objects;
                     context.objectIndex = 0;
