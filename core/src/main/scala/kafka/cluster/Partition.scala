@@ -18,7 +18,7 @@ package kafka.cluster
 
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
-import java.util.concurrent.{CompletableFuture, ExecutorService, Executors}
+import java.util.concurrent.CompletableFuture
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -41,11 +41,10 @@ import org.apache.kafka.common.record.FileRecords.TimestampAndOffset
 import org.apache.kafka.common.record.{MemoryRecords, RecordBatch}
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{IsolationLevel, TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
-import org.slf4j.LoggerFactory
 
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
@@ -59,33 +58,18 @@ class DelayedOperations(topicPartition: TopicPartition,
                         produce: DelayedOperationPurgatory[DelayedProduce],
                         fetch: DelayedOperationPurgatory[DelayedFetch],
                         deleteRecords: DelayedOperationPurgatory[DelayedDeleteRecords]) {
-  private val logger = LoggerFactory.getLogger(getClass.getName)
 
   def checkAndCompleteAll(): Unit = {
     val requestKey = TopicPartitionOperationKey(topicPartition)
-    // AutoMQ for Kafka inject start
-    Partition.DELAY_FETCH_EXECUTOR.submit(new Runnable {
-      override def run(): Unit = {
-        try {
-          fetch.checkAndComplete(requestKey)
-          deleteRecords.checkAndComplete(requestKey)
-        } catch {
-          case e: Throwable => logger.error("delay fetch fail", e)
-        }
-      }
-    })
-    // AutoMQ for Kafka inject end
+    fetch.checkAndComplete(requestKey)
     produce.checkAndComplete(requestKey)
+    deleteRecords.checkAndComplete(requestKey)
   }
 
   def numDelayedDelete: Int = deleteRecords.numDelayed
 }
 
 object Partition extends KafkaMetricsGroup {
-  // AutoMQ for Kafka inject start
-  val DELAY_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delay-fetch-executor-%d", true))
-  // AutoMQ for Kafka inject end
-
   def apply(topicPartition: TopicPartition,
             time: Time,
             replicaManager: ReplicaManager): Partition = {
