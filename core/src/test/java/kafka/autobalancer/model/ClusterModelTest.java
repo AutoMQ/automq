@@ -31,8 +31,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 @Tag("S3Unit")
 public class ClusterModelTest {
 
@@ -116,7 +114,7 @@ public class ClusterModelTest {
 
         // create on non-exist broker
         PartitionRecord partitionRecord = new PartitionRecord()
-                .setReplicas(List.of(brokerId, 2))
+                .setLeader(2)
                 .setTopicId(topicId)
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord);
@@ -137,7 +135,7 @@ public class ClusterModelTest {
         clusterModel.onPartitionCreate(partitionRecord);
         Assertions.assertNull(clusterModel.replicaUpdater(brokerId, tp));
 
-        partitionRecord.setReplicas(List.of(brokerId));
+        partitionRecord.setLeader(brokerId);
         clusterModel.onPartitionCreate(partitionRecord);
         Assertions.assertEquals(tp, clusterModel.replicaUpdater(brokerId, tp).topicPartition());
     }
@@ -154,7 +152,7 @@ public class ClusterModelTest {
 
         // reassign on non-exist broker
         PartitionChangeRecord partitionChangeRecord = new PartitionChangeRecord()
-                .setReplicas(List.of(newBrokerId, 3))
+                .setLeader(3)
                 .setTopicId(topicId)
                 .setPartitionId(partition);
         clusterModel.onPartitionChange(partitionChangeRecord);
@@ -179,13 +177,13 @@ public class ClusterModelTest {
                 .setBrokerId(oldBrokerId);
         clusterModel.onBrokerRegister(brokerRecord2);
         PartitionRecord partitionRecord = new PartitionRecord()
-                .setReplicas(List.of(oldBrokerId))
+                .setLeader(oldBrokerId)
                 .setTopicId(topicId)
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord);
         Assertions.assertEquals(tp, clusterModel.replicaUpdater(oldBrokerId, tp).topicPartition());
 
-        partitionChangeRecord.setReplicas(List.of(newBrokerId));
+        partitionChangeRecord.setLeader(newBrokerId);
         clusterModel.onPartitionChange(partitionChangeRecord);
         Assertions.assertEquals(tp, clusterModel.replicaUpdater(newBrokerId, tp).topicPartition());
         Assertions.assertNull(clusterModel.replicaUpdater(oldBrokerId, tp));
@@ -216,7 +214,7 @@ public class ClusterModelTest {
                 .setTopicId(topicId);
         clusterModel.onTopicCreate(topicRecord);
         PartitionRecord partitionRecord = new PartitionRecord()
-                .setReplicas(List.of(brokerId))
+                .setLeader(brokerId)
                 .setTopicId(topicId)
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord);
