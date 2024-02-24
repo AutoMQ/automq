@@ -467,6 +467,8 @@ object ElasticLog extends Logging {
             topicId: Uuid,
             leaderEpoch: Long,
             executorService: ExecutorService): ElasticLog = {
+    // TODO: better error mark for elastic log
+    logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
     val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
 
     val key = formatStreamKey(namespace, topicPartition, topicId)
