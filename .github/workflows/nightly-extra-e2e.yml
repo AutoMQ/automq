@@ -8,6 +8,7 @@ jobs:
   benchmarks_e2e:
     name: "Run benchmarks E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "benchmarks"
       test-path: "tests/kafkatest/benchmarks"
@@ -16,6 +17,7 @@ jobs:
   connect_e2e:
     name: "Run connect E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "connect"
       test-path: "tests/kafkatest/tests/connect"
@@ -24,6 +26,7 @@ jobs:
   streams_e2e:
     name: "Run streams E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "streams"
       test-path: "tests/kafkatest/tests/streams"
@@ -32,7 +35,7 @@ jobs:
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, extra ]
-    if: ${{ always() }}
+    if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ benchmarks_e2e, connect_e2e, streams_e2e ]
     steps:
       - name: Report results
