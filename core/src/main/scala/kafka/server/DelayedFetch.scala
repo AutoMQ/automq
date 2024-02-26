@@ -194,7 +194,7 @@ class DelayedFetch(
     ReadHint.markReadAll()
     // in delayed fetch, we only try fast read
     ReadHint.markFastRead()
-    var logReadResults = ReplicaManager.emptyReadResults(fetchPartitionStatus.map(_._1))
+    var logReadResults: Seq[(TopicIdPartition, LogReadResult)] = null
     try {
       logReadResults = replicaManager.readFromLocalLogV2(
         params,
@@ -205,6 +205,7 @@ class DelayedFetch(
       )
     } catch {
       case e: Throwable =>
+        logReadResults = ReplicaManager.emptyReadResults(fetchPartitionStatus.map(_._1))
         if (!FutureUtil.cause(e).isInstanceOf[FastReadFailFastException]) {
           error(s"Unexpected error in delayed fetch: $params $fetchInfos ", e)
         }
