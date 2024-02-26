@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import com.automq.stream.api.exceptions.FastReadFailFastException
+import com.automq.stream.utils.FutureUtil
 import kafka.log.streamaspect.ReadHint
 
 import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
@@ -190,16 +192,23 @@ class DelayedFetch(
 
     // AutoMQ for Kafka inject start
     ReadHint.markReadAll()
-    val logReadResults = replicaManager.readFromLocalLogV2(
-      params,
-      fetchInfos,
-      quota,
-      readFromPurgatory = true,
-      limiter = limiter,
-      // TODO: Delayed fetch should only accept fast read requests. If it goes into the slow path, it should
-      //  return an empty response.
-      timeoutMs = params.maxWaitMs,
-    )
+    // in delayed fetch, we only try fast read
+    ReadHint.markFastRead()
+    var logReadResults = ReplicaManager.emptyReadResults(fetchPartitionStatus.map(_._1))
+    try {
+      logReadResults = replicaManager.readFromLocalLogV2(
+        params,
+        fetchInfos,
+        quota,
+        readFromPurgatory = true,
+        limiter = limiter,
+      )
+    } catch {
+      case e: Throwable =>
+        if (!FutureUtil.cause(e).isInstanceOf[FastReadFailFastException]) {
+          error(s"Unexpected error in delayed fetch: $params $fetchInfos ", e)
+        }
+    }
     ReadHint.clear()
     // AutoMQ for Kafka inject end
 
