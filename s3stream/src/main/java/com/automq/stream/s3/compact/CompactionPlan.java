@@ -17,13 +17,19 @@ import java.util.List;
 import java.util.Map;
 
 public class CompactionPlan {
+    private final int order;
     private final List<CompactedObject> compactedObjects;
     private final Map<Long/* Object id*/, List<StreamDataBlock>> streamDataBlocksMap;
 
-    public CompactionPlan(List<CompactedObject> compactedObjects,
+    public CompactionPlan(int order, List<CompactedObject> compactedObjects,
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap) {
+        this.order = order;
         this.compactedObjects = compactedObjects;
         this.streamDataBlocksMap = streamDataBlocksMap;
+    }
+
+    public int order() {
+        return order;
     }
 
     public List<CompactedObject> compactedObjects() {

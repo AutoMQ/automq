@@ -50,12 +50,11 @@ class ProxyWriter implements Writer {
         if (multiPartWriter != null) {
             return multiPartWriter.write(part);
         } else {
+            objectWriter.write(part);
             if (objectWriter.isFull()) {
                 newMultiPartWriter();
-                return multiPartWriter.write(part);
-            } else {
-                return objectWriter.write(part);
             }
+            return objectWriter.cf;
         }
     }
 
