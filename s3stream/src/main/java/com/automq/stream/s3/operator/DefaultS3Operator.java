@@ -374,8 +374,8 @@ public class DefaultS3Operator implements S3Operator {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
             S3OperationStats.getInstance().putObjectStats(objectSize, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(null);
             data.release();
+            cf.complete(null);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             if (isUnrecoverable(ex)) {
@@ -482,7 +482,6 @@ public class DefaultS3Operator implements S3Operator {
         } else {
             uploadPart0(path, uploadId, partNumber, data, cf);
         }
-        cf.whenComplete((rst, ex) -> data.release());
         return refCf;
     }
 
@@ -497,12 +496,14 @@ public class DefaultS3Operator implements S3Operator {
         uploadPartCf.thenAccept(uploadPartResponse -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
             S3OperationStats.getInstance().uploadPartStats(size, true).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            part.release();
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber).eTag(uploadPartResponse.eTag()).build();
             cf.complete(completedPart);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartStats(size, false).record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             if (isUnrecoverable(ex)) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
+                part.release();
                 cf.completeExceptionally(ex);
             } else {
                 LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, ex);

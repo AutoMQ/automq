@@ -694,7 +694,7 @@ public class CompactionManager {
                 }
                 // wait for all stream objects and stream set object part to be uploaded
                 compactionCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
-                    .thenAccept(v -> uploader.forceUploadStreamSetObject())
+                    .thenCompose(v -> uploader.forceUploadStreamSetObject())
                     .exceptionally(ex -> {
                         uploader.release().thenAccept(v -> {
                             for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
@@ -713,6 +713,15 @@ public class CompactionManager {
             compactionCf = null;
 
             streamObjectCfList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
+
+            List<CompactedObject> compactedObjects = compactionPlan.compactedObjects();
+            for (CompactedObject compactedObject : compactedObjects) {
+                for (StreamDataBlock block : compactedObject.streamDataBlocks()) {
+                    if (block.getDataCf().join().refCnt() > 0) {
+                        logger.error("Block {} is not released after compaction, compact type: {}", block, compactedObject.type());
+                    }
+                }
+            }
         }
         List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRangeFromGroup(
             CompactionUtils.groupStreamDataBlocks(sortedStreamDataBlocks, new GroupByOffsetPredicate()));
