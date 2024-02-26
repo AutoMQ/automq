@@ -95,7 +95,7 @@ We have a list of [good first issues](https://github.com/AutoMQ/automq-for-kafka
 Coming soon...
 
 ## ⭐License
-AutoMQ is released under [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0.html). When contributing to AutoMQ, you can find the relevant license header in each file.
+AutoMQ is released under [Business Source License 1.1](BSL.md). When contributing to AutoMQ, you can find the relevant license header in each file.
 
 
 
