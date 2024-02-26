@@ -15,6 +15,7 @@ import com.automq.stream.s3.wal.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.WALNotInitializedException;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
+import java.io.File;
 import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -244,11 +245,12 @@ public interface WALChannel {
 
         public WALChannel build() {
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
+            boolean isBlockDevice = isBlockDevice(path);
             boolean useDirect = false;
             if (direct != null) {
                 // Set by user.
                 useDirect = direct;
-            } else if (isBlockDevice(path)) {
+            } else if (isBlockDevice) {
                 // We can only use direct IO for block devices.
                 useDirect = true;
             } else if (directNotAvailableMsg == null) {
@@ -261,9 +263,12 @@ public interface WALChannel {
             }
 
             if (useDirect) {
+                if (!isBlockDevice) {
+                    LOGGER.warn("WAL in a file system, which may cause performance degradation. path: {}", new File(path).getAbsolutePath());
+                }
                 return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
             } else {
-                LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}", path);
+                LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}", new File(path).getAbsolutePath());
                 return new WALFileChannel(path, capacity, recoveryMode);
             }
         }
