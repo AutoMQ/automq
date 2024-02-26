@@ -191,6 +191,7 @@ public class CompactionAnalyzer {
         List<CompactedObject> compactedObjects = new ArrayList<>();
         CompactedObjectBuilder compactedStreamSetObjectBuilder = null;
         long totalSize = 0L;
+        int compactionOrder = 0;
         for (int i = 0; i < compactedObjectBuilders.size(); ) {
             CompactedObjectBuilder compactedObjectBuilder = compactedObjectBuilders.get(i);
             if (totalSize + compactedObjectBuilder.totalBlockSize() > compactionCacheSize) {
@@ -210,7 +211,7 @@ public class CompactionAnalyzer {
                         compactedStreamSetObjectBuilder = addOrMergeCompactedObject(builder, compactedObjects, compactedStreamSetObjectBuilder);
                     }
                 }
-                compactionPlans.add(generateCompactionPlan(compactedObjects, compactedStreamSetObjectBuilder));
+                compactionPlans.add(generateCompactionPlan(compactionOrder++, compactedObjects, compactedStreamSetObjectBuilder));
                 compactedObjects.clear();
                 compactedStreamSetObjectBuilder = null;
                 totalSize = 0;
@@ -223,7 +224,7 @@ public class CompactionAnalyzer {
 
         }
         if (!compactedObjects.isEmpty() || compactedStreamSetObjectBuilder != null) {
-            compactionPlans.add(generateCompactionPlan(compactedObjects, compactedStreamSetObjectBuilder));
+            compactionPlans.add(generateCompactionPlan(compactionOrder, compactedObjects, compactedStreamSetObjectBuilder));
         }
         return compactionPlans;
     }
@@ -248,7 +249,7 @@ public class CompactionAnalyzer {
         return true;
     }
 
-    private CompactionPlan generateCompactionPlan(List<CompactedObject> compactedObjects,
+    private CompactionPlan generateCompactionPlan(int order, List<CompactedObject> compactedObjects,
         CompactedObjectBuilder compactedStreamSetObject) {
         if (compactedStreamSetObject != null) {
             compactedObjects.add(compactedStreamSetObject.build());
@@ -263,7 +264,7 @@ public class CompactionAnalyzer {
             dataBlocks.sort(StreamDataBlock.BLOCK_POSITION_COMPARATOR);
         }
 
-        return new CompactionPlan(new ArrayList<>(compactedObjects), streamDataBlockMap);
+        return new CompactionPlan(order, new ArrayList<>(compactedObjects), streamDataBlockMap);
     }
 
     /**

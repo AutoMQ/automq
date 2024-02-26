@@ -68,7 +68,8 @@ public class ProxyWriterTest {
         assertTrue(writer.hasBatchingPart());
         assertNull(writer.multiPartWriter);
         writer.write(TestUtils.random(17 * 1024 * 1024));
-        assertTrue(writer.hasBatchingPart());
+        assertNotNull(writer.multiPartWriter);
+        assertFalse(writer.hasBatchingPart());
         writer.write(TestUtils.random(17 * 1024 * 1024));
         assertNotNull(writer.multiPartWriter);
         assertFalse(writer.hasBatchingPart());
