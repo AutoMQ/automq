@@ -30,9 +30,11 @@ import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
 import io.opentelemetry.instrumentation.jmx.engine.JmxMetricInsight;
 import io.opentelemetry.instrumentation.jmx.engine.MetricConfiguration;
 import io.opentelemetry.instrumentation.jmx.yaml.RuleParser;
+import io.opentelemetry.instrumentation.runtimemetrics.java8.BufferPools;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.Cpu;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.GarbageCollector;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.MemoryPools;
+import io.opentelemetry.instrumentation.runtimemetrics.java8.Threads;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.OpenTelemetrySdkBuilder;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
@@ -196,6 +198,8 @@ public class TelemetryManager {
         autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
         autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
         autoCloseables.addAll(GarbageCollector.registerObservers(openTelemetrySdk));
+        autoCloseables.addAll(BufferPools.registerObservers(openTelemetrySdk));
+        autoCloseables.addAll(Threads.registerObservers(openTelemetrySdk));
     }
 
     private MetricsLevel metricsLevel() {
