@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
@@ -891,7 +891,7 @@ class BlockWALServiceTest {
         ByteBuf recordBody = TestUtils.random(recordSize - RECORD_HEADER_SIZE);
         ByteBuf recordHeader = recordHeader(recordBody, logicOffset);
 
-        CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
+        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
         record.addComponents(true, recordHeader, recordBody);
 
         long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);

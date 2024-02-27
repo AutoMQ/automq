@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -58,7 +58,7 @@ public class BenchTool {
             int capacity = BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
             WALChannel channel = WALChannel.builder(path).capacity(capacity).build();
             channel.open();
-            ByteBuf buf = DirectByteBufAlloc.byteBuffer(capacity);
+            ByteBuf buf = ByteBufAlloc.byteBuffer(capacity);
             buf.writeZero(capacity);
             channel.write(buf, 0);
             buf.release();

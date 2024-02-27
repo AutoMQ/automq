@@ -15,7 +15,7 @@ import com.automq.stream.DirectByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import io.netty.buffer.ByteBuf;
 
-import static com.automq.stream.s3.DirectByteBufAlloc.ENCODE_RECORD;
+import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
 
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
@@ -56,7 +56,7 @@ public class StreamRecordBatchCodec {
         long baseOffset = buf.readLong();
         int lastOffsetDelta = buf.readInt();
         int payloadLength = buf.readInt();
-        ByteBuf payload = DirectByteBufAlloc.byteBuffer(payloadLength, DirectByteBufAlloc.DECODE_RECORD);
+        ByteBuf payload = ByteBufAlloc.byteBuffer(payloadLength, ByteBufAlloc.DECODE_RECORD);
         buf.readBytes(payload);
         return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
     }

@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -159,7 +159,7 @@ public class BlockWALService implements WriteAheadLog {
      */
     private ByteBuf readRecord(long recoverStartOffset,
         Function<Long, Long> logicalToPhysical) throws ReadRecordException {
-        final ByteBuf recordHeader = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+        final ByteBuf recordHeader = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         SlidingWindowService.RecordHeaderCoreData readRecordHeader;
         try {
             readRecordHeader = parseRecordHeader(recoverStartOffset, recordHeader, logicalToPhysical);
@@ -168,7 +168,7 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
-        ByteBuf recordBody = DirectByteBufAlloc.byteBuffer(recordBodyLength);
+        ByteBuf recordBody = ByteBufAlloc.byteBuffer(recordBodyLength);
         try {
             parseRecordBody(recoverStartOffset, readRecordHeader, recordBody, logicalToPhysical);
         } catch (ReadRecordException e) {
@@ -300,7 +300,7 @@ public class BlockWALService implements WriteAheadLog {
     private WALHeader tryReadWALHeader(WALChannel walChannel) {
         WALHeader header = null;
         for (int i = 0; i < WAL_HEADER_COUNT; i++) {
-            ByteBuf buf = DirectByteBufAlloc.byteBuffer(WALHeader.WAL_HEADER_SIZE);
+            ByteBuf buf = ByteBufAlloc.byteBuffer(WALHeader.WAL_HEADER_SIZE);
             try {
                 int read = walChannel.retryRead(buf, i * WAL_HEADER_CAPACITY);
                 if (read != WALHeader.WAL_HEADER_SIZE) {
@@ -422,7 +422,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private ByteBuf record(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = DirectByteBufAlloc.compositeByteBuffer();
+        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
         crc = 0 == crc ? WALUtil.crc32(body) : crc;
         record.addComponents(true, recordHeader(body, crc, start), body);
         return record;

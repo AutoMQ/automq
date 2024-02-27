@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
-import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -225,7 +225,7 @@ public class CompactionTestBase {
     }
 
     private ByteBuf mergeStreamDataBlocksData(List<StreamDataBlock> streamDataBlocks) {
-        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+        CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
         for (StreamDataBlock block : streamDataBlocks) {
             buf.addComponent(true, block.getDataCf().join());
         }

@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.compact.operator;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
-import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -34,7 +34,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
+import static com.automq.stream.s3.ByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockReader {
@@ -145,7 +145,7 @@ public class DataBlockReader {
                     final int finalEnd = end + 1; // include current block
                     CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
                         .thenAccept(v -> {
-                            CompositeByteBuf compositeByteBuf = DirectByteBufAlloc.compositeByteBuffer();
+                            CompositeByteBuf compositeByteBuf = ByteBufAlloc.compositeByteBuffer();
                             for (int j = 0; j < iterations; j++) {
                                 compositeByteBuf.addComponent(true, bufferMap.get(j));
                             }
@@ -195,7 +195,7 @@ public class DataBlockReader {
         if (throttleBucket == null) {
             return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
                 // convert heap buffer to direct buffer
-                ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
+                ByteBuf directBuf = ByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
                 directBuf.writeBytes(buf);
                 buf.release();
                 return directBuf;
@@ -205,7 +205,7 @@ public class DataBlockReader {
                 .thenCompose(v ->
                     s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
                         // convert heap buffer to direct buffer
-                        ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
+                        ByteBuf directBuf = ByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
                         directBuf.writeBytes(buf);
                         buf.release();
                         return directBuf;

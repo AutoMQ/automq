@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
@@ -119,7 +119,7 @@ class ProxyWriter implements Writer {
         // max upload size, when object data size is larger MAX_UPLOAD_SIZE, we should use multi-part upload to upload it.
         static final long MAX_UPLOAD_SIZE = 32L * 1024 * 1024;
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        CompositeByteBuf data = DirectByteBufAlloc.compositeByteBuffer();
+        CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
         TimerUtil timerUtil = new TimerUtil();
 
         @Override
@@ -132,9 +132,9 @@ class ProxyWriter implements Writer {
         public void copyOnWrite() {
             int size = data.readableBytes();
             if (size > 0) {
-                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size, context.allocType());
+                ByteBuf buf = ByteBufAlloc.byteBuffer(size, context.allocType());
                 buf.writeBytes(data.duplicate());
-                CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
+                CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.data.release();
                 this.data = copy;
             }
