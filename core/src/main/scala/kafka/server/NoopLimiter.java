@@ -34,6 +34,11 @@ public class NoopLimiter implements Limiter {
         return new NoopHandler();
     }
 
+    @Override
+    public int availablePermits() {
+        return Integer.MAX_VALUE;
+    }
+
     public static class NoopHandler implements Handler {
         @Override
         public void close() {

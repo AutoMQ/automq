@@ -42,6 +42,13 @@ public interface Limiter {
     Handler acquire(int permit, long timeoutMs) throws InterruptedException;
 
     /**
+     * Return the number of permits available.
+     *
+     * @return the number of permits available
+     */
+    int availablePermits();
+
+    /**
      * A handler to release acquired permits.
      */
     interface Handler extends AutoCloseable {
