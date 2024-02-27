@@ -29,7 +29,7 @@ import kafka.metrics.KafkaMetricsGroup
 import kafka.server.HostedPartition.Online
 import kafka.server.Limiter.Handler
 import kafka.server.QuotaFactory.QuotaManagers
-import kafka.server.ReplicaManager.createLogReadResult
+import kafka.server.ReplicaManager.{createLogReadResult, emptyReadResults}
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpointFile, OffsetCheckpoints}
 import kafka.server.metadata.ZkMetadataCache
 import kafka.utils.Implicits._
@@ -191,6 +191,10 @@ object ReplicaManager {
   val HighWatermarkFilename = "replication-offset-checkpoint"
 
   // AutoMQ for Kafka inject start
+  def emptyReadResults(partitions: Seq[TopicIdPartition]): Seq[(TopicIdPartition, LogReadResult)] = {
+    partitions.map(tp => tp -> createLogReadResult(null))
+  }
+
   def createLogReadResult(e: Throwable): LogReadResult = {
     LogReadResult(info = new FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MemoryRecords.EMPTY),
       divergingEpoch = None,
@@ -267,7 +271,6 @@ class ReplicaManager(val config: KafkaConfig,
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
-  val delayedFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
    */
@@ -1161,11 +1164,19 @@ class ReplicaManager(val config: KafkaConfig,
             val ex = FutureUtil.cause(e)
             val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
             if (fastReadFailFast) {
+              val timer = Time.SYSTEM.timer(params.maxWaitMs)
               slowFetchExecutor.submit(new Runnable {
                 override def run(): Unit = {
                   try {
+                    timer.update()
+                    if (timer.isExpired) {
+                      // return empty response if timeout
+                      responseEmpty(null)
+                      return
+                    }
                     ReadHint.markReadAll()
-                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, params.maxWaitMs, responseCallback)
+                    assert(timer.remainingMs() > 0, "Remaining time should be positive")
+                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, timer.remainingMs(), responseCallback)
                   } catch {
                     case slowEx: Throwable =>
                       handleError(slowEx)
@@ -1247,7 +1258,9 @@ class ReplicaManager(val config: KafkaConfig,
         fetchPartitionStatus = fetchPartitionStatus,
         replicaManager = this,
         quota = quota,
-        limiter = delayedFetchLimiter,
+        // Always use the fast fetch limiter in delayed fetch operations, as when a delayed fetch
+        // operation is completed, it only try to read in the fast path.
+        limiter = fastFetchLimiter,
         responseCallback = responseCallback
       )
 
@@ -1282,12 +1295,6 @@ class ReplicaManager(val config: KafkaConfig,
       math.min(bytesNeed, params.maxBytes)
     }
 
-    def emptyResult(): Seq[(TopicIdPartition, LogReadResult)] = {
-      readPartitionInfo.map { case (tp, _) =>
-        tp -> createLogReadResult(null)
-      }
-    }
-
     val handler: Handler = timeoutMs match {
       case t if t > 0 => limiter.acquire(bytesNeed(), t)
       case _ => limiter.acquire(bytesNeed())
@@ -1297,7 +1304,7 @@ class ReplicaManager(val config: KafkaConfig,
       // handler maybe null if it timed out to acquire from limiter
       // TODO add metrics for this
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
-      emptyResult()
+      emptyReadResults(readPartitionInfo.map(_._1))
     } else {
       try {
         var logReadResults = readFromLocalLogV2(params, readPartitionInfo, quota, readFromPurgatory)

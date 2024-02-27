@@ -21,7 +21,6 @@ import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.context.propagation.TextMapPropagator;
-import io.opentelemetry.exporter.logging.LoggingMetricExporter;
 import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporter;
 import io.opentelemetry.exporter.otlp.http.metrics.OtlpHttpMetricExporterBuilder;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
@@ -38,7 +37,6 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.OpenTelemetrySdkBuilder;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
-import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReaderBuilder;
@@ -65,12 +63,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 
 public class TelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(TelemetryManager.class);
     private static final Integer EXPORTER_TIMEOUT_MS = 5000;
-    private static java.util.logging.Logger metricsLogger;
     private static OpenTelemetrySdk openTelemetrySdk;
     private static boolean traceEnable = false;
     private final KafkaConfig kafkaConfig;
@@ -85,6 +81,9 @@ public class TelemetryManager {
         this.clusterId = clusterId;
         this.metricReaderList = new ArrayList<>();
         this.autoCloseables = new ArrayList<>();
+        // redirect JUL from OpenTelemetry SDK to SLF4J
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
         init();
     }
 
@@ -105,6 +104,7 @@ public class TelemetryManager {
                 .put(ResourceAttributes.SERVICE_NAME, clusterId)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
                 .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
+                .put("node_type", getNodeType())
                 .build();
 
         Resource resource = Resource.empty().toBuilder()
@@ -243,9 +243,6 @@ public class TelemetryManager {
                 case "otlp":
                     initOTLPExporter(sdkMeterProviderBuilder, kafkaConfig);
                     break;
-                case "log":
-                    initLogExporter(sdkMeterProviderBuilder, kafkaConfig);
-                    break;
                 case "prometheus":
                     initPrometheusExporter(sdkMeterProviderBuilder, kafkaConfig);
                     break;
@@ -295,20 +292,6 @@ public class TelemetryManager {
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
                 instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("OTLP exporter registered, endpoint: {}, protocol: {}", otlpExporterHost, protocol);
-    }
-
-    private void initLogExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
-        SLF4JBridgeHandler.removeHandlersForRootLogger();
-        SLF4JBridgeHandler.install();
-        MetricReader periodicReader = PeriodicMetricReader.builder(LoggingMetricExporter.create(AggregationTemporality.DELTA))
-                .setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs()))
-                .build();
-        metricReaderList.add(periodicReader);
-        metricsLogger = java.util.logging.Logger.getLogger(LoggingMetricExporter.class.getName());
-        metricsLogger.setLevel(Level.FINEST);
-        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
-                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
-        LOGGER.info("Log exporter registered");
     }
 
     private void initPrometheusExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
