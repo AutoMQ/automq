@@ -42,7 +42,7 @@ public class ProxyWriterTest {
     @BeforeEach
     public void setup() {
         operator = mock(S3Operator.class);
-        writer = new ProxyWriter(operator, "testpath", null);
+        writer = new ProxyWriter(Writer.Context.DEFAULT, operator, "testpath", null);
     }
 
     @Test

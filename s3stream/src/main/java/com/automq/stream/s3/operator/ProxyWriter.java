@@ -28,21 +28,24 @@ import java.util.concurrent.TimeUnit;
  */
 class ProxyWriter implements Writer {
     final ObjectWriter objectWriter = new ObjectWriter();
+    private final Context context;
     private final S3Operator operator;
     private final String path;
     private final long minPartSize;
     private final ThrottleStrategy throttleStrategy;
     Writer multiPartWriter = null;
 
-    public ProxyWriter(S3Operator operator, String path, long minPartSize, ThrottleStrategy throttleStrategy) {
+    public ProxyWriter(Context context, S3Operator operator, String path, long minPartSize,
+        ThrottleStrategy throttleStrategy) {
+        this.context = context;
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
         this.throttleStrategy = throttleStrategy;
     }
 
-    public ProxyWriter(S3Operator operator, String path, ThrottleStrategy throttleStrategy) {
-        this(operator, path, MIN_PART_SIZE, throttleStrategy);
+    public ProxyWriter(Context context, S3Operator operator, String path, ThrottleStrategy throttleStrategy) {
+        this(context, operator, path, MIN_PART_SIZE, throttleStrategy);
     }
 
     @Override
@@ -103,7 +106,7 @@ class ProxyWriter implements Writer {
     }
 
     private void newMultiPartWriter() {
-        this.multiPartWriter = new MultiPartWriter(operator, path, minPartSize, throttleStrategy);
+        this.multiPartWriter = new MultiPartWriter(context, operator, path, minPartSize, throttleStrategy);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
         } else {
@@ -129,7 +132,7 @@ class ProxyWriter implements Writer {
         public void copyOnWrite() {
             int size = data.readableBytes();
             if (size > 0) {
-                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size);
+                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size, context.allocType());
                 buf.writeBytes(data.duplicate());
                 CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.data.release();
