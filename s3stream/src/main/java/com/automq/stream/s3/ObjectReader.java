@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.DirectByteBufAlloc.READ_INDEX_BLOCK;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
@@ -144,7 +145,7 @@ public class ObjectReader implements AutoCloseable {
 
                 // trim the ByteBuf to avoid extra memory occupy.
                 ByteBuf indexBlockBuf = objectTailBuf.slice(objectTailBuf.readerIndex() + indexRelativePosition, indexBlockSize);
-                ByteBuf copy = DirectByteBufAlloc.byteBuffer(indexBlockBuf.readableBytes());
+                ByteBuf copy = DirectByteBufAlloc.byteBuffer(indexBlockBuf.readableBytes(), READ_INDEX_BLOCK);
                 indexBlockBuf.readBytes(copy, indexBlockBuf.readableBytes());
                 objectTailBuf.release();
                 indexBlockBuf = copy;

@@ -30,6 +30,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_OBJECT_COMPACTION_WRITE;
+import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
 import static com.automq.stream.s3.operator.Writer.MIN_PART_SIZE;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
@@ -51,7 +53,7 @@ public class DataBlockWriter {
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
-        writer = s3Operator.writer(objectKey, ThrottleStrategy.THROTTLE_2);
+        writer = s3Operator.writer(new Writer.Context(STREAM_SET_OBJECT_COMPACTION_READ), objectKey, ThrottleStrategy.THROTTLE_2);
     }
 
     public long getObjectId() {
@@ -152,7 +154,7 @@ public class DataBlockWriter {
 
             List<DataBlockIndex> dataBlockIndices = CompactionUtils.buildDataBlockIndicesFromGroup(
                 CompactionUtils.groupStreamDataBlocks(completedBlocks, new GroupByLimitPredicate(DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD)));
-            buf = DirectByteBufAlloc.byteBuffer(dataBlockIndices.size() * DataBlockIndex.BLOCK_INDEX_SIZE, "write_index_block");
+            buf = DirectByteBufAlloc.byteBuffer(dataBlockIndices.size() * DataBlockIndex.BLOCK_INDEX_SIZE, DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_WRITE);
             for (DataBlockIndex dataBlockIndex : dataBlockIndices) {
                 dataBlockIndex.encode(buf);
             }
@@ -177,7 +179,7 @@ public class DataBlockWriter {
         private final ByteBuf buf;
 
         public Footer() {
-            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE);
+            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
             buf.writeLong(indexBlock.position());
             buf.writeInt(indexBlock.size());
             buf.writeZero(40 - 8 - 4);

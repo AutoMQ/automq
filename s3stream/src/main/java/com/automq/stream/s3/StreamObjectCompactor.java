@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_OBJECT_COMPACTION_READ;
+import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_OBJECT_COMPACTION_WRITE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
@@ -173,7 +175,7 @@ public class StreamObjectCompactor {
             long compactedEndOffset = objectGroup.get(objectGroup.size() - 1).endOffset();
             List<Long> compactedObjectIds = new LinkedList<>();
             CompositeByteBuf indexes = DirectByteBufAlloc.compositeByteBuffer();
-            Writer writer = s3Operator.writer(ObjectUtils.genKey(0, objectId), ThrottleStrategy.THROTTLE_2);
+            Writer writer = s3Operator.writer(new Writer.Context(STREAM_OBJECT_COMPACTION_READ), ObjectUtils.genKey(0, objectId), ThrottleStrategy.THROTTLE_2);
             long groupStartOffset = -1L;
             long groupStartPosition = -1L;
             int groupSize = 0;
@@ -182,7 +184,7 @@ public class StreamObjectCompactor {
             for (S3ObjectMetadata object : objectGroup) {
                 try (ObjectReader reader = new ObjectReader(object, s3Operator)) {
                     ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().get();
-                    ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().count() * DataBlockIndex.BLOCK_INDEX_SIZE);
+                    ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().count() * DataBlockIndex.BLOCK_INDEX_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
                     Iterator<DataBlockIndex> it = basicObjectInfo.indexBlock().iterator();
                     long validDataBlockStartPosition = 0;
                     while (it.hasNext()) {
@@ -217,7 +219,7 @@ public class StreamObjectCompactor {
                 }
             }
             if (lastIndex != null) {
-                ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(DataBlockIndex.BLOCK_INDEX_SIZE);
+                ByteBuf subIndexes = DirectByteBufAlloc.byteBuffer(DataBlockIndex.BLOCK_INDEX_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
                 new DataBlockIndex(streamId, groupStartOffset, (int) (lastIndex.endOffset() - groupStartOffset),
                     groupRecordCount, groupStartPosition, groupSize).encode(subIndexes);
                 indexes.addComponent(true, subIndexes);
