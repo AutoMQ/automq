@@ -57,6 +57,7 @@ import scala.collection.immutable.Set;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,10 +100,20 @@ public class TelemetryManager {
         return traceEnable;
     }
 
+    private String getHostName() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            LOGGER.error("Failed to get host name", e);
+            return "unknown";
+        }
+    }
+
     private void init() {
         Attributes baseAttributes = Attributes.builder()
                 .put(ResourceAttributes.SERVICE_NAME, clusterId)
                 .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
+                .put(ResourceAttributes.HOST_NAME, getHostName())
                 .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
                 .put("node_type", getNodeType())
                 .build();
