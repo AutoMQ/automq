@@ -61,7 +61,7 @@ import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common.MetadataVersion._
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants.{FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_SLOW_NAME}
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants.{FETCH_EXECUTOR_DELAYED_NAME, FETCH_EXECUTOR_FAST_NAME, FETCH_EXECUTOR_SLOW_NAME, FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_SLOW_NAME}
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -69,7 +69,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, ThreadPoolExecutor, TimeUnit}
 import java.util.function.Consumer
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
@@ -271,12 +271,25 @@ class ReplicaManager(val config: KafkaConfig,
 
   private var logDirFailureHandler: LogDirFailureHandler = _
 
-  val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
-  val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+  private val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
+  private val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+  private val fetchExecutorQueueSizeGaugeMap = new util.HashMap[String, Integer]()
+  S3StreamKafkaMetricsManager.setFetchPendingTaskNumSupplier(() => {
+    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_FAST_NAME, fastFetchExecutor match {
+      case executor: ThreadPoolExecutor => executor.getQueue.size()
+      case _ => 0
+    })
+    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_SLOW_NAME, slowFetchExecutor match {
+      case executor: ThreadPoolExecutor => executor.getQueue.size()
+      case _ => 0
+    })
+    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_DELAYED_NAME, DelayedFetch.executorQueueSize)
+    fetchExecutorQueueSizeGaugeMap
+  })
 
-  val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
-  val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
-  val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
+  private val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  private val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  private val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
     fetchLimiterGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
     fetchLimiterGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())

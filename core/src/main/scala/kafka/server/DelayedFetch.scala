@@ -21,7 +21,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import kafka.log.streamaspect.ReadHint
 
-import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
+import java.util.concurrent.{ExecutorService, Executors, ThreadPoolExecutor, TimeUnit}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.DelayedFetch.DELAYED_FETCH_EXECUTOR
 import org.apache.kafka.common.TopicIdPartition
@@ -44,6 +44,11 @@ case class FetchPartitionStatus(startOffsetMetadata: LogOffsetMetadata, fetchInf
 
 object DelayedFetch {
   private val DELAYED_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delayed-fetch-executor-%d", true))
+
+  def executorQueueSize: Int = DELAYED_FETCH_EXECUTOR match {
+    case tp: ThreadPoolExecutor => tp.getQueue.size
+    case _ => 0
+  }
 }
 
 /**

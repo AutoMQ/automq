@@ -34,11 +34,14 @@ public class S3StreamKafkaMetricsManager {
             S3StreamKafkaMetricsConstants.LABEL_OBJECT_STATE);
     private static final MultiAttributes<String> FETCH_LIMITER_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamKafkaMetricsConstants.LABEL_FETCH_LIMITER_NAME);
+    private static final MultiAttributes<String> FETCH_EXECUTOR_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamKafkaMetricsConstants.LABEL_FETCH_EXECUTOR_NAME);
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(BROKER_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(S3_OBJECT_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(FETCH_LIMITER_ATTRIBUTES);
+        BASE_ATTRIBUTES_LISTENERS.add(FETCH_EXECUTOR_ATTRIBUTES);
     }
 
     private static Supplier<Boolean> isActiveSupplier = () -> false;
@@ -54,6 +57,8 @@ public class S3StreamKafkaMetricsManager {
     private static Supplier<Integer> streamObjectNumSupplier = () -> 0;
     private static ObservableLongGauge fetchLimiterPermitNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier = Collections::emptyMap;
+    private static ObservableLongGauge fetchPendingTaskNumMetrics = new NoopObservableLongGauge();
+    private static Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier = Collections::emptyMap;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
 
     public static void configure(MetricsConfig metricsConfig) {
@@ -130,6 +135,17 @@ public class S3StreamKafkaMetricsManager {
                         }
                     }
                 });
+        fetchPendingTaskNumMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.FETCH_PENDING_TASK_NUM)
+                .setDescription("The number of pending tasks in fetch executors")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (shouldRecordMetrics()) {
+                        Map<String, Integer> fetchPendingTaskNumMap = fetchPendingTaskNumSupplier.get();
+                        for (Map.Entry<String, Integer> entry : fetchPendingTaskNumMap.entrySet()) {
+                            result.record(entry.getValue(), FETCH_EXECUTOR_ATTRIBUTES.get(entry.getKey()));
+                        }
+                    }
+                });
     }
 
     private static boolean shouldRecordMetrics() {
@@ -162,5 +178,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setFetchLimiterPermitNumSupplier(Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier) {
         S3StreamKafkaMetricsManager.fetchLimiterPermitNumSupplier = fetchLimiterPermitNumSupplier;
+    }
+
+    public static void setFetchPendingTaskNumSupplier(Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier) {
+        S3StreamKafkaMetricsManager.fetchPendingTaskNumSupplier = fetchPendingTaskNumSupplier;
     }
 }

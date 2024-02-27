@@ -20,6 +20,7 @@ public class S3StreamKafkaMetricsConstants {
     public static final String STREAM_SET_OBJECT_NUM = "stream_set_object_num";
     public static final String STREAM_OBJECT_NUM = "stream_object_num";
     public static final String FETCH_LIMITER_PERMIT_NUM = "fetch_limiter_permit_num";
+    public static final String FETCH_PENDING_TASK_NUM = "fetch_pending_task_num";
 
     public static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
 
@@ -31,4 +32,9 @@ public class S3StreamKafkaMetricsConstants {
     public static final AttributeKey<String> LABEL_FETCH_LIMITER_NAME = AttributeKey.stringKey("limiter_name");
     public static final String FETCH_LIMITER_FAST_NAME = "fast";
     public static final String FETCH_LIMITER_SLOW_NAME = "slow";
+
+    public static final AttributeKey<String> LABEL_FETCH_EXECUTOR_NAME = AttributeKey.stringKey("executor_name");
+    public static final String FETCH_EXECUTOR_FAST_NAME = "fast";
+    public static final String FETCH_EXECUTOR_SLOW_NAME = "slow";
+    public static final String FETCH_EXECUTOR_DELAYED_NAME = "delayed";
 }
