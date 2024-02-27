@@ -12,7 +12,7 @@
 package kafka.log.streamaspect;
 
 import com.automq.stream.api.ReadOptions;
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.trace.TraceUtils;
@@ -58,7 +58,7 @@ public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     private static final int POOLED_MEMORY_RECORDS = 30;
     static {
-        DirectByteBufAlloc.registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
+        ByteBufAlloc.registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
     }
 
     protected final AtomicInteger size;
@@ -325,7 +325,7 @@ public class ElasticLogFileRecords {
             }
             // TODO: create a new ByteBufMemoryRecords data struct to avoid copy
             if (pooled) {
-                this.pack = DirectByteBufAlloc.byteBuffer(size, POOLED_MEMORY_RECORDS);
+                this.pack = ByteBufAlloc.byteBuffer(size, POOLED_MEMORY_RECORDS);
             } else {
                 this.pack = Unpooled.buffer(size);
             }
