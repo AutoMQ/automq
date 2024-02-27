@@ -23,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class DirectByteBufAlloc {
+    public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
+
     private static final Logger LOGGER = LoggerFactory.getLogger(DirectByteBufAlloc.class);
     private static final PooledByteBufAllocator ALLOC = PooledByteBufAllocator.DEFAULT;
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
@@ -67,24 +69,32 @@ public class DirectByteBufAlloc {
 
     public static ByteBuf byteBuffer(int initCapacity, int type) {
         try {
-            LongAdder usage = USAGE_STATS.compute(type, (k, v) -> {
-                if (v == null) {
-                    v = new LongAdder();
+            if (MEMORY_USAGE_DETECT) {
+                LongAdder usage = USAGE_STATS.compute(type, (k, v) -> {
+                    if (v == null) {
+                        v = new LongAdder();
+                    }
+                    v.add(initCapacity);
+                    return v;
+                });
+                long now = System.currentTimeMillis();
+                if (now - lastMetricLogTime > 60000) {
+                    // it's ok to be not thread safe
+                    lastMetricLogTime = now;
+                    DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+                    LOGGER.info("Direct Memory usage: {}", DirectByteBufAlloc.directByteBufAllocMetric);
                 }
-                v.add(initCapacity);
-                return v;
-            });
-            long now = System.currentTimeMillis();
-            if (now - lastMetricLogTime > 60000) {
-                // it's ok to be not thread safe
-                lastMetricLogTime = now;
-                DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-                LOGGER.info("Direct Memory usage: {}", DirectByteBufAlloc.directByteBufAllocMetric);
+                return new WrappedByteBuf(ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
+            } else {
+                return ALLOC.directBuffer(initCapacity);
             }
-            return new WrappedByteBuf(ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
         } catch (OutOfMemoryError e) {
-            DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-            LOGGER.error("alloc direct buffer OOM, {}", DirectByteBufAlloc.directByteBufAllocMetric, e);
+            if (MEMORY_USAGE_DETECT) {
+                DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+                LOGGER.error("alloc direct buffer OOM, {}", DirectByteBufAlloc.directByteBufAllocMetric, e);
+            } else {
+                LOGGER.error("alloc direct buffer OOM", e);
+            }
             System.err.println("alloc direct buffer OOM");
             Runtime.getRuntime().halt(1);
             throw e;
