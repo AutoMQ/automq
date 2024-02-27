@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.atomic.AtomicLong;
@@ -182,7 +182,7 @@ class WALHeader {
     }
 
     private ByteBuf marshalHeaderExceptCRC() {
-        ByteBuf buf = DirectByteBufAlloc.byteBuffer(WAL_HEADER_SIZE);
+        ByteBuf buf = ByteBufAlloc.byteBuffer(WAL_HEADER_SIZE);
         buf.writeInt(magicCode0);
         buf.writeLong(capacity1);
         buf.writeLong(trimOffset2.get());

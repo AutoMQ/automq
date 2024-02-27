@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -317,7 +317,7 @@ public class DefaultS3Operator implements S3Operator {
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 S3ObjectStats.getInstance().objectDownloadSizeStats.record(MetricsLevel.INFO, size);
-                CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+                CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
                 responsePublisher.subscribe((bytes) -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));

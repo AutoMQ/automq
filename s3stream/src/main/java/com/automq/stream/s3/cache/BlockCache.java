@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadRecord;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.model.StreamRecordBatch.OBJECT_OVERHEAD;
 
-public class BlockCache implements DirectByteBufAlloc.OOMHandler {
+public class BlockCache implements ByteBufAlloc.OOMHandler {
     public static final Integer ASYNC_READ_AHEAD_NOOP_OFFSET = -1;
     static final int BLOCK_SIZE = 1024 * 1024;
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockCache.class);

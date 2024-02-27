@@ -929,7 +929,7 @@ public class S3Storage implements Storage {
         }
     }
 
-    class LogCacheEvictOOMHandler implements DirectByteBufAlloc.OOMHandler {
+    class LogCacheEvictOOMHandler implements ByteBufAlloc.OOMHandler {
         @Override
         public int handle(int memoryRequired) {
             try {

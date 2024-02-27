@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
@@ -103,7 +103,7 @@ public class BlockImpl implements Block {
             return null;
         }
 
-        data = DirectByteBufAlloc.compositeByteBuffer();
+        data = ByteBufAlloc.compositeByteBuffer();
         for (Supplier<ByteBuf> supplier : records) {
             ByteBuf record = supplier.get();
             data.addComponent(true, record);
