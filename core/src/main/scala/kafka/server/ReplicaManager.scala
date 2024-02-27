@@ -60,6 +60,8 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common.MetadataVersion._
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants.{FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_SLOW_NAME}
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -191,6 +193,8 @@ object ReplicaManager {
   val HighWatermarkFilename = "replication-offset-checkpoint"
 
   // AutoMQ for Kafka inject start
+
+
   def emptyReadResults(partitions: Seq[TopicIdPartition]): Seq[(TopicIdPartition, LogReadResult)] = {
     partitions.map(tp => tp -> createLogReadResult(null))
   }
@@ -269,8 +273,16 @@ class ReplicaManager(val config: KafkaConfig,
 
   val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
   val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+
   val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
   val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
+  S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
+    fetchLimiterGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
+    fetchLimiterGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
+    fetchLimiterGaugeMap
+  })
+
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
    */

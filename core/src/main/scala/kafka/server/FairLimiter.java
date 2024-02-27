@@ -68,6 +68,11 @@ public class FairLimiter implements Limiter {
         }
     }
 
+    @Override
+    public int availablePermits() {
+        return permits.availablePermits();
+    }
+
     private Handler acquireLocked(int permit, long timeoutNs) throws InterruptedException {
         if (permit > maxPermits) {
             permit = maxPermits;

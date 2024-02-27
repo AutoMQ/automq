@@ -32,10 +32,13 @@ public class S3StreamKafkaMetricsManager {
             S3StreamKafkaMetricsConstants.LABEL_NODE_ID);
     private static final MultiAttributes<String> S3_OBJECT_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamKafkaMetricsConstants.LABEL_OBJECT_STATE);
+    private static final MultiAttributes<String> FETCH_LIMITER_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamKafkaMetricsConstants.LABEL_FETCH_LIMITER_NAME);
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(BROKER_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(S3_OBJECT_ATTRIBUTES);
+        BASE_ATTRIBUTES_LISTENERS.add(FETCH_LIMITER_ATTRIBUTES);
     }
 
     private static Supplier<Boolean> isActiveSupplier = () -> false;
@@ -49,6 +52,8 @@ public class S3StreamKafkaMetricsManager {
     private static Supplier<Map<String, Integer>> streamSetObjectNumSupplier = Collections::emptyMap;
     private static ObservableLongGauge streamObjectNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Integer> streamObjectNumSupplier = () -> 0;
+    private static ObservableLongGauge fetchLimiterPermitNumMetrics = new NoopObservableLongGauge();
+    private static Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier = Collections::emptyMap;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
 
     public static void configure(MetricsConfig metricsConfig) {
@@ -114,6 +119,17 @@ public class S3StreamKafkaMetricsManager {
                         result.record(streamObjectNumSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
+        fetchLimiterPermitNumMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.FETCH_LIMITER_PERMIT_NUM)
+                .setDescription("The number of permits in fetch limiters")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (shouldRecordMetrics()) {
+                        Map<String, Integer> fetchLimiterPermitNumMap = fetchLimiterPermitNumSupplier.get();
+                        for (Map.Entry<String, Integer> entry : fetchLimiterPermitNumMap.entrySet()) {
+                            result.record(entry.getValue(), FETCH_LIMITER_ATTRIBUTES.get(entry.getKey()));
+                        }
+                    }
+                });
     }
 
     private static boolean shouldRecordMetrics() {
@@ -142,5 +158,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setStreamObjectNumSupplier(Supplier<Integer> streamObjectNumSupplier) {
         S3StreamKafkaMetricsManager.streamObjectNumSupplier = streamObjectNumSupplier;
+    }
+
+    public static void setFetchLimiterPermitNumSupplier(Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier) {
+        S3StreamKafkaMetricsManager.fetchLimiterPermitNumSupplier = fetchLimiterPermitNumSupplier;
     }
 }
