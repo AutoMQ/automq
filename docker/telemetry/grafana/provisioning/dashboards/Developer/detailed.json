@@ -2853,7 +2853,7 @@
               }
             ]
           },
-          "unit": "reqps"
+          "unit": "binBps"
         },
         "overrides": []
       },
