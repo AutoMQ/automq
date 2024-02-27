@@ -71,6 +71,12 @@ public class S3StreamKafkaMetricsManager {
     }
 
     public static void initMetrics(Meter meter, String prefix) {
+        initAutoBalancerMetrics(meter, prefix);
+        initObjectMetrics(meter, prefix);
+        initFetchMetrics(meter, prefix);
+    }
+
+    private static void initAutoBalancerMetrics(Meter meter, String prefix) {
         autoBalancerMetricsTimeDelay = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.AUTO_BALANCER_METRICS_TIME_DELAY_METRIC_NAME)
                 .setDescription("The time delay of auto balancer metrics per broker")
                 .setUnit("ms")
@@ -85,6 +91,9 @@ public class S3StreamKafkaMetricsManager {
                         }
                     }
                 });
+    }
+
+    private static void initObjectMetrics(Meter meter, String prefix) {
         s3ObjectCountMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.S3_OBJECT_COUNT_BY_STATE)
                 .setDescription("The total count of s3 objects in different states")
                 .ofLongs()
@@ -124,6 +133,9 @@ public class S3StreamKafkaMetricsManager {
                         result.record(streamObjectNumSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
+    }
+
+    private static void initFetchMetrics(Meter meter, String prefix) {
         fetchLimiterPermitNumMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.FETCH_LIMITER_PERMIT_NUM)
                 .setDescription("The number of permits in fetch limiters")
                 .ofLongs()
