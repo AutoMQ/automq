@@ -391,8 +391,8 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, ThrottleStrategy throttleStrategy) {
-        return new ProxyWriter(this, path, throttleStrategy);
+    public Writer writer(Writer.Context context, String path, ThrottleStrategy throttleStrategy) {
+        return new ProxyWriter(context, this, path, throttleStrategy);
     }
 
     @Override

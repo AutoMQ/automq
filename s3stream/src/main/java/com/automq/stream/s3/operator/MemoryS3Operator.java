@@ -46,7 +46,7 @@ public class MemoryS3Operator implements S3Operator {
     }
 
     @Override
-    public Writer writer(String path, ThrottleStrategy throttleStrategy) {
+    public Writer writer(Writer.Context context, String path, ThrottleStrategy throttleStrategy) {
         ByteBuf buf = Unpooled.buffer();
         storage.put(path, buf);
         return new Writer() {

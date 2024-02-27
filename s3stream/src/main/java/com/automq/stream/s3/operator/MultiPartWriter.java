@@ -28,9 +28,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
+
 public class MultiPartWriter implements Writer {
     private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
     final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
+    private final Context context;
     private final S3Operator operator;
     private final String path;
     private final List<CompletableFuture<CompletedPart>> parts = new LinkedList<>();
@@ -46,7 +48,8 @@ public class MultiPartWriter implements Writer {
     private CompletableFuture<Void> closeCf;
     private ObjectPart objectPart = null;
 
-    public MultiPartWriter(S3Operator operator, String path, long minPartSize, ThrottleStrategy throttleStrategy) {
+    public MultiPartWriter(Context context, S3Operator operator, String path, long minPartSize, ThrottleStrategy throttleStrategy) {
+        this.context = context;
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
@@ -200,7 +203,7 @@ public class MultiPartWriter implements Writer {
         public void copyOnWrite() {
             int size = partBuf.readableBytes();
             if (size > 0) {
-                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size);
+                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size, context.allocType());
                 buf.writeBytes(partBuf.duplicate());
                 CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.partBuf.release();

@@ -59,7 +59,7 @@ class MultiPartWriterTest {
 
     @Test
     void testWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(operator, "test-path", 100, null);
+        writer = new MultiPartWriter(Writer.Context.DEFAULT, operator, "test-path", 100, null);
 
         List<UploadPartRequest> requests = new ArrayList<>();
         List<Long> contentLengths = new ArrayList<>();
@@ -110,7 +110,7 @@ class MultiPartWriterTest {
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(operator, "test-path-2", 100, null);
+        writer = new MultiPartWriter(Writer.Context.DEFAULT, operator, "test-path-2", 100, null);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();

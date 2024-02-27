@@ -34,6 +34,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
+
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReader.class);
@@ -193,7 +195,7 @@ public class DataBlockReader {
         if (throttleBucket == null) {
             return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
                 // convert heap buffer to direct buffer
-                ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes());
+                ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
                 directBuf.writeBytes(buf);
                 buf.release();
                 return directBuf;
@@ -203,7 +205,7 @@ public class DataBlockReader {
                 .thenCompose(v ->
                     s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.THROTTLE_2).thenApply(buf -> {
                         // convert heap buffer to direct buffer
-                        ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes());
+                        ByteBuf directBuf = DirectByteBufAlloc.byteBuffer(buf.readableBytes(), STREAM_SET_OBJECT_COMPACTION_READ);
                         directBuf.writeBytes(buf);
                         buf.release();
                         return directBuf;

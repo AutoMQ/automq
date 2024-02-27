@@ -56,10 +56,10 @@ public interface S3Operator {
      * @param throttleStrategy throttle strategy.
      * @return {@link Writer}
      */
-    Writer writer(String path, ThrottleStrategy throttleStrategy);
+    Writer writer(Writer.Context ctx, String path, ThrottleStrategy throttleStrategy);
 
     default Writer writer(String path) {
-        return writer(path, ThrottleStrategy.BYPASS);
+        return writer(Writer.Context.DEFAULT, path, ThrottleStrategy.BYPASS);
     }
 
     CompletableFuture<Void> delete(String path);

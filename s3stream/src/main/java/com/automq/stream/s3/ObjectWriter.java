@@ -24,6 +24,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static com.automq.stream.s3.DirectByteBufAlloc.WRITE_DATA_BLOCK_HEADER;
+import static com.automq.stream.s3.DirectByteBufAlloc.WRITE_FOOTER;
+import static com.automq.stream.s3.DirectByteBufAlloc.WRITE_INDEX_BLOCK;
+
 /**
  * Write stream records to a single object.
  */
@@ -193,7 +197,7 @@ public interface ObjectWriter {
             public IndexBlock() {
                 long nextPosition = 0;
                 int indexBlockSize = DataBlockIndex.BLOCK_INDEX_SIZE * completedBlocks.size();
-                buf = DirectByteBufAlloc.byteBuffer(indexBlockSize, "write_index_block");
+                buf = DirectByteBufAlloc.byteBuffer(indexBlockSize, WRITE_INDEX_BLOCK);
                 for (DataBlock block : completedBlocks) {
                     ObjectStreamRange streamRange = block.getStreamRange();
                     new DataBlockIndex(streamRange.getStreamId(), streamRange.getStartOffset(), (int) (streamRange.getEndOffset() - streamRange.getStartOffset()),
@@ -227,7 +231,7 @@ public interface ObjectWriter {
         public DataBlock(long streamId, List<StreamRecordBatch> records) {
             this.recordCount = records.size();
             this.encodedBuf = DirectByteBufAlloc.compositeByteBuffer();
-            ByteBuf header = DirectByteBufAlloc.byteBuffer(BLOCK_HEADER_SIZE);
+            ByteBuf header = DirectByteBufAlloc.byteBuffer(BLOCK_HEADER_SIZE, WRITE_DATA_BLOCK_HEADER);
             header.writeByte(DATA_BLOCK_MAGIC);
             header.writeByte(DATA_BLOCK_DEFAULT_FLAG);
             header.writeInt(recordCount);
@@ -262,7 +266,7 @@ public interface ObjectWriter {
         private final ByteBuf buf;
 
         public Footer(long indexStartPosition, int indexBlockLength) {
-            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE);
+            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE, WRITE_FOOTER);
             // start position of index block
             buf.writeLong(indexStartPosition);
             // size of index block
