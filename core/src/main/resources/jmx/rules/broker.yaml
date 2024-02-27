@@ -81,6 +81,7 @@ rules:
   - bean: kafka.network:type=RequestMetrics,name=RequestsPerSec,request=*,version=*
     metricAttribute:
       type: param(request)
+      version: param(version)
     mapping:
       Count:
         metric: kafka.request.count
