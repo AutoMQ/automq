@@ -40,6 +40,7 @@ public class DirectByteBufAlloc {
     public static final int STREAM_OBJECT_COMPACTION_WRITE = 8;
     public static final int STREAM_SET_OBJECT_COMPACTION_READ = 9;
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
+    public static DirectByteBufAllocMetric directByteBufAllocMetric = null;
 
     static {
         registerAllocType(DEFAULT, "default");
@@ -77,11 +78,13 @@ public class DirectByteBufAlloc {
             if (now - lastMetricLogTime > 60000) {
                 // it's ok to be not thread safe
                 lastMetricLogTime = now;
-                LOGGER.info("Direct Memory usage: netty.usedDirectMemory={}, DirectByteBufAlloc={}", ALLOC.metric().usedDirectMemory(), metric());
+                DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+                LOGGER.info("Direct Memory usage: {}", DirectByteBufAlloc.directByteBufAllocMetric);
             }
             return new WrappedByteBuf(ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
         } catch (OutOfMemoryError e) {
-            LOGGER.error("alloc direct buffer OOM, netty.usedDirectMemory={}, DirectByteBufAlloc={}", ALLOC.metric().usedDirectMemory(), metric(), e);
+            DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+            LOGGER.error("alloc direct buffer OOM, {}", DirectByteBufAlloc.directByteBufAllocMetric, e);
             System.err.println("alloc direct buffer OOM");
             Runtime.getRuntime().halt(1);
             throw e;
@@ -95,28 +98,36 @@ public class DirectByteBufAlloc {
         ALLOC_TYPE.put(type, name);
     }
 
-    public static Metric metric() {
-        return new Metric();
-    }
+    public static class DirectByteBufAllocMetric {
+        private final long usedDirectMemory;
+        private final long allocatedDirectMemory;
+        private final Map<String, Long> detail = new HashMap<>();
 
-    public static class Metric {
-        private final long usage;
-        private final Map<Integer, Long> detail;
+        public DirectByteBufAllocMetric() {
+            USAGE_STATS.forEach((k, v) -> {
+                detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
+            });
+            this.usedDirectMemory = ALLOC.metric().usedDirectMemory();
+            this.allocatedDirectMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
+        }
 
-        public Metric() {
-            Map<Integer, Long> detail = new HashMap<>();
-            USAGE_STATS.forEach((k, v) -> detail.put(k, v.longValue()));
-            this.detail = detail;
-            this.usage = this.detail.values().stream().mapToLong(Long::longValue).sum();
+        public long getUsedDirectMemory() {
+            return usedDirectMemory;
+        }
+
+        public Map<String, Long> getDetailedMap() {
+            return detail;
         }
 
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("DirectByteBufAllocMetric{usage=");
-            sb.append(usage);
+            StringBuilder sb = new StringBuilder("DirectByteBufAllocMetric{usedDirectMemory=");
+            sb.append(usedDirectMemory);
+            sb.append(", allocatedDirectMemory=");
+            sb.append(allocatedDirectMemory);
             sb.append(", detail=");
-            for (Map.Entry<Integer, Long> entry : detail.entrySet()) {
-                sb.append(entry.getKey()).append("/").append(ALLOC_TYPE.get(entry.getKey())).append("=").append(entry.getValue()).append(",");
+            for (Map.Entry<String, Long> entry : detail.entrySet()) {
+                sb.append(entry.getKey()).append("=").append(entry.getValue()).append(",");
             }
             sb.append("}");
             return sb.toString();

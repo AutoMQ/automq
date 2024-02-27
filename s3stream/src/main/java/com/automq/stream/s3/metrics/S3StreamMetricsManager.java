@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.metrics;
 
+import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
@@ -25,6 +26,7 @@ import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 public class S3StreamMetricsManager {
@@ -44,7 +46,6 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge networkOutboundLimiterQueueSize = new NoopObservableLongGauge();
     private static LongHistogram networkInboundLimiterQueueTime = new NoopLongHistogram();
     private static LongHistogram networkOutboundLimiterQueueTime = new NoopLongHistogram();
-    private static LongHistogram allocateByteBufSize = new NoopLongHistogram();
     private static LongHistogram readAheadSize = new NoopLongHistogram();
     private static LongHistogram readAheadLimierQueueTime = new NoopLongHistogram();
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
@@ -55,6 +56,8 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge availableInflightS3ReadQuota = new NoopObservableLongGauge();
     private static ObservableLongGauge availableInflightS3WriteQuota = new NoopObservableLongGauge();
     private static ObservableLongGauge inflightWALUploadTasksCount = new NoopObservableLongGauge();
+    private static ObservableLongGauge allocatedDirectMemorySize = new NoopObservableLongGauge();
+    private static ObservableLongGauge usedDirectMemorySize = new NoopObservableLongGauge();
     private static LongCounter compactionReadSizeInTotal = new NoopLongCounter();
     private static LongCounter compactionWriteSizeInTotal = new NoopLongCounter();
     private static Supplier<Long> networkInboundAvailableBandwidthSupplier = () -> 0L;
@@ -70,6 +73,12 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> availableInflightS3WriteQuotaSupplier = () -> 0;
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
+    private static final MultiAttributes<String> ALLOC_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+        S3StreamMetricsConstant.LABEL_ALLOC_TYPE);
+
+    static {
+        BASE_ATTRIBUTES_LISTENERS.add(ALLOC_TYPE_ATTRIBUTES);
+    }
 
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
@@ -172,11 +181,6 @@ public class S3StreamMetricsManager {
             .ofLongs()
             .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
             .build();
-        allocateByteBufSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME)
-            .setDescription("Allocate byte buf size")
-            .setUnit("bytes")
-            .ofLongs()
-            .build();
         readAheadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.READ_AHEAD_SIZE_METRIC_NAME)
             .setDescription("Read ahead size")
             .setUnit("bytes")
@@ -263,6 +267,27 @@ public class S3StreamMetricsManager {
             .setDescription("Compaction write size")
             .setUnit("bytes")
             .build();
+        allocatedDirectMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.ALLOCATED_DIRECT_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Allocated direct memory size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && DirectByteBufAlloc.directByteBufAllocMetric != null) {
+                    Map<String, Long> allocateSizeMap = DirectByteBufAlloc.directByteBufAllocMetric.getDetailedMap();
+                    for (Map.Entry<String, Long> entry : allocateSizeMap.entrySet()) {
+                        result.record(entry.getValue(), ALLOC_TYPE_ATTRIBUTES.get(entry.getKey()));
+                    }
+                }
+            });
+        usedDirectMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.USED_DIRECT_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Used direct memory size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && DirectByteBufAlloc.directByteBufAllocMetric != null) {
+                    result.record(DirectByteBufAlloc.directByteBufAllocMetric.getUsedDirectMemory(), metricsConfig.getBaseAttributes());
+                }
+            });
     }
 
     public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
@@ -420,14 +445,6 @@ public class S3StreamMetricsManager {
     public static HistogramMetric buildNetworkOutboundLimiterQueueTimeMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             HistogramMetric metric = new HistogramMetric(metricsConfig, networkOutboundLimiterQueueTime);
-            BASE_ATTRIBUTES_LISTENERS.add(metric);
-            return metric;
-        }
-    }
-
-    public static HistogramMetric buildAllocateByteBufSizeMetric(String source) {
-        synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(source), allocateByteBufSize);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }

@@ -79,7 +79,6 @@ public class S3StreamMetricsConstant {
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE_METRIC_NAME = "network_outbound_limiter_queue_size";
     public static final String NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_inbound_limiter_queue_time";
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_outbound_limiter_queue_time";
-    public static final String ALLOCATE_BYTE_BUF_SIZE_METRIC_NAME = "allocate_byte_buf_size";
     public static final String READ_AHEAD_SIZE_METRIC_NAME = "read_ahead_size";
     public static final String WAL_START_OFFSET = "wal_start_offset";
     public static final String WAL_TRIMMED_OFFSET = "wal_trimmed_offset";
@@ -92,12 +91,14 @@ public class S3StreamMetricsConstant {
     public static final String INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME = "inflight_wal_upload_tasks_count";
     public static final String COMPACTION_READ_SIZE_METRIC_NAME = "compaction_read_size";
     public static final String COMPACTION_WRITE_SIZE_METRIC_NAME = "compaction_write_size";
+    public static final String ALLOCATED_DIRECT_MEMORY_SIZE_METRIC_NAME = "allocated_direct_memory_size";
+    public static final String USED_DIRECT_MEMORY_SIZE_METRIC_NAME = "used_direct_memory_size";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
     public static final AttributeKey<String> LABEL_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
-    public static final AttributeKey<String> LABEL_ALLOCATE_BYTE_BUF_SOURCE = AttributeKey.stringKey("source");
+    public static final AttributeKey<String> LABEL_ALLOC_TYPE = AttributeKey.stringKey("type");
     public static final String LABEL_STATUS_SUCCESS = "success";
     public static final String LABEL_STATUS_FAILED = "failed";
     public static final String LABEL_STATUS_HIT = "hit";
