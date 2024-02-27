@@ -52,12 +52,6 @@ public class AttributesUtils {
             .build();
     }
 
-    public static Attributes buildAttributes(String source) {
-        return Attributes.builder()
-            .put(S3StreamMetricsConstant.LABEL_ALLOCATE_BYTE_BUF_SOURCE, source)
-            .build();
-    }
-
     public static String getObjectBucketLabel(long objectSize) {
         int index = (int) Math.ceil(Math.log((double) objectSize / (16 * 1024)) / Math.log(2));
         index = Math.min(S3StreamMetricsConstant.OBJECT_SIZE_BUCKET_NAMES.length - 1, Math.max(0, index));
