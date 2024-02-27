@@ -8,6 +8,7 @@ jobs:
   main_e2e_1:
     name: "Run Main E2E Tests 1"
     uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
@@ -16,6 +17,7 @@ jobs:
   main_e2e_2:
     name: "Run Main E2E Tests 2"
     uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "main2"
       test-yaml: "tests/suites/main_kos_test_suite2.yml"
@@ -24,7 +26,7 @@ jobs:
   e2e_summary:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, main ]
-    if: ${{ always() }}
+    if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ main_e2e_1, main_e2e_2 ]
     steps:
       - name: Report results
