@@ -447,12 +447,374 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 35
+              },
+              {
+                "id": "displayName",
+                "value": "Hole rate"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 11
+      },
+      "id": 52,
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(job, instance) (kafka_stream_allocated_direct_memory_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "NodeNode-{{instance}}#allocated",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(job, instance) (kafka_stream_used_direct_memory_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#used",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "name": "Expression",
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "1 - $A / $B",
+          "hide": false,
+          "refId": "C",
+          "type": "math"
+        }
+      ],
+      "title": "Direct Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 11
+      },
+      "id": 53,
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(job, instance, type) (kafka_stream_allocated_direct_memory_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Allocated Direct Memory Detailed",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 11
+      },
+      "id": 54,
+      "interval": "1m",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(job, instance) (kafka_stream_delta_wal_cache_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#Delta_WAL_Cache",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(job, instance) (kafka_stream_block_cache_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#Block_Cache",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Cache Size",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 21
       },
       "id": 5,
       "panels": [],
@@ -523,7 +885,7 @@
         "h": 11,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 22
       },
       "id": 3,
       "options": {
@@ -624,7 +986,7 @@
         "h": 11,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 22
       },
       "id": 6,
       "options": {
@@ -759,7 +1121,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 23
+        "y": 33
       },
       "id": 7,
       "options": {
@@ -860,7 +1222,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 23
+        "y": 33
       },
       "id": 8,
       "options": {
@@ -903,7 +1265,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 45
       },
       "id": 9,
       "panels": [],
@@ -974,7 +1336,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 36
+        "y": 46
       },
       "id": 11,
       "options": {
@@ -1074,7 +1436,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 36
+        "y": 46
       },
       "id": 13,
       "options": {
@@ -1133,7 +1495,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 58
       },
       "id": 15,
       "panels": [],
@@ -1204,7 +1566,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 49
+        "y": 59
       },
       "id": 12,
       "options": {
@@ -1306,7 +1668,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 49
+        "y": 59
       },
       "id": 16,
       "options": {
@@ -1409,7 +1771,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 49
+        "y": 59
       },
       "id": 17,
       "options": {
@@ -1468,7 +1830,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 71
       },
       "id": 18,
       "panels": [],
@@ -1539,7 +1901,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 72
       },
       "id": 19,
       "options": {
@@ -1639,7 +2001,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 72
       },
       "id": 20,
       "options": {
@@ -1681,7 +2043,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 84
       },
       "id": 21,
       "panels": [],
@@ -1752,7 +2114,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 85
       },
       "id": 22,
       "options": {
@@ -1869,7 +2231,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 85
       },
       "id": 23,
       "options": {
@@ -1986,7 +2348,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 97
       },
       "id": 24,
       "options": {
@@ -2086,7 +2448,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 97
       },
       "id": 25,
       "options": {
@@ -2128,7 +2490,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 109
       },
       "id": 26,
       "panels": [],
@@ -2199,7 +2561,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 110
       },
       "id": 27,
       "options": {
@@ -2299,7 +2661,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 100
+        "y": 110
       },
       "id": 28,
       "options": {
@@ -2399,7 +2761,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 112
+        "y": 122
       },
       "id": 29,
       "options": {
@@ -2499,7 +2861,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 112
+        "y": 122
       },
       "id": 31,
       "options": {
@@ -2599,7 +2961,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 112
+        "y": 122
       },
       "id": 30,
       "options": {
@@ -2699,7 +3061,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 124
+        "y": 134
       },
       "id": 32,
       "options": {
@@ -2800,7 +3162,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 124
+        "y": 134
       },
       "id": 33,
       "options": {
@@ -2842,7 +3204,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 136
+        "y": 146
       },
       "id": 34,
       "panels": [],
@@ -2917,7 +3279,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 137
+        "y": 147
       },
       "id": 35,
       "options": {
@@ -3038,7 +3400,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 137
+        "y": 147
       },
       "id": 36,
       "options": {
@@ -3194,7 +3556,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 149
+        "y": 159
       },
       "id": 37,
       "options": {
@@ -3315,7 +3677,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 149
+        "y": 159
       },
       "id": 38,
       "options": {
@@ -3374,7 +3736,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 161
+        "y": 171
       },
       "id": 39,
       "panels": [],
@@ -3444,7 +3806,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 162
+        "y": 172
       },
       "id": 48,
       "options": {
@@ -3544,7 +3906,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 162
+        "y": 172
       },
       "id": 49,
       "options": {
@@ -3643,7 +4005,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 174
+        "y": 184
       },
       "id": 50,
       "options": {
@@ -3742,7 +4104,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 174
+        "y": 184
       },
       "id": 51,
       "options": {
@@ -3803,7 +4165,7 @@
         "h": 13,
         "w": 4,
         "x": 0,
-        "y": 186
+        "y": 196
       },
       "id": 40,
       "options": {
@@ -3915,7 +4277,7 @@
         "h": 13,
         "w": 8,
         "x": 4,
-        "y": 186
+        "y": 196
       },
       "id": 41,
       "options": {
@@ -3976,7 +4338,7 @@
         "h": 13,
         "w": 4,
         "x": 12,
-        "y": 186
+        "y": 196
       },
       "id": 42,
       "options": {
@@ -4088,7 +4450,7 @@
         "h": 13,
         "w": 8,
         "x": 16,
-        "y": 186
+        "y": 196
       },
       "id": 43,
       "options": {
@@ -4130,7 +4492,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 199
+        "y": 209
       },
       "id": 44,
       "panels": [],
@@ -4197,7 +4559,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 200
+        "y": 210
       },
       "id": 45,
       "options": {
@@ -4256,7 +4618,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 214
+        "y": 224
       },
       "id": 46,
       "panels": [],
@@ -4327,7 +4689,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 215
+        "y": 225
       },
       "id": 47,
       "options": {
@@ -4390,8 +4752,8 @@
       {
         "current": {
           "selected": false,
-          "text": "xJGnLhprSXareHmTpNkpHg",
-          "value": "xJGnLhprSXareHmTpNkpHg"
+          "text": "jfPcM5qpSSuRENMXefpl3w",
+          "value": "jfPcM5qpSSuRENMXefpl3w"
         },
         "datasource": {
           "type": "prometheus",
@@ -4442,7 +4804,7 @@
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "",
+        "regex": "/(^[0-9]*$)/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
@@ -4553,6 +4915,6 @@
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 33,
+  "version": 39,
   "weekStart": ""
 }
