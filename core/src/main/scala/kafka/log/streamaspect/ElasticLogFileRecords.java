@@ -56,6 +56,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class ElasticLogFileRecords {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
+    private static final int POOLED_MEMORY_RECORDS = 30;
+    static {
+        DirectByteBufAlloc.registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
+    }
+
     protected final AtomicInteger size;
     // only used for recover
     protected final Iterable<RecordBatch> batches;
@@ -320,7 +325,7 @@ public class ElasticLogFileRecords {
             }
             // TODO: create a new ByteBufMemoryRecords data struct to avoid copy
             if (pooled) {
-                this.pack = DirectByteBufAlloc.byteBuffer(size);
+                this.pack = DirectByteBufAlloc.byteBuffer(size, POOLED_MEMORY_RECORDS);
             } else {
                 this.pack = Unpooled.buffer(size);
             }
