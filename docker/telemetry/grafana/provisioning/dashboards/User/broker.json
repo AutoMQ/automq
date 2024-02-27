@@ -1534,7 +1534,7 @@
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
-        "regex": "/(?<value>\\b\\d\\b)/",
+        "regex": "/(^[0-9]*$)/",
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
@@ -1549,6 +1549,6 @@
   "timezone": "",
   "title": "Broker Metrics",
   "uid": "e97dc219-c0c7-4bbe-9616-cdafb3451a3b",
-  "version": 11,
+  "version": 13,
   "weekStart": ""
 }
