@@ -1164,11 +1164,19 @@ class ReplicaManager(val config: KafkaConfig,
             val ex = FutureUtil.cause(e)
             val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
             if (fastReadFailFast) {
+              val timer = Time.SYSTEM.timer(params.maxWaitMs)
               slowFetchExecutor.submit(new Runnable {
                 override def run(): Unit = {
                   try {
+                    timer.update()
+                    if (timer.isExpired) {
+                      // return empty response if timeout
+                      responseEmpty(null)
+                      return
+                    }
                     ReadHint.markReadAll()
-                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, params.maxWaitMs, responseCallback)
+                    assert(timer.remainingMs() > 0, "Remaining time should be positive")
+                    fetchMessages0(params, fetchInfos, quota, slowFetchLimiter, timer.remainingMs(), responseCallback)
                   } catch {
                     case slowEx: Throwable =>
                       handleError(slowEx)
