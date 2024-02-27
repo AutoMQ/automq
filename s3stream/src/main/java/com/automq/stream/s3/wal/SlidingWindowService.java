@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
@@ -445,7 +445,7 @@ public class SlidingWindowService {
         }
 
         private ByteBuf marshalHeaderExceptCRC() {
-            ByteBuf buf = DirectByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+            ByteBuf buf = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
             buf.writeInt(magicCode0);
             buf.writeInt(recordBodyLength1);
             buf.writeLong(recordBodyOffset2);

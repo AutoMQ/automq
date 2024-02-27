@@ -11,7 +11,7 @@
 
 package com.automq.stream;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,14 +25,14 @@ public class DirectByteBufSeqAlloc {
     public DirectByteBufSeqAlloc(int allocType) {
         this.allocType = allocType;
         for (int i = 0; i < hugeBufArray.length; i++) {
-            hugeBufArray[i] = new AtomicReference<>(new HugeBuf(DirectByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType)));
+            hugeBufArray[i] = new AtomicReference<>(new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType)));
         }
     }
 
     public ByteBuf byteBuffer(int capacity) {
         if (capacity >= HUGE_BUF_SIZE) {
             // if the request capacity is larger than HUGE_BUF_SIZE, just allocate a new ByteBuf
-            return DirectByteBufAlloc.byteBuffer(capacity, allocType);
+            return ByteBufAlloc.byteBuffer(capacity, allocType);
         }
         int bufIndex = Math.abs(Thread.currentThread().hashCode() % hugeBufArray.length);
 
@@ -53,13 +53,13 @@ public class DirectByteBufSeqAlloc {
             // 1. slice the remaining of the current hugeBuf and release the hugeBuf
             // 2. create a new hugeBuf and slice the remaining of the required capacity
             // 3. return the composite ByteBuf of the two slices
-            CompositeByteBuf cbf = DirectByteBufAlloc.compositeByteBuffer();
+            CompositeByteBuf cbf = ByteBufAlloc.compositeByteBuffer();
             int readLength = hugeBuf.buf.capacity() - hugeBuf.nextIndex;
             cbf.addComponent(false, hugeBuf.buf.retainedSlice(hugeBuf.nextIndex, readLength));
             capacity -= readLength;
             hugeBuf.buf.release();
 
-            HugeBuf newHugeBuf = new HugeBuf(DirectByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType));
+            HugeBuf newHugeBuf = new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType));
             bufRef.set(newHugeBuf);
 
             cbf.addComponent(false, newHugeBuf.buf.retainedSlice(0, capacity));

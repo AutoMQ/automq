@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.compact.operator;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
-import com.automq.stream.s3.DirectByteBufAlloc;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.compact.utils.GroupByLimitPredicate;
@@ -30,8 +30,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_OBJECT_COMPACTION_WRITE;
-import static com.automq.stream.s3.DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
+import static com.automq.stream.s3.ByteBufAlloc.STREAM_OBJECT_COMPACTION_WRITE;
+import static com.automq.stream.s3.ByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_READ;
 import static com.automq.stream.s3.operator.Writer.MIN_PART_SIZE;
 
 //TODO: refactor to reduce duplicate code with ObjectWriter
@@ -121,7 +121,7 @@ public class DataBlockWriter {
     }
 
     private CompositeByteBuf groupWaitingBlocks() {
-        CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+        CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
         for (StreamDataBlock block : waitingUploadBlocks) {
             buf.addComponent(true, block.getDataCf().join());
             block.releaseRef();
@@ -154,7 +154,7 @@ public class DataBlockWriter {
 
             List<DataBlockIndex> dataBlockIndices = CompactionUtils.buildDataBlockIndicesFromGroup(
                 CompactionUtils.groupStreamDataBlocks(completedBlocks, new GroupByLimitPredicate(DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD)));
-            buf = DirectByteBufAlloc.byteBuffer(dataBlockIndices.size() * DataBlockIndex.BLOCK_INDEX_SIZE, DirectByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_WRITE);
+            buf = ByteBufAlloc.byteBuffer(dataBlockIndices.size() * DataBlockIndex.BLOCK_INDEX_SIZE, ByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_WRITE);
             for (DataBlockIndex dataBlockIndex : dataBlockIndices) {
                 dataBlockIndex.encode(buf);
             }
@@ -179,7 +179,7 @@ public class DataBlockWriter {
         private final ByteBuf buf;
 
         public Footer() {
-            buf = DirectByteBufAlloc.byteBuffer(FOOTER_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
+            buf = ByteBufAlloc.byteBuffer(FOOTER_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
             buf.writeLong(indexBlock.position());
             buf.writeInt(indexBlock.size());
             buf.writeZero(40 - 8 - 4);

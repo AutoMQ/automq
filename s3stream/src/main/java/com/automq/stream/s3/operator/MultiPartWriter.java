@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
@@ -185,7 +185,7 @@ public class MultiPartWriter implements Writer {
         private final int partNumber = nextPartNumber.getAndIncrement();
         private final CompletableFuture<CompletedPart> partCf = new CompletableFuture<>();
         private final ThrottleStrategy throttleStrategy;
-        private CompositeByteBuf partBuf = DirectByteBufAlloc.compositeByteBuffer();
+        private CompositeByteBuf partBuf = ByteBufAlloc.compositeByteBuffer();
         private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
         private long size;
 
@@ -203,9 +203,9 @@ public class MultiPartWriter implements Writer {
         public void copyOnWrite() {
             int size = partBuf.readableBytes();
             if (size > 0) {
-                ByteBuf buf = DirectByteBufAlloc.byteBuffer(size, context.allocType());
+                ByteBuf buf = ByteBufAlloc.byteBuffer(size, context.allocType());
                 buf.writeBytes(partBuf.duplicate());
-                CompositeByteBuf copy = DirectByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
+                CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.partBuf.release();
                 this.partBuf = copy;
             }

@@ -91,8 +91,8 @@ public class S3StreamMetricsConstant {
     public static final String INFLIGHT_WAL_UPLOAD_TASKS_COUNT_METRIC_NAME = "inflight_wal_upload_tasks_count";
     public static final String COMPACTION_READ_SIZE_METRIC_NAME = "compaction_read_size";
     public static final String COMPACTION_WRITE_SIZE_METRIC_NAME = "compaction_write_size";
-    public static final String ALLOCATED_DIRECT_MEMORY_SIZE_METRIC_NAME = "allocated_direct_memory_size";
-    public static final String USED_DIRECT_MEMORY_SIZE_METRIC_NAME = "used_direct_memory_size";
+    public static final String BUFFER_ALLOCATED_MEMORY_SIZE_METRIC_NAME = "buffer_allocated_memory_size";
+    public static final String BUFFER_USED_MEMORY_SIZE_METRIC_NAME = "buffer_used_memory_size";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");

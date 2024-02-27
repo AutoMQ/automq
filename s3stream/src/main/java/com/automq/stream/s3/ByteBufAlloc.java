@@ -12,9 +12,13 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.WrappedByteBuf;
+import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocatorMetric;
+import io.netty.buffer.ByteBufAllocatorMetricProvider;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,11 +26,13 @@ import java.util.concurrent.atomic.LongAdder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DirectByteBufAlloc {
+public class ByteBufAlloc {
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
+    public static final boolean ALLOCATOR_USAGE_UNPOOLED = Boolean.parseBoolean(System.getenv("AUTOMQ_ALLOCATOR_USAGE_UNPOOLED"));
+    public static final boolean BUFFER_USAGE_HEAPED = Boolean.parseBoolean(System.getenv("AUTOMQ_BUFFER_USAGE_HEAPED"));
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(DirectByteBufAlloc.class);
-    private static final PooledByteBufAllocator ALLOC = PooledByteBufAllocator.DEFAULT;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
+    private static final AbstractByteBufAllocator ALLOC = ALLOCATOR_USAGE_UNPOOLED ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
     private static long lastMetricLogTime = System.currentTimeMillis();
     private static final Map<Integer, String> ALLOC_TYPE = new HashMap<>();
@@ -81,17 +87,17 @@ public class DirectByteBufAlloc {
                 if (now - lastMetricLogTime > 60000) {
                     // it's ok to be not thread safe
                     lastMetricLogTime = now;
-                    DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-                    LOGGER.info("Direct Memory usage: {}", DirectByteBufAlloc.directByteBufAllocMetric);
+                    ByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+                    LOGGER.info("Direct Memory usage: {}", ByteBufAlloc.directByteBufAllocMetric);
                 }
-                return new WrappedByteBuf(ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
+                return new WrappedByteBuf(BUFFER_USAGE_HEAPED ? ALLOC.heapBuffer(initCapacity) : ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
             } else {
-                return ALLOC.directBuffer(initCapacity);
+                return BUFFER_USAGE_HEAPED ? ALLOC.heapBuffer(initCapacity) : ALLOC.directBuffer(initCapacity);
             }
         } catch (OutOfMemoryError e) {
             if (MEMORY_USAGE_DETECT) {
-                DirectByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-                LOGGER.error("alloc direct buffer OOM, {}", DirectByteBufAlloc.directByteBufAllocMetric, e);
+                ByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
+                LOGGER.error("alloc direct buffer OOM, {}", ByteBufAlloc.directByteBufAllocMetric, e);
             } else {
                 LOGGER.error("alloc direct buffer OOM", e);
             }
@@ -109,20 +115,21 @@ public class DirectByteBufAlloc {
     }
 
     public static class DirectByteBufAllocMetric {
-        private final long usedDirectMemory;
-        private final long allocatedDirectMemory;
+        private final long usedMemory;
+        private final long allocatedMemory;
         private final Map<String, Long> detail = new HashMap<>();
 
         public DirectByteBufAllocMetric() {
             USAGE_STATS.forEach((k, v) -> {
                 detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
             });
-            this.usedDirectMemory = ALLOC.metric().usedDirectMemory();
-            this.allocatedDirectMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
+            ByteBufAllocatorMetric metric = ((ByteBufAllocatorMetricProvider) ALLOC).metric();
+            this.usedMemory = BUFFER_USAGE_HEAPED ? metric.usedHeapMemory() : metric.usedDirectMemory();
+            this.allocatedMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
         }
 
-        public long getUsedDirectMemory() {
-            return usedDirectMemory;
+        public long getUsedMemory() {
+            return usedMemory;
         }
 
         public Map<String, Long> getDetailedMap() {
@@ -131,14 +138,18 @@ public class DirectByteBufAlloc {
 
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("DirectByteBufAllocMetric{usedDirectMemory=");
-            sb.append(usedDirectMemory);
-            sb.append(", allocatedDirectMemory=");
-            sb.append(allocatedDirectMemory);
+            StringBuilder sb = new StringBuilder("DirectByteBufAllocMetric{usedMemory=");
+            sb.append(usedMemory);
+            sb.append(", allocatedMemory=");
+            sb.append(allocatedMemory);
             sb.append(", detail=");
             for (Map.Entry<String, Long> entry : detail.entrySet()) {
                 sb.append(entry.getKey()).append("=").append(entry.getValue()).append(",");
             }
+            sb.append(", pooled=");
+            sb.append(!ALLOCATOR_USAGE_UNPOOLED);
+            sb.append(", direct=");
+            sb.append(!BUFFER_USAGE_HEAPED);
             sb.append("}");
             return sb.toString();
         }

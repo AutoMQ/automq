@@ -11,7 +11,7 @@
 
 package com.automq.stream.utils;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -305,7 +305,7 @@ public class S3Utils {
             GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
             readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
-                    CompositeByteBuf buf = DirectByteBufAlloc.compositeByteBuffer();
+                    CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
                     responsePublisher.subscribe((bytes) -> {
                         // the aws client will copy DefaultHttpContent to heap ByteBuffer
                         buf.addComponent(true, Unpooled.wrappedBuffer(bytes));

@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 
@@ -75,7 +75,7 @@ public interface Writer {
     CompletableFuture<Void> release();
 
     class Context {
-        public static final Context DEFAULT = new Context(DirectByteBufAlloc.DEFAULT);
+        public static final Context DEFAULT = new Context(ByteBufAlloc.DEFAULT);
 
         private final int allocType;
 

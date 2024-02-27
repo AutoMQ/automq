@@ -107,7 +107,7 @@ public class ObjectReaderTest {
     @Test
     public void testReadBlockGroup() throws ExecutionException, InterruptedException {
         S3Operator s3Operator = new MemoryS3Operator();
-        ByteBuf buf = DirectByteBufAlloc.byteBuffer(0);
+        ByteBuf buf = ByteBufAlloc.byteBuffer(0);
         buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
             new StreamRecordBatch(233L, 0, 10, 1, TestUtils.random(100)),
             new StreamRecordBatch(233L, 0, 11, 2, TestUtils.random(100))

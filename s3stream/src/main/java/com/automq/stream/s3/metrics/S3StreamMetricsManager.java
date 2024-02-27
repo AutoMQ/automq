@@ -11,13 +11,13 @@
 
 package com.automq.stream.s3.metrics;
 
-import com.automq.stream.s3.DirectByteBufAlloc;
-import com.automq.stream.s3.metrics.wrapper.CounterMetric;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
-import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
+import com.automq.stream.s3.metrics.wrapper.CounterMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -56,8 +56,8 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge availableInflightS3ReadQuota = new NoopObservableLongGauge();
     private static ObservableLongGauge availableInflightS3WriteQuota = new NoopObservableLongGauge();
     private static ObservableLongGauge inflightWALUploadTasksCount = new NoopObservableLongGauge();
-    private static ObservableLongGauge allocatedDirectMemorySize = new NoopObservableLongGauge();
-    private static ObservableLongGauge usedDirectMemorySize = new NoopObservableLongGauge();
+    private static ObservableLongGauge allocatedMemorySize = new NoopObservableLongGauge();
+    private static ObservableLongGauge usedMemorySize = new NoopObservableLongGauge();
     private static LongCounter compactionReadSizeInTotal = new NoopLongCounter();
     private static LongCounter compactionWriteSizeInTotal = new NoopLongCounter();
     private static Supplier<Long> networkInboundAvailableBandwidthSupplier = () -> 0L;
@@ -267,25 +267,25 @@ public class S3StreamMetricsManager {
             .setDescription("Compaction write size")
             .setUnit("bytes")
             .build();
-        allocatedDirectMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.ALLOCATED_DIRECT_MEMORY_SIZE_METRIC_NAME)
-            .setDescription("Allocated direct memory size")
+        allocatedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_ALLOCATED_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Buffer allocated memory size")
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && DirectByteBufAlloc.directByteBufAllocMetric != null) {
-                    Map<String, Long> allocateSizeMap = DirectByteBufAlloc.directByteBufAllocMetric.getDetailedMap();
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.directByteBufAllocMetric != null) {
+                    Map<String, Long> allocateSizeMap = ByteBufAlloc.directByteBufAllocMetric.getDetailedMap();
                     for (Map.Entry<String, Long> entry : allocateSizeMap.entrySet()) {
                         result.record(entry.getValue(), ALLOC_TYPE_ATTRIBUTES.get(entry.getKey()));
                     }
                 }
             });
-        usedDirectMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.USED_DIRECT_MEMORY_SIZE_METRIC_NAME)
-            .setDescription("Used direct memory size")
+        usedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_USED_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Buffer used memory size")
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && DirectByteBufAlloc.directByteBufAllocMetric != null) {
-                    result.record(DirectByteBufAlloc.directByteBufAllocMetric.getUsedDirectMemory(), metricsConfig.getBaseAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.directByteBufAllocMetric != null) {
+                    result.record(ByteBufAlloc.directByteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
                 }
             });
     }
