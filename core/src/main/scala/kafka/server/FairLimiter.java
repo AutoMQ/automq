@@ -82,10 +82,27 @@ public class FairLimiter implements Limiter {
     }
 
     public class FairHandler implements Handler {
-        private final int permit;
+        private int permit;
 
         public FairHandler(int permit) {
             this.permit = permit;
+        }
+
+        @Override
+        public void release(int p) {
+            if (p < 0) {
+                throw new IllegalArgumentException(String.format("The number of permits to release (%d) should not be negative", p));
+            }
+            if (p > permit) {
+                throw new IllegalArgumentException(String.format("The number of permits to release (%d) should not be greater than the permits held by this handler (%d)", p, permit));
+            }
+            permits.release(p);
+            permit -= p;
+        }
+
+        @Override
+        public int permitsHeld() {
+            return permit;
         }
 
         @Override

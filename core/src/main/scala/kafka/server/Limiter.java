@@ -52,5 +52,37 @@ public interface Limiter {
      * A handler to release acquired permits.
      */
     interface Handler extends AutoCloseable {
+
+        /**
+         * Release part of the acquired permits.
+         *
+         * @param permits the number of permits to release, should not be negative or greater than the permits held
+         *                by this handler
+         * @throws IllegalArgumentException if the permits is negative or greater than the permits held by this handler
+         */
+        void release(int permits);
+
+        /**
+         * Release part of the acquired permits to a new number of permits.
+         *
+         * @param newPermits the new number of permits, should not be negative or greater than the permits held
+         *                   by this handler
+         * @return true if the permits are released to the new number, false if the new number is invalid
+         */
+        default boolean releaseTo(int newPermits) {
+            int held = permitsHeld();
+            if (newPermits < 0 || newPermits > held) {
+                return false;
+            }
+            release(held - newPermits);
+            return true;
+        }
+
+        /**
+         * Return the number of permits held by this handler.
+         *
+         * @return the number of permits held by this handler
+         */
+        int permitsHeld();
     }
 }
