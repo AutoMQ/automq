@@ -894,12 +894,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "${datasource}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition, consumer_group) (kafka_group_commit_offset{job=\"$cluster_id\", topic=~\"$topic\"})",
+          "expr": "sum by(topic, partition, consumer_group) (kafka_group_commit_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -912,12 +912,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "${datasource}"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\"})",
+          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "format": "table",
           "fullMetaSearch": false,
           "hide": false,
@@ -1003,7 +1003,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jvm_cpu_count,job)",
+        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster Id",
@@ -1012,7 +1012,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(jvm_cpu_count,job)",
+          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -1095,6 +1095,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 11,
+  "version": 14,
   "weekStart": ""
 }

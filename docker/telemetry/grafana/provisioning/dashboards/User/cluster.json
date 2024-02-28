@@ -1886,7 +1886,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jvm_cpu_count,job)",
+        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
         "description": "The cluster id of a Kafka cluster",
         "hide": 0,
         "includeAll": false,
@@ -1896,7 +1896,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(jvm_cpu_count,job)",
+          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -1926,8 +1926,8 @@
       {
         "current": {
           "selected": false,
-          "text": "1",
-          "value": "1"
+          "text": "0",
+          "value": "0"
         },
         "datasource": {
           "type": "prometheus",
@@ -1961,6 +1961,6 @@
   "timezone": "",
   "title": "Cluster Overview",
   "uid": "f719833b-0a35-4fb3-9b84-3815726006e7",
-  "version": 15,
+  "version": 19,
   "weekStart": ""
 }
