@@ -272,8 +272,8 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.directByteBufAllocMetric != null) {
-                    Map<String, Long> allocateSizeMap = ByteBufAlloc.directByteBufAllocMetric.getDetailedMap();
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
+                    Map<String, Long> allocateSizeMap = ByteBufAlloc.byteBufAllocMetric.getDetailedMap();
                     for (Map.Entry<String, Long> entry : allocateSizeMap.entrySet()) {
                         result.record(entry.getValue(), ALLOC_TYPE_ATTRIBUTES.get(entry.getKey()));
                     }
@@ -284,8 +284,8 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.directByteBufAllocMetric != null) {
-                    result.record(ByteBufAlloc.directByteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
+                    result.record(ByteBufAlloc.byteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
                 }
             });
     }

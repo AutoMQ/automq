@@ -48,7 +48,7 @@ public class ByteBufAlloc {
     public static final int STREAM_OBJECT_COMPACTION_WRITE = 8;
     public static final int STREAM_SET_OBJECT_COMPACTION_READ = 9;
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
-    public static DirectByteBufAllocMetric directByteBufAllocMetric = null;
+    public static ByteBufAllocMetric byteBufAllocMetric = null;
 
     static {
         registerAllocType(DEFAULT, "default");
@@ -87,8 +87,8 @@ public class ByteBufAlloc {
                 if (now - lastMetricLogTime > 60000) {
                     // it's ok to be not thread safe
                     lastMetricLogTime = now;
-                    ByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-                    LOGGER.info("Direct Memory usage: {}", ByteBufAlloc.directByteBufAllocMetric);
+                    ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
+                    LOGGER.info("Buffer usage: {}", ByteBufAlloc.byteBufAllocMetric);
                 }
                 return new WrappedByteBuf(BUFFER_USAGE_HEAPED ? ALLOC.heapBuffer(initCapacity) : ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
             } else {
@@ -96,12 +96,12 @@ public class ByteBufAlloc {
             }
         } catch (OutOfMemoryError e) {
             if (MEMORY_USAGE_DETECT) {
-                ByteBufAlloc.directByteBufAllocMetric = new DirectByteBufAllocMetric();
-                LOGGER.error("alloc direct buffer OOM, {}", ByteBufAlloc.directByteBufAllocMetric, e);
+                ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
+                LOGGER.error("alloc buffer OOM, {}", ByteBufAlloc.byteBufAllocMetric, e);
             } else {
-                LOGGER.error("alloc direct buffer OOM", e);
+                LOGGER.error("alloc buffer OOM", e);
             }
-            System.err.println("alloc direct buffer OOM");
+            System.err.println("alloc buffer OOM");
             Runtime.getRuntime().halt(1);
             throw e;
         }
@@ -114,12 +114,12 @@ public class ByteBufAlloc {
         ALLOC_TYPE.put(type, name);
     }
 
-    public static class DirectByteBufAllocMetric {
+    public static class ByteBufAllocMetric {
         private final long usedMemory;
         private final long allocatedMemory;
         private final Map<String, Long> detail = new HashMap<>();
 
-        public DirectByteBufAllocMetric() {
+        public ByteBufAllocMetric() {
             USAGE_STATS.forEach((k, v) -> {
                 detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
             });
@@ -138,7 +138,7 @@ public class ByteBufAlloc {
 
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("DirectByteBufAllocMetric{usedMemory=");
+            StringBuilder sb = new StringBuilder("ByteBufAllocMetric{usedMemory=");
             sb.append(usedMemory);
             sb.append(", allocatedMemory=");
             sb.append(allocatedMemory);
