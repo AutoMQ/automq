@@ -1489,7 +1489,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jvm_cpu_count,job)",
+        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster Id",
@@ -1498,7 +1498,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(jvm_cpu_count,job)",
+          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -1521,7 +1521,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jvm_cpu_count,instance)",
+        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Node Id",
@@ -1530,7 +1530,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(jvm_cpu_count,instance)",
+          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,instance)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -1549,6 +1549,6 @@
   "timezone": "",
   "title": "Broker Metrics",
   "uid": "e97dc219-c0c7-4bbe-9616-cdafb3451a3b",
-  "version": 13,
+  "version": 14,
   "weekStart": ""
 }
