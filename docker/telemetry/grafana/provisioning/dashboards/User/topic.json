@@ -834,6 +834,10 @@
                     "url": "/d/d90be32f-7d32-488a-b99c-3e21529790e4/group-metrics?var-datasource=${datasource}&var-cluster_id=${cluster_id}&var-group_id=${__value.text}&var-topic=${__data.fields.topic}"
                   }
                 ]
+              },
+              {
+                "id": "custom.filterable",
+                "value": true
               }
             ]
           },
@@ -899,7 +903,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition, consumer_group) (kafka_group_commit_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
+          "expr": "max by(consumer_group, topic, partition) (kafka_group_commit_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "format": "table",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -917,7 +921,7 @@
           "disableTextWrap": false,
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
+          "expr": "max by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "format": "table",
           "fullMetaSearch": false,
           "hide": false,
@@ -1023,12 +1027,12 @@
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
-            "test-topic"
+            "__auto_balancer_metrics"
           ],
           "value": [
-            "test-topic"
+            "__auto_balancer_metrics"
           ]
         },
         "datasource": {
@@ -1095,6 +1099,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 14,
+  "version": 15,
   "weekStart": ""
 }
