@@ -226,7 +226,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(consumer_group, topic, partition) (kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\", partition=~\"$partition\"})",
+          "expr": "max by(consumer_group, topic, partition) (kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -243,7 +243,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
+          "expr": "max by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -423,6 +423,6 @@
   "timezone": "",
   "title": "Group Metrics",
   "uid": "d90be32f-7d32-488a-b99c-3e21529790e4",
-  "version": 5,
+  "version": 6,
   "weekStart": ""
 }
