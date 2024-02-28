@@ -109,7 +109,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(consumer_group, topic, partition) (rate(kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\"}[$__rate_interval]))",
+          "expr": "sum by(consumer_group, topic, partition) (rate(kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\", partition=~\"$partition\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -226,7 +226,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(consumer_group, topic, partition) (kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\"})",
+          "expr": "sum by(consumer_group, topic, partition) (kafka_group_commit_offset{job=\"$cluster_id\", consumer_group=~\"$group_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -243,7 +243,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\"})",
+          "expr": "sum by(topic, partition) (kafka_log_end_offset{job=\"$cluster_id\", topic=~\"$topic\", partition=~\"$partition\"})",
           "fullMetaSearch": false,
           "hide": true,
           "includeNullMetadata": true,
@@ -303,7 +303,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(jvm_cpu_count,job)",
+        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster Id",
@@ -312,10 +312,10 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(jvm_cpu_count,job)",
+          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
@@ -355,13 +355,9 @@
       },
       {
         "current": {
-          "selected": true,
-          "text": [
-            "test-topic"
-          ],
-          "value": [
-            "test-topic"
-          ]
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
           "type": "prometheus",
@@ -384,6 +380,38 @@
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(kafka_group_commit_offset,partition)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Partition",
+        "multi": true,
+        "name": "partition",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kafka_group_commit_offset,partition)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 3,
+        "type": "query"
       }
     ]
   },
@@ -395,6 +423,6 @@
   "timezone": "",
   "title": "Group Metrics",
   "uid": "d90be32f-7d32-488a-b99c-3e21529790e4",
-  "version": 3,
+  "version": 5,
   "weekStart": ""
 }
