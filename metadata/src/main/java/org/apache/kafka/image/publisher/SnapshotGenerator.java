@@ -21,6 +21,10 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
+<<<<<<< HEAD
+=======
+import org.apache.kafka.image.loader.LoaderManifest;
+>>>>>>> trunk
 import org.apache.kafka.image.loader.LogDeltaManifest;
 import org.apache.kafka.image.loader.SnapshotManifest;
 import org.apache.kafka.queue.EventQueue;
@@ -44,6 +48,10 @@ public class SnapshotGenerator implements MetadataPublisher {
         private long maxBytesSinceLastSnapshot = 100 * 1024L * 1024L;
         private long maxTimeSinceLastSnapshotNs = TimeUnit.DAYS.toNanos(1);
         private AtomicReference<String> disabledReason = null;
+<<<<<<< HEAD
+=======
+        private String threadNamePrefix = "";
+>>>>>>> trunk
 
         public Builder(Emitter emitter) {
             this.emitter = emitter;
@@ -79,6 +87,14 @@ public class SnapshotGenerator implements MetadataPublisher {
             return this;
         }
 
+<<<<<<< HEAD
+=======
+        public Builder setThreadNamePrefix(String threadNamePrefix) {
+            this.threadNamePrefix = threadNamePrefix;
+            return this;
+        }
+
+>>>>>>> trunk
         public SnapshotGenerator build() {
             if (disabledReason == null) {
                 disabledReason = new AtomicReference<>();
@@ -90,7 +106,12 @@ public class SnapshotGenerator implements MetadataPublisher {
                 faultHandler,
                 maxBytesSinceLastSnapshot,
                 maxTimeSinceLastSnapshotNs,
+<<<<<<< HEAD
                 disabledReason
+=======
+                disabledReason,
+                threadNamePrefix
+>>>>>>> trunk
             );
         }
     }
@@ -173,7 +194,12 @@ public class SnapshotGenerator implements MetadataPublisher {
         FaultHandler faultHandler,
         long maxBytesSinceLastSnapshot,
         long maxTimeSinceLastSnapshotNs,
+<<<<<<< HEAD
         AtomicReference<String> disabledReason
+=======
+        AtomicReference<String> disabledReason,
+        String threadNamePrefix
+>>>>>>> trunk
     ) {
         this.nodeId = nodeId;
         this.time = time;
@@ -181,10 +207,17 @@ public class SnapshotGenerator implements MetadataPublisher {
         this.faultHandler = faultHandler;
         this.maxBytesSinceLastSnapshot = maxBytesSinceLastSnapshot;
         this.maxTimeSinceLastSnapshotNs = maxTimeSinceLastSnapshotNs;
+<<<<<<< HEAD
         LogContext logContext = new LogContext("[SnapshotGenerator " + nodeId + "] ");
         this.log = logContext.logger(SnapshotGenerator.class);
         this.disabledReason = disabledReason;
         this.eventQueue = new KafkaEventQueue(time, logContext, "SnapshotGenerator" + nodeId);
+=======
+        LogContext logContext = new LogContext("[SnapshotGenerator id=" + nodeId + "] ");
+        this.log = logContext.logger(SnapshotGenerator.class);
+        this.disabledReason = disabledReason;
+        this.eventQueue = new KafkaEventQueue(time, logContext, threadNamePrefix + "snapshot-generator-");
+>>>>>>> trunk
         resetSnapshotCounters();
         log.debug("Starting SnapshotGenerator.");
     }
@@ -200,7 +233,26 @@ public class SnapshotGenerator implements MetadataPublisher {
     }
 
     @Override
+<<<<<<< HEAD
     public void publishSnapshot(
+=======
+    public void onMetadataUpdate(
+        MetadataDelta delta,
+        MetadataImage newImage,
+        LoaderManifest manifest
+    ) {
+        switch (manifest.type()) {
+            case LOG_DELTA:
+                publishLogDelta(delta, newImage, (LogDeltaManifest) manifest);
+                break;
+            case SNAPSHOT:
+                publishSnapshot(delta, newImage, (SnapshotManifest) manifest);
+                break;
+        }
+    }
+
+    void publishSnapshot(
+>>>>>>> trunk
         MetadataDelta delta,
         MetadataImage newImage,
         SnapshotManifest manifest
@@ -209,8 +261,12 @@ public class SnapshotGenerator implements MetadataPublisher {
         resetSnapshotCounters();
     }
 
+<<<<<<< HEAD
     @Override
     public void publishLogDelta(
+=======
+    void publishLogDelta(
+>>>>>>> trunk
         MetadataDelta delta,
         MetadataImage newImage,
         LogDeltaManifest manifest

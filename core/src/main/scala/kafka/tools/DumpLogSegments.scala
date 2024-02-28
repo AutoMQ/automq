@@ -33,6 +33,8 @@ import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.metadata.bootstrap.BootstrapDirectory
 import org.apache.kafka.snapshot.Snapshots
+import org.apache.kafka.server.util.{CommandDefaultOptions, CommandLineUtils}
+import org.apache.kafka.storage.internals.log.{CorruptSnapshotException, LogFileUtils, OffsetIndex, ProducerStateManager, TimeIndex, TransactionIndex}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
@@ -45,7 +47,7 @@ object DumpLogSegments {
 
   def main(args: Array[String]): Unit = {
     val opts = new DumpLogSegmentsOptions(args)
-    CommandLineUtils.printHelpAndExitIfNeeded(opts, "This tool helps to parse a log file and dump its contents to the console, useful for debugging a seemingly corrupt log segment.")
+    CommandLineUtils.maybePrintHelpOrVersion(opts, "This tool helps to parse a log file and dump its contents to the console, useful for debugging a seemingly corrupt log segment.")
     opts.checkArgs()
 
     val misMatchesForIndexFilesMap = mutable.Map[String, List[(Long, Long)]]()
@@ -66,7 +68,7 @@ object DumpLogSegments {
           dumpIndex(file, opts.indexSanityOnly, opts.verifyOnly, misMatchesForIndexFilesMap, opts.maxMessageSize)
         case UnifiedLog.TimeIndexFileSuffix =>
           dumpTimeIndex(file, opts.indexSanityOnly, opts.verifyOnly, timeIndexDumpErrors)
-        case UnifiedLog.ProducerSnapshotFileSuffix =>
+        case LogFileUtils.PRODUCER_SNAPSHOT_FILE_SUFFIX =>
           dumpProducerIdSnapshot(file)
         case UnifiedLog.TxnIndexFileSuffix =>
           dumpTxnIndex(file)
@@ -94,7 +96,7 @@ object DumpLogSegments {
 
   private def dumpTxnIndex(file: File): Unit = {
     val index = new TransactionIndex(UnifiedLog.offsetFromFile(file), file)
-    for (abortedTxn <- index.allAbortedTxns) {
+    for (abortedTxn <- index.allAbortedTxns.asScala) {
       println(s"version: ${abortedTxn.version} producerId: ${abortedTxn.producerId} firstOffset: ${abortedTxn.firstOffset} " +
         s"lastOffset: ${abortedTxn.lastOffset} lastStableOffset: ${abortedTxn.lastStableOffset}")
     }
@@ -102,11 +104,11 @@ object DumpLogSegments {
 
   private def dumpProducerIdSnapshot(file: File): Unit = {
     try {
-      ProducerStateManager.readSnapshot(file).foreach { entry =>
+      ProducerStateManager.readSnapshot(file).forEach { entry =>
         print(s"producerId: ${entry.producerId} producerEpoch: ${entry.producerEpoch} " +
           s"coordinatorEpoch: ${entry.coordinatorEpoch} currentTxnFirstOffset: ${entry.currentTxnFirstOffset} " +
           s"lastTimestamp: ${entry.lastTimestamp} ")
-        entry.batchMetadata.headOption.foreach { metadata =>
+        entry.batchMetadata.asScala.headOption.foreach { metadata =>
           print(s"firstSequence: ${metadata.firstSeq} lastSequence: ${metadata.lastSeq} " +
             s"lastOffset: ${metadata.lastOffset} offsetDelta: ${metadata.offsetDelta} timestamp: ${metadata.timestamp}")
         }
@@ -128,7 +130,11 @@ object DumpLogSegments {
     val startOffset = file.getName.split("\\.")(0).toLong
     val logFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.LogFileSuffix)
     val fileRecords = FileRecords.open(logFile, false)
+<<<<<<< HEAD
     val index = OffsetIndex(file, baseOffset = startOffset, writable = false)
+=======
+    val index = new OffsetIndex(file, startOffset, -1, false)
+>>>>>>> trunk
 
     if (index.entries == 0) {
       println(s"$file is empty.")
@@ -170,8 +176,13 @@ object DumpLogSegments {
     val logFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.LogFileSuffix)
     val fileRecords = FileRecords.open(logFile, false)
     val indexFile = new File(file.getAbsoluteFile.getParent, file.getName.split("\\.")(0) + UnifiedLog.IndexFileSuffix)
+<<<<<<< HEAD
     val index = OffsetIndex(indexFile, baseOffset = startOffset, writable = false)
     val timeIndex = TimeIndex(file, baseOffset = startOffset, writable = false)
+=======
+    val index = new OffsetIndex(indexFile, startOffset, -1, false)
+    val timeIndex = new TimeIndex(file, startOffset, -1, false)
+>>>>>>> trunk
 
     try {
       //Check that index passes sanityCheck, this is the check that determines if indexes will be rebuilt on startup or not.
@@ -300,10 +311,10 @@ object DumpLogSegments {
                     val endTxnMarker = EndTransactionMarker.deserialize(record)
                     print(s" endTxnMarker: ${endTxnMarker.controlType} coordinatorEpoch: ${endTxnMarker.coordinatorEpoch}")
                   case ControlRecordType.SNAPSHOT_HEADER =>
-                    val header = ControlRecordUtils.deserializedSnapshotHeaderRecord(record)
+                    val header = ControlRecordUtils.deserializeSnapshotHeaderRecord(record)
                     print(s" SnapshotHeader ${SnapshotHeaderRecordJsonConverter.write(header, header.version())}")
                   case ControlRecordType.SNAPSHOT_FOOTER =>
-                    val footer = ControlRecordUtils.deserializedSnapshotFooterRecord(record)
+                    val footer = ControlRecordUtils.deserializeSnapshotFooterRecord(record)
                     print(s" SnapshotFooter ${SnapshotFooterRecordJsonConverter.write(footer, footer.version())}")
                   case controlType =>
                     print(s" controlType: $controlType($controlTypeId)")
@@ -345,9 +356,9 @@ object DumpLogSegments {
   }
 
   class TimeIndexDumpErrors {
-    val misMatchesForTimeIndexFilesMap = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
-    val outOfOrderTimestamp = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
-    val shallowOffsetNotFound = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
+    val misMatchesForTimeIndexFilesMap: mutable.Map[String, ArrayBuffer[(Long, Long)]] = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
+    val outOfOrderTimestamp: mutable.Map[String, ArrayBuffer[(Long, Long)]] = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
+    val shallowOffsetNotFound: mutable.Map[String, ArrayBuffer[(Long, Long)]] = mutable.Map[String, ArrayBuffer[(Long, Long)]]()
 
     def recordMismatchTimeIndex(file: File, indexTimestamp: Long, logTimestamp: Long): Unit = {
       val misMatchesSeq = misMatchesForTimeIndexFilesMap.getOrElse(file.getAbsolutePath, new ArrayBuffer[(Long, Long)]())
@@ -372,21 +383,19 @@ object DumpLogSegments {
 
     def printErrors(): Unit = {
       misMatchesForTimeIndexFilesMap.foreach {
-        case (fileName, listOfMismatches) => {
+        case (fileName, listOfMismatches) =>
           System.err.println("Found timestamp mismatch in :" + fileName)
           listOfMismatches.foreach(m => {
             System.err.println("  Index timestamp: %d, log timestamp: %d".format(m._1, m._2))
           })
-        }
       }
 
       outOfOrderTimestamp.foreach {
-        case (fileName, outOfOrderTimestamps) => {
+        case (fileName, outOfOrderTimestamps) =>
           System.err.println("Found out of order timestamp in :" + fileName)
           outOfOrderTimestamps.foreach(m => {
             System.err.println("  Index timestamp: %d, Previously indexed timestamp: %d".format(m._1, m._2))
           })
-        }
       }
 
       shallowOffsetNotFound.values.foreach { listOfShallowOffsetNotFound =>
@@ -411,7 +420,7 @@ object DumpLogSegments {
   }
 
   private class ClusterMetadataLogMessageParser extends MessageParser[String, String] {
-    val metadataRecordSerde = new MetadataRecordSerde()
+    private val metadataRecordSerde = new MetadataRecordSerde()
 
     override def parse(record: Record): (Option[String], Option[String]) = {
       val output = try {
@@ -423,11 +432,10 @@ object DumpLogSegments {
         json.set("version", new IntNode(messageAndVersion.version()))
         json.set("data", MetadataJsonConverters.writeJson(
           messageAndVersion.message(), messageAndVersion.version()))
-        json.toString()
+        json.toString
       } catch {
-        case e: Throwable => {
+        case e: Throwable =>
           s"Error at ${record.offset}, skipping. ${e.getMessage}"
-        }
       }
       // No keys for metadata records
       (None, Some(output))
@@ -435,39 +443,39 @@ object DumpLogSegments {
   }
 
   private class DumpLogSegmentsOptions(args: Array[String]) extends CommandDefaultOptions(args) {
-    val printOpt = parser.accepts("print-data-log", "if set, printing the messages content when dumping data logs. Automatically set if any decoder option is specified.")
-    val verifyOpt = parser.accepts("verify-index-only", "if set, just verify the index log without printing its content.")
-    val indexSanityOpt = parser.accepts("index-sanity-check", "if set, just checks the index sanity without printing its content. " +
+    private val printOpt = parser.accepts("print-data-log", "if set, printing the messages content when dumping data logs. Automatically set if any decoder option is specified.")
+    private val verifyOpt = parser.accepts("verify-index-only", "if set, just verify the index log without printing its content.")
+    private val indexSanityOpt = parser.accepts("index-sanity-check", "if set, just checks the index sanity without printing its content. " +
       "This is the same check that is executed on broker startup to determine if an index needs rebuilding or not.")
-    val filesOpt = parser.accepts("files", "REQUIRED: The comma separated list of data and index log files to be dumped.")
+    private val filesOpt = parser.accepts("files", "REQUIRED: The comma separated list of data and index log files to be dumped.")
       .withRequiredArg
       .describedAs("file1, file2, ...")
       .ofType(classOf[String])
-    val maxMessageSizeOpt = parser.accepts("max-message-size", "Size of largest message.")
+    private val maxMessageSizeOpt = parser.accepts("max-message-size", "Size of largest message.")
       .withRequiredArg
       .describedAs("size")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(5 * 1024 * 1024)
-    val maxBytesOpt = parser.accepts("max-bytes", "Limit the amount of total batches read in bytes avoiding reading the whole .log file(s).")
+    private val maxBytesOpt = parser.accepts("max-bytes", "Limit the amount of total batches read in bytes avoiding reading the whole .log file(s).")
        .withRequiredArg
        .describedAs("size")
        .ofType(classOf[java.lang.Integer])
        .defaultsTo(Integer.MAX_VALUE)
-    val deepIterationOpt = parser.accepts("deep-iteration", "if set, uses deep instead of shallow iteration. Automatically set if print-data-log is enabled.")
-    val valueDecoderOpt = parser.accepts("value-decoder-class", "if set, used to deserialize the messages. This class should implement kafka.serializer.Decoder trait. Custom jar should be available in kafka/libs directory.")
+    private val deepIterationOpt = parser.accepts("deep-iteration", "if set, uses deep instead of shallow iteration. Automatically set if print-data-log is enabled.")
+    private val valueDecoderOpt = parser.accepts("value-decoder-class", "if set, used to deserialize the messages. This class should implement kafka.serializer.Decoder trait. Custom jar should be available in kafka/libs directory.")
       .withOptionalArg()
       .ofType(classOf[java.lang.String])
       .defaultsTo("kafka.serializer.StringDecoder")
-    val keyDecoderOpt = parser.accepts("key-decoder-class", "if set, used to deserialize the keys. This class should implement kafka.serializer.Decoder trait. Custom jar should be available in kafka/libs directory.")
+    private val keyDecoderOpt = parser.accepts("key-decoder-class", "if set, used to deserialize the keys. This class should implement kafka.serializer.Decoder trait. Custom jar should be available in kafka/libs directory.")
       .withOptionalArg()
       .ofType(classOf[java.lang.String])
       .defaultsTo("kafka.serializer.StringDecoder")
-    val offsetsOpt = parser.accepts("offsets-decoder", "if set, log data will be parsed as offset data from the " +
+    private val offsetsOpt = parser.accepts("offsets-decoder", "if set, log data will be parsed as offset data from the " +
       "__consumer_offsets topic.")
-    val transactionLogOpt = parser.accepts("transaction-log-decoder", "if set, log data will be parsed as " +
+    private val transactionLogOpt = parser.accepts("transaction-log-decoder", "if set, log data will be parsed as " +
       "transaction metadata from the __transaction_state topic.")
-    val clusterMetadataOpt = parser.accepts("cluster-metadata-decoder", "if set, log data will be parsed as cluster metadata records.")
-    val skipRecordMetadataOpt = parser.accepts("skip-record-metadata", "whether to skip printing metadata for each record.")
+    private val clusterMetadataOpt = parser.accepts("cluster-metadata-decoder", "if set, log data will be parsed as cluster metadata records.")
+    private val skipRecordMetadataOpt = parser.accepts("skip-record-metadata", "whether to skip printing metadata for each record.")
     options = parser.parse(args : _*)
 
     def messageParser: MessageParser[_, _] =
@@ -490,13 +498,13 @@ object DumpLogSegments {
       options.has(valueDecoderOpt) ||
       options.has(keyDecoderOpt)
 
-    lazy val skipRecordMetadata = options.has(skipRecordMetadataOpt)
+    lazy val skipRecordMetadata: Boolean = options.has(skipRecordMetadataOpt)
     lazy val isDeepIteration: Boolean = options.has(deepIterationOpt) || shouldPrintDataLog
     lazy val verifyOnly: Boolean = options.has(verifyOpt)
     lazy val indexSanityOnly: Boolean = options.has(indexSanityOpt)
-    lazy val files = options.valueOf(filesOpt).split(",")
-    lazy val maxMessageSize = options.valueOf(maxMessageSizeOpt).intValue()
-    lazy val maxBytes = options.valueOf(maxBytesOpt).intValue()
+    lazy val files: Array[String] = options.valueOf(filesOpt).split(",")
+    lazy val maxMessageSize: Int = options.valueOf(maxMessageSizeOpt).intValue()
+    lazy val maxBytes: Int = options.valueOf(maxBytesOpt).intValue()
 
     def checkArgs(): Unit = CommandLineUtils.checkRequiredArgs(parser, options, filesOpt)
 

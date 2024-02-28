@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.streams.processor.internals;
 
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.internals.KafkaFutureImpl;
 import org.apache.kafka.streams.processor.TaskId;
 
 import java.time.Duration;
@@ -93,6 +95,11 @@ public interface StateUpdater {
      * @param taskId ID of the task to remove
      */
     void remove(final TaskId taskId);
+
+    /**
+     * Wakes up the state updater if it is currently dormant, to check if a paused task should be resumed.
+     */
+    void signalResume();
 
     /**
      * Drains the restored active tasks from the state updater.
@@ -175,7 +182,7 @@ public interface StateUpdater {
      * Returns if the state updater restores active tasks.
      *
      * The state updater restores active tasks if at least one active task was added with {@link StateUpdater#add(Task)},
-     * the task is not paused, and the task was not removed from the state updater with one of the following methods:
+     * and the task was not removed from the state updater with one of the following methods:
      * <ul>
      *   <li>{@link StateUpdater#drainRestoredActiveTasks(Duration)}</li>
      *   <li>{@link StateUpdater#drainRemovedTasks()}</li>
@@ -184,6 +191,10 @@ public interface StateUpdater {
      *
      * @return {@code true} if the state updater restores active tasks, {@code false} otherwise
      */
+    // TODO: We would still return true if all active tasks to be restored
+    //       are paused, in order to keep consistent behavior compared with
+    //       state updater disabled. In the future we would modify this criterion
+    //       with state updater always enabled to allow mixed processing / restoration.
     boolean restoresActiveTasks();
 
     /**
@@ -199,4 +210,9 @@ public interface StateUpdater {
      * @return set of all tasks managed by the state updater
      */
     Set<StandbyTask> getStandbyTasks();
+
+    /**
+     * Get the restore consumer instance id for telemetry, and complete the given future to return it.
+     */
+    KafkaFutureImpl<Uuid> restoreConsumerInstanceId(final Duration timeout);
 }

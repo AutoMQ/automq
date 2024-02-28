@@ -17,16 +17,16 @@
 
 package kafka.server.builders;
 
-import kafka.log.CleanerConfig;
-import kafka.log.LogConfig;
 import kafka.log.LogManager;
-import kafka.log.ProducerStateManagerConfig;
 import kafka.server.BrokerTopicStats;
-import kafka.server.LogDirFailureChannel;
 import kafka.server.metadata.ConfigRepository;
-import kafka.utils.Scheduler;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.storage.internals.log.CleanerConfig;
+import org.apache.kafka.storage.internals.log.LogConfig;
+import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
+import org.apache.kafka.server.util.Scheduler;
+import org.apache.kafka.storage.internals.log.ProducerStateManagerConfig;
 import scala.collection.JavaConverters;
 
 import java.io.File;
@@ -35,6 +35,7 @@ import java.util.List;
 
 
 public class LogManagerBuilder {
+    private static final int PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS = 600000;
     private List<File> logDirs = null;
     private List<File> initialOfflineDirs = Collections.emptyList();
     private ConfigRepository configRepository = null;
@@ -46,14 +47,14 @@ public class LogManagerBuilder {
     private long flushStartOffsetCheckpointMs = 10000L;
     private long retentionCheckMs = 1000L;
     private int maxTransactionTimeoutMs = 15 * 60 * 1000;
-    private ProducerStateManagerConfig producerStateManagerConfig = new ProducerStateManagerConfig(60000);
-    private int producerIdExpirationCheckIntervalMs = 600000;
-    private MetadataVersion interBrokerProtocolVersion = MetadataVersion.latest();
+    private ProducerStateManagerConfig producerStateManagerConfig = new ProducerStateManagerConfig(60000, false);
+    private MetadataVersion interBrokerProtocolVersion = MetadataVersion.latestProduction();
     private Scheduler scheduler = null;
     private BrokerTopicStats brokerTopicStats = null;
     private LogDirFailureChannel logDirFailureChannel = null;
     private Time time = Time.SYSTEM;
     private boolean keepPartitionMetadataFile = true;
+    private boolean remoteStorageSystemEnable = false;
 
     public LogManagerBuilder setLogDirs(List<File> logDirs) {
         this.logDirs = logDirs;
@@ -110,8 +111,8 @@ public class LogManagerBuilder {
         return this;
     }
 
-    public LogManagerBuilder setMaxProducerIdExpirationMs(int maxProducerIdExpirationMs) {
-        this.producerStateManagerConfig = new ProducerStateManagerConfig(maxProducerIdExpirationMs);
+    public LogManagerBuilder setProducerStateManagerConfig(int maxProducerIdExpirationMs, boolean transactionVerificationEnabled) {
+        this.producerStateManagerConfig = new ProducerStateManagerConfig(maxProducerIdExpirationMs, transactionVerificationEnabled);
         return this;
     }
 
@@ -145,6 +146,11 @@ public class LogManagerBuilder {
         return this;
     }
 
+    public LogManagerBuilder setRemoteStorageSystemEnable(boolean remoteStorageSystemEnable) {
+        this.remoteStorageSystemEnable = remoteStorageSystemEnable;
+        return this;
+    }
+
     public LogManager build() {
         if (logDirs == null) throw new RuntimeException("you must set logDirs");
         if (configRepository == null) throw new RuntimeException("you must set configRepository");
@@ -166,12 +172,13 @@ public class LogManagerBuilder {
                               retentionCheckMs,
                               maxTransactionTimeoutMs,
                               producerStateManagerConfig,
-                              producerIdExpirationCheckIntervalMs,
+                              PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS,
                               interBrokerProtocolVersion,
                               scheduler,
                               brokerTopicStats,
                               logDirFailureChannel,
                               time,
-                              keepPartitionMetadataFile);
+                              keepPartitionMetadataFile,
+                              remoteStorageSystemEnable);
     }
 }

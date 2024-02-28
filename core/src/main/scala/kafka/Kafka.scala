@@ -17,18 +17,28 @@
 
 package kafka
 
+<<<<<<< HEAD
 import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
 import com.automq.s3shell.sdk.model.S3Url
+=======
+import java.util.Properties
+>>>>>>> trunk
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
+<<<<<<< HEAD
 import kafka.utils.{CommandLineUtils, Exit, Logging}
 import org.apache.kafka.common.utils._
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 
 import java.util.Properties
 import scala.jdk.CollectionConverters._
+=======
+import kafka.utils.{Exit, Logging}
+import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
+import org.apache.kafka.server.util.CommandLineUtils
+>>>>>>> trunk
 
 object Kafka extends Logging {
 
@@ -77,12 +87,12 @@ object Kafka extends Logging {
     optionParser.accepts("version", "Print version information and exit.")
 
     if (args.isEmpty || args.contains("--help")) {
-      CommandLineUtils.printUsageAndDie(optionParser,
+      CommandLineUtils.printUsageAndExit(optionParser,
         "USAGE: java [options] %s server.properties [--override property=value]*".format(this.getClass.getCanonicalName.split('$').head))
     }
 
     if (args.contains("--version")) {
-      CommandLineUtils.printVersionAndDie()
+      CommandLineUtils.printVersionAndExit()
     }
 
     val props = Utils.loadProps(args(0))
@@ -91,10 +101,10 @@ object Kafka extends Logging {
       val options = optionParser.parse(args.slice(1, args.length): _*)
 
       if (options.nonOptionArguments().size() > 0) {
-        CommandLineUtils.printUsageAndDie(optionParser, "Found non argument parameters: " + options.nonOptionArguments().toArray.mkString(","))
+        CommandLineUtils.printUsageAndExit(optionParser, "Found non argument parameters: " + options.nonOptionArguments().toArray.mkString(","))
       }
 
-      props ++= CommandLineUtils.parseKeyValueArgs(options.valuesOf(overrideOpt).asScala)
+      props ++= CommandLineUtils.parseKeyValueArgs(options.valuesOf(overrideOpt))
     }
     props
   }
@@ -106,7 +116,7 @@ object Kafka extends Logging {
     config.migrationEnabled && config.interBrokerProtocolVersion.isApiForwardingEnabled
 
   private def buildServer(props: Properties): Server = {
-    val config = KafkaConfig.fromProps(props, false)
+    val config = KafkaConfig.fromProps(props, doLog = false)
     if (config.requiresZookeeper) {
       new KafkaServer(
         config,
@@ -118,7 +128,6 @@ object Kafka extends Logging {
       new KafkaRaftServer(
         config,
         Time.SYSTEM,
-        threadNamePrefix = None
       )
     }
   }

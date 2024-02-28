@@ -21,6 +21,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.runtime.errors.ErrorReporter;
+import org.apache.kafka.connect.runtime.errors.ProcessingContext;
 import org.apache.kafka.connect.storage.ClusterConfigState;
 import org.apache.kafka.connect.runtime.errors.RetryWithToleranceOperator;
 import org.apache.kafka.connect.runtime.errors.ErrorHandlingMetrics;
@@ -40,6 +42,7 @@ import org.apache.kafka.connect.util.TopicCreationGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -48,17 +51,19 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.apache.kafka.connect.runtime.SubmittedRecords.CommittableOffsets;
 
 /**
- * WorkerTask that uses a SourceTask to ingest data into Kafka.
+ * {@link WorkerTask} that uses a {@link SourceTask} to ingest data into Kafka.
  */
 class WorkerSourceTask extends AbstractWorkerSourceTask {
     private static final Logger log = LoggerFactory.getLogger(WorkerSourceTask.class);
 
     private volatile CommittableOffsets committableOffsets;
-    private final SubmittedRecords submittedRecords;
+    //VisibleForTesting
+    final SubmittedRecords submittedRecords;
     private final AtomicReference<Exception> producerSendException;
 
     public WorkerSourceTask(ConnectorTaskId id,
@@ -69,7 +74,7 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
                             Converter valueConverter,
                             ErrorHandlingMetrics errorMetrics,
                             HeaderConverter headerConverter,
-                            TransformationChain<SourceRecord> transformationChain,
+                            TransformationChain<SourceRecord, SourceRecord> transformationChain,
                             Producer<byte[], byte[]> producer,
                             TopicAdmin admin,
                             Map<String, TopicCreationGroup> topicGroups,
@@ -81,14 +86,15 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
                             ConnectMetrics connectMetrics,
                             ClassLoader loader,
                             Time time,
-                            RetryWithToleranceOperator retryWithToleranceOperator,
+                            RetryWithToleranceOperator<SourceRecord> retryWithToleranceOperator,
                             StatusBackingStore statusBackingStore,
-                            Executor closeExecutor) {
+                            Executor closeExecutor,
+                            Supplier<List<ErrorReporter<SourceRecord>>> errorReportersSupplier) {
 
         super(id, task, statusListener, initialState, keyConverter, valueConverter, headerConverter, transformationChain,
                 new WorkerSourceTaskContext(offsetReader, id, configState, null), producer,
                 admin, topicGroups, offsetReader, offsetWriter, offsetStore, workerConfig, connectMetrics, errorMetrics, loader,
-                time, retryWithToleranceOperator, statusBackingStore, closeExecutor);
+                time, retryWithToleranceOperator, statusBackingStore, closeExecutor, errorReportersSupplier);
 
         this.committableOffsets = CommittableOffsets.EMPTY;
         this.submittedRecords = new SubmittedRecords();
@@ -150,6 +156,7 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
 
     @Override
     protected void producerSendFailed(
+            ProcessingContext<SourceRecord> context,
             boolean synchronous,
             ProducerRecord<byte[], byte[]> producerRecord,
             SourceRecord preTransformRecord,
@@ -169,9 +176,9 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
             );
             // executeFailed here allows the use of existing logging infrastructure/configuration
             retryWithToleranceOperator.executeFailed(
+                    context,
                     Stage.KAFKA_PRODUCE,
                     WorkerSourceTask.class,
-                    preTransformRecord,
                     e
             );
             commitTaskRecord(preTransformRecord, null);
@@ -216,7 +223,7 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
             this.committableOffsets = CommittableOffsets.EMPTY;
         }
 
-        if (committableOffsets.isEmpty()) {
+        if (offsetsToCommit.isEmpty()) {
             log.debug("{} Either no records were produced by the task since the last offset commit, " 
                     + "or every record has been filtered out by a transformation " 
                     + "or dropped due to transformation or conversion errors.",
@@ -225,15 +232,15 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
             // We continue with the offset commit process here instead of simply returning immediately
             // in order to invoke SourceTask::commit and record metrics for a successful offset commit
         } else {
-            log.info("{} Committing offsets for {} acknowledged messages", this, committableOffsets.numCommittableMessages());
-            if (committableOffsets.hasPending()) {
+            log.info("{} Committing offsets for {} acknowledged messages", this, offsetsToCommit.numCommittableMessages());
+            if (offsetsToCommit.hasPending()) {
                 log.debug("{} There are currently {} pending messages spread across {} source partitions whose offsets will not be committed. "
                                 + "The source partition with the most pending messages is {}, with {} pending messages",
                         this,
-                        committableOffsets.numUncommittableMessages(),
-                        committableOffsets.numDeques(),
-                        committableOffsets.largestDequePartition(),
-                        committableOffsets.largestDequeSize()
+                        offsetsToCommit.numUncommittableMessages(),
+                        offsetsToCommit.numDeques(),
+                        offsetsToCommit.largestDequePartition(),
+                        offsetsToCommit.largestDequeSize()
                 );
             } else {
                 log.debug("{} There are currently no pending messages for this offset commit; "
@@ -249,7 +256,19 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
         // though we may update them here with newer offsets for acked records.
         offsetsToCommit.offsets().forEach(offsetWriter::offset);
 
-        if (!offsetWriter.beginFlush()) {
+        boolean shouldFlush;
+        try {
+            shouldFlush = offsetWriter.beginFlush(timeout - time.milliseconds(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            log.warn("{} Interrupted while waiting for previous offset flush to complete, cancelling", this);
+            recordCommitFailure(time.milliseconds() - started, e);
+            return false;
+        } catch (TimeoutException e) {
+            log.warn("{} Timed out while waiting for previous offset flush to complete, cancelling", this);
+            recordCommitFailure(time.milliseconds() - started, e);
+            return false;
+        }
+        if (!shouldFlush) {
             // There was nothing in the offsets to process, but we still mark a successful offset commit.
             long durationMillis = time.milliseconds() - started;
             recordCommitSuccess(durationMillis);
@@ -308,7 +327,8 @@ class WorkerSourceTask extends AbstractWorkerSourceTask {
         return true;
     }
 
-    private void updateCommittableOffsets() {
+    // Visible for testing
+    void updateCommittableOffsets() {
         CommittableOffsets newOffsets = submittedRecords.committableOffsets();
         synchronized (this) {
             this.committableOffsets = this.committableOffsets.updatedWith(newOffsets);

@@ -17,21 +17,31 @@
 
 package kafka.server.metadata
 
+<<<<<<< HEAD
 import kafka.metrics.KafkaMetricsGroup
 
+=======
+>>>>>>> trunk
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import org.apache.kafka.common.MetricName
 import org.apache.kafka.common.metrics.Gauge
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.metrics.MetricConfig
 import org.apache.kafka.image.MetadataProvenance
+<<<<<<< HEAD
 import org.apache.kafka.image.loader.MetadataLoaderMetrics
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 
+=======
+import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
+
+import java.util.Collections
+>>>>>>> trunk
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 final class BrokerServerMetrics private (
   metrics: Metrics
+<<<<<<< HEAD
 ) extends MetadataLoaderMetrics with KafkaMetricsGroup {
   import BrokerServerMetrics._
 
@@ -39,6 +49,15 @@ final class BrokerServerMetrics private (
     "BrokerMetadataListener",
     "MetadataBatchProcessingTimeUs",
     Map.empty)
+=======
+) extends AutoCloseable {
+  import BrokerServerMetrics._
+
+  private val batchProcessingTimeHistName = KafkaMetricsGroup.explicitMetricName("kafka.server",
+    "BrokerMetadataListener",
+    "MetadataBatchProcessingTimeUs",
+    Collections.emptyMap())
+>>>>>>> trunk
 
   /**
    * A histogram tracking the time in microseconds it took to process batches of events.
@@ -46,10 +65,17 @@ final class BrokerServerMetrics private (
   private val batchProcessingTimeHist =
     KafkaYammerMetrics.defaultRegistry().newHistogram(batchProcessingTimeHistName, true)
 
+<<<<<<< HEAD
   private val batchSizeHistName = explicitMetricName("kafka.server",
     "BrokerMetadataListener",
     "MetadataBatchSizes",
     Map.empty)
+=======
+  private val batchSizeHistName = KafkaMetricsGroup.explicitMetricName("kafka.server",
+    "BrokerMetadataListener",
+    "MetadataBatchSizes",
+    Collections.emptyMap())
+>>>>>>> trunk
 
   /**
    * A histogram tracking the sizes of batches that we have processed.
@@ -62,31 +88,31 @@ final class BrokerServerMetrics private (
   val metadataLoadErrorCount: AtomicLong = new AtomicLong(0)
   val metadataApplyErrorCount: AtomicLong = new AtomicLong(0)
 
-  val lastAppliedRecordOffsetName = metrics.metricName(
+  val lastAppliedRecordOffsetName: MetricName = metrics.metricName(
     "last-applied-record-offset",
     metricGroupName,
     "The offset of the last record from the cluster metadata partition that was applied by the broker"
   )
 
-  val lastAppliedRecordTimestampName = metrics.metricName(
+  val lastAppliedRecordTimestampName: MetricName = metrics.metricName(
     "last-applied-record-timestamp",
     metricGroupName,
     "The timestamp of the last record from the cluster metadata partition that was applied by the broker"
   )
 
-  val lastAppliedRecordLagMsName = metrics.metricName(
+  val lastAppliedRecordLagMsName: MetricName = metrics.metricName(
     "last-applied-record-lag-ms",
     metricGroupName,
     "The difference between now and the timestamp of the last record from the cluster metadata partition that was applied by the broker"
   )
 
-  val metadataLoadErrorCountName = metrics.metricName(
+  val metadataLoadErrorCountName: MetricName = metrics.metricName(
     "metadata-load-error-count",
     metricGroupName,
     "The number of errors encountered by the BrokerMetadataListener while loading the metadata log and generating a new MetadataDelta based on it."
   )
 
-  val metadataApplyErrorCountName = metrics.metricName(
+  val metadataApplyErrorCountName: MetricName = metrics.metricName(
     "metadata-apply-error-count",
     metricGroupName,
     "The number of errors encountered by the BrokerMetadataPublisher while applying a new MetadataImage based on the latest MetadataDelta."
@@ -124,6 +150,7 @@ final class BrokerServerMetrics private (
     ).foreach(metrics.removeMetric)
   }
 
+<<<<<<< HEAD
   override def updateBatchProcessingTime(elapsedNs: Long): Unit =
     batchProcessingTimeHist.update(NANOSECONDS.toMicros(elapsedNs))
 
@@ -133,12 +160,23 @@ final class BrokerServerMetrics private (
     lastAppliedImageProvenance.set(provenance)
 
   override def lastAppliedOffset(): Long = lastAppliedImageProvenance.get().lastContainedOffset()
+=======
+  def updateBatchProcessingTime(elapsedNs: Long): Unit =
+    batchProcessingTimeHist.update(NANOSECONDS.toMicros(elapsedNs))
+
+  def updateBatchSize(size: Int): Unit = batchSizeHist.update(size)
+
+  def updateLastAppliedImageProvenance(provenance: MetadataProvenance): Unit =
+    lastAppliedImageProvenance.set(provenance)
+
+  def lastAppliedOffset(): Long = lastAppliedImageProvenance.get().lastContainedOffset()
+>>>>>>> trunk
 
   def lastAppliedTimestamp(): Long = lastAppliedImageProvenance.get().lastContainedLogTimeMs()
 }
 
 
-final object BrokerServerMetrics {
+object BrokerServerMetrics {
   private val metricGroupName = "broker-metadata-metrics"
 
   private def addMetric[T](metrics: Metrics, name: MetricName)(func: Long => T): Unit = {

@@ -20,6 +20,7 @@ package org.apache.kafka.metadata.placement;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+import org.apache.kafka.common.Uuid;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -56,5 +57,18 @@ public class PartitionAssignmentTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void testToString() {
+        List<Integer> replicas = Arrays.asList(0, 1, 2);
+        List<Uuid> directories = Arrays.asList(
+                Uuid.fromString("65WMNfybQpCDVulYOxMCTw"),
+                Uuid.fromString("VkZ5AkuESPGkMc2OxpKUjw"),
+                Uuid.fromString("wFtTi4FxTlOhhHytfxv7fQ")
+        );
+        PartitionAssignment partitionAssignment = new PartitionAssignment(replicas, directories::get);
+        assertEquals("PartitionAssignment(replicas=[0, 1, 2], " +
+                "directories=[65WMNfybQpCDVulYOxMCTw, VkZ5AkuESPGkMc2OxpKUjw, wFtTi4FxTlOhhHytfxv7fQ])", partitionAssignment.toString());
     }
 }

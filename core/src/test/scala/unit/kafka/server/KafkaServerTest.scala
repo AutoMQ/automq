@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import java.util.Properties
 
 import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 
 class KafkaServerTest extends QuorumTestHarness {
 
@@ -126,12 +127,29 @@ class KafkaServerTest extends QuorumTestHarness {
   @Test
   def testAlterIsrManager(): Unit = {
     val props = TestUtils.createBrokerConfigs(1, zkConnect).head
-    props.put(KafkaConfig.InterBrokerProtocolVersionProp, MetadataVersion.latest.toString)
+    props.put(KafkaConfig.InterBrokerProtocolVersionProp, MetadataVersion.latestTesting.toString)
 
     val server = TestUtils.createServer(KafkaConfig.fromProps(props))
     server.replicaManager.alterPartitionManager match {
       case _: DefaultAlterPartitionManager =>
       case _ => fail("Should use AlterIsr for ISR manager in versions after 2.7-IV2")
+    }
+    server.shutdown()
+  }
+
+  @Test
+  def testRemoteLogManagerInstantiation(): Unit = {
+    val props = TestUtils.createBrokerConfigs(1, zkConnect).head
+    props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, true.toString)
+    props.put(RemoteLogManagerConfig.REMOTE_LOG_METADATA_MANAGER_CLASS_NAME_PROP,
+      "org.apache.kafka.server.log.remote.storage.NoOpRemoteLogMetadataManager")
+    props.put(RemoteLogManagerConfig.REMOTE_STORAGE_MANAGER_CLASS_NAME_PROP,
+      "org.apache.kafka.server.log.remote.storage.NoOpRemoteStorageManager")
+
+    val server = TestUtils.createServer(KafkaConfig.fromProps(props))
+    server.remoteLogManagerOpt match {
+      case Some(_) =>
+      case None => fail("RemoteLogManager should be initialized")
     }
     server.shutdown()
   }

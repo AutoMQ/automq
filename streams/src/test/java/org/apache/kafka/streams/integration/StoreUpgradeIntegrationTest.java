@@ -85,13 +85,13 @@ public class StoreUpgradeIntegrationTest {
 
     @Before
     public void createTopics() throws Exception {
-        inputStream = "input-stream-" + safeUniqueTestName(getClass(), testName);
+        inputStream = "input-stream-" + safeUniqueTestName(testName);
         CLUSTER.createTopic(inputStream);
     }
 
     private Properties props() {
         final Properties streamsConfiguration = new Properties();
-        final String safeTestName = safeUniqueTestName(getClass(), testName);
+        final String safeTestName = safeUniqueTestName(testName);
         streamsConfiguration.put(StreamsConfig.APPLICATION_ID_CONFIG, "app-" + safeTestName);
         streamsConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
         streamsConfiguration.put(StreamsConfig.STATESTORE_CACHE_MAX_BYTES_CONFIG, 0);
@@ -394,7 +394,8 @@ public class StoreUpgradeIntegrationTest {
                 }
             },
             60_000L,
-            "Could not get expected result in time.");
+            5_000L,
+            () -> "Could not get expected result in time.");
     }
 
     private <K> void verifyCountWithSurrogateTimestamp(final K key,
@@ -976,8 +977,6 @@ public class StoreUpgradeIntegrationTest {
             store.put(record.key(), newCount);
         }
 
-        @Override
-        public void close() {}
     }
 
     private static class TimestampedKeyValueProcessor implements Processor<Integer, Integer, Void, Void> {
@@ -1006,8 +1005,6 @@ public class StoreUpgradeIntegrationTest {
             store.put(record.key(), ValueAndTimestamp.make(newCount, newTimestamp));
         }
 
-        @Override
-        public void close() {}
     }
 
     private static class WindowedProcessor implements Processor<Integer, Integer, Void, Void> {
@@ -1032,8 +1029,6 @@ public class StoreUpgradeIntegrationTest {
             store.put(record.key(), newCount, record.key() < 10 ? 0L : 100000L);
         }
 
-        @Override
-        public void close() {}
     }
 
     private static class TimestampedWindowedProcessor implements Processor<Integer, Integer, Void, Void> {
@@ -1062,7 +1057,5 @@ public class StoreUpgradeIntegrationTest {
             store.put(record.key(), ValueAndTimestamp.make(newCount, newTimestamp), record.key() < 10 ? 0L : 100000L);
         }
 
-        @Override
-        public void close() {}
     }
 }

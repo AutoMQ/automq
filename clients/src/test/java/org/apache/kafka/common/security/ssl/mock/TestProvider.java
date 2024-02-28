@@ -27,6 +27,7 @@ public class TestProvider extends Provider {
         this("TestProvider", 0.1, "provider for test cases");
     }
 
+    @SuppressWarnings("this-escape")
     protected TestProvider(String name, double version, String info) {
         super(name, Double.toString(version), info);
         super.put(KEY_MANAGER_FACTORY, TestKeyManagerFactory.class.getName());

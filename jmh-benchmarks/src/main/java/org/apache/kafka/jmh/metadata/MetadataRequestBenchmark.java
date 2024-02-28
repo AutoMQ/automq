@@ -18,7 +18,6 @@
 package org.apache.kafka.jmh.metadata;
 
 import kafka.controller.KafkaController;
-import kafka.coordinator.group.GroupCoordinator;
 import kafka.coordinator.transaction.TransactionCoordinator;
 import kafka.network.RequestChannel;
 import kafka.network.RequestConvertToJson;
@@ -60,6 +59,8 @@ import org.apache.kafka.common.requests.UpdateMetadataRequest;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.coordinator.group.GroupCoordinator;
+import org.apache.kafka.server.common.Features;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.mockito.Mockito;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -95,10 +96,34 @@ import java.util.stream.IntStream;
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 
 public class MetadataRequestBenchmark {
+    private final RequestChannel requestChannel = Mockito.mock(RequestChannel.class, Mockito.withSettings().stubOnly());
+    private final RequestChannel.Metrics requestChannelMetrics = Mockito.mock(RequestChannel.Metrics.class);
+    private final ReplicaManager replicaManager = Mockito.mock(ReplicaManager.class);
+    private final GroupCoordinator groupCoordinator = Mockito.mock(GroupCoordinator.class);
+    private final ZkAdminManager adminManager = Mockito.mock(ZkAdminManager.class);
+    private final TransactionCoordinator transactionCoordinator = Mockito.mock(TransactionCoordinator.class);
+    private final KafkaController kafkaController = Mockito.mock(KafkaController.class);
+    private final AutoTopicCreationManager autoTopicCreationManager = Mockito.mock(AutoTopicCreationManager.class);
+    private final KafkaZkClient kafkaZkClient = Mockito.mock(KafkaZkClient.class);
+    private final Metrics metrics = new Metrics();
+    private final int brokerId = 1;
+    private final ZkMetadataCache metadataCache = MetadataCache.zkMetadataCache(brokerId,
+        MetadataVersion.latestTesting(), BrokerFeatures.createEmpty(), null, false);
+    private final ClientQuotaManager clientQuotaManager = Mockito.mock(ClientQuotaManager.class);
+    private final ClientRequestQuotaManager clientRequestQuotaManager = Mockito.mock(ClientRequestQuotaManager.class);
+    private final ControllerMutationQuotaManager controllerMutationQuotaManager = Mockito.mock(ControllerMutationQuotaManager.class);
+    private final ReplicationQuotaManager replicaQuotaManager = Mockito.mock(ReplicationQuotaManager.class);
+    private final QuotaFactory.QuotaManagers quotaManagers = new QuotaFactory.QuotaManagers(clientQuotaManager,
+        clientQuotaManager, clientRequestQuotaManager, controllerMutationQuotaManager, replicaQuotaManager,
+        replicaQuotaManager, replicaQuotaManager, Option.empty());
+    private final FetchManager fetchManager = Mockito.mock(FetchManager.class);
+    private final BrokerTopicStats brokerTopicStats = new BrokerTopicStats(Optional.empty());
+    private final KafkaPrincipal principal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, "test-user");
     @Param({"500", "1000", "5000"})
     private int topicCount;
     @Param({"10", "20", "50"})
     private int partitionCount;
+<<<<<<< HEAD
 
     private RequestChannel requestChannel = Mockito.mock(RequestChannel.class, Mockito.withSettings().stubOnly());
     private RequestChannel.Metrics requestChannelMetrics = Mockito.mock(RequestChannel.Metrics.class);
@@ -123,6 +148,8 @@ public class MetadataRequestBenchmark {
     private FetchManager fetchManager = Mockito.mock(FetchManager.class);
     private BrokerTopicStats brokerTopicStats = new BrokerTopicStats();
     private KafkaPrincipal principal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, "test-user");
+=======
+>>>>>>> trunk
     private KafkaApis kafkaApis;
     private RequestChannel.Request allTopicMetadataRequest;
 
@@ -199,7 +226,11 @@ public class MetadataRequestBenchmark {
             setClusterId("clusterId").
             setTime(Time.SYSTEM).
             setTokenManager(null).
-            setApiVersionManager(new SimpleApiVersionManager(ApiMessageType.ListenerType.ZK_BROKER)).
+            setApiVersionManager(new SimpleApiVersionManager(
+                    ApiMessageType.ListenerType.ZK_BROKER,
+                    false,
+                    false,
+                    () -> Features.fromKRaftVersion(MetadataVersion.latestTesting()))).
             build();
     }
 

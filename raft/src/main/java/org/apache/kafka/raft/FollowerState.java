@@ -118,12 +118,20 @@ public class FollowerState implements EpochState {
 
             if (updatedHighWatermark < 0) {
                 throw new IllegalArgumentException(
+<<<<<<< HEAD
                     String.format("Illegal negative (%s) high watermark update", updatedHighWatermark)
+=======
+                    String.format("Illegal negative (%d) high watermark update", updatedHighWatermark)
+>>>>>>> trunk
                 );
             } else if (previousHighWatermark > updatedHighWatermark) {
                 throw new IllegalArgumentException(
                     String.format(
+<<<<<<< HEAD
                         "Non-monotonic update of high watermark from %s to %s",
+=======
+                        "Non-monotonic update of high watermark from %d to %d",
+>>>>>>> trunk
                         previousHighWatermark,
                         updatedHighWatermark
                     )
@@ -153,9 +161,7 @@ public class FollowerState implements EpochState {
     }
 
     public void setFetchingSnapshot(Optional<RawSnapshotWriter> newSnapshot) {
-        if (fetchingSnapshot.isPresent()) {
-            fetchingSnapshot.get().close();
-        }
+        fetchingSnapshot.ifPresent(RawSnapshotWriter::close);
         fetchingSnapshot = newSnapshot;
     }
 
@@ -180,8 +186,28 @@ public class FollowerState implements EpochState {
 
     @Override
     public void close() {
-        if (fetchingSnapshot.isPresent()) {
-            fetchingSnapshot.get().close();
+        fetchingSnapshot.ifPresent(RawSnapshotWriter::close);
+    }
+
+    private void logHighWatermarkUpdate(
+        Optional<LogOffsetMetadata> oldHighWatermark,
+        Optional<LogOffsetMetadata> newHighWatermark
+    ) {
+        if (!oldHighWatermark.equals(newHighWatermark)) {
+            if (oldHighWatermark.isPresent()) {
+                log.trace(
+                    "High watermark set to {} from {} for epoch {}",
+                    newHighWatermark,
+                    oldHighWatermark.get(),
+                    epoch
+                );
+            } else {
+                log.info(
+                    "High watermark set to {} for the first time for epoch {}",
+                    newHighWatermark,
+                    epoch
+                );
+            }
         }
     }
 

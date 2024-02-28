@@ -99,7 +99,7 @@ public interface ReplicatedLog extends AutoCloseable {
              */
             OffsetAndEpoch latestSnapshotId = latestSnapshotId().orElseThrow(() -> new IllegalStateException(
                 String.format(
-                    "Log start offset (%s) is greater than zero but latest snapshot was not found",
+                    "Log start offset (%d) is greater than zero but latest snapshot was not found",
                     startOffset()
                 )
             ));
@@ -168,7 +168,7 @@ public interface ReplicatedLog extends AutoCloseable {
     /**
      * Update the high watermark and associated metadata (which is used to avoid
      * index lookups when handling reads with {@link #read(long, Isolation)} with
-     * the {@link Isolation#COMMITTED} isolation level.
+     * the {@link Isolation#COMMITTED} isolation level).
      *
      * @param offsetMetadata The offset and optional metadata
      */
@@ -193,11 +193,6 @@ public interface ReplicatedLog extends AutoCloseable {
      * Possibly perform cleaning of snapshots and logs
      */
     boolean maybeClean();
-
-    /**
-     * Get the last offset which has been flushed to disk.
-     */
-    long lastFlushedOffset();
 
     /**
      * Return the topic partition associated with the log.
@@ -245,7 +240,7 @@ public interface ReplicatedLog extends AutoCloseable {
      * and the replicated log.
      *
      * @param snapshotId the end offset and epoch that identifies the snapshot
-     * @return a writable snapshot if it doesn't already exists and greater than the log start
+     * @return a writable snapshot if it doesn't already exist and greater than the log start
      *         offset
      * @throws IllegalArgumentException if validate is true and end offset is greater than the
      *         high-watermark
@@ -264,7 +259,7 @@ public interface ReplicatedLog extends AutoCloseable {
      * the quorum leader.
      *
      * @param snapshotId the end offset and epoch that identifies the snapshot
-     * @return a writable snapshot if it doesn't already exists
+     * @return a writable snapshot if it doesn't already exist
      */
     Optional<RawSnapshotWriter> storeSnapshot(OffsetAndEpoch snapshotId);
 
@@ -292,7 +287,7 @@ public interface ReplicatedLog extends AutoCloseable {
      /**
       * Returns the latest snapshot id if one exists.
       *
-      * @return an Optional snapshot id of the latest snashot if one exists, otherwise returns an
+      * @return an Optional snapshot id of the latest snapshot if one exists, otherwise returns an
       *         empty Optional
       */
     Optional<OffsetAndEpoch> latestSnapshotId();

@@ -261,6 +261,7 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return ListTransactionsResponse.parse(responseBuffer, version);
             case ALLOCATE_PRODUCER_IDS:
                 return AllocateProducerIdsResponse.parse(responseBuffer, version);
+<<<<<<< HEAD
 
             // AutoMQ for Kafka inject start
             case CREATE_STREAMS:
@@ -290,6 +291,24 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
             // AutoMQ for Kafka inject end
+=======
+            case CONSUMER_GROUP_HEARTBEAT:
+                return ConsumerGroupHeartbeatResponse.parse(responseBuffer, version);
+            case CONSUMER_GROUP_DESCRIBE:
+                return ConsumerGroupDescribeResponse.parse(responseBuffer, version);
+            case CONTROLLER_REGISTRATION:
+                return ControllerRegistrationResponse.parse(responseBuffer, version);
+            case GET_TELEMETRY_SUBSCRIPTIONS:
+                return GetTelemetrySubscriptionsResponse.parse(responseBuffer, version);
+            case PUSH_TELEMETRY:
+                return PushTelemetryResponse.parse(responseBuffer, version);
+            case ASSIGN_REPLICAS_TO_DIRS:
+                return AssignReplicasToDirsResponse.parse(responseBuffer, version);
+            case LIST_CLIENT_METRICS_RESOURCES:
+                return ListClientMetricsResourcesResponse.parse(responseBuffer, version);
+            case DESCRIBE_TOPIC_PARTITIONS:
+                return DescribeTopicPartitionsResponse.parse(responseBuffer, version);
+>>>>>>> trunk
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +
                         "code should be updated to do so.", apiKey));

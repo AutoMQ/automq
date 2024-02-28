@@ -17,18 +17,22 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.common.metadata.RegisterControllerRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+import org.apache.kafka.metadata.ControllerRegistration;
 import org.apache.kafka.server.common.MetadataVersion;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -42,7 +46,11 @@ import java.util.stream.Collectors;
 public final class ClusterDelta {
     private final ClusterImage image;
     private final HashMap<Integer, Optional<BrokerRegistration>> changedBrokers = new HashMap<>();
+<<<<<<< HEAD
     private Integer nextNodeId = -1;
+=======
+    private final HashMap<Integer, Optional<ControllerRegistration>> changedControllers = new HashMap<>();
+>>>>>>> trunk
 
     public ClusterDelta(ClusterImage image) {
         this.image = image;
@@ -50,6 +58,10 @@ public final class ClusterDelta {
 
     public HashMap<Integer, Optional<BrokerRegistration>> changedBrokers() {
         return changedBrokers;
+    }
+
+    public HashMap<Integer, Optional<ControllerRegistration>> changedControllers() {
+        return changedControllers;
     }
 
     public BrokerRegistration broker(int nodeId) {
@@ -77,6 +89,11 @@ public final class ClusterDelta {
                 changedBrokers.put(brokerId, Optional.empty());
             }
         }
+        for (Integer controllerId : image.controllers().keySet()) {
+            if (!changedControllers.containsKey(controllerId)) {
+                changedControllers.put(controllerId, Optional.empty());
+            }
+        }
     }
 
     public void handleMetadataVersionChange(MetadataVersion newVersion) {
@@ -92,8 +109,14 @@ public final class ClusterDelta {
         changedBrokers.put(record.brokerId(), Optional.empty());
     }
 
+<<<<<<< HEAD
     public void replay(UpdateNextNodeIdRecord record) {
         nextNodeId = record.nodeId();
+=======
+    public void replay(RegisterControllerRecord record) {
+        ControllerRegistration controller = new ControllerRegistration.Builder(record).build();
+        changedControllers.put(controller.id(), Optional.of(controller));
+>>>>>>> trunk
     }
 
     private BrokerRegistration getBrokerOrThrow(int brokerId, long epoch, String action) {
@@ -114,6 +137,7 @@ public final class ClusterDelta {
         BrokerRegistration curRegistration = getBrokerOrThrow(record.id(), record.epoch(), "fence");
         changedBrokers.put(record.id(), Optional.of(curRegistration.cloneWith(
             BrokerRegistrationFencingChange.FENCE.asBoolean(),
+            Optional.empty(),
             Optional.empty()
         )));
     }
@@ -122,6 +146,7 @@ public final class ClusterDelta {
         BrokerRegistration curRegistration = getBrokerOrThrow(record.id(), record.epoch(), "unfence");
         changedBrokers.put(record.id(), Optional.of(curRegistration.cloneWith(
             BrokerRegistrationFencingChange.UNFENCE.asBoolean(),
+            Optional.empty(),
             Optional.empty()
         )));
     }
@@ -137,9 +162,11 @@ public final class ClusterDelta {
             BrokerRegistrationInControlledShutdownChange.fromValue(record.inControlledShutdown()).orElseThrow(
                 () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
                     "value for inControlledShutdown field: %d", record, record.inControlledShutdown())));
+        Optional<List<Uuid>> directoriesChange = Optional.ofNullable(record.logDirs()).filter(list -> !list.isEmpty());
         BrokerRegistration nextRegistration = curRegistration.cloneWith(
             fencingChange.asBoolean(),
-            inControlledShutdownChange.asBoolean()
+            inControlledShutdownChange.asBoolean(),
+            directoriesChange
         );
         if (!curRegistration.equals(nextRegistration)) {
             changedBrokers.put(record.brokerId(), Optional.of(nextRegistration));
@@ -166,15 +193,42 @@ public final class ClusterDelta {
                 }
             }
         }
+<<<<<<< HEAD
         Integer nextNodeId = this.nextNodeId >= 0 ? this.nextNodeId : image.nextNodeId();
         return new ClusterImage(newBrokers, nextNodeId);
+=======
+        Map<Integer, ControllerRegistration> newControllers = new HashMap<>(image.controllers().size());
+        for (Entry<Integer, ControllerRegistration> entry : image.controllers().entrySet()) {
+            int nodeId = entry.getKey();
+            Optional<ControllerRegistration> change = changedControllers.get(nodeId);
+            if (change == null) {
+                newControllers.put(nodeId, entry.getValue());
+            } else if (change.isPresent()) {
+                newControllers.put(nodeId, change.get());
+            }
+        }
+        for (Entry<Integer, Optional<ControllerRegistration>> entry : changedControllers.entrySet()) {
+            int nodeId = entry.getKey();
+            Optional<ControllerRegistration> controllerRegistration = entry.getValue();
+            if (!newControllers.containsKey(nodeId)) {
+                if (controllerRegistration.isPresent()) {
+                    newControllers.put(nodeId, controllerRegistration.get());
+                }
+            }
+        }
+        return new ClusterImage(newBrokers, newControllers);
+>>>>>>> trunk
     }
 
     @Override
     public String toString() {
         return "ClusterDelta(" +
             "changedBrokers=" + changedBrokers +
+<<<<<<< HEAD
             ", nextNodeId=" + nextNodeId +
+=======
+            ", changedControllers=" + changedControllers +
+>>>>>>> trunk
             ')';
     }
 }

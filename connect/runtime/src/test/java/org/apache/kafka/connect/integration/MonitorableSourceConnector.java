@@ -27,7 +27,7 @@ import org.apache.kafka.connect.source.ConnectorTransactionBoundaries;
 import org.apache.kafka.connect.source.ExactlyOnceSupport;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
-import org.apache.kafka.tools.ThroughputThrottler;
+import org.apache.kafka.server.util.ThroughputThrottler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +51,10 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
     private static final Logger log = LoggerFactory.getLogger(MonitorableSourceConnector.class);
 
     public static final String TOPIC_CONFIG = "topic";
+    public static final String NUM_TASKS = "num.tasks";
     public static final String MESSAGES_PER_POLL_CONFIG = "messages.per.poll";
+    public static final String MAX_MESSAGES_PER_SECOND_CONFIG = "throughput";
+    public static final String MAX_MESSAGES_PRODUCED_CONFIG = "max.messages";
 
     public static final String CUSTOM_EXACTLY_ONCE_SUPPORT_CONFIG = "custom.exactly.once.support";
     public static final String EXACTLY_ONCE_SUPPORTED = "supported";
@@ -64,6 +67,9 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
     public static final String TRANSACTION_BOUNDARIES_UNSUPPORTED = "unsupported";
     public static final String TRANSACTION_BOUNDARIES_NULL = "null";
     public static final String TRANSACTION_BOUNDARIES_FAIL = "fail";
+
+    // Boolean valued configuration that determines whether MonitorableSourceConnector::alterOffsets should return true or false
+    public static final String ALTER_OFFSETS_RESULT = "alter.offsets.result";
 
     private String connectorName;
     private ConnectorHandle connectorHandle;
@@ -88,20 +94,34 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
 
     @Override
     public List<Map<String, String>> taskConfigs(int maxTasks) {
+        String numTasksProp = commonConfigs.get(NUM_TASKS);
+        int numTasks = numTasksProp != null ? Integer.parseInt(numTasksProp) : maxTasks;
         List<Map<String, String>> configs = new ArrayList<>();
-        for (int i = 0; i < maxTasks; i++) {
-            Map<String, String> config = new HashMap<>(commonConfigs);
-            config.put("connector.name", connectorName);
-            config.put("task.id", taskId(connectorName, i));
+        for (int i = 0; i < numTasks; i++) {
+            Map<String, String> config = taskConfig(commonConfigs, connectorName, i);
             configs.add(config);
         }
         return configs;
+    }
+
+    public static Map<String, String> taskConfig(
+            Map<String, String> connectorProps,
+            String connectorName,
+            int taskNum
+    ) {
+        Map<String, String> result = new HashMap<>(connectorProps);
+        result.put("connector.name", connectorName);
+        result.put("task.id", taskId(connectorName, taskNum));
+        return result;
     }
 
     @Override
     public void stop() {
         log.info("Stopped {} connector {}", this.getClass().getSimpleName(), connectorName);
         connectorHandle.recordConnectorStop();
+        if (Boolean.parseBoolean(commonConfigs.getOrDefault("connector.stop.inject.error", "false"))) {
+            throw new RuntimeException("Injecting errors during connector stop");
+        }
     }
 
     @Override
@@ -142,6 +162,11 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
         }
     }
 
+    @Override
+    public boolean alterOffsets(Map<String, String> connectorConfig, Map<Map<String, ?>, Map<String, ?>> offsets) {
+        return Boolean.parseBoolean(connectorConfig.get(ALTER_OFFSETS_RESULT));
+    }
+
     public static String taskId(String connectorName, int taskId) {
         return connectorName + "-" + taskId;
     }
@@ -155,6 +180,7 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
         private long seqno;
         private int batchSize;
         private ThroughputThrottler throttler;
+        private long maxMessages;
 
         private long priorTransactionBoundary;
         private long nextTransactionBoundary;
@@ -177,7 +203,8 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
             startingSeqno = Optional.ofNullable((Long) offset.get("saved")).orElse(0L);
             seqno = startingSeqno;
             log.info("Started {} task {} with properties {}", this.getClass().getSimpleName(), taskId, props);
-            throttler = new ThroughputThrottler(Long.parseLong(props.getOrDefault("throughput", "-1")), System.currentTimeMillis());
+            throttler = new ThroughputThrottler(Long.parseLong(props.getOrDefault(MAX_MESSAGES_PER_SECOND_CONFIG, "-1")), System.currentTimeMillis());
+            maxMessages = Long.parseLong(props.getOrDefault(MAX_MESSAGES_PRODUCED_CONFIG, String.valueOf(Long.MAX_VALUE)));
             taskHandle.recordTaskStart();
             priorTransactionBoundary = 0;
             nextTransactionBoundary = 1;
@@ -190,12 +217,17 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
         @Override
         public List<SourceRecord> poll() {
             if (!stopped) {
+                // Don't return any more records since we've already produced the configured maximum number.
+                if (seqno >= maxMessages) {
+                    return null;
+                }
                 if (throttler.shouldThrottle(seqno - startingSeqno, System.currentTimeMillis())) {
                     throttler.throttle();
                 }
-                taskHandle.record(batchSize);
-                log.trace("Returning batch of {} records", batchSize);
-                return LongStream.range(0, batchSize)
+                int currentBatchSize = (int) Math.min(maxMessages - seqno, batchSize);
+                taskHandle.record(currentBatchSize);
+                log.trace("Returning batch of {} records", currentBatchSize);
+                return LongStream.range(0, currentBatchSize)
                         .mapToObj(i -> {
                             seqno++;
                             SourceRecord record = new SourceRecord(
@@ -255,13 +287,17 @@ public class MonitorableSourceConnector extends SampleSourceConnector {
             if (context.transactionContext() == null || seqno != nextTransactionBoundary) {
                 return;
             }
+            long transactionSize = nextTransactionBoundary - priorTransactionBoundary;
+
             // If the transaction boundary ends on an even-numbered offset, abort it
             // Otherwise, commit
             boolean abort = nextTransactionBoundary % 2 == 0;
             calculateNextBoundary();
             if (abort) {
+                log.info("Aborting transaction of {} records", transactionSize);
                 context.transactionContext().abortTransaction(record);
             } else {
+                log.info("Committing transaction of {} records", transactionSize);
                 context.transactionContext().commitTransaction(record);
             }
         }

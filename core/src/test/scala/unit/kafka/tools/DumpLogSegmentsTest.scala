@@ -21,13 +21,13 @@ import java.io.{ByteArrayOutputStream, File, PrintWriter}
 import java.nio.ByteBuffer
 import java.util
 import java.util.Properties
-
-import kafka.log.{AppendOrigin, Defaults, LogConfig, LogTestUtils, ProducerStateManagerConfig, UnifiedLog}
+import kafka.log.{LogTestUtils, UnifiedLog}
 import kafka.raft.{KafkaMetadataLog, MetadataLogConfig}
-import kafka.server.{BrokerTopicStats, FetchLogEnd, KafkaRaftServer, LogDirFailureChannel}
+import kafka.server.{BrokerTopicStats, KafkaRaftServer}
 import kafka.tools.DumpLogSegments.TimeIndexDumpErrors
-import kafka.utils.{MockTime, TestUtils}
+import kafka.utils.TestUtils
 import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.metadata.{PartitionChangeRecord, RegisterBrokerRecord, TopicRecord}
 import org.apache.kafka.common.protocol.{ByteBufferAccessor, ObjectSerializationCache}
@@ -36,7 +36,10 @@ import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.raft.{KafkaRaftClient, OffsetAndEpoch}
 import org.apache.kafka.server.common.ApiMessageAndVersion
+import org.apache.kafka.server.config.Defaults
+import org.apache.kafka.server.util.MockTime
 import org.apache.kafka.snapshot.RecordsSnapshotWriter
+import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchIsolation, LogConfig, LogDirFailureChannel, ProducerStateManagerConfig}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterEach, BeforeEach, Test}
 
@@ -64,18 +67,18 @@ class DumpLogSegmentsTest {
   @BeforeEach
   def setUp(): Unit = {
     val props = new Properties
-    props.setProperty(LogConfig.IndexIntervalBytesProp, "128")
+    props.setProperty(TopicConfig.INDEX_INTERVAL_BYTES_CONFIG, "128")
     log = UnifiedLog(
       dir = logDir,
-      config = LogConfig(props),
+      config = new LogConfig(props),
       logStartOffset = 0L,
       recoveryPoint = 0L,
       scheduler = time.scheduler,
       time = time,
       brokerTopicStats = new BrokerTopicStats,
       maxTransactionTimeoutMs = 5 * 60 * 1000,
-      producerStateManagerConfig = new ProducerStateManagerConfig(kafka.server.Defaults.ProducerIdExpirationMs),
-      producerIdExpirationCheckIntervalMs = kafka.server.Defaults.ProducerIdExpirationCheckIntervalMs,
+      producerStateManagerConfig = new ProducerStateManagerConfig(Defaults.PRODUCER_ID_EXPIRATION_MS, false),
+      producerIdExpirationCheckIntervalMs = Defaults.PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS,
       logDirFailureChannel = new LogDirFailureChannel(10),
       topicId = None,
       keepPartitionMetadataFile = true
@@ -103,7 +106,7 @@ class DumpLogSegmentsTest {
 
   @AfterEach
   def tearDown(): Unit = {
-    log.close()
+    Utils.closeQuietly(log, "UnifiedLog")
     Utils.delete(tmpDir)
   }
 
@@ -136,7 +139,7 @@ class DumpLogSegmentsTest {
 
     log.appendAsLeader(MemoryRecords.withEndTransactionMarker(98323L, 99.toShort,
       new EndTransactionMarker(ControlRecordType.COMMIT, 100)
-    ), origin = AppendOrigin.Coordinator, leaderEpoch = 7)
+    ), origin = AppendOrigin.COORDINATOR, leaderEpoch = 7)
 
     assertDumpLogRecordMetadata()
   }
@@ -234,7 +237,7 @@ class DumpLogSegmentsTest {
   def testDumpMetadataRecords(): Unit = {
     val mockTime = new MockTime
     val logConfig = LogTestUtils.createLogConfig(segmentBytes = 1024 * 1024)
-    val log = LogTestUtils.createLog(logDir, logConfig, new BrokerTopicStats, mockTime.scheduler, mockTime)
+    log = LogTestUtils.createLog(logDir, logConfig, new BrokerTopicStats, mockTime.scheduler, mockTime)
 
     val metadataRecords = Seq(
       new ApiMessageAndVersion(
@@ -249,7 +252,7 @@ class DumpLogSegmentsTest {
     )
 
     val records: Array[SimpleRecord] = metadataRecords.map(message => {
-      val serde = new MetadataRecordSerde()
+      val serde = MetadataRecordSerde.INSTANCE
       val cache = new ObjectSerializationCache
       val size = serde.recordSize(message, cache)
       val buf = ByteBuffer.allocate(size)
@@ -312,7 +315,7 @@ class DumpLogSegmentsTest {
         retentionMillis = 60 * 1000,
         maxBatchSizeInBytes = KafkaRaftClient.MAX_BATCH_SIZE_BYTES,
         maxFetchSizeInBytes = KafkaRaftClient.MAX_FETCH_SIZE_BYTES,
-        fileDeleteDelayMs = Defaults.FileDeleteDelayMs,
+        fileDeleteDelayMs = LogConfig.DEFAULT_FILE_DELETE_DELAY_MS,
         nodeId = 1
       )
     )
@@ -327,7 +330,7 @@ class DumpLogSegmentsTest {
         new MockTime,
         lastContainedLogTimestamp,
         CompressionType.NONE,
-        new MetadataRecordSerde
+        MetadataRecordSerde.INSTANCE,
       ).get()
     ) { snapshotWriter =>
       snapshotWriter.append(metadataRecords.asJava)
@@ -413,7 +416,7 @@ class DumpLogSegmentsTest {
     var batchesBytes = 0
     var batchesCounter = 0
     while (lines.hasNext) {
-      if (batchesCounter >= limit){
+      if (batchesCounter >= limit) {
         return batchesBytes
       }
       val line = lines.next()
@@ -479,7 +482,7 @@ class DumpLogSegmentsTest {
     val logReadInfo = log.read(
       startOffset = 0,
       maxLength = Int.MaxValue,
-      isolation = FetchLogEnd,
+      isolation = FetchIsolation.LOG_END,
       minOneMessage = true
     )
 

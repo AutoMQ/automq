@@ -511,11 +511,15 @@ ducker_test() {
     done
     
     must_pushd "${kafka_dir}"
+<<<<<<< HEAD
     if [[ "${force_update_snapshot}" -eq 1 ]]; then
         (test -f ./gradlew || gradle) && ./gradlew --refresh-dependencies clean systemTestLibs
     else
         (test -f ./gradlew || gradle) && ./gradlew systemTestLibs
     fi
+=======
+    ( (test -f ./gradlew || gradle) && ./gradlew systemTestLibs ) || die "ducker_test: Failed to build system test libraries, please check the error log."
+>>>>>>> trunk
     must_popd
     if [[ "${debug}" -eq 1 ]]; then
         local ducktape_cmd="python3 -m debugpy --listen 0.0.0.0:${debugpy_port} --wait-for-client /usr/local/bin/ducktape"

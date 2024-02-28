@@ -22,14 +22,14 @@ import java.util.{Collections, Properties}
 import kafka.api.LeaderAndIsr
 import kafka.cluster.{Broker, EndPoint}
 import kafka.controller.{LeaderIsrAndControllerEpoch, ReplicaAssignment}
-import kafka.log.LogConfig
 import kafka.security.authorizer.AclEntry
-import kafka.server.{ConfigType, KafkaConfig, QuorumTestHarness}
+import kafka.server.{KafkaConfig, QuorumTestHarness}
 import kafka.utils.CoreUtils
 import kafka.zk.KafkaZkClient.UpdateLeaderAndIsrResult
 import kafka.zookeeper._
 import org.apache.kafka.common.acl.AclOperation.READ
 import org.apache.kafka.common.acl.AclPermissionType.{ALLOW, DENY}
+import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.ControllerMovedException
 import org.apache.kafka.common.feature.Features._
 import org.apache.kafka.common.feature.{Features, SupportedVersionRange}
@@ -44,6 +44,8 @@ import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.metadata.migration.ZkMigrationLeadershipState
 import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.config.ConfigType
+import org.apache.kafka.storage.internals.log.LogConfig
 import org.apache.zookeeper.KeeperException.{Code, NoAuthException, NoNodeException, NodeExistsException}
 import org.apache.zookeeper.{CreateMode, ZooDefs}
 import org.apache.zookeeper.client.ZKClientConfig
@@ -730,20 +732,20 @@ class KafkaZkClientTest extends QuorumTestHarness {
 
   @Test
   def testEntityConfigManagementMethods(): Unit = {
-    assertTrue(zkClient.getEntityConfigs(ConfigType.Topic, topic1).isEmpty)
+    assertTrue(zkClient.getEntityConfigs(ConfigType.TOPIC, topic1).isEmpty)
 
-    zkClient.setOrCreateEntityConfigs(ConfigType.Topic, topic1, logProps)
-    assertEquals(logProps, zkClient.getEntityConfigs(ConfigType.Topic, topic1))
+    zkClient.setOrCreateEntityConfigs(ConfigType.TOPIC, topic1, logProps)
+    assertEquals(logProps, zkClient.getEntityConfigs(ConfigType.TOPIC, topic1))
 
-    logProps.remove(LogConfig.CleanupPolicyProp)
-    zkClient.setOrCreateEntityConfigs(ConfigType.Topic, topic1, logProps)
-    assertEquals(logProps, zkClient.getEntityConfigs(ConfigType.Topic, topic1))
+    logProps.remove(TopicConfig.CLEANUP_POLICY_CONFIG)
+    zkClient.setOrCreateEntityConfigs(ConfigType.TOPIC, topic1, logProps)
+    assertEquals(logProps, zkClient.getEntityConfigs(ConfigType.TOPIC, topic1))
 
-    zkClient.setOrCreateEntityConfigs(ConfigType.Topic, topic2, logProps)
-    assertEquals(Set(topic1, topic2), zkClient.getAllEntitiesWithConfig(ConfigType.Topic).toSet)
+    zkClient.setOrCreateEntityConfigs(ConfigType.TOPIC, topic2, logProps)
+    assertEquals(Set(topic1, topic2), zkClient.getAllEntitiesWithConfig(ConfigType.TOPIC).toSet)
 
     zkClient.deleteTopicConfigs(Seq(topic1, topic2), controllerEpochZkVersion)
-    assertTrue(zkClient.getEntityConfigs(ConfigType.Topic, topic1).isEmpty)
+    assertTrue(zkClient.getEntityConfigs(ConfigType.TOPIC, topic1).isEmpty)
   }
 
   @Test
@@ -751,13 +753,13 @@ class KafkaZkClientTest extends QuorumTestHarness {
     assertFalse(zkClient.pathExists(ConfigEntityChangeNotificationZNode.path))
 
     // The parent path is created if needed
-    zkClient.createConfigChangeNotification(ConfigEntityZNode.path(ConfigType.Topic, topic1))
+    zkClient.createConfigChangeNotification(ConfigEntityZNode.path(ConfigType.TOPIC, topic1))
     assertPathExistenceAndData(
       "/config/changes/config_change_0000000000",
       """{"version":2,"entity_path":"/config/topics/topic1"}""")
 
     // Creation does not fail if the parent path exists
-    zkClient.createConfigChangeNotification(ConfigEntityZNode.path(ConfigType.Topic, topic2))
+    zkClient.createConfigChangeNotification(ConfigEntityZNode.path(ConfigType.TOPIC, topic2))
     assertPathExistenceAndData(
       "/config/changes/config_change_0000000001",
       """{"version":2,"entity_path":"/config/topics/topic2"}""")
@@ -765,9 +767,9 @@ class KafkaZkClientTest extends QuorumTestHarness {
 
   private def createLogProps(bytesProp: Int): Properties = {
     val logProps = new Properties()
-    logProps.put(LogConfig.SegmentBytesProp, bytesProp.toString)
-    logProps.put(LogConfig.SegmentIndexBytesProp, bytesProp.toString)
-    logProps.put(LogConfig.CleanupPolicyProp, LogConfig.Compact)
+    logProps.put(TopicConfig.SEGMENT_BYTES_CONFIG, bytesProp.toString)
+    logProps.put(TopicConfig.SEGMENT_INDEX_BYTES_CONFIG, bytesProp.toString)
+    logProps.put(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT)
     logProps
   }
 
@@ -775,30 +777,30 @@ class KafkaZkClientTest extends QuorumTestHarness {
 
   @Test
   def testGetLogConfigs(): Unit = {
-    val emptyConfig = LogConfig(Collections.emptyMap())
+    val emptyConfig = new LogConfig(Collections.emptyMap())
     assertEquals((Map(topic1 -> emptyConfig), Map.empty),
       zkClient.getLogConfigs(Set(topic1), Collections.emptyMap()),
       "Non existent config, no defaults")
 
     val logProps2 = createLogProps(2048)
 
-    zkClient.setOrCreateEntityConfigs(ConfigType.Topic, topic1, logProps)
-    assertEquals((Map(topic1 -> LogConfig(logProps), topic2 -> emptyConfig), Map.empty),
+    zkClient.setOrCreateEntityConfigs(ConfigType.TOPIC, topic1, logProps)
+    assertEquals((Map(topic1 -> new LogConfig(logProps), topic2 -> emptyConfig), Map.empty),
       zkClient.getLogConfigs(Set(topic1, topic2), Collections.emptyMap()),
       "One existing and one non-existent topic")
 
-    zkClient.setOrCreateEntityConfigs(ConfigType.Topic, topic2, logProps2)
-    assertEquals((Map(topic1 -> LogConfig(logProps), topic2 -> LogConfig(logProps2)), Map.empty),
+    zkClient.setOrCreateEntityConfigs(ConfigType.TOPIC, topic2, logProps2)
+    assertEquals((Map(topic1 -> new LogConfig(logProps), topic2 -> new LogConfig(logProps2)), Map.empty),
       zkClient.getLogConfigs(Set(topic1, topic2), Collections.emptyMap()),
       "Two existing topics")
 
     val logProps1WithMoreValues = createLogProps(1024)
-    logProps1WithMoreValues.put(LogConfig.SegmentJitterMsProp, "100")
-    logProps1WithMoreValues.put(LogConfig.SegmentBytesProp, "1024")
+    logProps1WithMoreValues.put(TopicConfig.SEGMENT_JITTER_MS_CONFIG, "100")
+    logProps1WithMoreValues.put(TopicConfig.SEGMENT_BYTES_CONFIG, "1024")
 
-    assertEquals((Map(topic1 -> LogConfig(logProps1WithMoreValues)), Map.empty),
+    assertEquals((Map(topic1 -> new LogConfig(logProps1WithMoreValues)), Map.empty),
       zkClient.getLogConfigs(Set(topic1),
-        Map[String, AnyRef](LogConfig.SegmentJitterMsProp -> "100", LogConfig.SegmentBytesProp -> "128").asJava),
+        Map[String, AnyRef](TopicConfig.SEGMENT_JITTER_MS_CONFIG -> "100", TopicConfig.SEGMENT_BYTES_CONFIG -> "128").asJava),
       "Config with defaults")
   }
 
@@ -811,7 +813,7 @@ class KafkaZkClientTest extends QuorumTestHarness {
         Seq(new EndPoint(host, port, ListenerName.forSecurityProtocol(securityProtocol), securityProtocol)),
         rack = rack,
         features = features),
-      MetadataVersion.latest, jmxPort = port + 10)
+      MetadataVersion.latestTesting, jmxPort = port + 10)
 
   @Test
   def testRegisterBrokerInfo(): Unit = {
@@ -1187,7 +1189,7 @@ class KafkaZkClientTest extends QuorumTestHarness {
 
     assertEquals(CreateResponse(Code.NODEEXISTS, ControllerEpochZNode.path, None, null, ResponseMetadata(0, 0)),
       eraseMetadata(zkClient.createControllerEpochRaw(0)),
-      "Attemt to create existing nodes should return NODEEXISTS")
+      "Attempt to create existing nodes should return NODEEXISTS")
 
     assertEquals(SetDataResponse(Code.OK, ControllerEpochZNode.path, None, statWithVersion(1), ResponseMetadata(0, 0)),
       eraseMetadataAndStat(zkClient.setControllerEpochRaw(1, 0)),
@@ -1413,7 +1415,7 @@ class KafkaZkClientTest extends QuorumTestHarness {
   }
 
   @Test
-  def testJuteMaxBufffer(): Unit = {
+  def testJuteMaxBuffer(): Unit = {
 
     def assertJuteMaxBufferConfig(clientConfig: ZKClientConfig, expectedValue: String): Unit = {
       val client = KafkaZkClient(zkConnect, zkAclsEnabled.getOrElse(JaasUtils.isZkSaslEnabled), zkSessionTimeout,

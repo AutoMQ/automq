@@ -24,6 +24,7 @@ import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
+import org.apache.kafka.common.metadata.DelegationTokenRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -33,7 +34,9 @@ import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.common.metadata.RegisterControllerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
+<<<<<<< HEAD
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -50,6 +53,16 @@ import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+=======
+import org.apache.kafka.common.metadata.RemoveDelegationTokenRecord;
+import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
+import org.apache.kafka.common.metadata.TopicRecord;
+import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
+import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UserScramCredentialRecord;
+import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
+>>>>>>> trunk
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
@@ -60,9 +73,13 @@ import java.util.Optional;
  * A change to the broker metadata image.
  */
 public final class MetadataDelta {
+<<<<<<< HEAD
 
     public static class Builder {
 
+=======
+    public static class Builder {
+>>>>>>> trunk
         private MetadataImage image = MetadataImage.EMPTY;
 
         public Builder setImage(MetadataImage image) {
@@ -91,6 +108,7 @@ public final class MetadataDelta {
 
     private AclsDelta aclsDelta = null;
 
+<<<<<<< HEAD
     // AutoMQ for Kafka inject start
     private S3StreamsMetadataDelta s3StreamsMetadataDelta = null;
 
@@ -98,6 +116,11 @@ public final class MetadataDelta {
 
     private KVDelta kvDelta = null;
     // AutoMQ for Kafka inject end
+=======
+    private ScramDelta scramDelta = null;
+
+    private DelegationTokenDelta delegationTokenDelta = null;
+>>>>>>> trunk
 
     public MetadataDelta(MetadataImage image) {
         this.image = image;
@@ -184,6 +207,7 @@ public final class MetadataDelta {
         return aclsDelta;
     }
 
+<<<<<<< HEAD
 
     // AutoMQ for Kafka inject start
     public S3StreamsMetadataDelta streamMetadataDelta() {
@@ -220,6 +244,26 @@ public final class MetadataDelta {
     }
     // AutoMQ for Kafka inject end
 
+=======
+    public ScramDelta scramDelta() {
+        return scramDelta;
+    }
+
+    public ScramDelta getOrCreateScramDelta() {
+        if (scramDelta == null) scramDelta = new ScramDelta(image.scram());
+        return scramDelta;
+    }
+
+    public DelegationTokenDelta delegationTokenDelta() {
+        return delegationTokenDelta;
+    }
+
+    public DelegationTokenDelta getOrCreateDelegationTokenDelta() {
+        if (delegationTokenDelta == null) delegationTokenDelta = new DelegationTokenDelta(image.delegationTokens());
+        return delegationTokenDelta;
+    }
+
+>>>>>>> trunk
     public Optional<MetadataVersion> metadataVersionChanged() {
         if (featuresDelta == null) {
             return Optional.empty();
@@ -228,7 +272,10 @@ public final class MetadataDelta {
         }
     }
 
+<<<<<<< HEAD
     @SuppressWarnings("all")
+=======
+>>>>>>> trunk
     public void replay(ApiMessage record) {
         MetadataRecordType type = MetadataRecordType.fromId(record.apiKey());
         switch (type) {
@@ -262,6 +309,12 @@ public final class MetadataDelta {
             case REMOVE_TOPIC_RECORD:
                 replay((RemoveTopicRecord) record);
                 break;
+            case DELEGATION_TOKEN_RECORD:
+                replay((DelegationTokenRecord) record);
+                break;
+            case USER_SCRAM_CREDENTIAL_RECORD:
+                replay((UserScramCredentialRecord) record);
+                break;
             case FEATURE_LEVEL_RECORD:
                 replay((FeatureLevelRecord) record);
                 break;
@@ -280,12 +333,19 @@ public final class MetadataDelta {
             case REMOVE_ACCESS_CONTROL_ENTRY_RECORD:
                 replay((RemoveAccessControlEntryRecord) record);
                 break;
+            case REMOVE_USER_SCRAM_CREDENTIAL_RECORD:
+                replay((RemoveUserScramCredentialRecord) record);
+                break;
+            case REMOVE_DELEGATION_TOKEN_RECORD:
+                replay((RemoveDelegationTokenRecord) record);
+                break;
             case NO_OP_RECORD:
                 /* NoOpRecord is an empty record and doesn't need to be replayed beyond
                  * updating the highest offset and epoch.
                  */
                 break;
             case ZK_MIGRATION_STATE_RECORD:
+<<<<<<< HEAD
                 // TODO handle this
                 break;
             // AutoMQ for Kafka inject start
@@ -338,6 +398,13 @@ public final class MetadataDelta {
                 replay((RemoveKVRecord) record);
                 break;
                 // AutoMQ for Kafka inject end
+=======
+                replay((ZkMigrationStateRecord) record);
+                break;
+            case REGISTER_CONTROLLER_RECORD:
+                replay((RegisterControllerRecord) record);
+                break;
+>>>>>>> trunk
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
         }
@@ -345,10 +412,13 @@ public final class MetadataDelta {
 
     public void replay(RegisterBrokerRecord record) {
         getOrCreateClusterDelta().replay(record);
+<<<<<<< HEAD
     }
 
     public void replay(UpdateNextNodeIdRecord record) {
         getOrCreateClusterDelta().replay(record);
+=======
+>>>>>>> trunk
     }
 
     public void replay(UnregisterBrokerRecord record) {
@@ -384,6 +454,18 @@ public final class MetadataDelta {
         getOrCreateConfigsDelta().replay(record, topicName);
     }
 
+    public void replay(DelegationTokenRecord record) {
+        getOrCreateDelegationTokenDelta().replay(record);
+    }
+
+    public void replay(RemoveDelegationTokenRecord record) {
+        getOrCreateDelegationTokenDelta().replay(record);
+    }
+
+    public void replay(UserScramCredentialRecord record) {
+        getOrCreateScramDelta().replay(record);
+    }
+
     public void replay(FeatureLevelRecord record) {
         getOrCreateFeaturesDelta().replay(record);
         featuresDelta.metadataVersionChange().ifPresent(changedMetadataVersion -> {
@@ -394,6 +476,8 @@ public final class MetadataDelta {
             getOrCreateClientQuotasDelta().handleMetadataVersionChange(changedMetadataVersion);
             getOrCreateProducerIdsDelta().handleMetadataVersionChange(changedMetadataVersion);
             getOrCreateAclsDelta().handleMetadataVersionChange(changedMetadataVersion);
+            getOrCreateScramDelta().handleMetadataVersionChange(changedMetadataVersion);
+            getOrCreateDelegationTokenDelta().handleMetadataVersionChange(changedMetadataVersion);
         });
     }
 
@@ -417,6 +501,7 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().replay(record);
     }
 
+<<<<<<< HEAD
     // AutoMQ for Kafka inject start
 
     public void replay(S3StreamRecord record) {
@@ -484,6 +569,20 @@ public final class MetadataDelta {
     }
     // AutoMQ for Kafka inject end
 
+=======
+    public void replay(RemoveUserScramCredentialRecord record) {
+        getOrCreateScramDelta().replay(record);
+    }
+
+    public void replay(ZkMigrationStateRecord record) {
+        getOrCreateFeaturesDelta().replay(record);
+    }
+
+    public void replay(RegisterControllerRecord record) {
+        getOrCreateClusterDelta().replay(record);
+    }
+
+>>>>>>> trunk
     /**
      * Create removal deltas for anything which was in the base image, but which was not referenced in the snapshot records we just applied.
      */
@@ -495,7 +594,12 @@ public final class MetadataDelta {
         getOrCreateClientQuotasDelta().finishSnapshot();
         getOrCreateProducerIdsDelta().finishSnapshot();
         getOrCreateAclsDelta().finishSnapshot();
+<<<<<<< HEAD
         // TODO: fill new added delta
+=======
+        getOrCreateScramDelta().finishSnapshot();
+        getOrCreateDelegationTokenDelta().finishSnapshot();
+>>>>>>> trunk
     }
 
     public MetadataImage apply(MetadataProvenance provenance) {
@@ -541,12 +645,27 @@ public final class MetadataDelta {
         } else {
             newAcls = aclsDelta.apply();
         }
+<<<<<<< HEAD
 
         // AutoMQ for Kafka inject start
         S3StreamsMetadataImage newStreamMetadata = getNewS3StreamsMetadataImage();
         S3ObjectsImage newS3ObjectsMetadata = getNewS3ObjectsMetadataImage();
         KVImage newKVImage = getNewKVImage();
         // AutoMQ for Kafka inject end
+=======
+        ScramImage newScram;
+        if (scramDelta == null) {
+            newScram = image.scram();
+        } else {
+            newScram = scramDelta.apply();
+        }
+        DelegationTokenImage newDelegationTokens;
+        if (delegationTokenDelta == null) {
+            newDelegationTokens = image.delegationTokens();
+        } else {
+            newDelegationTokens = delegationTokenDelta.apply();
+        }
+>>>>>>> trunk
         return new MetadataImage(
             provenance,
             newFeatures,
@@ -556,9 +675,14 @@ public final class MetadataDelta {
             newClientQuotas,
             newProducerIds,
             newAcls,
+<<<<<<< HEAD
             newStreamMetadata,
             newS3ObjectsMetadata,
             newKVImage
+=======
+            newScram,
+            newDelegationTokens
+>>>>>>> trunk
         );
     }
 
@@ -590,9 +714,14 @@ public final class MetadataDelta {
             ", clientQuotasDelta=" + clientQuotasDelta +
             ", producerIdsDelta=" + producerIdsDelta +
             ", aclsDelta=" + aclsDelta +
+<<<<<<< HEAD
             ", streamMetadataDelta=" + s3StreamsMetadataDelta +
             ", objectsMetadataDelta=" + s3ObjectsDelta +
             ", kvDelta=" + kvDelta +
+=======
+            ", scramDelta=" + scramDelta +
+            ", delegationTokenDelta=" + delegationTokenDelta +
+>>>>>>> trunk
             ')';
     }
 }

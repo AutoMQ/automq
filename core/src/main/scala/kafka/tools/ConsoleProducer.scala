@@ -21,48 +21,96 @@ import java.io._
 import java.nio.charset.StandardCharsets
 import java.util.Properties
 import java.util.regex.Pattern
-import joptsimple.{OptionException, OptionParser, OptionSet}
-import kafka.common._
-import kafka.message._
+import joptsimple.{OptionException, OptionParser, OptionSet, OptionSpec}
+import kafka.common.MessageReader
 import kafka.utils.Implicits._
-import kafka.utils.{CommandDefaultOptions, CommandLineUtils, Exit, ToolsUtils}
+import kafka.utils.{Exit, Logging, ToolsUtils}
 import org.apache.kafka.clients.producer.internals.ErrorLoggingCallback
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+import org.apache.kafka.clients.producer.{KafkaProducer, Producer, ProducerConfig, ProducerRecord}
 import org.apache.kafka.common.KafkaException
+import org.apache.kafka.common.record.CompressionType
 import org.apache.kafka.common.utils.Utils
-import scala.jdk.CollectionConverters._
+import org.apache.kafka.server.util.{CommandDefaultOptions, CommandLineUtils}
+import org.apache.kafka.tools.api.RecordReader
 
-object ConsoleProducer {
+import java.lang
+import scala.annotation.nowarn
+
+@nowarn("cat=deprecation")
+object ConsoleProducer extends Logging {
+
+  private[tools] def newReader(className: String, prop: Properties): RecordReader = {
+    val reader = Class.forName(className).getDeclaredConstructor().newInstance()
+    reader match {
+      case r: RecordReader =>
+        r.configure(prop.asInstanceOf[java.util.Map[String, _]])
+        r
+      case r: MessageReader =>
+        logger.warn("MessageReader is deprecated. Please use org.apache.kafka.tools.api.RecordReader instead")
+        new RecordReader {
+          private[this] var initialized = false
+
+          override def readRecords(inputStream: InputStream): java.util.Iterator[ProducerRecord[Array[Byte], Array[Byte]]] = {
+            if (initialized) throw new IllegalStateException("It is invalid to call readRecords again when the reader is based on deprecated MessageReader")
+            if (!initialized) {
+              r.init(inputStream, prop)
+              initialized = true
+            }
+            new java.util.Iterator[ProducerRecord[Array[Byte], Array[Byte]]] {
+              private[this] var current: ProducerRecord[Array[Byte], Array[Byte]] = _
+              // a flag used to avoid accessing readMessage again after it does return null
+              private[this] var done: Boolean = false
+
+              override def hasNext: Boolean = {
+                if (current != null) true
+                else if (done) false
+                else {
+                  current = r.readMessage()
+                  done = current == null
+                  !done
+                }
+              }
+
+              override def next(): ProducerRecord[Array[Byte], Array[Byte]] =
+                try if (hasNext) current
+                else throw new NoSuchElementException("no more records from input stream")
+                finally current = null
+            }
+          }
+          override def close(): Unit = r.close()
+        }
+      case _ => throw new IllegalArgumentException(f"the reader must extend ${classOf[RecordReader].getName}")
+    }
+  }
+
+  private[tools] def loopReader(producer: Producer[Array[Byte], Array[Byte]],
+                               reader: RecordReader,
+                                inputStream: InputStream,
+                               sync: Boolean): Unit = {
+    val iter = reader.readRecords(inputStream)
+    try while (iter.hasNext) send(producer, iter.next(), sync) finally reader.close()
+  }
 
   def main(args: Array[String]): Unit = {
 
     try {
-        val config = new ProducerConfig(args)
-        val reader = Class.forName(config.readerClass).getDeclaredConstructor().newInstance().asInstanceOf[MessageReader]
-        reader.init(System.in, getReaderProps(config))
-
-        val producer = new KafkaProducer[Array[Byte], Array[Byte]](producerProps(config))
-
-    Exit.addShutdownHook("producer-shutdown-hook", producer.close)
-
-        var record: ProducerRecord[Array[Byte], Array[Byte]] = null
-        do {
-          record = reader.readMessage()
-          if (record != null)
-            send(producer, record, config.sync)
-        } while (record != null)
+      val config = new ProducerConfig(args)
+      val input = System.in
+      val producer = new KafkaProducer[Array[Byte], Array[Byte]](producerProps(config))
+      try loopReader(producer, newReader(config.readerClass, getReaderProps(config)), input, config.sync)
+      finally producer.close()
+      Exit.exit(0)
     } catch {
       case e: joptsimple.OptionException =>
         System.err.println(e.getMessage)
         Exit.exit(1)
       case e: Exception =>
-        e.printStackTrace
+        e.printStackTrace()
         Exit.exit(1)
     }
-    Exit.exit(0)
   }
 
-  private def send(producer: KafkaProducer[Array[Byte], Array[Byte]],
+  private def send(producer: Producer[Array[Byte], Array[Byte]],
                          record: ProducerRecord[Array[Byte], Array[Byte]], sync: Boolean): Unit = {
     if (sync)
       producer.send(record).get()
@@ -127,81 +175,81 @@ object ConsoleProducer {
   }
 
   class ProducerConfig(args: Array[String]) extends CommandDefaultOptions(args) {
-    val topicOpt = parser.accepts("topic", "REQUIRED: The topic id to produce messages to.")
+    val topicOpt: OptionSpec[String] = parser.accepts("topic", "REQUIRED: The topic id to produce messages to.")
       .withRequiredArg
       .describedAs("topic")
       .ofType(classOf[String])
-    val brokerListOpt = parser.accepts("broker-list", "DEPRECATED, use --bootstrap-server instead; ignored if --bootstrap-server is specified.  The broker list string in the form HOST1:PORT1,HOST2:PORT2.")
+    private val brokerListOpt = parser.accepts("broker-list", "DEPRECATED, use --bootstrap-server instead; ignored if --bootstrap-server is specified.  The broker list string in the form HOST1:PORT1,HOST2:PORT2.")
       .withRequiredArg
       .describedAs("broker-list")
       .ofType(classOf[String])
-    val bootstrapServerOpt = parser.accepts("bootstrap-server", "REQUIRED unless --broker-list(deprecated) is specified. The server(s) to connect to. The broker list string in the form HOST1:PORT1,HOST2:PORT2.")
+    val bootstrapServerOpt: OptionSpec[String]  = parser.accepts("bootstrap-server", "REQUIRED unless --broker-list(deprecated) is specified. The server(s) to connect to. The broker list string in the form HOST1:PORT1,HOST2:PORT2.")
       .requiredUnless("broker-list")
       .withRequiredArg
       .describedAs("server to connect to")
       .ofType(classOf[String])
-    val syncOpt = parser.accepts("sync", "If set message send requests to the brokers are synchronously, one at a time as they arrive.")
-    val compressionCodecOpt = parser.accepts("compression-codec", "The compression codec: either 'none', 'gzip', 'snappy', 'lz4', or 'zstd'." +
+    private val syncOpt = parser.accepts("sync", "If set message send requests to the brokers are synchronously, one at a time as they arrive.")
+    val compressionCodecOpt: OptionSpec[String]  = parser.accepts("compression-codec", "The compression codec: either 'none', 'gzip', 'snappy', 'lz4', or 'zstd'." +
                                                                   "If specified without value, then it defaults to 'gzip'")
                                     .withOptionalArg()
                                     .describedAs("compression-codec")
                                     .ofType(classOf[String])
-    val batchSizeOpt = parser.accepts("batch-size", "Number of messages to send in a single batch if they are not being sent synchronously. "+
+    val batchSizeOpt: OptionSpec[Integer] = parser.accepts("batch-size", "Number of messages to send in a single batch if they are not being sent synchronously. "+
        "please note that this option will be replaced if max-partition-memory-bytes is also set")
       .withRequiredArg
       .describedAs("size")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(16 * 1024)
-    val messageSendMaxRetriesOpt = parser.accepts("message-send-max-retries", "Brokers can fail receiving the message for multiple reasons, " +
+    val messageSendMaxRetriesOpt: OptionSpec[Integer] = parser.accepts("message-send-max-retries", "Brokers can fail receiving the message for multiple reasons, " +
       "and being unavailable transiently is just one of them. This property specifies the number of retries before the producer give up and drop this message. " +
       "This is the option to control `retries` in producer configs.")
       .withRequiredArg
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(3)
-    val retryBackoffMsOpt = parser.accepts("retry-backoff-ms", "Before each retry, the producer refreshes the metadata of relevant topics. " +
+    val retryBackoffMsOpt: OptionSpec[lang.Long] = parser.accepts("retry-backoff-ms", "Before each retry, the producer refreshes the metadata of relevant topics. " +
       "Since leader election takes a bit of time, this property specifies the amount of time that the producer waits before refreshing the metadata. " +
       "This is the option to control `retry.backoff.ms` in producer configs.")
       .withRequiredArg
       .ofType(classOf[java.lang.Long])
       .defaultsTo(100)
-    val sendTimeoutOpt = parser.accepts("timeout", "If set and the producer is running in asynchronous mode, this gives the maximum amount of time" +
+    val sendTimeoutOpt: OptionSpec[lang.Long] = parser.accepts("timeout", "If set and the producer is running in asynchronous mode, this gives the maximum amount of time" +
       " a message will queue awaiting sufficient batch size. The value is given in ms. " +
       "This is the option to control `linger.ms` in producer configs.")
       .withRequiredArg
       .describedAs("timeout_ms")
       .ofType(classOf[java.lang.Long])
       .defaultsTo(1000)
-    val requestRequiredAcksOpt = parser.accepts("request-required-acks", "The required `acks` of the producer requests")
+    val requestRequiredAcksOpt: OptionSpec[String] = parser.accepts("request-required-acks", "The required `acks` of the producer requests")
       .withRequiredArg
       .describedAs("request required acks")
       .ofType(classOf[java.lang.String])
       .defaultsTo("-1")
-    val requestTimeoutMsOpt = parser.accepts("request-timeout-ms", "The ack timeout of the producer requests. Value must be non-negative and non-zero.")
+    val requestTimeoutMsOpt: OptionSpec[Integer] = parser.accepts("request-timeout-ms", "The ack timeout of the producer requests. Value must be non-negative and non-zero.")
       .withRequiredArg
       .describedAs("request timeout ms")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(1500)
-    val metadataExpiryMsOpt = parser.accepts("metadata-expiry-ms",
+    val metadataExpiryMsOpt: OptionSpec[lang.Long] = parser.accepts("metadata-expiry-ms",
       "The period of time in milliseconds after which we force a refresh of metadata even if we haven't seen any leadership changes. " +
         "This is the option to control `metadata.max.age.ms` in producer configs.")
       .withRequiredArg
       .describedAs("metadata expiration interval")
       .ofType(classOf[java.lang.Long])
       .defaultsTo(5*60*1000L)
-    val maxBlockMsOpt = parser.accepts("max-block-ms",
+    val maxBlockMsOpt: OptionSpec[lang.Long] = parser.accepts("max-block-ms",
       "The max time that the producer will block for during a send request.")
       .withRequiredArg
       .describedAs("max block on send")
       .ofType(classOf[java.lang.Long])
       .defaultsTo(60*1000L)
-    val maxMemoryBytesOpt = parser.accepts("max-memory-bytes",
+    val maxMemoryBytesOpt: OptionSpec[lang.Long] = parser.accepts("max-memory-bytes",
       "The total memory used by the producer to buffer records waiting to be sent to the server. " +
         "This is the option to control `buffer.memory` in producer configs.")
       .withRequiredArg
       .describedAs("total memory in bytes")
       .ofType(classOf[java.lang.Long])
       .defaultsTo(32 * 1024 * 1024L)
-    val maxPartitionMemoryBytesOpt = parser.accepts("max-partition-memory-bytes",
+    val maxPartitionMemoryBytesOpt: OptionSpec[Integer] = parser.accepts("max-partition-memory-bytes",
       "The buffer size allocated for a partition. When records are received which are smaller than this size the producer " +
         "will attempt to optimistically group them together until this size is reached. " +
         "This is the option to control `batch.size` in producer configs.")
@@ -209,19 +257,19 @@ object ConsoleProducer {
       .describedAs("memory in bytes per partition")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(16 * 1024)
-    val messageReaderOpt = parser.accepts("line-reader", "The class name of the class to use for reading lines from standard in. " +
+    private val messageReaderOpt = parser.accepts("line-reader", "The class name of the class to use for reading lines from standard in. " +
       "By default each line is read as a separate message.")
       .withRequiredArg
       .describedAs("reader_class")
       .ofType(classOf[java.lang.String])
       .defaultsTo(classOf[LineMessageReader].getName)
-    val socketBufferSizeOpt = parser.accepts("socket-buffer-size", "The size of the tcp RECV size. " +
+    val socketBufferSizeOpt: OptionSpec[Integer] = parser.accepts("socket-buffer-size", "The size of the tcp RECV size. " +
       "This is the option to control `send.buffer.bytes` in producer configs.")
       .withRequiredArg
       .describedAs("size")
       .ofType(classOf[java.lang.Integer])
       .defaultsTo(1024*100)
-    val propertyOpt = parser.accepts("property",
+    private val propertyOpt = parser.accepts("property",
       """A mechanism to pass user-defined properties in the form key=value to the message reader. This allows custom configuration for a user-defined message reader.
         |Default properties include:
         | parse.key=false
@@ -244,86 +292,85 @@ object ConsoleProducer {
       .withRequiredArg
       .describedAs("prop")
       .ofType(classOf[String])
-    val readerConfigOpt = parser.accepts("reader-config", s"Config properties file for the message reader. Note that $propertyOpt takes precedence over this config.")
+    val readerConfigOpt: OptionSpec[String] = parser.accepts("reader-config", s"Config properties file for the message reader. Note that $propertyOpt takes precedence over this config.")
       .withRequiredArg
       .describedAs("config file")
       .ofType(classOf[String])
-    val producerPropertyOpt = parser.accepts("producer-property", "A mechanism to pass user-defined properties in the form key=value to the producer. ")
+    private val producerPropertyOpt = parser.accepts("producer-property", "A mechanism to pass user-defined properties in the form key=value to the producer. ")
             .withRequiredArg
             .describedAs("producer_prop")
             .ofType(classOf[String])
-    val producerConfigOpt = parser.accepts("producer.config", s"Producer config properties file. Note that $producerPropertyOpt takes precedence over this config.")
+    val producerConfigOpt: OptionSpec[String]  = parser.accepts("producer.config", s"Producer config properties file. Note that $producerPropertyOpt takes precedence over this config.")
       .withRequiredArg
       .describedAs("config file")
       .ofType(classOf[String])
 
     options = tryParse(parser, args)
 
-    CommandLineUtils.printHelpAndExitIfNeeded(this, "This tool helps to read data from standard input and publish it to Kafka.")
+    CommandLineUtils.maybePrintHelpOrVersion(this, "This tool helps to read data from standard input and publish it to Kafka.")
 
     CommandLineUtils.checkRequiredArgs(parser, options, topicOpt)
 
-    val topic = options.valueOf(topicOpt)
+    val topic: String = options.valueOf(topicOpt)
 
-    val bootstrapServer = options.valueOf(bootstrapServerOpt)
-    val brokerList = options.valueOf(brokerListOpt)
+    val bootstrapServer: String = options.valueOf(bootstrapServerOpt)
+    val brokerList: String = options.valueOf(brokerListOpt)
 
-    val brokerHostsAndPorts = options.valueOf(if (options.has(bootstrapServerOpt)) bootstrapServerOpt else brokerListOpt)
+    val brokerHostsAndPorts: String = options.valueOf(if (options.has(bootstrapServerOpt)) bootstrapServerOpt else brokerListOpt)
     ToolsUtils.validatePortOrDie(parser, brokerHostsAndPorts)
 
-    val sync = options.has(syncOpt)
-    val compressionCodecOptionValue = options.valueOf(compressionCodecOpt)
-    val compressionCodec = if (options.has(compressionCodecOpt))
+    val sync: Boolean = options.has(syncOpt)
+    private val compressionCodecOptionValue = options.valueOf(compressionCodecOpt)
+    val compressionCodec: String = if (options.has(compressionCodecOpt))
                              if (compressionCodecOptionValue == null || compressionCodecOptionValue.isEmpty)
-                               DefaultCompressionCodec.name
+                               CompressionType.GZIP.name
                              else compressionCodecOptionValue
-                           else NoCompressionCodec.name
-    val readerClass = options.valueOf(messageReaderOpt)
-    val cmdLineProps = CommandLineUtils.parseKeyValueArgs(options.valuesOf(propertyOpt).asScala)
-    val extraProducerProps = CommandLineUtils.parseKeyValueArgs(options.valuesOf(producerPropertyOpt).asScala)
+                           else CompressionType.NONE.name
+    val readerClass: String = options.valueOf(messageReaderOpt)
+    val cmdLineProps: Properties = CommandLineUtils.parseKeyValueArgs(options.valuesOf(propertyOpt))
+    val extraProducerProps: Properties = CommandLineUtils.parseKeyValueArgs(options.valuesOf(producerPropertyOpt))
 
     def tryParse(parser: OptionParser, args: Array[String]): OptionSet = {
       try
         parser.parse(args: _*)
       catch {
         case e: OptionException =>
-          CommandLineUtils.printUsageAndDie(parser, e.getMessage)
+          ToolsUtils.printUsageAndExit(parser, e.getMessage)
       }
     }
   }
 
-  class LineMessageReader extends MessageReader {
+  class LineMessageReader extends RecordReader {
     var topic: String = _
-    var reader: BufferedReader = _
-    var parseKey = false
-    var keySeparator = "\t"
-    var parseHeaders = false
-    var headersDelimiter = "\t"
-    var headersSeparator = ","
-    var headersKeySeparator = ":"
-    var ignoreError = false
-    var lineNumber = 0
-    var printPrompt = System.console != null
-    var headersSeparatorPattern: Pattern = _
-    var nullMarker: String = _
+    var parseKey: Boolean = false
+    var keySeparator: String = "\t"
+    var parseHeaders: Boolean = false
+    private var headersDelimiter = "\t"
+    var headersSeparator: String = ","
+    private var headersKeySeparator = ":"
+    private var ignoreError = false
+    private var lineNumber = 0
+    private val printPrompt = System.console != null
+    private var headersSeparatorPattern: Pattern = _
+    private var nullMarker: String = _
 
-    override def init(inputStream: InputStream, props: Properties): Unit = {
-      topic = props.getProperty("topic")
+    override def configure(props: java.util.Map[String, _]): Unit = {
+      topic = props.get("topic").toString
       if (props.containsKey("parse.key"))
-        parseKey = props.getProperty("parse.key").trim.equalsIgnoreCase("true")
+        parseKey = props.get("parse.key").toString.trim.equalsIgnoreCase("true")
       if (props.containsKey("key.separator"))
-        keySeparator = props.getProperty("key.separator")
+        keySeparator = props.get("key.separator").toString
       if (props.containsKey("parse.headers"))
-        parseHeaders = props.getProperty("parse.headers").trim.equalsIgnoreCase("true")
+        parseHeaders = props.get("parse.headers").toString.trim.equalsIgnoreCase("true")
       if (props.containsKey("headers.delimiter"))
-        headersDelimiter = props.getProperty("headers.delimiter")
+        headersDelimiter = props.get("headers.delimiter").toString
       if (props.containsKey("headers.separator"))
-        headersSeparator = props.getProperty("headers.separator")
+        headersSeparator = props.get("headers.separator").toString
       headersSeparatorPattern = Pattern.compile(headersSeparator)
       if (props.containsKey("headers.key.separator"))
-        headersKeySeparator = props.getProperty("headers.key.separator")
+        headersKeySeparator = props.get("headers.key.separator").toString
       if (props.containsKey("ignore.error"))
-        ignoreError = props.getProperty("ignore.error").trim.equalsIgnoreCase("true")
+        ignoreError = props.get("ignore.error").toString.trim.equalsIgnoreCase("true")
       if (headersDelimiter == headersSeparator)
         throw new KafkaException("headers.delimiter and headers.separator may not be equal")
       if (headersDelimiter == headersKeySeparator)
@@ -331,7 +378,7 @@ object ConsoleProducer {
       if (headersSeparator == headersKeySeparator)
         throw new KafkaException("headers.separator and headers.key.separator may not be equal")
       if (props.containsKey("null.marker"))
-        nullMarker = props.getProperty("null.marker")
+        nullMarker = props.get("null.marker").toString
       if (nullMarker == keySeparator)
         throw new KafkaException("null.marker and key.separator may not be equal")
       if (nullMarker == headersSeparator)
@@ -340,38 +387,48 @@ object ConsoleProducer {
         throw new KafkaException("null.marker and headers.delimiter may not be equal")
       if (nullMarker == headersKeySeparator)
         throw new KafkaException("null.marker and headers.key.separator may not be equal")
-      reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))
     }
 
-    override def readMessage(): ProducerRecord[Array[Byte], Array[Byte]] = {
-      lineNumber += 1
-      if (printPrompt) print(">")
-      val line = reader.readLine()
-      line match {
-        case null => null
-        case line =>
-          val headers = parse(parseHeaders, line, 0, headersDelimiter, "headers delimiter")
-          val headerOffset = if (headers == null) 0 else headers.length + headersDelimiter.length
+    override def readRecords(inputStream: InputStream): java.util.Iterator[ProducerRecord[Array[Byte], Array[Byte]]] =
+      new java.util.Iterator[ProducerRecord[Array[Byte], Array[Byte]]] {
+        private[this] val reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))
+        private[this] var current: ProducerRecord[Array[Byte], Array[Byte]] = _
+        override def hasNext: Boolean =
+          if (current != null) true
+          else {
+            lineNumber += 1
+            if (printPrompt) print(">")
+            val line = reader.readLine()
+            current = line match {
+              case null => null
+              case line =>
+                val headers = parse(parseHeaders, line, 0, headersDelimiter, "headers delimiter")
+                val headerOffset = if (headers == null) 0 else headers.length + headersDelimiter.length
 
-          val key = parse(parseKey, line, headerOffset, keySeparator, "key separator")
-          val keyOffset = if (key == null) 0 else key.length + keySeparator.length
+                val key = parse(parseKey, line, headerOffset, keySeparator, "key separator")
+                val keyOffset = if (key == null) 0 else key.length + keySeparator.length
 
-          val value = line.substring(headerOffset + keyOffset)
+                val value = line.substring(headerOffset + keyOffset)
 
-          val record = new ProducerRecord[Array[Byte], Array[Byte]](
-            topic,
-            if (key != null && key != nullMarker) key.getBytes(StandardCharsets.UTF_8) else null,
-            if (value != null && value != nullMarker) value.getBytes(StandardCharsets.UTF_8) else null,
-          )
+                val record = new ProducerRecord[Array[Byte], Array[Byte]](
+                  topic,
+                  if (key != null && key != nullMarker) key.getBytes(StandardCharsets.UTF_8) else null,
+                  if (value != null && value != nullMarker) value.getBytes(StandardCharsets.UTF_8) else null,
+                )
 
-          if (headers != null && headers != nullMarker) {
-            splitHeaders(headers)
-              .foreach(header => record.headers.add(header._1, header._2))
+                if (headers != null && headers != nullMarker) {
+                  splitHeaders(headers)
+                    .foreach(header => record.headers.add(header._1, header._2))
+                }
+                record
+            }
+            current != null
           }
 
-          record
+        override def next(): ProducerRecord[Array[Byte], Array[Byte]] = if (!hasNext) throw new NoSuchElementException("no more record")
+        else try current finally current = null
       }
-    }
+
 
     private def parse(enabled: Boolean, line: String, startIndex: Int, demarcation: String, demarcationName: String): String = {
       (enabled, line.indexOf(demarcation, startIndex)) match {

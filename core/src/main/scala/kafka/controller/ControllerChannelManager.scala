@@ -19,7 +19,6 @@ package kafka.controller
 import com.yammer.metrics.core.{Gauge, Timer}
 import kafka.api._
 import kafka.cluster.Broker
-import kafka.metrics.KafkaMetricsGroup
 import kafka.server.KafkaConfig
 import kafka.utils.Implicits._
 import kafka.utils._
@@ -37,6 +36,8 @@ import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion._
+import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.apache.kafka.server.util.ShutdownableThread
 
 import java.net.SocketTimeoutException
 import java.util.concurrent.{BlockingQueue, LinkedBlockingQueue, TimeUnit}
@@ -44,8 +45,8 @@ import scala.collection.{Seq, Set, mutable}
 import scala.jdk.CollectionConverters._
 
 object ControllerChannelManager {
-  val QueueSizeMetricName = "QueueSize"
-  val RequestRateAndQueueTimeMetricName = "RequestRateAndQueueTimeMs"
+  private val QueueSizeMetricName = "QueueSize"
+  private val RequestRateAndQueueTimeMetricName = "RequestRateAndQueueTimeMs"
 }
 
 class ControllerChannelManager(controllerEpoch: () => Int,
@@ -53,14 +54,19 @@ class ControllerChannelManager(controllerEpoch: () => Int,
                                time: Time,
                                metrics: Metrics,
                                stateChangeLogger: StateChangeLogger,
-                               threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
+                               threadNamePrefix: Option[String] = None) extends Logging {
   import ControllerChannelManager._
 
+<<<<<<< HEAD
+=======
+  private val metricsGroup = new KafkaMetricsGroup(this.getClass)
+
+>>>>>>> trunk
   protected val brokerStateInfo = new mutable.HashMap[Int, ControllerBrokerStateInfo]
   private val brokerLock = new Object
   this.logIdent = "[Channel manager on controller " + config.brokerId + "]: "
 
-  newGauge("TotalQueueSize",
+  metricsGroup.newGauge("TotalQueueSize",
     () => brokerLock synchronized {
       brokerStateInfo.values.iterator.map(_.messageQueue.size).sum
     }
@@ -88,7 +94,9 @@ class ControllerChannelManager(controllerEpoch: () => Int,
         case Some(stateInfo) =>
           stateInfo.messageQueue.put(QueueItem(request.apiKey, request, callback, time.milliseconds()))
         case None =>
-          warn(s"Not sending request $request to broker $brokerId, since it is offline.")
+          warn(s"Not sending request ${request.apiKey.name} with controllerId=${request.controllerId()}, " +
+            s"controllerEpoch=${request.controllerEpoch()}, brokerEpoch=${request.brokerEpoch()} " +
+            s"to broker $brokerId, since it is offline.")
       }
     }
   }
@@ -168,7 +176,7 @@ class ControllerChannelManager(controllerEpoch: () => Int,
       case Some(name) => s"$name:Controller-${config.brokerId}-to-broker-${broker.id}-send-thread"
     }
 
-    val requestRateAndQueueTimeMetrics = newTimer(
+    val requestRateAndQueueTimeMetrics = metricsGroup.newTimer(
       RequestRateAndQueueTimeMetricName, TimeUnit.MILLISECONDS, TimeUnit.SECONDS, brokerMetricTags(broker.id)
     )
 
@@ -176,13 +184,13 @@ class ControllerChannelManager(controllerEpoch: () => Int,
       brokerNode, config, time, requestRateAndQueueTimeMetrics, stateChangeLogger, threadName)
     requestThread.setDaemon(false)
 
-    val queueSizeGauge = newGauge(QueueSizeMetricName, () => messageQueue.size, brokerMetricTags(broker.id))
+    val queueSizeGauge = metricsGroup.newGauge(QueueSizeMetricName, () => messageQueue.size, brokerMetricTags(broker.id))
 
     brokerStateInfo.put(broker.id, ControllerBrokerStateInfo(networkClient, brokerNode, messageQueue,
       requestThread, queueSizeGauge, requestRateAndQueueTimeMetrics, reconfigurableChannelBuilder))
   }
 
-  private def brokerMetricTags(brokerId: Int) = Map("broker-id" -> brokerId.toString)
+  private def brokerMetricTags(brokerId: Int) = Map("broker-id" -> brokerId.toString).asJava
 
   private def removeExistingBroker(brokerState: ControllerBrokerStateInfo): Unit = {
     try {
@@ -194,15 +202,15 @@ class ControllerChannelManager(controllerEpoch: () => Int,
       brokerState.requestSendThread.shutdown()
       brokerState.networkClient.close()
       brokerState.messageQueue.clear()
-      removeMetric(QueueSizeMetricName, brokerMetricTags(brokerState.brokerNode.id))
-      removeMetric(RequestRateAndQueueTimeMetricName, brokerMetricTags(brokerState.brokerNode.id))
+      metricsGroup.removeMetric(QueueSizeMetricName, brokerMetricTags(brokerState.brokerNode.id))
+      metricsGroup.removeMetric(RequestRateAndQueueTimeMetricName, brokerMetricTags(brokerState.brokerNode.id))
       brokerStateInfo.remove(brokerState.brokerNode.id)
     } catch {
       case e: Throwable => error("Error while removing broker by the controller", e)
     }
   }
 
-  protected def startRequestSendThread(brokerId: Int): Unit = {
+  private def startRequestSendThread(brokerId: Int): Unit = {
     val requestThread = brokerStateInfo(brokerId).requestSendThread
     if (requestThread.getState == Thread.State.NEW)
       requestThread.start()
@@ -222,9 +230,10 @@ class RequestSendThread(val controllerId: Int,
                         val requestRateAndQueueTimeMetrics: Timer,
                         val stateChangeLogger: StateChangeLogger,
                         name: String)
-  extends ShutdownableThread(name = name) {
+  extends ShutdownableThread(name, true, s"[RequestSendThread controllerId=$controllerId] ")
+    with Logging {
 
-  logIdent = s"[RequestSendThread controllerId=$controllerId] "
+  logIdent = logPrefix
 
   private val socketTimeoutMs = config.controllerSocketTimeoutMs
 
@@ -326,7 +335,7 @@ class ControllerBrokerRequestBatch(
   stateChangeLogger
 ) {
 
-  def sendEvent(event: ControllerEvent): Unit = {
+  private def sendEvent(event: ControllerEvent): Unit = {
     controllerEventManager.put(event)
   }
   def sendRequest(brokerId: Int,
@@ -357,7 +366,11 @@ class ControllerBrokerRequestBatch(
  * @param metadataProvider Provider to provide the relevant metadata to build the state needed to
  *                         send RPCs
  * @param metadataVersionProvider Provider to provide the metadata version used by the controller.
+<<<<<<< HEAD
  * @param stateChangeLogger logger to log the various events while sending requests and receving
+=======
+ * @param stateChangeLogger logger to log the various events while sending requests and receiving
+>>>>>>> trunk
  *                          responses from the brokers
  * @param kraftController whether the controller is KRaft controller
  */
@@ -367,10 +380,18 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
                                                     stateChangeLogger: StateChangeLogger,
                                                     kraftController: Boolean = false) extends Logging {
   val controllerId: Int = config.brokerId
+<<<<<<< HEAD
   val leaderAndIsrRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, LeaderAndIsrPartitionState]]
   val stopReplicaRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, StopReplicaPartitionState]]
   val updateMetadataRequestBrokerSet = mutable.Set.empty[Int]
   val updateMetadataRequestPartitionInfoMap = mutable.Map.empty[TopicPartition, UpdateMetadataPartitionState]
+=======
+  private val leaderAndIsrRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, LeaderAndIsrPartitionState]]
+  private val stopReplicaRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, StopReplicaPartitionState]]
+  private val updateMetadataRequestBrokerSet = mutable.Set.empty[Int]
+  private val updateMetadataRequestPartitionInfoMap = mutable.Map.empty[TopicPartition, UpdateMetadataPartitionState]
+  private var updateType: AbstractControlRequest.Type = AbstractControlRequest.Type.UNKNOWN
+>>>>>>> trunk
   private var metadataInstance: ControllerChannelContext = _
 
   def sendRequest(brokerId: Int,
@@ -390,6 +411,13 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
         s"new one. Some UpdateMetadata state changes to brokers $updateMetadataRequestBrokerSet with partition info " +
         s"$updateMetadataRequestPartitionInfoMap might be lost ")
     metadataInstance = metadataProvider()
+<<<<<<< HEAD
+=======
+  }
+
+  def setUpdateType(updateType: AbstractControlRequest.Type): Unit = {
+    this.updateType = updateType
+>>>>>>> trunk
   }
 
   def clear(): Unit = {
@@ -398,6 +426,10 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
     updateMetadataRequestBrokerSet.clear()
     updateMetadataRequestPartitionInfoMap.clear()
     metadataInstance = null
+<<<<<<< HEAD
+=======
+    updateType = AbstractControlRequest.Type.UNKNOWN
+>>>>>>> trunk
   }
 
   def addLeaderAndIsrRequestForBrokers(brokerIds: Seq[Int],
@@ -537,8 +569,22 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
           .toSet[String]
           .map(topic => (topic, metadataInstance.topicIds.getOrElse(topic, Uuid.ZERO_UUID)))
           .toMap
+<<<<<<< HEAD
         val leaderAndIsrRequestBuilder = new LeaderAndIsrRequest.Builder(leaderAndIsrRequestVersion, controllerId,
           controllerEpoch, brokerEpoch, leaderAndIsrPartitionStates.values.toBuffer.asJava, topicIds.asJava, leaders.asJava, kraftController)
+=======
+        val leaderAndIsrRequestBuilder = new LeaderAndIsrRequest.Builder(
+          leaderAndIsrRequestVersion,
+          controllerId,
+          controllerEpoch,
+          brokerEpoch,
+          leaderAndIsrPartitionStates.values.toBuffer.asJava,
+          topicIds.asJava,
+          leaders.asJava,
+          kraftController,
+          updateType
+        )
+>>>>>>> trunk
         sendRequest(broker, leaderAndIsrRequestBuilder, (r: AbstractResponse) => {
           val leaderAndIsrResponse = r.asInstanceOf[LeaderAndIsrResponse]
           handleLeaderAndIsrResponse(leaderAndIsrResponse, broker)
@@ -599,8 +645,22 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
         .distinct
         .filter(metadataInstance.topicIds.contains)
         .map(topic => (topic, metadataInstance.topicIds(topic))).toMap
+<<<<<<< HEAD
       val updateMetadataRequestBuilder = new UpdateMetadataRequest.Builder(updateMetadataRequestVersion,
         controllerId, controllerEpoch, brokerEpoch, partitionStates.asJava, liveBrokers.asJava, topicIds.asJava, kraftController)
+=======
+      val updateMetadataRequestBuilder = new UpdateMetadataRequest.Builder(
+        updateMetadataRequestVersion,
+        controllerId,
+        controllerEpoch,
+        brokerEpoch,
+        partitionStates.asJava,
+        liveBrokers.asJava,
+        topicIds.asJava,
+        kraftController,
+        updateType
+      )
+>>>>>>> trunk
       sendRequest(broker, updateMetadataRequestBuilder, (r: AbstractResponse) => {
         val updateMetadataResponse = r.asInstanceOf[UpdateMetadataResponse]
         handleUpdateMetadataResponse(updateMetadataResponse, broker)
@@ -714,6 +774,7 @@ abstract class AbstractControllerBrokerRequestBatch(config: KafkaConfig,
       sendLeaderAndIsrRequest(controllerEpoch, stateChangeLog)
       sendUpdateMetadataRequests(controllerEpoch, stateChangeLog)
       sendStopReplicaRequests(controllerEpoch, stateChangeLog)
+      this.updateType = AbstractControlRequest.Type.UNKNOWN
     } catch {
       case e: Throwable =>
         if (leaderAndIsrRequestMap.nonEmpty) {

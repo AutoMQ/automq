@@ -25,12 +25,12 @@ import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
 import org.apache.kafka.streams.integration.utils.IntegrationTestUtils;
 import org.apache.kafka.streams.tests.SmokeTestClient;
 import org.apache.kafka.streams.tests.SmokeTestDriver;
-import org.junit.Assert;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
@@ -42,11 +42,11 @@ import java.util.Set;
 
 import static org.apache.kafka.streams.tests.SmokeTestDriver.generate;
 import static org.apache.kafka.streams.tests.SmokeTestDriver.verify;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(600)
 @Tag("integration")
 public class SmokeTestDriverIntegrationTest {
-
     public static final EmbeddedKafkaCluster CLUSTER = new EmbeddedKafkaCluster(3);
 
     @BeforeAll
@@ -95,12 +95,19 @@ public class SmokeTestDriverIntegrationTest {
 
     }
 
-    private static Stream<Boolean> parameters() {
+    private static Stream<Arguments> parameters() {
         return Stream.of(
+<<<<<<< HEAD
             // TODO KAFKA-14533: debug and re-enable both parameters
             //Boolean.TRUE
             Boolean.FALSE
           );
+=======
+            Arguments.of(false, false),
+            Arguments.of(true, false),
+            Arguments.of(true, true)
+        );
+>>>>>>> trunk
     }
 
     // In this test, we try to keep creating new stream, and closing the old one, to maintain only 3 streams alive.
@@ -109,7 +116,7 @@ public class SmokeTestDriverIntegrationTest {
     // (1) 10 min timeout, (2) 30 tries of polling without getting any data
     @ParameterizedTest
     @MethodSource("parameters")
-    public void shouldWorkWithRebalance(final boolean stateUpdaterEnabled) throws InterruptedException {
+    public void shouldWorkWithRebalance(final boolean stateUpdaterEnabled, final boolean processingThreadsEnabled) throws InterruptedException {
         Exit.setExitProcedure((statusCode, message) -> {
             throw new AssertionError("Test called exit(). code:" + statusCode + " message:" + message);
         });
@@ -130,6 +137,7 @@ public class SmokeTestDriverIntegrationTest {
         final Properties props = new Properties();
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(InternalConfig.STATE_UPDATER_ENABLED, stateUpdaterEnabled);
+        props.put(InternalConfig.PROCESSING_THREADS_ENABLED, processingThreadsEnabled);
         // decrease the session timeout so that we can trigger the rebalance soon after old client left closed
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, 10000);
 
@@ -176,6 +184,6 @@ public class SmokeTestDriverIntegrationTest {
             driver.exception().printStackTrace();
             throw new AssertionError(driver.exception());
         }
-        Assert.assertTrue(driver.result().result(), driver.result().passed());
+        assertTrue(driver.result().passed(), driver.result().result());
     }
 }

@@ -16,8 +16,11 @@
  */
 package org.apache.kafka.streams.integration;
 
+<<<<<<< HEAD
 import kafka.log.LogConfig;
 import kafka.utils.MockTime;
+=======
+>>>>>>> trunk
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.Config;
@@ -25,9 +28,11 @@ import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.server.util.MockTime;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
@@ -210,10 +215,10 @@ public class InternalTopicIntegrationTest {
         }
 
         final Properties changelogProps = getTopicProperties(ProcessorStateManager.storeChangelogTopic(appID, "Counts", null));
-        assertEquals(LogConfig.Compact(), changelogProps.getProperty(LogConfig.CleanupPolicyProp()));
+        assertEquals(TopicConfig.CLEANUP_POLICY_COMPACT, changelogProps.getProperty(TopicConfig.CLEANUP_POLICY_CONFIG));
 
         final Properties repartitionProps = getTopicProperties(appID + "-Counts-repartition");
-        assertEquals(LogConfig.Delete(), repartitionProps.getProperty(LogConfig.CleanupPolicyProp()));
+        assertEquals(TopicConfig.CLEANUP_POLICY_DELETE, repartitionProps.getProperty(TopicConfig.CLEANUP_POLICY_CONFIG));
         assertEquals(4, repartitionProps.size());
     }
 
@@ -250,16 +255,16 @@ public class InternalTopicIntegrationTest {
         }
 
         final Properties properties = getTopicProperties(ProcessorStateManager.storeChangelogTopic(appID, "CountWindows", null));
-        final List<String> policies = Arrays.asList(properties.getProperty(LogConfig.CleanupPolicyProp()).split(","));
+        final List<String> policies = Arrays.asList(properties.getProperty(TopicConfig.CLEANUP_POLICY_CONFIG).split(","));
         assertEquals(2, policies.size());
-        assertTrue(policies.contains(LogConfig.Compact()));
-        assertTrue(policies.contains(LogConfig.Delete()));
+        assertTrue(policies.contains(TopicConfig.CLEANUP_POLICY_COMPACT));
+        assertTrue(policies.contains(TopicConfig.CLEANUP_POLICY_DELETE));
         // retention should be 1 day + the window duration
         final long retention = TimeUnit.MILLISECONDS.convert(1, TimeUnit.DAYS) + durationMs;
-        assertEquals(retention, Long.parseLong(properties.getProperty(LogConfig.RetentionMsProp())));
+        assertEquals(retention, Long.parseLong(properties.getProperty(TopicConfig.RETENTION_MS_CONFIG)));
 
         final Properties repartitionProps = getTopicProperties(appID + "-CountWindows-repartition");
-        assertEquals(LogConfig.Delete(), repartitionProps.getProperty(LogConfig.CleanupPolicyProp()));
+        assertEquals(TopicConfig.CLEANUP_POLICY_DELETE, repartitionProps.getProperty(TopicConfig.CLEANUP_POLICY_CONFIG));
         assertEquals(4, repartitionProps.size());
     }
 }

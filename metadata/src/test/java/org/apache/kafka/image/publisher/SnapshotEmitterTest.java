@@ -17,6 +17,11 @@
 
 package org.apache.kafka.image.publisher;
 
+<<<<<<< HEAD
+=======
+import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.image.FakeSnapshotWriter;
+>>>>>>> trunk
 import org.apache.kafka.image.MetadataImageTest;
 import org.apache.kafka.raft.LeaderAndEpoch;
 import org.apache.kafka.raft.OffsetAndEpoch;
@@ -26,7 +31,10 @@ import org.apache.kafka.snapshot.SnapshotWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+<<<<<<< HEAD
 import java.util.ArrayList;
+=======
+>>>>>>> trunk
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.Optional;
@@ -43,7 +51,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(value = 40)
 public class SnapshotEmitterTest {
     static class MockRaftClient implements RaftClient<ApiMessageAndVersion> {
+<<<<<<< HEAD
         TreeMap<OffsetAndEpoch, MockSnapshotWriter> writers = new TreeMap<>();
+=======
+        TreeMap<OffsetAndEpoch, FakeSnapshotWriter> writers = new TreeMap<>();
+>>>>>>> trunk
 
         @Override
         public void initialize() {
@@ -81,7 +93,15 @@ public class SnapshotEmitterTest {
         }
 
         @Override
+<<<<<<< HEAD
         public long scheduleAtomicAppend(int epoch, List<ApiMessageAndVersion> records) {
+=======
+        public long scheduleAtomicAppend(
+            int epoch,
+            OptionalLong requiredEndOffset,
+            List<ApiMessageAndVersion> records
+        ) {
+>>>>>>> trunk
             return 0;
         }
 
@@ -103,7 +123,11 @@ public class SnapshotEmitterTest {
             if (writers.containsKey(snapshotId)) {
                 return Optional.empty();
             }
+<<<<<<< HEAD
             MockSnapshotWriter writer = new MockSnapshotWriter(snapshotId);
+=======
+            FakeSnapshotWriter writer = new FakeSnapshotWriter(snapshotId);
+>>>>>>> trunk
             writers.put(snapshotId, writer);
             return Optional.of(writer);
         }
@@ -119,11 +143,20 @@ public class SnapshotEmitterTest {
         }
 
         @Override
+<<<<<<< HEAD
+=======
+        public long logEndOffset() {
+            return 0;
+        }
+
+        @Override
+>>>>>>> trunk
         public void close() throws Exception {
             // nothing to do
         }
     }
 
+<<<<<<< HEAD
     static class MockSnapshotWriter implements SnapshotWriter<ApiMessageAndVersion> {
         private final OffsetAndEpoch snapshotId;
         private boolean frozen = false;
@@ -190,6 +223,26 @@ public class SnapshotEmitterTest {
             build();
         emitter.maybeEmit(MetadataImageTest.IMAGE1);
         MockSnapshotWriter writer = mockRaftClient.writers.get(
+=======
+    @Test
+    public void testEmit() {
+        MockRaftClient mockRaftClient = new MockRaftClient();
+        MockTime time = new MockTime(0, 10000L, 20000L);
+        SnapshotEmitter emitter = new SnapshotEmitter.Builder().
+            setTime(time).
+            setBatchSize(2).
+            setRaftClient(mockRaftClient).
+            build();
+        assertEquals(0L, emitter.metrics().latestSnapshotGeneratedAgeMs());
+        assertEquals(0L, emitter.metrics().latestSnapshotGeneratedBytes());
+        time.sleep(30000L);
+        assertEquals(30000L, emitter.metrics().latestSnapshotGeneratedAgeMs());
+        assertEquals(0L, emitter.metrics().latestSnapshotGeneratedBytes());
+        emitter.maybeEmit(MetadataImageTest.IMAGE1);
+        assertEquals(0L, emitter.metrics().latestSnapshotGeneratedAgeMs());
+        assertEquals(1600L, emitter.metrics().latestSnapshotGeneratedBytes());
+        FakeSnapshotWriter writer = mockRaftClient.writers.get(
+>>>>>>> trunk
                 MetadataImageTest.IMAGE1.provenance().snapshotId());
         assertNotNull(writer);
         assertEquals(MetadataImageTest.IMAGE1.highestOffsetAndEpoch().offset(),

@@ -57,6 +57,7 @@ import org.apache.kafka.streams.state.TimestampedWindowStore;
 import org.apache.kafka.streams.state.ValueAndTimestamp;
 import org.apache.kafka.test.MockApiProcessorSupplier;
 import org.apache.kafka.test.MockClientSupplier;
+import org.apache.kafka.test.MockStandbyUpdateListener;
 import org.apache.kafka.test.MockStateRestoreListener;
 import org.apache.kafka.test.TestUtils;
 import org.junit.After;
@@ -69,10 +70,10 @@ import org.mockito.junit.MockitoJUnitRunner;
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -420,7 +421,8 @@ public class StreamThreadStateStoreProviderTest {
                 logContext,
                 clientSupplier.adminClient,
                 clientSupplier.restoreConsumer,
-                new MockStateRestoreListener()),
+                new MockStateRestoreListener(),
+                new MockStandbyUpdateListener()),
             topology.storeToChangelogTopic(),
             partitions,
             false);
@@ -460,11 +462,14 @@ public class StreamThreadStateStoreProviderTest {
             new MockTime(),
             stateManager,
             recordCollector,
-            context, logContext);
+            context,
+            logContext,
+            false
+        );
     }
 
     private void mockThread(final boolean initialized) {
-        when(threadMock.activeTasks()).thenReturn(new ArrayList<>(tasks.values()));
+        when(threadMock.readOnlyActiveTasks()).thenReturn(new HashSet<>(tasks.values()));
         when(threadMock.state()).thenReturn(
             initialized ? StreamThread.State.RUNNING : StreamThread.State.PARTITIONS_ASSIGNED
         );

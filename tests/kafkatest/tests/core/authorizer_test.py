@@ -43,9 +43,15 @@ class AuthorizerTest(Test):
         self.acls = ACLs(self.test_context)
 
     @cluster(num_nodes=4)
+<<<<<<< HEAD
     @parametrize(metadata_quorum=quorum.remote_kraft, authorizer_class=KafkaService.KRAFT_ACL_AUTHORIZER)
     @parametrize(metadata_quorum=quorum.remote_kraft, authorizer_class=KafkaService.ZK_ACL_AUTHORIZER)
     @parametrize(metadata_quorum=quorum.colocated_kraft, authorizer_class=KafkaService.ZK_ACL_AUTHORIZER)
+=======
+    @parametrize(metadata_quorum=quorum.isolated_kraft, authorizer_class=KafkaService.KRAFT_ACL_AUTHORIZER)
+    @parametrize(metadata_quorum=quorum.isolated_kraft, authorizer_class=KafkaService.ZK_ACL_AUTHORIZER)
+    @parametrize(metadata_quorum=quorum.zk, authorizer_class=KafkaService.ZK_ACL_AUTHORIZER)
+>>>>>>> trunk
     def test_authorizer(self, metadata_quorum, authorizer_class):
         topics = {"test_topic": {"partitions": 1, "replication-factor": 1}}
 
@@ -83,7 +89,7 @@ class AuthorizerTest(Test):
         node.account.ssh(alter_client_quotas_cmd)
 
         # set authorizer, restart with broker as super user
-        if (metadata_quorum == quorum.remote_kraft):
+        if (metadata_quorum == quorum.isolated_kraft):
             # we need to explicitly reconfigure/restart any remote controller quorum
             self.kafka.logger.info("Restarting Remote KRaft Controller with authorizer and broker principal as super user")
             controller_quorum = self.kafka.controller_quorum

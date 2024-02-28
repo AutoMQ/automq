@@ -16,98 +16,25 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.FetchSessionHandler;
-import org.apache.kafka.clients.Metadata;
-import org.apache.kafka.clients.NodeApiVersions;
-import org.apache.kafka.clients.StaleMetadataException;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.LogTruncationException;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
-import org.apache.kafka.clients.consumer.OffsetOutOfRangeException;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.clients.consumer.internals.OffsetsForLeaderEpochClient.OffsetForEpochResult;
-import org.apache.kafka.clients.consumer.internals.SubscriptionState.FetchPosition;
-import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.IsolationLevel;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.MetricName;
+import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.errors.CorruptRecordException;
-import org.apache.kafka.common.errors.InvalidTopicException;
-import org.apache.kafka.common.errors.RecordDeserializationException;
-import org.apache.kafka.common.errors.RecordTooLargeException;
-import org.apache.kafka.common.errors.RetriableException;
-import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.errors.TopicAuthorizationException;
-import org.apache.kafka.common.header.Headers;
-import org.apache.kafka.common.header.internals.RecordHeaders;
-import org.apache.kafka.common.message.FetchResponseData;
-import org.apache.kafka.common.message.ApiVersionsResponseData.ApiVersion;
-import org.apache.kafka.common.message.ListOffsetsRequestData.ListOffsetsPartition;
-import org.apache.kafka.common.message.ListOffsetsResponseData.ListOffsetsPartitionResponse;
-import org.apache.kafka.common.message.ListOffsetsResponseData.ListOffsetsTopicResponse;
-import org.apache.kafka.common.metrics.Gauge;
-import org.apache.kafka.common.metrics.Metrics;
-import org.apache.kafka.common.metrics.Sensor;
-import org.apache.kafka.common.metrics.stats.Avg;
-import org.apache.kafka.common.metrics.stats.Max;
-import org.apache.kafka.common.metrics.stats.Meter;
-import org.apache.kafka.common.metrics.stats.Min;
-import org.apache.kafka.common.metrics.stats.Value;
-import org.apache.kafka.common.metrics.stats.WindowedCount;
-import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.utils.BufferSupplier;
-import org.apache.kafka.common.record.ControlRecordType;
-import org.apache.kafka.common.record.Record;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.internals.IdempotentCloser;
 import org.apache.kafka.common.requests.FetchRequest;
-import org.apache.kafka.common.requests.FetchResponse;
-import org.apache.kafka.common.requests.ListOffsetsRequest;
-import org.apache.kafka.common.requests.ListOffsetsResponse;
-import org.apache.kafka.common.requests.MetadataRequest;
-import org.apache.kafka.common.requests.MetadataResponse;
-import org.apache.kafka.common.requests.OffsetsForLeaderEpochRequest;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Timer;
-import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
-import org.slf4j.helpers.MessageFormatter;
 
-import java.io.Closeable;
-import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * This class manages the fetching process with the brokers.
@@ -122,226 +49,70 @@ import java.util.stream.Collectors;
  *     <li>If a response handler accesses any shared state of the coordinator (e.g. SubscriptionState),
  *     it is assumed that all access to that state is synchronized on the coordinator instance by
  *     the caller.</li>
- *     <li>Responses that collate partial responses from multiple brokers (e.g. to list offsets) are
- *     synchronized on the response future.</li>
  *     <li>At most one request is pending for each node at any time. Nodes with pending requests are
  *     tracked and updated after processing the response. This ensures that any state (e.g. epoch)
  *     updated while processing responses on one thread are visible while creating the subsequent request
  *     on a different thread.</li>
  * </ul>
  */
-public class Fetcher<K, V> implements Closeable {
-    private final Logger log;
-    private final LogContext logContext;
-    private final ConsumerNetworkClient client;
-    private final Time time;
-    private final int minBytes;
-    private final int maxBytes;
-    private final int maxWaitMs;
-    private final int fetchSize;
-    private final long retryBackoffMs;
-    private final long requestTimeoutMs;
-    private final int maxPollRecords;
-    private final boolean checkCrcs;
-    private final String clientRackId;
-    private final ConsumerMetadata metadata;
-    private final FetchManagerMetrics sensors;
-    private final SubscriptionState subscriptions;
-    private final ConcurrentLinkedQueue<CompletedFetch> completedFetches;
-    private final BufferSupplier decompressionBufferSupplier = BufferSupplier.create();
-    private final Deserializer<K> keyDeserializer;
-    private final Deserializer<V> valueDeserializer;
-    private final IsolationLevel isolationLevel;
-    private final Map<Integer, FetchSessionHandler> sessionHandlers;
-    private final AtomicReference<RuntimeException> cachedListOffsetsException = new AtomicReference<>();
-    private final AtomicReference<RuntimeException> cachedOffsetForLeaderException = new AtomicReference<>();
-    private final OffsetsForLeaderEpochClient offsetsForLeaderEpochClient;
-    private final Set<Integer> nodesWithPendingFetchRequests;
-    private final ApiVersions apiVersions;
-    private final AtomicInteger metadataUpdateVersion = new AtomicInteger(-1);
+public class Fetcher<K, V> extends AbstractFetch {
 
-    private CompletedFetch nextInLineFetch = null;
+    private final Logger log;
+    private final ConsumerNetworkClient client;
+    private final FetchCollector<K, V> fetchCollector;
 
     public Fetcher(LogContext logContext,
                    ConsumerNetworkClient client,
-                   int minBytes,
-                   int maxBytes,
-                   int maxWaitMs,
-                   int fetchSize,
-                   int maxPollRecords,
-                   boolean checkCrcs,
-                   String clientRackId,
-                   Deserializer<K> keyDeserializer,
-                   Deserializer<V> valueDeserializer,
                    ConsumerMetadata metadata,
                    SubscriptionState subscriptions,
-                   Metrics metrics,
-                   FetcherMetricsRegistry metricsRegistry,
+                   FetchConfig fetchConfig,
+                   Deserializers<K, V> deserializers,
+                   FetchMetricsManager metricsManager,
                    Time time,
-                   long retryBackoffMs,
-                   long requestTimeoutMs,
-                   IsolationLevel isolationLevel,
                    ApiVersions apiVersions) {
+        super(logContext, metadata, subscriptions, fetchConfig, new FetchBuffer(logContext), metricsManager, time, apiVersions);
         this.log = logContext.logger(Fetcher.class);
-        this.logContext = logContext;
-        this.time = time;
         this.client = client;
-        this.metadata = metadata;
-        this.subscriptions = subscriptions;
-        this.minBytes = minBytes;
-        this.maxBytes = maxBytes;
-        this.maxWaitMs = maxWaitMs;
-        this.fetchSize = fetchSize;
-        this.maxPollRecords = maxPollRecords;
-        this.checkCrcs = checkCrcs;
-        this.clientRackId = clientRackId;
-        this.keyDeserializer = keyDeserializer;
-        this.valueDeserializer = valueDeserializer;
-        this.completedFetches = new ConcurrentLinkedQueue<>();
-        this.sensors = new FetchManagerMetrics(metrics, metricsRegistry);
-        this.retryBackoffMs = retryBackoffMs;
-        this.requestTimeoutMs = requestTimeoutMs;
-        this.isolationLevel = isolationLevel;
-        this.apiVersions = apiVersions;
-        this.sessionHandlers = new HashMap<>();
-        this.offsetsForLeaderEpochClient = new OffsetsForLeaderEpochClient(client, logContext);
-        this.nodesWithPendingFetchRequests = new HashSet<>();
+        this.fetchCollector = new FetchCollector<>(logContext,
+                metadata,
+                subscriptions,
+                fetchConfig,
+                deserializers,
+                metricsManager,
+                time);
+    }
+
+    @Override
+    protected boolean isUnavailable(Node node) {
+        return client.isUnavailable(node);
+    }
+
+    @Override
+    protected void maybeThrowAuthFailure(Node node) {
+        client.maybeThrowAuthFailure(node);
+    }
+
+    public void clearBufferedDataForUnassignedPartitions(Collection<TopicPartition> assignedPartitions) {
+        fetchBuffer.retainAll(new HashSet<>(assignedPartitions));
     }
 
     /**
-     * Represents data about an offset returned by a broker.
-     */
-    static class ListOffsetData {
-        final long offset;
-        final Long timestamp; //  null if the broker does not support returning timestamps
-        final Optional<Integer> leaderEpoch; // empty if the leader epoch is not known
-
-        ListOffsetData(long offset, Long timestamp, Optional<Integer> leaderEpoch) {
-            this.offset = offset;
-            this.timestamp = timestamp;
-            this.leaderEpoch = leaderEpoch;
-        }
-    }
-
-    /**
-     * Return whether we have any completed fetches pending return to the user. This method is thread-safe. Has
-     * visibility for testing.
-     * @return true if there are completed fetches, false otherwise
-     */
-    protected boolean hasCompletedFetches() {
-        return !completedFetches.isEmpty();
-    }
-
-    /**
-     * Return whether we have any completed fetches that are fetchable. This method is thread-safe.
-     * @return true if there are completed fetches that can be returned, false otherwise
-     */
-    public boolean hasAvailableFetches() {
-        return completedFetches.stream().anyMatch(fetch -> subscriptions.isFetchable(fetch.partition));
-    }
-
-    /**
-     * Set-up a fetch request for any node that we have assigned partitions for which doesn't already have
+     * Set up a fetch request for any node that we have assigned partitions for which doesn't already have
      * an in-flight fetch or pending fetch data.
      * @return number of fetches sent
      */
     public synchronized int sendFetches() {
-        // Update metrics in case there was an assignment change
-        sensors.maybeUpdateAssignment(subscriptions);
-
-        Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareFetchRequests();
-        for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
-            final Node fetchTarget = entry.getKey();
-            final FetchSessionHandler.FetchRequestData data = entry.getValue();
-            final short maxVersion;
-            if (!data.canUseTopicIds()) {
-                maxVersion = (short) 12;
-            } else {
-                maxVersion = ApiKeys.FETCH.latestVersion();
-            }
-            final FetchRequest.Builder request = FetchRequest.Builder
-                    .forConsumer(maxVersion, this.maxWaitMs, this.minBytes, data.toSend())
-                    .isolationLevel(isolationLevel)
-                    .setMaxBytes(this.maxBytes)
-                    .metadata(data.metadata())
-                    .removed(data.toForget())
-                    .replaced(data.toReplace())
-                    .rackId(clientRackId);
-
-            if (log.isDebugEnabled()) {
-                log.debug("Sending {} {} to broker {}", isolationLevel, data.toString(), fetchTarget);
-            }
-            RequestFuture<ClientResponse> future = client.send(fetchTarget, request);
-            // We add the node to the set of nodes with pending fetch requests before adding the
-            // listener because the future may have been fulfilled on another thread (e.g. during a
-            // disconnection being handled by the heartbeat thread) which will mean the listener
-            // will be invoked synchronously.
-            this.nodesWithPendingFetchRequests.add(entry.getKey().id());
-            future.addListener(new RequestFutureListener<ClientResponse>() {
-                @Override
-                public void onSuccess(ClientResponse resp) {
+        final Map<Node, FetchSessionHandler.FetchRequestData> fetchRequests = prepareFetchRequests();
+        sendFetchesInternal(
+                fetchRequests,
+                (fetchTarget, data, clientResponse) -> {
                     synchronized (Fetcher.this) {
-                        try {
-                            FetchResponse response = (FetchResponse) resp.responseBody();
-                            FetchSessionHandler handler = sessionHandler(fetchTarget.id());
-                            if (handler == null) {
-                                log.error("Unable to find FetchSessionHandler for node {}. Ignoring fetch response.",
-                                        fetchTarget.id());
-                                return;
-                            }
-                            if (!handler.handleResponse(response, resp.requestHeader().apiVersion())) {
-                                if (response.error() == Errors.FETCH_SESSION_TOPIC_ID_ERROR) {
-                                    metadata.requestUpdate();
-                                }
-                                return;
-                            }
-
-                            Map<TopicPartition, FetchResponseData.PartitionData> responseData = response.responseData(handler.sessionTopicNames(), resp.requestHeader().apiVersion());
-                            Set<TopicPartition> partitions = new HashSet<>(responseData.keySet());
-                            FetchResponseMetricAggregator metricAggregator = new FetchResponseMetricAggregator(sensors, partitions);
-
-                            for (Map.Entry<TopicPartition, FetchResponseData.PartitionData> entry : responseData.entrySet()) {
-                                TopicPartition partition = entry.getKey();
-                                FetchRequest.PartitionData requestData = data.sessionPartitions().get(partition);
-                                if (requestData == null) {
-                                    String message;
-                                    if (data.metadata().isFull()) {
-                                        message = MessageFormatter.arrayFormat(
-                                                "Response for missing full request partition: partition={}; metadata={}",
-                                                new Object[]{partition, data.metadata()}).getMessage();
-                                    } else {
-                                        message = MessageFormatter.arrayFormat(
-                                                "Response for missing session request partition: partition={}; metadata={}; toSend={}; toForget={}; toReplace={}",
-                                                new Object[]{partition, data.metadata(), data.toSend(), data.toForget(), data.toReplace()}).getMessage();
-                                    }
-
-                                    // Received fetch response for missing session partition
-                                    throw new IllegalStateException(message);
-                                } else {
-                                    long fetchOffset = requestData.fetchOffset;
-                                    FetchResponseData.PartitionData partitionData = entry.getValue();
-
-                                    log.debug("Fetch {} at offset {} for partition {} returned fetch data {}",
-                                            isolationLevel, fetchOffset, partition, partitionData);
-
-                                    Iterator<? extends RecordBatch> batches = FetchResponse.recordsOrFail(partitionData).batches().iterator();
-                                    short responseVersion = resp.requestHeader().apiVersion();
-
-                                    completedFetches.add(new CompletedFetch(partition, partitionData,
-                                            metricAggregator, batches, fetchOffset, responseVersion));
-                                }
-                            }
-
-                            sensors.fetchLatency.record(resp.requestLatencyMs());
-                        } finally {
-                            nodesWithPendingFetchRequests.remove(fetchTarget.id());
-                        }
+                        handleFetchSuccess(fetchTarget, data, clientResponse);
                     }
-                }
-
-                @Override
-                public void onFailure(RuntimeException e) {
+                },
+                (fetchTarget, data, error) -> {
                     synchronized (Fetcher.this) {
+<<<<<<< HEAD
                         try {
                             FetchSessionHandler handler = sessionHandler(fetchTarget.id());
                             if (handler != null) {
@@ -1022,11 +793,43 @@ public class Fetcher<K, V> implements Closeable {
                         ListOffsetsResponse lor = (ListOffsetsResponse) response.responseBody();
                         log.trace("Received ListOffsetResponse {} from broker {}", lor, node);
                         handleListOffsetResponse(lor, future);
+=======
+                        handleFetchFailure(fetchTarget, data, error);
+>>>>>>> trunk
                     }
                 });
+        return fetchRequests.size();
+    }
+
+    protected void maybeCloseFetchSessions(final Timer timer) {
+        final List<RequestFuture<ClientResponse>> requestFutures = sendFetchesInternal(
+                prepareCloseFetchSessionRequests(),
+                this::handleCloseFetchSessionSuccess,
+                this::handleCloseFetchSessionFailure
+        );
+
+        // Poll to ensure that request has been written to the socket. Wait until either the timer has expired or until
+        // all requests have received a response.
+        while (timer.notExpired() && !requestFutures.stream().allMatch(RequestFuture::isDone)) {
+            client.poll(timer, null, true);
+            timer.update();
+        }
+
+        if (!requestFutures.stream().allMatch(RequestFuture::isDone)) {
+            // we ran out of time before completing all futures. It is ok since we don't want to block the shutdown
+            // here.
+            log.debug("All requests couldn't be sent in the specific timeout period {}ms. " +
+                    "This may result in unnecessary fetch sessions at the broker. Consider increasing the timeout passed for " +
+                    "KafkaConsumer.close(Duration timeout)", timer.timeoutMs());
+        }
+    }
+
+    public Fetch<K, V> collectFetch() {
+        return fetchCollector.collectFetch(fetchBuffer);
     }
 
     /**
+<<<<<<< HEAD
      * Callback for the response of the list offset call above.
      * @param listOffsetsResponse The response from the server.
      * @param future The future to be completed when the response returns. Note that any partition-level errors will
@@ -1445,496 +1248,71 @@ public class Fetcher<K, V> implements Closeable {
 
     /**
      * Clear the buffered data which are not a part of newly assigned partitions
+=======
+     * This method is called by {@link #close(Timer)} which is guarded by the {@link IdempotentCloser}) such as to only
+     * be executed once the first time that any of the {@link #close()} methods are called. Subclasses can override
+     * this method without the need for extra synchronization at the instance level.
+>>>>>>> trunk
      *
-     * @param assignedPartitions  newly assigned {@link TopicPartition}
-     */
-    public void clearBufferedDataForUnassignedPartitions(Collection<TopicPartition> assignedPartitions) {
-        Iterator<CompletedFetch> completedFetchesItr = completedFetches.iterator();
-        while (completedFetchesItr.hasNext()) {
-            CompletedFetch records = completedFetchesItr.next();
-            TopicPartition tp = records.partition;
-            if (!assignedPartitions.contains(tp)) {
-                records.drain();
-                completedFetchesItr.remove();
-            }
-        }
-
-        if (nextInLineFetch != null && !assignedPartitions.contains(nextInLineFetch.partition)) {
-            nextInLineFetch.drain();
-            nextInLineFetch = null;
-        }
-    }
-
-    /**
-     * Clear the buffered data which are not a part of newly assigned topics
+     * <p/>
      *
-     * @param assignedTopics  newly assigned topics
+     * <em>Note</em>: this method is <code>synchronized</code> to reinstitute the 3.5 behavior:
+     *
+     * <blockquote>
+     * Shared states (e.g. sessionHandlers) could be accessed by multiple threads (such as heartbeat thread), hence,
+     * it is necessary to acquire a lock on the fetcher instance before modifying the states.
+     * </blockquote>
+     *
+     * @param timer Timer to enforce time limit
      */
-    public void clearBufferedDataForUnassignedTopics(Collection<String> assignedTopics) {
-        Set<TopicPartition> currentTopicPartitions = new HashSet<>();
-        for (TopicPartition tp : subscriptions.assignedPartitions()) {
-            if (assignedTopics.contains(tp.topic())) {
-                currentTopicPartitions.add(tp);
-            }
-        }
-        clearBufferedDataForUnassignedPartitions(currentTopicPartitions);
-    }
-
     // Visible for testing
-    protected FetchSessionHandler sessionHandler(int node) {
-        return sessionHandlers.get(node);
-    }
-
-    public static Sensor throttleTimeSensor(Metrics metrics, FetcherMetricsRegistry metricsRegistry) {
-        Sensor fetchThrottleTimeSensor = metrics.sensor("fetch-throttle-time");
-        fetchThrottleTimeSensor.add(metrics.metricInstance(metricsRegistry.fetchThrottleTimeAvg), new Avg());
-
-        fetchThrottleTimeSensor.add(metrics.metricInstance(metricsRegistry.fetchThrottleTimeMax), new Max());
-
-        return fetchThrottleTimeSensor;
-    }
-
-    private class CompletedFetch {
-        private final TopicPartition partition;
-        private final Iterator<? extends RecordBatch> batches;
-        private final Set<Long> abortedProducerIds;
-        private final PriorityQueue<FetchResponseData.AbortedTransaction> abortedTransactions;
-        private final FetchResponseData.PartitionData partitionData;
-        private final FetchResponseMetricAggregator metricAggregator;
-        private final short responseVersion;
-
-        private int recordsRead;
-        private int bytesRead;
-        private RecordBatch currentBatch;
-        private Record lastRecord;
-        private CloseableIterator<Record> records;
-        private long nextFetchOffset;
-        private Optional<Integer> lastEpoch;
-        private boolean isConsumed = false;
-        private Exception cachedRecordException = null;
-        private boolean corruptLastRecord = false;
-        private boolean initialized = false;
-
-        private CompletedFetch(TopicPartition partition,
-                               FetchResponseData.PartitionData partitionData,
-                               FetchResponseMetricAggregator metricAggregator,
-                               Iterator<? extends RecordBatch> batches,
-                               Long fetchOffset,
-                               short responseVersion) {
-            this.partition = partition;
-            this.partitionData = partitionData;
-            this.metricAggregator = metricAggregator;
-            this.batches = batches;
-            this.nextFetchOffset = fetchOffset;
-            this.responseVersion = responseVersion;
-            this.lastEpoch = Optional.empty();
-            this.abortedProducerIds = new HashSet<>();
-            this.abortedTransactions = abortedTransactions(partitionData);
-        }
-
-        private void drain() {
-            if (!isConsumed) {
-                maybeCloseRecordStream();
-                cachedRecordException = null;
-                this.isConsumed = true;
-                this.metricAggregator.record(partition, bytesRead, recordsRead);
-
-                // we move the partition to the end if we received some bytes. This way, it's more likely that partitions
-                // for the same topic can remain together (allowing for more efficient serialization).
-                if (bytesRead > 0)
-                    subscriptions.movePartitionToEnd(partition);
-            }
-        }
-
-        private void maybeEnsureValid(RecordBatch batch) {
-            if (checkCrcs && currentBatch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
-                try {
-                    batch.ensureValid();
-                } catch (CorruptRecordException e) {
-                    throw new KafkaException("Record batch for partition " + partition + " at offset " +
-                            batch.baseOffset() + " is invalid, cause: " + e.getMessage());
-                }
-            }
-        }
-
-        private void maybeEnsureValid(Record record) {
-            if (checkCrcs) {
-                try {
-                    record.ensureValid();
-                } catch (CorruptRecordException e) {
-                    throw new KafkaException("Record for partition " + partition + " at offset " + record.offset()
-                            + " is invalid, cause: " + e.getMessage());
-                }
-            }
-        }
-
-        private void maybeCloseRecordStream() {
-            if (records != null) {
-                records.close();
-                records = null;
-            }
-        }
-
-        private Record nextFetchedRecord() {
-            while (true) {
-                if (records == null || !records.hasNext()) {
-                    maybeCloseRecordStream();
-
-                    if (!batches.hasNext()) {
-                        // Message format v2 preserves the last offset in a batch even if the last record is removed
-                        // through compaction. By using the next offset computed from the last offset in the batch,
-                        // we ensure that the offset of the next fetch will point to the next batch, which avoids
-                        // unnecessary re-fetching of the same batch (in the worst case, the consumer could get stuck
-                        // fetching the same batch repeatedly).
-                        if (currentBatch != null)
-                            nextFetchOffset = currentBatch.nextOffset();
-                        drain();
-                        return null;
-                    }
-
-                    currentBatch = batches.next();
-                    lastEpoch = currentBatch.partitionLeaderEpoch() == RecordBatch.NO_PARTITION_LEADER_EPOCH ?
-                            Optional.empty() : Optional.of(currentBatch.partitionLeaderEpoch());
-
-                    maybeEnsureValid(currentBatch);
-
-                    if (isolationLevel == IsolationLevel.READ_COMMITTED && currentBatch.hasProducerId()) {
-                        // remove from the aborted transaction queue all aborted transactions which have begun
-                        // before the current batch's last offset and add the associated producerIds to the
-                        // aborted producer set
-                        consumeAbortedTransactionsUpTo(currentBatch.lastOffset());
-
-                        long producerId = currentBatch.producerId();
-                        if (containsAbortMarker(currentBatch)) {
-                            abortedProducerIds.remove(producerId);
-                        } else if (isBatchAborted(currentBatch)) {
-                            log.debug("Skipping aborted record batch from partition {} with producerId {} and " +
-                                          "offsets {} to {}",
-                                      partition, producerId, currentBatch.baseOffset(), currentBatch.lastOffset());
-                            nextFetchOffset = currentBatch.nextOffset();
-                            continue;
-                        }
-                    }
-
-                    records = currentBatch.streamingIterator(decompressionBufferSupplier);
-                } else {
-                    Record record = records.next();
-                    // skip any records out of range
-                    if (record.offset() >= nextFetchOffset) {
-                        // we only do validation when the message should not be skipped.
-                        maybeEnsureValid(record);
-
-                        // control records are not returned to the user
-                        if (!currentBatch.isControlBatch()) {
-                            return record;
-                        } else {
-                            // Increment the next fetch offset when we skip a control batch.
-                            nextFetchOffset = record.offset() + 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        private List<ConsumerRecord<K, V>> fetchRecords(int maxRecords) {
-            // Error when fetching the next record before deserialization.
-            if (corruptLastRecord)
-                throw new KafkaException("Received exception when fetching the next record from " + partition
-                                             + ". If needed, please seek past the record to "
-                                             + "continue consumption.", cachedRecordException);
-
-            if (isConsumed)
-                return Collections.emptyList();
-
-            List<ConsumerRecord<K, V>> records = new ArrayList<>();
-            try {
-                for (int i = 0; i < maxRecords; i++) {
-                    // Only move to next record if there was no exception in the last fetch. Otherwise we should
-                    // use the last record to do deserialization again.
-                    if (cachedRecordException == null) {
-                        corruptLastRecord = true;
-                        lastRecord = nextFetchedRecord();
-                        corruptLastRecord = false;
-                    }
-                    if (lastRecord == null)
-                        break;
-                    records.add(parseRecord(partition, currentBatch, lastRecord));
-                    recordsRead++;
-                    bytesRead += lastRecord.sizeInBytes();
-                    nextFetchOffset = lastRecord.offset() + 1;
-                    // In some cases, the deserialization may have thrown an exception and the retry may succeed,
-                    // we allow user to move forward in this case.
-                    cachedRecordException = null;
-                }
-            } catch (SerializationException se) {
-                cachedRecordException = se;
-                if (records.isEmpty())
-                    throw se;
-            } catch (KafkaException e) {
-                cachedRecordException = e;
-                if (records.isEmpty())
-                    throw new KafkaException("Received exception when fetching the next record from " + partition
-                                                 + ". If needed, please seek past the record to "
-                                                 + "continue consumption.", e);
-            }
-            return records;
-        }
-
-        private void consumeAbortedTransactionsUpTo(long offset) {
-            if (abortedTransactions == null)
-                return;
-
-            while (!abortedTransactions.isEmpty() && abortedTransactions.peek().firstOffset() <= offset) {
-                FetchResponseData.AbortedTransaction abortedTransaction = abortedTransactions.poll();
-                abortedProducerIds.add(abortedTransaction.producerId());
-            }
-        }
-
-        private boolean isBatchAborted(RecordBatch batch) {
-            return batch.isTransactional() && abortedProducerIds.contains(batch.producerId());
-        }
-
-        private PriorityQueue<FetchResponseData.AbortedTransaction> abortedTransactions(FetchResponseData.PartitionData partition) {
-            if (partition.abortedTransactions() == null || partition.abortedTransactions().isEmpty())
-                return null;
-
-            PriorityQueue<FetchResponseData.AbortedTransaction> abortedTransactions = new PriorityQueue<>(
-                    partition.abortedTransactions().size(), Comparator.comparingLong(FetchResponseData.AbortedTransaction::firstOffset)
-            );
-            abortedTransactions.addAll(partition.abortedTransactions());
-            return abortedTransactions;
-        }
-
-        private boolean containsAbortMarker(RecordBatch batch) {
-            if (!batch.isControlBatch())
-                return false;
-
-            Iterator<Record> batchIterator = batch.iterator();
-            if (!batchIterator.hasNext())
-                return false;
-
-            Record firstRecord = batchIterator.next();
-            return ControlRecordType.ABORT == ControlRecordType.parse(firstRecord.key());
-        }
-
-        private boolean notInitialized() {
-            return !this.initialized;
-        }
+    protected synchronized void closeInternal(Timer timer) {
+        // we do not need to re-enable wake-ups since we are closing already
+        client.disableWakeups();
+        maybeCloseFetchSessions(timer);
+        super.closeInternal(timer);
     }
 
     /**
-     * Since we parse the message data for each partition from each fetch response lazily, fetch-level
-     * metrics need to be aggregated as the messages from each partition are parsed. This class is used
-     * to facilitate this incremental aggregation.
+     * Creates the {@link FetchRequest.Builder fetch request},
+     * {@link NetworkClient#send(ClientRequest, long) enqueues/sends it, and adds the {@link RequestFuture callback}
+     * for the response.
+     *
+     * @param fetchRequests  {@link Map} of {@link Node nodes} to their
+     *                       {@link FetchSessionHandler.FetchRequestData request data}
+     * @param successHandler {@link ResponseHandler Handler for successful responses}
+     * @param errorHandler   {@link ResponseHandler Handler for failure responses}
+     * @return List of {@link RequestFuture callbacks}
      */
-    private static class FetchResponseMetricAggregator {
-        private final FetchManagerMetrics sensors;
-        private final Set<TopicPartition> unrecordedPartitions;
+    private List<RequestFuture<ClientResponse>> sendFetchesInternal(Map<Node, FetchSessionHandler.FetchRequestData> fetchRequests,
+                                                                    ResponseHandler<ClientResponse> successHandler,
+                                                                    ResponseHandler<Throwable> errorHandler) {
+        final List<RequestFuture<ClientResponse>> requestFutures = new ArrayList<>();
 
-        private final FetchMetrics fetchMetrics = new FetchMetrics();
-        private final Map<String, FetchMetrics> topicFetchMetrics = new HashMap<>();
+        for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequests.entrySet()) {
+            final Node fetchTarget = entry.getKey();
+            final FetchSessionHandler.FetchRequestData data = entry.getValue();
+            final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
+            final RequestFuture<ClientResponse> responseFuture = client.send(fetchTarget, request);
 
-        private FetchResponseMetricAggregator(FetchManagerMetrics sensors,
-                                              Set<TopicPartition> partitions) {
-            this.sensors = sensors;
-            this.unrecordedPartitions = partitions;
-        }
-
-        /**
-         * After each partition is parsed, we update the current metric totals with the total bytes
-         * and number of records parsed. After all partitions have reported, we write the metric.
-         */
-        public void record(TopicPartition partition, int bytes, int records) {
-            this.unrecordedPartitions.remove(partition);
-            this.fetchMetrics.increment(bytes, records);
-
-            // collect and aggregate per-topic metrics
-            String topic = partition.topic();
-            FetchMetrics topicFetchMetric = this.topicFetchMetrics.get(topic);
-            if (topicFetchMetric == null) {
-                topicFetchMetric = new FetchMetrics();
-                this.topicFetchMetrics.put(topic, topicFetchMetric);
-            }
-            topicFetchMetric.increment(bytes, records);
-
-            if (this.unrecordedPartitions.isEmpty()) {
-                // once all expected partitions from the fetch have reported in, record the metrics
-                this.sensors.bytesFetched.record(this.fetchMetrics.fetchBytes);
-                this.sensors.recordsFetched.record(this.fetchMetrics.fetchRecords);
-
-                // also record per-topic metrics
-                for (Map.Entry<String, FetchMetrics> entry: this.topicFetchMetrics.entrySet()) {
-                    FetchMetrics metric = entry.getValue();
-                    this.sensors.recordTopicFetchMetrics(entry.getKey(), metric.fetchBytes, metric.fetchRecords);
+            responseFuture.addListener(new RequestFutureListener<ClientResponse>() {
+                @Override
+                public void onSuccess(ClientResponse resp) {
+                    successHandler.handle(fetchTarget, data, resp);
                 }
-            }
+
+                @Override
+                public void onFailure(RuntimeException e) {
+                    errorHandler.handle(fetchTarget, data, e);
+                }
+            });
+
+            requestFutures.add(responseFuture);
         }
 
-        private static class FetchMetrics {
-            private int fetchBytes;
-            private int fetchRecords;
-
-            protected void increment(int bytes, int records) {
-                this.fetchBytes += bytes;
-                this.fetchRecords += records;
-            }
-        }
+        return requestFutures;
     }
-
-    private static class FetchManagerMetrics {
-        private final Metrics metrics;
-        private FetcherMetricsRegistry metricsRegistry;
-        private final Sensor bytesFetched;
-        private final Sensor recordsFetched;
-        private final Sensor fetchLatency;
-        private final Sensor recordsFetchLag;
-        private final Sensor recordsFetchLead;
-
-        private int assignmentId = 0;
-        private Set<TopicPartition> assignedPartitions = Collections.emptySet();
-
-        private FetchManagerMetrics(Metrics metrics, FetcherMetricsRegistry metricsRegistry) {
-            this.metrics = metrics;
-            this.metricsRegistry = metricsRegistry;
-
-            this.bytesFetched = metrics.sensor("bytes-fetched");
-            this.bytesFetched.add(metrics.metricInstance(metricsRegistry.fetchSizeAvg), new Avg());
-            this.bytesFetched.add(metrics.metricInstance(metricsRegistry.fetchSizeMax), new Max());
-            this.bytesFetched.add(new Meter(metrics.metricInstance(metricsRegistry.bytesConsumedRate),
-                    metrics.metricInstance(metricsRegistry.bytesConsumedTotal)));
-
-            this.recordsFetched = metrics.sensor("records-fetched");
-            this.recordsFetched.add(metrics.metricInstance(metricsRegistry.recordsPerRequestAvg), new Avg());
-            this.recordsFetched.add(new Meter(metrics.metricInstance(metricsRegistry.recordsConsumedRate),
-                    metrics.metricInstance(metricsRegistry.recordsConsumedTotal)));
-
-            this.fetchLatency = metrics.sensor("fetch-latency");
-            this.fetchLatency.add(metrics.metricInstance(metricsRegistry.fetchLatencyAvg), new Avg());
-            this.fetchLatency.add(metrics.metricInstance(metricsRegistry.fetchLatencyMax), new Max());
-            this.fetchLatency.add(new Meter(new WindowedCount(), metrics.metricInstance(metricsRegistry.fetchRequestRate),
-                    metrics.metricInstance(metricsRegistry.fetchRequestTotal)));
-
-            this.recordsFetchLag = metrics.sensor("records-lag");
-            this.recordsFetchLag.add(metrics.metricInstance(metricsRegistry.recordsLagMax), new Max());
-
-            this.recordsFetchLead = metrics.sensor("records-lead");
-            this.recordsFetchLead.add(metrics.metricInstance(metricsRegistry.recordsLeadMin), new Min());
-        }
-
-        private void recordTopicFetchMetrics(String topic, int bytes, int records) {
-            // record bytes fetched
-            String name = "topic." + topic + ".bytes-fetched";
-            Sensor bytesFetched = this.metrics.getSensor(name);
-            if (bytesFetched == null) {
-                Map<String, String> metricTags = Collections.singletonMap("topic", topic.replace('.', '_'));
-
-                bytesFetched = this.metrics.sensor(name);
-                bytesFetched.add(this.metrics.metricInstance(metricsRegistry.topicFetchSizeAvg,
-                        metricTags), new Avg());
-                bytesFetched.add(this.metrics.metricInstance(metricsRegistry.topicFetchSizeMax,
-                        metricTags), new Max());
-                bytesFetched.add(new Meter(this.metrics.metricInstance(metricsRegistry.topicBytesConsumedRate, metricTags),
-                        this.metrics.metricInstance(metricsRegistry.topicBytesConsumedTotal, metricTags)));
-            }
-            bytesFetched.record(bytes);
-
-            // record records fetched
-            name = "topic." + topic + ".records-fetched";
-            Sensor recordsFetched = this.metrics.getSensor(name);
-            if (recordsFetched == null) {
-                Map<String, String> metricTags = new HashMap<>(1);
-                metricTags.put("topic", topic.replace('.', '_'));
-
-                recordsFetched = this.metrics.sensor(name);
-                recordsFetched.add(this.metrics.metricInstance(metricsRegistry.topicRecordsPerRequestAvg,
-                        metricTags), new Avg());
-                recordsFetched.add(new Meter(this.metrics.metricInstance(metricsRegistry.topicRecordsConsumedRate, metricTags),
-                        this.metrics.metricInstance(metricsRegistry.topicRecordsConsumedTotal, metricTags)));
-            }
-            recordsFetched.record(records);
-        }
-
-        private void maybeUpdateAssignment(SubscriptionState subscription) {
-            int newAssignmentId = subscription.assignmentId();
-            if (this.assignmentId != newAssignmentId) {
-                Set<TopicPartition> newAssignedPartitions = subscription.assignedPartitions();
-                for (TopicPartition tp : this.assignedPartitions) {
-                    if (!newAssignedPartitions.contains(tp)) {
-                        metrics.removeSensor(partitionLagMetricName(tp));
-                        metrics.removeSensor(partitionLeadMetricName(tp));
-                        metrics.removeMetric(partitionPreferredReadReplicaMetricName(tp));
-                    }
-                }
-
-                for (TopicPartition tp : newAssignedPartitions) {
-                    if (!this.assignedPartitions.contains(tp)) {
-                        MetricName metricName = partitionPreferredReadReplicaMetricName(tp);
-                        metrics.addMetricIfAbsent(
-                            metricName,
-                            null,
-                            (Gauge<Integer>) (config, now) -> subscription.preferredReadReplica(tp, 0L).orElse(-1)
-                        );
-                    }
-                }
-
-                this.assignedPartitions = newAssignedPartitions;
-                this.assignmentId = newAssignmentId;
-            }
-        }
-
-        private void recordPartitionLead(TopicPartition tp, long lead) {
-            this.recordsFetchLead.record(lead);
-
-            String name = partitionLeadMetricName(tp);
-            Sensor recordsLead = this.metrics.getSensor(name);
-            if (recordsLead == null) {
-                Map<String, String> metricTags = topicPartitionTags(tp);
-
-                recordsLead = this.metrics.sensor(name);
-
-                recordsLead.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLead, metricTags), new Value());
-                recordsLead.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLeadMin, metricTags), new Min());
-                recordsLead.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLeadAvg, metricTags), new Avg());
-            }
-            recordsLead.record(lead);
-        }
-
-        private void recordPartitionLag(TopicPartition tp, long lag) {
-            this.recordsFetchLag.record(lag);
-
-            String name = partitionLagMetricName(tp);
-            Sensor recordsLag = this.metrics.getSensor(name);
-            if (recordsLag == null) {
-                Map<String, String> metricTags = topicPartitionTags(tp);
-                recordsLag = this.metrics.sensor(name);
-
-                recordsLag.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLag, metricTags), new Value());
-                recordsLag.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLagMax, metricTags), new Max());
-                recordsLag.add(this.metrics.metricInstance(metricsRegistry.partitionRecordsLagAvg, metricTags), new Avg());
-            }
-            recordsLag.record(lag);
-        }
-
-        private static String partitionLagMetricName(TopicPartition tp) {
-            return tp + ".records-lag";
-        }
-
-        private static String partitionLeadMetricName(TopicPartition tp) {
-            return tp + ".records-lead";
-        }
-
-        private MetricName partitionPreferredReadReplicaMetricName(TopicPartition tp) {
-            Map<String, String> metricTags = topicPartitionTags(tp);
-            return this.metrics.metricInstance(metricsRegistry.partitionPreferredReadReplica, metricTags);
-        }
-
-        private Map<String, String> topicPartitionTags(TopicPartition tp) {
-            Map<String, String> metricTags = new HashMap<>(2);
-            metricTags.put("topic", tp.topic().replace('.', '_'));
-            metricTags.put("partition", String.valueOf(tp.partition()));
-            return metricTags;
-        }
-    }
+<<<<<<< HEAD
 
     @Override
     public void close() {
@@ -1953,3 +1331,6 @@ public class Fetcher<K, V> implements Closeable {
     }
 
 }
+=======
+}
+>>>>>>> trunk

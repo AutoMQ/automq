@@ -18,28 +18,34 @@
 package kafka.server
 
 import kafka.cluster.EndPoint
+<<<<<<< HEAD
 import kafka.log.LogConfig
 import kafka.message._
+=======
+>>>>>>> trunk
 import kafka.security.authorizer.AclAuthorizer
 import kafka.utils.TestUtils.assertBadConfigContainingMessage
 import kafka.utils.{CoreUtils, TestUtils}
 import org.apache.kafka.common.config.{ConfigException, TopicConfig}
 import org.apache.kafka.common.metrics.Sensor
 import org.apache.kafka.common.network.ListenerName
-import org.apache.kafka.common.record.Records
+import org.apache.kafka.common.record.{CompressionType, Records}
 import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.raft.RaftConfig.{AddressSpec, InetAddressSpec, UNKNOWN_ADDRESS_SPEC_INSTANCE}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Test
+
 import java.net.InetSocketAddress
 import java.util
 import java.util.{Collections, Properties}
-
 import org.apache.kafka.common.Node
+import org.apache.kafka.coordinator.group.Group.GroupType
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion.{IBP_0_8_2, IBP_3_0_IV1}
+import org.apache.kafka.server.config.ServerTopicConfigSynonyms
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
+import org.apache.kafka.storage.internals.log.LogConfig
 import org.junit.jupiter.api.function.Executable
 
 import scala.annotation.nowarn
@@ -205,6 +211,51 @@ class KafkaConfigTest {
     // but not duplicate names
     props.setProperty(KafkaConfig.AdvertisedListenersProp, "HOST://localhost:9091,HOST://localhost:9091")
     assertBadConfigContainingMessage(props, "Each listener must have a different name")
+  }
+
+  @Test
+  def testIPv4AndIPv6SamePortListeners(): Unit = {
+    val props = new Properties()
+    props.put(KafkaConfig.BrokerIdProp, "1")
+    props.put(KafkaConfig.ZkConnectProp, "localhost:2181")
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://[::1]:9092,SSL://[::1]:9092")
+    var caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("If you have two listeners on the same port then one needs to be IPv4 and the other IPv6"))
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://127.0.0.1:9092,SSL://127.0.0.1:9092")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("If you have two listeners on the same port then one needs to be IPv4 and the other IPv6"))
+
+    props.put(KafkaConfig.ListenersProp, "SSL://[::1]:9096,PLAINTEXT://127.0.0.1:9096,SASL_SSL://:9096")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("If you have two listeners on the same port then one needs to be IPv4 and the other IPv6"))
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://127.0.0.1:9092,PLAINTEXT://127.0.0.1:9092")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("Each listener must have a different name"))
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://127.0.0.1:9092,SSL://127.0.0.1:9092,SASL_SSL://127.0.0.1:9092")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("Each listener must have a different port"))
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://apache.org:9092,SSL://[::1]:9092")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("Each listener must have a different port"))
+
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://apache.org:9092,SSL://127.0.0.1:9092")
+    caught = assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("Each listener must have a different port"))
+
+    // Happy case
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://127.0.0.1:9092,SSL://[::1]:9092")
+    assertTrue(isValidKafkaConfig(props))
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://[::1]:9093,SSL://127.0.0.1:9093")
+    assertTrue(isValidKafkaConfig(props))
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://127.0.0.1:9094,SSL://[::1]:9094,SASL_SSL://127.0.0.1:9095,SASL_PLAINTEXT://[::1]:9095")
+    assertTrue(isValidKafkaConfig(props))
+    props.put(KafkaConfig.ListenersProp, "PLAINTEXT://[::1]:9096,SSL://127.0.0.1:9096,SASL_SSL://[::1]:9097,SASL_PLAINTEXT://127.0.0.1:9097")
+    assertTrue(isValidKafkaConfig(props))
   }
 
   @Test
@@ -549,7 +600,7 @@ class KafkaConfigTest {
     props.setProperty(KafkaConfig.BrokerIdProp, "1")
     props.setProperty(KafkaConfig.ZkConnectProp, "localhost:2181")
     val conf = KafkaConfig.fromProps(props)
-    assertEquals(MetadataVersion.latest, conf.interBrokerProtocolVersion)
+    assertEquals(MetadataVersion.latestProduction, conf.interBrokerProtocolVersion)
 
     props.setProperty(KafkaConfig.InterBrokerProtocolVersionProp, "0.8.2.0")
     // We need to set the message format version to make the configuration valid.
@@ -565,7 +616,7 @@ class KafkaConfigTest {
     assertEquals(IBP_0_8_2, conf3.interBrokerProtocolVersion)
 
     //check that latest is newer than 0.8.2
-    assertTrue(MetadataVersion.latest.isAtLeast(conf3.interBrokerProtocolVersion))
+    assertTrue(MetadataVersion.latestTesting.isAtLeast(conf3.interBrokerProtocolVersion))
   }
 
   private def isValidKafkaConfig(props: Properties): Boolean = {
@@ -716,6 +767,7 @@ class KafkaConfigTest {
   }
 
   @Test
+  @nowarn("cat=deprecation") // See `TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG` for deprecation details
   def testFromPropsInvalid(): Unit = {
     def baseProperties: Properties = {
       val validRequiredProperties = new Properties()
@@ -811,6 +863,8 @@ class KafkaConfigTest {
         case KafkaConfig.LogFlushSchedulerIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
         case KafkaConfig.LogFlushIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
         case KafkaConfig.LogMessageTimestampDifferenceMaxMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
+        case KafkaConfig.LogMessageTimestampBeforeMaxMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
+        case KafkaConfig.LogMessageTimestampAfterMaxMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
         case KafkaConfig.LogFlushStartOffsetCheckpointIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number")
         case KafkaConfig.NumRecoveryThreadsPerDataDirProp => assertPropertyInvalid(baseProperties, name, "not_a_number", "0")
         case KafkaConfig.AutoCreateTopicsEnableProp => assertPropertyInvalid(baseProperties, name, "not_a_boolean", "0")
@@ -980,9 +1034,22 @@ class KafkaConfigTest {
         case RemoteLogManagerConfig.REMOTE_LOG_MANAGER_TASK_RETRY_JITTER_PROP => assertPropertyInvalid(baseProperties, name, "not_a_number", -1, 0.51)
         case RemoteLogManagerConfig.REMOTE_LOG_READER_THREADS_PROP => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
         case RemoteLogManagerConfig.REMOTE_LOG_READER_MAX_PENDING_TASKS_PROP => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case RemoteLogManagerConfig.LOG_LOCAL_RETENTION_MS_PROP => assertPropertyInvalid(baseProperties, name, "not_a_number", -3)
+        case RemoteLogManagerConfig.LOG_LOCAL_RETENTION_BYTES_PROP => assertPropertyInvalid(baseProperties, name, "not_a_number", -3)
 
-        case TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -2)
-        case TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -2)
+        /** New group coordinator configs */
+        case KafkaConfig.NewGroupCoordinatorEnableProp => // ignore
+        case KafkaConfig.GroupCoordinatorNumThreadsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+
+        /** Consumer groups configs */
+        case KafkaConfig.ConsumerGroupSessionTimeoutMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupMinSessionTimeoutMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupMaxSessionTimeoutMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupHeartbeatIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupMinHeartbeatIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupMaxHeartbeatIntervalMsProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupMaxSizeProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
+        case KafkaConfig.ConsumerGroupAssignorsProp => // ignore string
 
         case _ => assertPropertyInvalid(baseProperties, name, "not_a_number", "-1")
       }
@@ -999,6 +1066,7 @@ class KafkaConfigTest {
     }
 
     val props = baseProperties
+    props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, "true")
     val config = KafkaConfig.fromProps(props)
 
     def assertDynamic(property: String, value: Any, accessor: () => Any): Unit = {
@@ -1012,59 +1080,67 @@ class KafkaConfigTest {
     // Every log config prop must be explicitly accounted for here.
     // A value other than the default value for this config should be set to ensure that we can check whether
     // the value is dynamically updatable.
-    LogConfig.TopicConfigSynonyms.foreach { case (logConfig, kafkaConfigProp) =>
+    ServerTopicConfigSynonyms.TOPIC_CONFIG_SYNONYMS.forEach { case (logConfig, kafkaConfigProp) =>
       logConfig match {
-        case LogConfig.CleanupPolicyProp =>
-          assertDynamic(kafkaConfigProp, Defaults.Compact, () => config.logCleanupPolicy)
-        case LogConfig.CompressionTypeProp =>
+        case TopicConfig.CLEANUP_POLICY_CONFIG =>
+          assertDynamic(kafkaConfigProp, TopicConfig.CLEANUP_POLICY_COMPACT, () => config.logCleanupPolicy)
+        case TopicConfig.COMPRESSION_TYPE_CONFIG =>
           assertDynamic(kafkaConfigProp, "lz4", () => config.compressionType)
-        case LogConfig.SegmentBytesProp =>
+        case TopicConfig.SEGMENT_BYTES_CONFIG =>
           assertDynamic(kafkaConfigProp, 10000, () => config.logSegmentBytes)
-        case LogConfig.SegmentMsProp =>
+        case TopicConfig.SEGMENT_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10001L, () => config.logRollTimeMillis)
-        case LogConfig.DeleteRetentionMsProp =>
+        case TopicConfig.DELETE_RETENTION_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10002L, () => config.logCleanerDeleteRetentionMs)
-        case LogConfig.FileDeleteDelayMsProp =>
+        case TopicConfig.FILE_DELETE_DELAY_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10003L, () => config.logDeleteDelayMs)
-        case LogConfig.FlushMessagesProp =>
+        case TopicConfig.FLUSH_MESSAGES_INTERVAL_CONFIG =>
           assertDynamic(kafkaConfigProp, 10004L, () => config.logFlushIntervalMessages)
-        case LogConfig.FlushMsProp =>
+        case TopicConfig.FLUSH_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10005L, () => config.logFlushIntervalMs)
-        case LogConfig.MaxCompactionLagMsProp =>
+        case TopicConfig.MAX_COMPACTION_LAG_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10006L, () => config.logCleanerMaxCompactionLagMs)
-        case LogConfig.IndexIntervalBytesProp =>
+        case TopicConfig.INDEX_INTERVAL_BYTES_CONFIG =>
           assertDynamic(kafkaConfigProp, 10007, () => config.logIndexIntervalBytes)
-        case LogConfig.MaxMessageBytesProp =>
+        case TopicConfig.MAX_MESSAGE_BYTES_CONFIG =>
           assertDynamic(kafkaConfigProp, 10008, () => config.messageMaxBytes)
-        case LogConfig.MessageDownConversionEnableProp =>
+        case TopicConfig.MESSAGE_DOWNCONVERSION_ENABLE_CONFIG =>
           assertDynamic(kafkaConfigProp, false, () => config.logMessageDownConversionEnable)
-        case LogConfig.MessageTimestampDifferenceMaxMsProp =>
+        case TopicConfig.MESSAGE_TIMESTAMP_DIFFERENCE_MAX_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10009, () => config.logMessageTimestampDifferenceMaxMs)
-        case LogConfig.MessageTimestampTypeProp =>
+        case TopicConfig.MESSAGE_TIMESTAMP_BEFORE_MAX_MS_CONFIG =>
+          assertDynamic(kafkaConfigProp, 10015L, () => config.logMessageTimestampBeforeMaxMs)
+        case TopicConfig.MESSAGE_TIMESTAMP_AFTER_MAX_MS_CONFIG =>
+          assertDynamic(kafkaConfigProp, 10016L, () => config.logMessageTimestampAfterMaxMs)
+        case TopicConfig.MESSAGE_TIMESTAMP_TYPE_CONFIG =>
           assertDynamic(kafkaConfigProp, "LogAppendTime", () => config.logMessageTimestampType.name)
-        case LogConfig.MinCleanableDirtyRatioProp =>
+        case TopicConfig.MIN_CLEANABLE_DIRTY_RATIO_CONFIG =>
           assertDynamic(kafkaConfigProp, 0.01, () => config.logCleanerMinCleanRatio)
-        case LogConfig.MinCompactionLagMsProp =>
+        case TopicConfig.MIN_COMPACTION_LAG_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10010L, () => config.logCleanerMinCompactionLagMs)
-        case LogConfig.MinInSyncReplicasProp =>
+        case TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG =>
           assertDynamic(kafkaConfigProp, 4, () => config.minInSyncReplicas)
-        case LogConfig.PreAllocateEnableProp =>
+        case TopicConfig.PREALLOCATE_CONFIG =>
           assertDynamic(kafkaConfigProp, true, () => config.logPreAllocateEnable)
-        case LogConfig.RetentionBytesProp =>
+        case TopicConfig.RETENTION_BYTES_CONFIG =>
           assertDynamic(kafkaConfigProp, 10011L, () => config.logRetentionBytes)
-        case LogConfig.RetentionMsProp =>
+        case TopicConfig.RETENTION_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10012L, () => config.logRetentionTimeMillis)
-        case LogConfig.SegmentIndexBytesProp =>
+        case TopicConfig.SEGMENT_INDEX_BYTES_CONFIG =>
           assertDynamic(kafkaConfigProp, 10013, () => config.logIndexSizeMaxBytes)
-        case LogConfig.SegmentJitterMsProp =>
+        case TopicConfig.SEGMENT_JITTER_MS_CONFIG =>
           assertDynamic(kafkaConfigProp, 10014L, () => config.logRollTimeJitterMillis)
-        case LogConfig.UncleanLeaderElectionEnableProp =>
+        case TopicConfig.UNCLEAN_LEADER_ELECTION_ENABLE_CONFIG =>
           assertDynamic(kafkaConfigProp, true, () => config.uncleanLeaderElectionEnable)
-        case LogConfig.MessageFormatVersionProp =>
+        case TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG =>
+          assertDynamic(kafkaConfigProp, 10015L, () => config.logLocalRetentionMs)
+        case TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG =>
+          assertDynamic(kafkaConfigProp, 10016L, () => config.logLocalRetentionBytes)
+        case TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG =>
         // not dynamically updatable
-        case LogConfig.FollowerReplicationThrottledReplicasProp =>
+        case LogConfig.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG =>
         // topic only config
-        case LogConfig.LeaderReplicationThrottledReplicasProp =>
+        case LogConfig.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG =>
         // topic only config
         case prop =>
           fail(prop + " must be explicitly checked for dynamic updatability. Note that LogConfig(s) require that KafkaConfig value lookups are dynamic and not static values.")
@@ -1089,7 +1165,7 @@ class KafkaConfigTest {
     defaults.setProperty(KafkaConfig.LogRetentionTimeHoursProp, "10")
     //For LogFlushIntervalMsProp
     defaults.setProperty(KafkaConfig.LogFlushSchedulerIntervalMsProp, "123")
-    defaults.setProperty(KafkaConfig.OffsetsTopicCompressionCodecProp, SnappyCompressionCodec.codec.toString)
+    defaults.setProperty(KafkaConfig.OffsetsTopicCompressionCodecProp, CompressionType.SNAPPY.id.toString)
     // For MetricRecordingLevelProp
     defaults.setProperty(KafkaConfig.MetricRecordingLevelProp, Sensor.RecordingLevel.DEBUG.toString)
 
@@ -1106,7 +1182,7 @@ class KafkaConfigTest {
     assertEquals(11 * 60L * 1000L * 60, config.logRollTimeJitterMillis)
     assertEquals(10 * 60L * 1000L * 60, config.logRetentionTimeMillis)
     assertEquals(123L, config.logFlushIntervalMs)
-    assertEquals(SnappyCompressionCodec, config.offsetsTopicCompressionCodec)
+    assertEquals(CompressionType.SNAPPY, config.offsetsTopicCompressionType)
     assertEquals(Sensor.RecordingLevel.DEBUG.toString, config.metricRecordingLevel)
     assertEquals(false, config.tokenAuthEnabled)
     assertEquals(7 * 24 * 60L * 60L * 1000L, config.delegationTokenMaxLifeMs)
@@ -1660,12 +1736,18 @@ class KafkaConfigTest {
     // All needed configs are now set
     KafkaConfig.fromProps(props)
 
+<<<<<<< HEAD
     // Don't allow migration startup with an authorizer set
     props.setProperty(KafkaConfig.AuthorizerClassNameProp, classOf[AclAuthorizer].getCanonicalName)
     assertEquals(
       "requirement failed: ZooKeeper migration does not yet support authorizers. Remove authorizer.class.name before performing a migration.",
       assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props)).getMessage)
     props.remove(KafkaConfig.AuthorizerClassNameProp)
+=======
+    // Check that we allow authorizer to be set
+    props.setProperty(KafkaConfig.AuthorizerClassNameProp, classOf[AclAuthorizer].getCanonicalName)
+    KafkaConfig.fromProps(props)
+>>>>>>> trunk
 
     // Don't allow migration startup with an older IBP
     props.setProperty(KafkaConfig.InterBrokerProtocolVersionProp, MetadataVersion.IBP_3_3_IV0.version())
@@ -1683,6 +1765,23 @@ class KafkaConfigTest {
   }
 
   @Test
+<<<<<<< HEAD
+=======
+  def testMigrationCannotBeEnabledWithJBOD(): Unit = {
+    val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect, port = TestUtils.MockZkPort, logDirCount = 2)
+    props.setProperty(KafkaConfig.MigrationEnabledProp, "true")
+    props.setProperty(KafkaConfig.QuorumVotersProp, "3000@localhost:9093")
+    props.setProperty(KafkaConfig.ControllerListenerNamesProp, "CONTROLLER")
+    props.setProperty(KafkaConfig.InterBrokerProtocolVersionProp, MetadataVersion.IBP_3_7_IV1.version())
+
+    assertEquals(
+      "requirement failed: Cannot enable ZooKeeper migration with multiple log directories " +
+      "(aka JBOD) without setting 'inter.broker.protocol.version' to 3.7-IV2 or higher",
+      assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props)).getMessage)
+  }
+
+  @Test
+>>>>>>> trunk
   def testMigrationEnabledKRaftMode(): Unit = {
     val props = new Properties()
     props.putAll(kraftProps())
@@ -1695,4 +1794,83 @@ class KafkaConfigTest {
     props.setProperty(KafkaConfig.ZkConnectProp, "localhost:2181")
     KafkaConfig.fromProps(props)
   }
+<<<<<<< HEAD
+=======
+
+  @Test
+  def testConsumerGroupSessionTimeoutValidation(): Unit = {
+    val props = new Properties()
+    props.putAll(kraftProps())
+
+    // Max should be greater than or equals to min.
+    props.put(KafkaConfig.ConsumerGroupMinSessionTimeoutMsProp, "20")
+    props.put(KafkaConfig.ConsumerGroupMaxSessionTimeoutMsProp, "10")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+
+    // The timeout should be within the min-max range.
+    props.put(KafkaConfig.ConsumerGroupMinSessionTimeoutMsProp, "10")
+    props.put(KafkaConfig.ConsumerGroupMaxSessionTimeoutMsProp, "20")
+    props.put(KafkaConfig.ConsumerGroupSessionTimeoutMsProp, "5")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    props.put(KafkaConfig.ConsumerGroupSessionTimeoutMsProp, "25")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+  }
+
+  @Test
+  def testConsumerGroupHeartbeatIntervalValidation(): Unit = {
+    val props = new Properties()
+    props.putAll(kraftProps())
+
+    // Max should be greater than or equals to min.
+    props.put(KafkaConfig.ConsumerGroupMinHeartbeatIntervalMsProp, "20")
+    props.put(KafkaConfig.ConsumerGroupMaxHeartbeatIntervalMsProp, "10")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+
+    // The timeout should be within the min-max range.
+    props.put(KafkaConfig.ConsumerGroupMinHeartbeatIntervalMsProp, "10")
+    props.put(KafkaConfig.ConsumerGroupMaxHeartbeatIntervalMsProp, "20")
+    props.put(KafkaConfig.ConsumerGroupHeartbeatIntervalMsProp, "5")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+    props.put(KafkaConfig.ConsumerGroupHeartbeatIntervalMsProp, "25")
+    assertThrows(classOf[IllegalArgumentException], () => KafkaConfig.fromProps(props))
+  }
+
+  @Test
+  def testGroupCoordinatorRebalanceProtocols(): Unit = {
+    val props = new Properties()
+    props.putAll(kraftProps())
+
+    // Only classic and consumer are supported.
+    props.put(KafkaConfig.GroupCoordinatorRebalanceProtocolsProp, "foo")
+    assertThrows(classOf[ConfigException], () => KafkaConfig.fromProps(props))
+
+    // classic cannot be disabled.
+    props.put(KafkaConfig.GroupCoordinatorRebalanceProtocolsProp, "consumer")
+    assertThrows(classOf[ConfigException], () => KafkaConfig.fromProps(props))
+
+    // This is OK.
+    props.put(KafkaConfig.GroupCoordinatorRebalanceProtocolsProp, "classic,consumer")
+    val config = KafkaConfig.fromProps(props)
+    assertEquals(Set(GroupType.CLASSIC, GroupType.CONSUMER), config.groupCoordinatorRebalanceProtocols)
+    assertTrue(config.isNewGroupCoordinatorEnabled)
+  }
+
+  @Test
+  def testMultipleLogDirectoriesNotSupportedWithRemoteLogStorage(): Unit = {
+    val props = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 8181)
+    props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, String.valueOf(true))
+    props.put(KafkaConfig.LogDirsProp, "/tmp/a,/tmp/b")
+
+    val caught = assertThrows(classOf[ConfigException], () => KafkaConfig.fromProps(props))
+    assertTrue(caught.getMessage.contains("Multiple log directories `/tmp/a,/tmp/b` are not supported when remote log storage is enabled"))
+  }
+
+  @Test
+  def testSingleLogDirectoryWithRemoteLogStorage(): Unit = {
+    val props = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 8181)
+    props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, String.valueOf(true))
+    props.put(KafkaConfig.LogDirsProp, "/tmp/a")
+    assertDoesNotThrow(() => KafkaConfig.fromProps(props))
+  }
+>>>>>>> trunk
 }

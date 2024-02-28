@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.TreeSet;
+
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
@@ -41,6 +42,7 @@ import static org.apache.kafka.controller.BrokerControlState.SHUTDOWN_NOW;
 import static org.apache.kafka.controller.BrokerControlState.UNFENCED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,6 +60,9 @@ public class BrokerHeartbeatManagerTest {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
         MockTime time = (MockTime)  manager.time();
         assertFalse(manager.hasValidSession(0));
+        for (int brokerId = 0; brokerId < 3; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, false, 0);
         time.sleep(5);
         manager.touch(1, false, 0);
@@ -82,6 +87,9 @@ public class BrokerHeartbeatManagerTest {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
         MockTime time = (MockTime)  manager.time();
         assertFalse(manager.hasValidSession(0));
+        for (int brokerId = 0; brokerId < 3; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, false, 0);
         time.sleep(5);
         manager.touch(1, false, 0);
@@ -120,6 +128,9 @@ public class BrokerHeartbeatManagerTest {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
         MockTime time = (MockTime)  manager.time();
         assertEquals(Long.MAX_VALUE, manager.nextCheckTimeNs());
+        for (int brokerId = 0; brokerId < 4; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, false, 0);
         time.sleep(2);
         manager.touch(1, false, 0);
@@ -191,6 +202,9 @@ public class BrokerHeartbeatManagerTest {
     public void testUsableBrokerIterator() {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
         assertEquals(Collections.emptySet(), usableBrokersToSet(manager));
+        for (int brokerId = 0; brokerId < 5; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, false, 100);
         manager.touch(1, false, 100);
         manager.touch(2, false, 98);
@@ -219,6 +233,9 @@ public class BrokerHeartbeatManagerTest {
     public void testControlledShutdownOffsetIsOnlyUpdatedOnce() {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
         assertEquals(Collections.emptySet(), usableBrokersToSet(manager));
+        for (int brokerId = 0; brokerId < 5; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, false, 100);
         manager.touch(1, false, 100);
         manager.touch(2, false, 98);
@@ -239,7 +256,7 @@ public class BrokerHeartbeatManagerTest {
     @Test
     public void testBrokerHeartbeatStateList() {
         BrokerHeartbeatStateList list = new BrokerHeartbeatStateList();
-        assertEquals(null, list.first());
+        assertNull(list.first());
         BrokerHeartbeatStateIterator iterator = list.iterator();
         assertFalse(iterator.hasNext());
         BrokerHeartbeatState broker0 = new BrokerHeartbeatState(0);
@@ -272,6 +289,9 @@ public class BrokerHeartbeatManagerTest {
     @Test
     public void testCalculateNextBrokerState() {
         BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
+        for (int brokerId = 0; brokerId < 6; brokerId++) {
+            manager.register(brokerId, true);
+        }
         manager.touch(0, true, 100);
         manager.touch(1, false, 98);
         manager.touch(2, false, 100);
@@ -320,5 +340,24 @@ public class BrokerHeartbeatManagerTest {
         assertEquals(new BrokerControlStates(CONTROLLED_SHUTDOWN, CONTROLLED_SHUTDOWN),
             manager.calculateNextBrokerState(5,
                 new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true));
+        assertEquals("Broker 6 is not registered.",
+                assertThrows(IllegalStateException.class,
+                        () -> manager.calculateNextBrokerState(6, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true)).getMessage());
+        assertEquals("Broker 7 is not registered.",
+                assertThrows(IllegalStateException.class,
+                        () -> manager.calculateNextBrokerState(7, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true)).getMessage());
+    }
+
+    @Test
+    public void testTouchThrowsExceptionUnlessRegistered() {
+        BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
+        manager.register(1, true);
+        manager.register(3, true);
+        assertEquals("Broker 2 is not registered.",
+                assertThrows(IllegalStateException.class,
+                        () -> manager.touch(2, false, 0)).getMessage());
+        assertEquals("Broker 4 is not registered.",
+                assertThrows(IllegalStateException.class,
+                        () -> manager.touch(4, false, 0)).getMessage());
     }
 }

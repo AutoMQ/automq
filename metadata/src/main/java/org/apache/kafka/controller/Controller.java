@@ -26,24 +26,39 @@ import org.apache.kafka.common.message.AlterPartitionRequestData;
 import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
+import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
+import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
+import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+<<<<<<< HEAD
 import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
+=======
+import org.apache.kafka.common.message.ControllerRegistrationRequestData;
+import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
+import org.apache.kafka.common.message.CreateDelegationTokenResponseData;
+>>>>>>> trunk
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
 import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+<<<<<<< HEAD
 import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
+=======
+import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
+import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
+>>>>>>> trunk
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
@@ -53,6 +68,7 @@ import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+<<<<<<< HEAD
 import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsResponseData;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
@@ -61,6 +77,10 @@ import org.apache.kafka.common.message.PutKVsRequestData;
 import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
+=======
+import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
+import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
+>>>>>>> trunk
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -90,6 +110,58 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<AlterPartitionResponseData> alterPartition(
         ControllerRequestContext context,
         AlterPartitionRequestData request
+    );
+
+    /**
+     * Alter the user SCRAM credentials.
+     *
+     * @param context       The controller request context.
+     * @param request       The AlterUserScramCredentialsRequest data.
+     *
+     * @return              A future yielding the response.
+     */
+    CompletableFuture<AlterUserScramCredentialsResponseData> alterUserScramCredentials(
+        ControllerRequestContext context,
+        AlterUserScramCredentialsRequestData request
+    );
+
+    /**
+     * Create a DelegationToken for a specified user.
+     *
+     * @param context       The controller request context.
+     * @param request       The CreateDelegationTokenRequest data.
+     *
+     * @return              A future yielding the response.
+     */
+    CompletableFuture<CreateDelegationTokenResponseData> createDelegationToken(
+        ControllerRequestContext context,
+        CreateDelegationTokenRequestData request
+    );
+
+    /**
+     * Renew an existing DelegationToken for a specific TokenID.
+     *
+     * @param context       The controller request context.
+     * @param request       The RenewDelegationTokenRequest data.
+     *
+     * @return              A future yielding the response.
+     */
+    CompletableFuture<RenewDelegationTokenResponseData> renewDelegationToken(
+        ControllerRequestContext context,
+        RenewDelegationTokenRequestData request
+    );
+
+    /**
+     * Expire an existing DelegationToken for a specific TokenID.
+     *
+     * @param context       The controller request context.
+     * @param request       The ExpireDelegationTokenRequest data.
+     *
+     * @return              A future yielding the response.
+     */
+    CompletableFuture<ExpireDelegationTokenResponseData> expireDelegationToken(
+        ControllerRequestContext context,
+        ExpireDelegationTokenRequestData request
     );
 
     /**
@@ -366,6 +438,32 @@ public interface Controller extends AclMutator, AutoCloseable {
         ControllerRequestContext context,
         List<CreatePartitionsTopic> topics,
         boolean validateOnly
+    );
+
+    /**
+     * Attempt to register the given controller.
+     *
+     * @param context       The controller request context.
+     * @param request       The registration request.
+     *
+     * @return              A future yielding the broker registration reply.
+     */
+    CompletableFuture<Void> registerController(
+        ControllerRequestContext context,
+        ControllerRegistrationRequestData request
+    );
+
+    /**
+     * Assign replicas to directories.
+     *
+     * @param context       The controller request context.
+     * @param request       The assign replicas to dirs request.
+     *
+     * @return              A future yielding the results.
+     */
+    CompletableFuture<AssignReplicasToDirsResponseData> assignReplicasToDirs(
+        ControllerRequestContext context,
+        AssignReplicasToDirsRequestData request
     );
 
     /**

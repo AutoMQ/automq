@@ -17,6 +17,7 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.image.node.MetadataImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.raft.OffsetAndEpoch;
@@ -39,9 +40,14 @@ public final class MetadataImage {
         ClientQuotasImage.EMPTY,
         ProducerIdsImage.EMPTY,
         AclsImage.EMPTY,
+<<<<<<< HEAD
         S3StreamsMetadataImage.EMPTY,
         S3ObjectsImage.EMPTY,
         KVImage.EMPTY);
+=======
+        ScramImage.EMPTY,
+        DelegationTokenImage.EMPTY);
+>>>>>>> trunk
 
     private final MetadataProvenance provenance;
 
@@ -59,6 +65,7 @@ public final class MetadataImage {
 
     private final AclsImage acls;
 
+<<<<<<< HEAD
     // AutoMQ for Kafka inject start
 
     private final S3StreamsMetadataImage streamMetadata;
@@ -67,6 +74,11 @@ public final class MetadataImage {
 
     private final KVImage kv;
     // AutoMQ for Kafka inject end
+=======
+    private final ScramImage scram;
+
+    private final DelegationTokenImage delegationTokens;
+>>>>>>> trunk
 
     public MetadataImage(
         MetadataProvenance provenance,
@@ -77,9 +89,14 @@ public final class MetadataImage {
         ClientQuotasImage clientQuotas,
         ProducerIdsImage producerIds,
         AclsImage acls,
+<<<<<<< HEAD
         S3StreamsMetadataImage streamMetadata,
         S3ObjectsImage s3ObjectsImage,
         KVImage kvImage
+=======
+        ScramImage scram,
+        DelegationTokenImage delegationTokens
+>>>>>>> trunk
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -89,9 +106,14 @@ public final class MetadataImage {
         this.clientQuotas = clientQuotas;
         this.producerIds = producerIds;
         this.acls = acls;
+<<<<<<< HEAD
         this.streamMetadata = streamMetadata;
         this.objectsMetadata = s3ObjectsImage;
         this.kv = kvImage;
+=======
+        this.scram = scram;
+        this.delegationTokens = delegationTokens;
+>>>>>>> trunk
     }
 
     public boolean isEmpty() {
@@ -102,9 +124,14 @@ public final class MetadataImage {
             clientQuotas.isEmpty() &&
             producerIds.isEmpty() &&
             acls.isEmpty() &&
+<<<<<<< HEAD
             streamMetadata.isEmpty() &&
             objectsMetadata.isEmpty() &&
             kv.isEmpty();
+=======
+            scram.isEmpty() &&
+            delegationTokens.isEmpty();
+>>>>>>> trunk
     }
 
     public MetadataProvenance provenance() {
@@ -147,6 +174,7 @@ public final class MetadataImage {
         return acls;
     }
 
+<<<<<<< HEAD
     // AutoMQ for Kafka inject start
 
     public S3StreamsMetadataImage streamsMetadata() {
@@ -162,6 +190,16 @@ public final class MetadataImage {
     }
     // AutoMQ for Kafka inject end
 
+=======
+    public ScramImage scram() {
+        return scram;
+    }
+
+    public DelegationTokenImage delegationTokens() {
+        return delegationTokens;
+    }
+
+>>>>>>> trunk
     public void write(ImageWriter writer, ImageWriterOptions options) {
         // Features should be written out first so we can include the metadata.version at the beginning of the
         // snapshot
@@ -172,11 +210,16 @@ public final class MetadataImage {
         clientQuotas.write(writer, options);
         producerIds.write(writer, options);
         acls.write(writer, options);
+<<<<<<< HEAD
         // AutoMQ for Kafka inject start
         streamMetadata.write(writer, options);
         objectsMetadata.write(writer, options);
         kv.write(writer, options);
         // AutoMQ for Kafka inject end
+=======
+        scram.write(writer, options);
+        delegationTokens.write(writer, options);
+>>>>>>> trunk
         writer.close(true);
     }
 
@@ -192,9 +235,14 @@ public final class MetadataImage {
             clientQuotas.equals(other.clientQuotas) &&
             producerIds.equals(other.producerIds) &&
             acls.equals(other.acls) &&
+<<<<<<< HEAD
             streamMetadata.equals(other.streamMetadata) &&
             objectsMetadata.equals(other.objectsMetadata) &&
             kv.equals(other.kv);
+=======
+            scram.equals(other.scram) &&
+            delegationTokens.equals(other.delegationTokens);
+>>>>>>> trunk
     }
 
     @Override
@@ -208,13 +256,19 @@ public final class MetadataImage {
             clientQuotas,
             producerIds,
             acls,
+<<<<<<< HEAD
             streamMetadata,
             objectsMetadata,
             kv);
+=======
+            scram,
+            delegationTokens);
+>>>>>>> trunk
     }
 
     @Override
     public String toString() {
+<<<<<<< HEAD
         return "MetadataImage(" +
             "provenance=" + provenance +
             ", features=" + features +
@@ -228,5 +282,8 @@ public final class MetadataImage {
             ", objectsMetadata=" + objectsMetadata +
             ", kv=" + kv +
             ")";
+=======
+        return new MetadataImageNode(this).stringify();
+>>>>>>> trunk
     }
 }

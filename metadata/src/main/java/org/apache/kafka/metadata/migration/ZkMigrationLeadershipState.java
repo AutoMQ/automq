@@ -26,10 +26,19 @@ import java.util.Objects;
  * that no migration has been started.
  */
 public class ZkMigrationLeadershipState {
+    /**
+     * A Kafka-internal constant used to indicate that the znode version is unknown. See ZkVersion.UnknownVersion.
+     */
+    public static final int UNKNOWN_ZK_VERSION = -2;
 
     // Use -2 as sentinel for "unknown version" for ZK versions to avoid sending an actual -1 "any version"
     // when doing ZK writes
+<<<<<<< HEAD
     public static final ZkMigrationLeadershipState EMPTY = new ZkMigrationLeadershipState(-1, -1, -1, -1, -1, -2, -1, -2);
+=======
+    public static final ZkMigrationLeadershipState EMPTY =
+        new ZkMigrationLeadershipState(-1, -1, -1, -1, -1, -2, -1, UNKNOWN_ZK_VERSION);
+>>>>>>> trunk
 
     private final int kraftControllerId;
 
@@ -110,7 +119,7 @@ public class ZkMigrationLeadershipState {
         return kraftMetadataOffset;
     }
 
-    public long kraftMetadataEpoch() {
+    public int kraftMetadataEpoch() {
         return kraftMetadataEpoch;
     }
 
@@ -124,13 +133,20 @@ public class ZkMigrationLeadershipState {
 
     public int zkControllerEpoch() {
         return zkControllerEpoch;
+<<<<<<< HEAD
+    }
+
+    public int zkControllerEpochZkVersion() {
+        return zkControllerEpochZkVersion;
+=======
+>>>>>>> trunk
     }
 
     public int zkControllerEpochZkVersion() {
         return zkControllerEpochZkVersion;
     }
 
-    public boolean zkMigrationComplete() {
+    public boolean initialZkMigrationComplete() {
         return kraftMetadataOffset > 0;
     }
 
@@ -138,6 +154,24 @@ public class ZkMigrationLeadershipState {
         return new OffsetAndEpoch(kraftMetadataOffset, kraftMetadataEpoch);
     }
 
+<<<<<<< HEAD
+=======
+    public boolean loggableChangeSinceState(ZkMigrationLeadershipState other) {
+        if (other == null) {
+            return false;
+        }
+        if (this.equals(other)) {
+            return false;
+        } else {
+            // Did the controller change, or did we finish the migration?
+            return
+                this.kraftControllerId != other.kraftControllerId ||
+                this.kraftControllerEpoch != other.kraftControllerEpoch ||
+                (!other.initialZkMigrationComplete() && this.initialZkMigrationComplete());
+        }
+    }
+
+>>>>>>> trunk
     @Override
     public String toString() {
         return "ZkMigrationLeadershipState{" +
@@ -176,7 +210,12 @@ public class ZkMigrationLeadershipState {
             kraftMetadataEpoch,
             lastUpdatedTimeMs,
             migrationZkVersion,
+<<<<<<< HEAD
                 zkControllerEpoch,
                 zkControllerEpochZkVersion);
+=======
+            zkControllerEpoch,
+            zkControllerEpochZkVersion);
+>>>>>>> trunk
     }
 }

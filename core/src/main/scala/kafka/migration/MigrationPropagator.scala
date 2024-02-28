@@ -22,6 +22,7 @@ import kafka.controller.{ControllerChannelContext, ControllerChannelManager, Rep
 import kafka.server.KafkaConfig
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.metrics.Metrics
+<<<<<<< HEAD
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.image.{MetadataDelta, MetadataImage}
 import org.apache.kafka.metadata.migration.LegacyPropagator
@@ -29,13 +30,47 @@ import org.apache.kafka.server.common.MetadataVersion
 
 import java.util
 import scala.jdk.CollectionConverters._
+=======
+import org.apache.kafka.common.requests.AbstractControlRequest
+import org.apache.kafka.common.utils.Time
+import org.apache.kafka.image.{ClusterImage, MetadataDelta, MetadataImage, TopicsImage}
+import org.apache.kafka.metadata.PartitionRegistration
+import org.apache.kafka.metadata.migration.LegacyPropagator
+
+import java.util
+import scala.jdk.CollectionConverters._
+import scala.compat.java8.OptionConverters._
+
+object MigrationPropagator {
+  def calculateBrokerChanges(prevClusterImage: ClusterImage, clusterImage: ClusterImage): (Set[Broker], Set[Broker]) = {
+    val prevBrokers = prevClusterImage.brokers().values().asScala
+      .filter(_.isMigratingZkBroker)
+      .filterNot(_.fenced)
+      .map(Broker.fromBrokerRegistration)
+      .toSet
+
+    val aliveBrokers = clusterImage.brokers().values().asScala
+      .filter(_.isMigratingZkBroker)
+      .filterNot(_.fenced)
+      .map(Broker.fromBrokerRegistration)
+      .toSet
+
+    val addedBrokers = aliveBrokers -- prevBrokers
+    val removedBrokers = prevBrokers -- aliveBrokers
+    (addedBrokers, removedBrokers)
+  }
+}
+>>>>>>> trunk
 
 class MigrationPropagator(
   nodeId: Int,
   config: KafkaConfig
 ) extends LegacyPropagator {
   @volatile private var _image = MetadataImage.EMPTY
+<<<<<<< HEAD
   @volatile private var metadataVersion = MetadataVersion.IBP_3_4_IV0
+=======
+>>>>>>> trunk
   val stateChangeLogger = new StateChangeLogger(nodeId, inControllerContext = true, None)
   val channelManager = new ControllerChannelManager(
     () => _image.highestOffsetAndEpoch().epoch(),
@@ -45,10 +80,17 @@ class MigrationPropagator(
     stateChangeLogger
   )
 
+<<<<<<< HEAD
   val requestBatch = new MigrationPropagatorBatch(
     config,
     metadataProvider,
     () => metadataVersion,
+=======
+  private val requestBatch = new MigrationPropagatorBatch(
+    config,
+    metadataProvider,
+    () => _image.features().metadataVersion(),
+>>>>>>> trunk
     channelManager,
     stateChangeLogger
   )
@@ -68,6 +110,7 @@ class MigrationPropagator(
 
   override def publishMetadata(image: MetadataImage): Unit = {
     val oldImage = _image
+<<<<<<< HEAD
     val addedBrokers = new util.HashSet[Integer](image.cluster().brokers().keySet())
     addedBrokers.removeAll(oldImage.cluster().brokers().keySet())
     val removedBrokers = new util.HashSet[Integer](oldImage.cluster().brokers().keySet())
@@ -79,6 +122,30 @@ class MigrationPropagator(
     _image = image
   }
 
+=======
+
+    val (addedBrokers, removedBrokers) = MigrationPropagator.calculateBrokerChanges(oldImage.cluster(), image.cluster())
+    if (addedBrokers.nonEmpty || removedBrokers.nonEmpty) {
+      stateChangeLogger.logger.info(s"Adding brokers $addedBrokers, removing brokers $removedBrokers.")
+    }
+    removedBrokers.foreach(broker => channelManager.removeBroker(broker.id))
+    addedBrokers.foreach(broker => channelManager.addBroker(broker))
+    _image = image
+  }
+
+  /**
+   * A very expensive function that creates a map with an entry for every partition that exists, from
+   * (topic name, partition index) to partition registration.
+   */
+  private def materializePartitions(topicsImage: TopicsImage): util.Map[TopicPartition, PartitionRegistration] = {
+    val result = new util.HashMap[TopicPartition, PartitionRegistration]()
+    topicsImage.topicsById().values().forEach(topic =>
+      topic.partitions().forEach((key, value) => result.put(new TopicPartition(topic.name(), key), value))
+    )
+    result
+  }
+
+>>>>>>> trunk
   override def sendRPCsToBrokersFromMetadataDelta(delta: MetadataDelta, image: MetadataImage,
                                                   zkControllerEpoch: Int): Unit = {
     publishMetadata(image)
@@ -87,27 +154,48 @@ class MigrationPropagator(
     delta.getOrCreateTopicsDelta()
     delta.getOrCreateClusterDelta()
 
+<<<<<<< HEAD
     val changedZkBrokers = delta.clusterDelta().liveZkBrokerIdChanges().asScala.map(_.toInt).toSet
     val zkBrokers = image.cluster().zkBrokers().keySet().asScala.map(_.toInt).toSet
+=======
+    val changedZkBrokers = delta.clusterDelta().changedBrokers().values().asScala.map(_.asScala).filter {
+      case None => false
+      case Some(registration) => registration.isMigratingZkBroker && !registration.fenced()
+    }.map(_.get.id()).toSet
+
+    val zkBrokers = image.cluster().brokers().values().asScala.filter(_.isMigratingZkBroker).map(_.id()).toSet
+>>>>>>> trunk
     val oldZkBrokers = zkBrokers -- changedZkBrokers
     val brokersChanged = !delta.clusterDelta().changedBrokers().isEmpty
 
     // First send metadata about the live/dead brokers to all the zk brokers.
     if (changedZkBrokers.nonEmpty) {
       // Update new Zk brokers about all the metadata.
+<<<<<<< HEAD
       requestBatch.addUpdateMetadataRequestForBrokers(changedZkBrokers.toSeq, image.topics().partitions().keySet().asScala)
+=======
+      requestBatch.addUpdateMetadataRequestForBrokers(changedZkBrokers.toSeq, materializePartitions(image.topics()).asScala.keySet)
+>>>>>>> trunk
     }
     if (brokersChanged) {
       requestBatch.addUpdateMetadataRequestForBrokers(oldZkBrokers.toSeq)
     }
     requestBatch.sendRequestsToBrokers(zkControllerEpoch)
     requestBatch.newBatch()
+<<<<<<< HEAD
+=======
+    requestBatch.setUpdateType(AbstractControlRequest.Type.INCREMENTAL)
+>>>>>>> trunk
 
     // Now send LISR, UMR and StopReplica requests for both new zk brokers and existing zk
     // brokers based on the topic changes.
     if (changedZkBrokers.nonEmpty) {
       // For new the brokers, check if there are partition assignments and add LISR appropriately.
+<<<<<<< HEAD
       image.topics().partitions().asScala.foreach { case (tp, partitionRegistration) =>
+=======
+      materializePartitions(image.topics()).asScala.foreach { case (tp, partitionRegistration) =>
+>>>>>>> trunk
         val replicas = partitionRegistration.replicas.toSet
         val leaderIsrAndControllerEpochOpt = MigrationControllerChannelContext.partitionLeadershipInfo(image, tp)
         val newBrokersWithReplicas = replicas.intersect(changedZkBrokers)
@@ -170,7 +258,11 @@ class MigrationPropagator(
         val newReplicas = partitionRegistration.replicas.toSet
         val removedReplicas = oldReplicas -- newReplicas
         if (removedReplicas.nonEmpty) {
+<<<<<<< HEAD
           requestBatch.addStopReplicaRequestForBrokers(removedReplicas.toSeq, tp, deletePartition = false)
+=======
+          requestBatch.addStopReplicaRequestForBrokers(removedReplicas.toSeq, tp, deletePartition = true)
+>>>>>>> trunk
         }
       }
     }
@@ -181,6 +273,7 @@ class MigrationPropagator(
   override def sendRPCsToBrokersFromMetadataImage(image: MetadataImage, zkControllerEpoch: Int): Unit = {
     publishMetadata(image)
 
+<<<<<<< HEAD
     val zkBrokers = image.cluster().zkBrokers().keySet().asScala.map(_.toInt).toSeq
     val partitions = image.topics().partitions()
     // First send all the metadata before sending any other requests to make sure subsequent
@@ -190,6 +283,18 @@ class MigrationPropagator(
     requestBatch.sendRequestsToBrokers(zkControllerEpoch)
 
     requestBatch.newBatch()
+=======
+    val zkBrokers = image.cluster().brokers().values().asScala.filter(_.isMigratingZkBroker).map(_.id()).toSeq
+    val partitions = materializePartitions(image.topics())
+    // First send all the metadata before sending any other requests to make sure subsequent
+    // requests are handled correctly.
+    requestBatch.newBatch()
+    requestBatch.addUpdateMetadataRequestForBrokers(zkBrokers, partitions.keySet.asScala)
+    requestBatch.sendRequestsToBrokers(zkControllerEpoch)
+
+    requestBatch.newBatch()
+    requestBatch.setUpdateType(AbstractControlRequest.Type.FULL)
+>>>>>>> trunk
     // When we need to send RPCs from the image, we're sending 'full' requests meaning we let
     // every broker know about all the metadata and all the LISR requests it needs to handle.
     // Note that we cannot send StopReplica requests from the image. We don't have any state
@@ -211,8 +316,11 @@ class MigrationPropagator(
   override def clear(): Unit = {
     requestBatch.clear()
   }
+<<<<<<< HEAD
 
   override def setMetadataVersion(newMetadataVersion: MetadataVersion): Unit = {
     metadataVersion = newMetadataVersion
   }
+=======
+>>>>>>> trunk
 }

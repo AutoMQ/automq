@@ -16,14 +16,53 @@
  */
 package org.apache.kafka.clients.consumer.internals.events;
 
+import java.util.Objects;
+
 /**
  * This is the abstract definition of the events created by the KafkaConsumer API
  */
-abstract public class ApplicationEvent {
-    /**
-     * process the application event. Return true upon succesful execution,
-     * false otherwise.
-     * @return true if the event was successfully executed; false otherwise.
-     */
-    public abstract boolean process();
+public abstract class ApplicationEvent {
+
+    public enum Type {
+        COMMIT_ASYNC, COMMIT_SYNC, POLL, FETCH_COMMITTED_OFFSETS, NEW_TOPICS_METADATA_UPDATE, ASSIGNMENT_CHANGE,
+        LIST_OFFSETS, RESET_POSITIONS, VALIDATE_POSITIONS, TOPIC_METADATA, SUBSCRIPTION_CHANGE,
+        UNSUBSCRIBE, CONSUMER_REBALANCE_LISTENER_CALLBACK_COMPLETED,
+        COMMIT_ON_CLOSE, LEAVE_ON_CLOSE
+    }
+
+    private final Type type;
+
+    protected ApplicationEvent(Type type) {
+        this.type = Objects.requireNonNull(type);
+    }
+
+    public Type type() {
+        return type;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        ApplicationEvent that = (ApplicationEvent) o;
+
+        return type == that.type;
+    }
+
+    @Override
+    public int hashCode() {
+        return type.hashCode();
+    }
+
+    protected String toStringBase() {
+        return "type=" + type;
+    }
+
+    @Override
+    public String toString() {
+        return "ApplicationEvent{" +
+                toStringBase() +
+                '}';
+    }
 }

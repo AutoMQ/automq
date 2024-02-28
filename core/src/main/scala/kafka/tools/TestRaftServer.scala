@@ -19,13 +19,12 @@ package kafka.tools
 
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.concurrent.{CompletableFuture, CountDownLatch, LinkedBlockingDeque, TimeUnit}
-
-import joptsimple.OptionException
+import joptsimple.{OptionException, OptionSpec}
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.{KafkaRaftManager, RaftManager}
 import kafka.security.CredentialProvider
-import kafka.server.{KafkaConfig, KafkaRequestHandlerPool, MetaProperties, SimpleApiVersionManager}
-import kafka.utils.{CommandDefaultOptions, CommandLineUtils, CoreUtils, Exit, Logging, ShutdownableThread}
+import kafka.server.{KafkaConfig, KafkaRequestHandlerPool, SimpleApiVersionManager}
+import kafka.utils.{CoreUtils, Exit, Logging}
 import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.common.metrics.Metrics
@@ -38,7 +37,10 @@ import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid, protocol}
 import org.apache.kafka.raft.errors.NotLeaderException
 import org.apache.kafka.raft.{Batch, BatchReader, LeaderAndEpoch, RaftClient, RaftConfig}
+import org.apache.kafka.server.common.{Features, MetadataVersion}
 import org.apache.kafka.server.common.serialization.RecordSerde
+import org.apache.kafka.server.fault.ProcessTerminatingFaultHandler
+import org.apache.kafka.server.util.{CommandDefaultOptions, CommandLineUtils, ShutdownableThread}
 import org.apache.kafka.snapshot.SnapshotReader
 
 import scala.jdk.CollectionConverters._
@@ -66,23 +68,22 @@ class TestRaftServer(
   var credentialProvider: CredentialProvider = _
   var tokenCache: DelegationTokenCache = _
   var dataPlaneRequestHandlerPool: KafkaRequestHandlerPool = _
-  var workloadGenerator: RaftWorkloadGenerator = _
+  private var workloadGenerator: RaftWorkloadGenerator = _
   var raftManager: KafkaRaftManager[Array[Byte]] = _
 
   def startup(): Unit = {
     tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
     credentialProvider = new CredentialProvider(ScramMechanism.mechanismNames, tokenCache)
 
-    val apiVersionManager = new SimpleApiVersionManager(ListenerType.CONTROLLER)
+    val apiVersionManager = new SimpleApiVersionManager(
+      ListenerType.CONTROLLER,
+      true,
+      false,
+      () => Features.fromKRaftVersion(MetadataVersion.MINIMUM_KRAFT_VERSION))
     socketServer = new SocketServer(config, metrics, time, credentialProvider, apiVersionManager)
 
-    val metaProperties = MetaProperties(
-      clusterId = Uuid.ZERO_UUID.toString,
-      nodeId = config.nodeId
-    )
-
     raftManager = new KafkaRaftManager[Array[Byte]](
-      metaProperties,
+      Uuid.ZERO_UUID.toString,
       config,
       new ByteArraySerde,
       partition,
@@ -91,6 +92,7 @@ class TestRaftServer(
       metrics,
       Some(threadNamePrefix),
       CompletableFuture.completedFuture(RaftConfig.parseVoterConnections(config.quorumVoters)),
+      new ProcessTerminatingFaultHandler.Builder().build()
     )
 
     workloadGenerator = new RaftWorkloadGenerator(
@@ -140,20 +142,20 @@ class TestRaftServer(
     shutdownLatch.await()
   }
 
-  class RaftWorkloadGenerator(
+  private class RaftWorkloadGenerator(
     raftManager: RaftManager[Array[Byte]],
     time: Time,
     recordsPerSec: Int,
     recordSize: Int
-  ) extends ShutdownableThread(name = "raft-workload-generator")
+  ) extends ShutdownableThread("raft-workload-generator")
     with RaftClient.Listener[Array[Byte]] {
 
-    sealed trait RaftEvent
-    case class HandleClaim(epoch: Int) extends RaftEvent
-    case object HandleResign extends RaftEvent
-    case class HandleCommit(reader: BatchReader[Array[Byte]]) extends RaftEvent
-    case class HandleSnapshot(reader: SnapshotReader[Array[Byte]]) extends RaftEvent
-    case object Shutdown extends RaftEvent
+    private sealed trait RaftEvent
+    private case class HandleClaim(epoch: Int) extends RaftEvent
+    private case object HandleResign extends RaftEvent
+    private case class HandleCommit(reader: BatchReader[Array[Byte]]) extends RaftEvent
+    private case class HandleSnapshot(reader: SnapshotReader[Array[Byte]]) extends RaftEvent
+    private case object Shutdown extends RaftEvent
 
     private val eventQueue = new LinkedBlockingDeque[RaftEvent]()
     private val stats = new WriteStats(metrics, time, printIntervalMs = 5000)
@@ -178,7 +180,7 @@ class TestRaftServer(
       eventQueue.offer(HandleCommit(reader))
     }
 
-    override def handleSnapshot(reader: SnapshotReader[Array[Byte]]): Unit = {
+    override def handleLoadSnapshot(reader: SnapshotReader[Array[Byte]]): Unit = {
       eventQueue.offer(HandleSnapshot(reader))
     }
 
@@ -409,20 +411,20 @@ object TestRaftServer extends Logging {
     }
   }
 
-  class TestRaftServerOptions(args: Array[String]) extends CommandDefaultOptions(args) {
-    val configOpt = parser.accepts("config", "Required configured file")
+  private class TestRaftServerOptions(args: Array[String]) extends CommandDefaultOptions(args) {
+    val configOpt: OptionSpec[String] = parser.accepts("config", "Required configured file")
       .withRequiredArg
       .describedAs("filename")
       .ofType(classOf[String])
 
-    val throughputOpt = parser.accepts("throughput",
+    val throughputOpt: OptionSpec[Int] = parser.accepts("throughput",
       "The number of records per second the leader will write to the metadata topic")
       .withRequiredArg
       .describedAs("records/sec")
       .ofType(classOf[Int])
       .defaultsTo(5000)
 
-    val recordSizeOpt = parser.accepts("record-size", "The size of each record")
+    val recordSizeOpt: OptionSpec[Int] = parser.accepts("record-size", "The size of each record")
       .withRequiredArg
       .describedAs("size in bytes")
       .ofType(classOf[Int])
@@ -434,7 +436,7 @@ object TestRaftServer extends Logging {
   def main(args: Array[String]): Unit = {
     val opts = new TestRaftServerOptions(args)
     try {
-      CommandLineUtils.printHelpAndExitIfNeeded(opts,
+      CommandLineUtils.maybePrintHelpOrVersion(opts,
         "Standalone raft server for performance testing")
 
       val configFile = opts.options.valueOf(opts.configOpt)
@@ -459,7 +461,7 @@ object TestRaftServer extends Logging {
       Exit.exit(0)
     } catch {
       case e: OptionException =>
-        CommandLineUtils.printUsageAndDie(opts.parser, e.getMessage)
+        CommandLineUtils.printUsageAndExit(opts.parser, e.getMessage)
       case e: Throwable =>
         fatal("Exiting raft server due to fatal exception", e)
         Exit.exit(1)

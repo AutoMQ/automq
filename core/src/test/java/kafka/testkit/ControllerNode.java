@@ -17,14 +17,31 @@
 
 package kafka.testkit;
 
+<<<<<<< HEAD
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+=======
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.metadata.properties.MetaProperties;
+import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble;
+import org.apache.kafka.metadata.properties.MetaPropertiesVersion;
+
+import java.io.File;
+import java.nio.file.Paths;
+import java.util.Optional;
+>>>>>>> trunk
 
 public class ControllerNode implements TestKitNode {
     public static class Builder {
         private int id = -1;
+        private String baseDirectory = null;
         private String metadataDirectory = null;
+        private Uuid clusterId = null;
+
+        public int id() {
+            return id;
+        }
 
         public Builder setId(int id) {
             this.id = id;
@@ -36,17 +53,41 @@ public class ControllerNode implements TestKitNode {
             return this;
         }
 
-        public ControllerNode build() {
+        public ControllerNode build(
+            String baseDirectory,
+            Uuid clusterId,
+            boolean combined
+        ) {
             if (id == -1) {
-                throw new RuntimeException("You must set the node id");
+                throw new RuntimeException("You must set the node id.");
+            }
+            if (baseDirectory == null) {
+                throw new RuntimeException("You must set the base directory.");
             }
             if (metadataDirectory == null) {
-                metadataDirectory = String.format("controller_%d", id);
+                if (combined) {
+                    metadataDirectory = String.format("combined_%d", id);
+                } else {
+                    metadataDirectory = String.format("controller_%d", id);
+                }
             }
-            return new ControllerNode(id, metadataDirectory);
+            if (!Paths.get(metadataDirectory).isAbsolute()) {
+                metadataDirectory = new File(baseDirectory, metadataDirectory).getAbsolutePath();
+            }
+            MetaPropertiesEnsemble.Copier copier =
+                new MetaPropertiesEnsemble.Copier(MetaPropertiesEnsemble.EMPTY);
+            copier.setMetaLogDir(Optional.of(metadataDirectory));
+            copier.setLogDirProps(metadataDirectory, new MetaProperties.Builder().
+                setVersion(MetaPropertiesVersion.V1).
+                setClusterId(clusterId.toString()).
+                setNodeId(id).
+                setDirectoryId(copier.generateValidDirectoryId()).
+                build());
+            return new ControllerNode(copier.copy(), combined);
         }
     }
 
+<<<<<<< HEAD
     private final int id;
     private final String metadataDirectory;
     private final Map<String, String> propertyOverrides;
@@ -59,16 +100,28 @@ public class ControllerNode implements TestKitNode {
         this.id = id;
         this.metadataDirectory = metadataDirectory;
         this.propertyOverrides = new HashMap<>(propertyOverrides);
+=======
+    private final MetaPropertiesEnsemble initialMetaPropertiesEnsemble;
+
+    private final boolean combined;
+
+    ControllerNode(
+        MetaPropertiesEnsemble initialMetaPropertiesEnsemble,
+        boolean combined
+    ) {
+        this.initialMetaPropertiesEnsemble = initialMetaPropertiesEnsemble;
+        this.combined = combined;
+>>>>>>> trunk
     }
 
     @Override
-    public int id() {
-        return id;
+    public MetaPropertiesEnsemble initialMetaPropertiesEnsemble() {
+        return initialMetaPropertiesEnsemble;
     }
 
     @Override
-    public String metadataDirectory() {
-        return metadataDirectory;
+    public boolean combined() {
+        return combined;
     }
 
     public Map<String, String> propertyOverrides() {

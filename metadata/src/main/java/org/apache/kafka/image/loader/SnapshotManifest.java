@@ -25,7 +25,11 @@ import java.util.Objects;
 /**
  * Contains information about a snapshot that was loaded.
  */
+<<<<<<< HEAD
 public class SnapshotManifest {
+=======
+public class SnapshotManifest implements LoaderManifest {
+>>>>>>> trunk
     /**
      * The source of this snapshot.
      */
@@ -44,6 +48,15 @@ public class SnapshotManifest {
         this.elapsedNs = elapsedNs;
     }
 
+<<<<<<< HEAD
+=======
+    @Override
+    public LoaderManifestType type() {
+        return LoaderManifestType.SNAPSHOT;
+    }
+
+    @Override
+>>>>>>> trunk
     public MetadataProvenance provenance() {
         return provenance;
     }

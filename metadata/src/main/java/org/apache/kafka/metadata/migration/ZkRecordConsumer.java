@@ -23,8 +23,14 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ZkRecordConsumer {
+<<<<<<< HEAD
     void beginMigration();
     CompletableFuture<?> acceptBatch(List<ApiMessageAndVersion> recordBatch);
     OffsetAndEpoch completeMigration();
+=======
+    CompletableFuture<?> beginMigration();
+    CompletableFuture<?> acceptBatch(List<ApiMessageAndVersion> recordBatch);
+    CompletableFuture<OffsetAndEpoch> completeMigration();
+>>>>>>> trunk
     void abortMigration();
 }

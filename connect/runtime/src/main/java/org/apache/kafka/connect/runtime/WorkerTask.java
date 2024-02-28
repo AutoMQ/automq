@@ -25,9 +25,11 @@ import org.apache.kafka.common.metrics.stats.Frequencies;
 import org.apache.kafka.common.metrics.stats.Max;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.runtime.errors.ErrorHandlingMetrics;
 import org.apache.kafka.connect.runtime.AbstractStatus.State;
 import org.apache.kafka.connect.runtime.ConnectMetrics.MetricGroup;
+import org.apache.kafka.connect.runtime.errors.ErrorReporter;
 import org.apache.kafka.connect.runtime.errors.RetryWithToleranceOperator;
 import org.apache.kafka.connect.storage.StatusBackingStore;
 import org.apache.kafka.connect.util.ConnectorTaskId;
@@ -35,22 +37,26 @@ import org.apache.kafka.connect.util.LoggingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Handles processing for an individual task. This interface only provides the basic methods
  * used by {@link Worker} to manage the tasks. Implementations combine a user-specified Task with
  * Kafka to create a data flow.
- *
+ * <p>
  * Note on locking: since the task runs in its own thread, special care must be taken to ensure
  * that state transitions are reported correctly, in particular since some state transitions are
  * asynchronous (e.g. pause/resume). For example, changing the state to paused could cause a race
  * if the task fails at the same time. To protect from these cases, we synchronize status updates
  * using the WorkerTask's monitor.
+ * @param <T> The type of record initially entering the processing pipeline from the source or consumer
+ * @param <R> The type of record during transformations (must be an implementation of {@link ConnectRecord})
  */
-abstract class WorkerTask implements Runnable {
+abstract class WorkerTask<T, R extends ConnectRecord<R>> implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(WorkerTask.class);
     private static final String THREAD_NAME_PREFIX = "task-thread-";
 
@@ -66,8 +72,9 @@ abstract class WorkerTask implements Runnable {
     private volatile boolean stopping;   // indicates whether the Worker has asked the task to stop
     private volatile boolean cancelled;  // indicates whether the Worker has cancelled the task (e.g. because of slow shutdown)
     private final ErrorHandlingMetrics errorMetrics;
-
-    protected final RetryWithToleranceOperator retryWithToleranceOperator;
+    protected final RetryWithToleranceOperator<T> retryWithToleranceOperator;
+    protected final TransformationChain<T, R> transformationChain;
+    private final Supplier<List<ErrorReporter<T>>> errorReportersSupplier;
 
     public WorkerTask(ConnectorTaskId id,
                       TaskStatus.Listener statusListener,
@@ -75,7 +82,9 @@ abstract class WorkerTask implements Runnable {
                       ClassLoader loader,
                       ConnectMetrics connectMetrics,
                       ErrorHandlingMetrics errorMetrics,
-                      RetryWithToleranceOperator retryWithToleranceOperator,
+                      RetryWithToleranceOperator<T> retryWithToleranceOperator,
+                      TransformationChain<T, R> transformationChain,
+                      Supplier<List<ErrorReporter<T>>> errorReportersSupplier,
                       Time time,
                       StatusBackingStore statusBackingStore) {
         this.id = id;
@@ -89,6 +98,8 @@ abstract class WorkerTask implements Runnable {
         this.cancelled = false;
         this.taskMetricsGroup.recordState(this.targetState);
         this.retryWithToleranceOperator = retryWithToleranceOperator;
+        this.transformationChain = transformationChain;
+        this.errorReportersSupplier = errorReportersSupplier;
         this.time = time;
         this.statusBackingStore = statusBackingStore;
     }
@@ -120,7 +131,7 @@ abstract class WorkerTask implements Runnable {
 
     /**
      * Stop this task from processing messages. This method does not block, it only triggers
-     * shutdown. Use #{@link #awaitStop} to block until completion.
+     * shutdown. Use {@link #awaitStop} to block until completion.
      */
     public void stop() {
         triggerStop();
@@ -158,6 +169,13 @@ abstract class WorkerTask implements Runnable {
         Utils.closeQuietly(errorMetrics, "Error handling metrics");
     }
 
+    // Visible for testing
+    void doStart() {
+        retryWithToleranceOperator.reporters(errorReportersSupplier.get());
+        initializeAndStart();
+        statusListener.onStartup(id);
+    }
+
     protected abstract void initializeAndStart();
 
     protected abstract void execute();
@@ -169,26 +187,32 @@ abstract class WorkerTask implements Runnable {
     }
 
     protected boolean isStopping() {
-        return stopping;
+        // The target state should never be STOPPED, but if things go wrong and it somehow is,
+        // we handle that identically to a request to shut down the task
+        return stopping || targetState == TargetState.STOPPED;
     }
 
     protected boolean isCancelled() {
         return cancelled;
     }
 
-    private void doClose() {
+    // Visible for testing
+    void doClose() {
         try {
             close();
         } catch (Throwable t) {
             log.error("{} Task threw an uncaught and unrecoverable exception during shutdown", this, t);
             throw t;
+        } finally {
+            Utils.closeQuietly(transformationChain, "transformation chain");
+            Utils.closeQuietly(retryWithToleranceOperator, "retry operator");
         }
     }
 
     private void doRun() throws InterruptedException {
         try {
             synchronized (this) {
-                if (stopping)
+                if (isStopping())
                     return;
 
                 if (targetState == TargetState.PAUSED) {
@@ -197,14 +221,13 @@ abstract class WorkerTask implements Runnable {
                 }
             }
 
-            initializeAndStart();
-            statusListener.onStartup(id);
+            doStart();
             execute();
         } catch (Throwable t) {
             failed = true;
             if (cancelled) {
                 log.warn("{} After being scheduled for shutdown, the orphan task threw an uncaught exception. A newer instance of this task might be already running", this, t);
-            } else if (stopping) {
+            } else if (isStopping()) {
                 log.warn("{} After being scheduled for shutdown, task threw an uncaught exception.", this, t);
             } else {
                 log.error("{} Task threw an uncaught and unrecoverable exception. Task is being killed and will not recover until manually restarted", this, t);
@@ -281,7 +304,7 @@ abstract class WorkerTask implements Runnable {
     protected boolean awaitUnpause() throws InterruptedException {
         synchronized (this) {
             while (targetState == TargetState.PAUSED) {
-                if (stopping)
+                if (isStopping())
                     return false;
                 this.wait();
             }
@@ -291,9 +314,21 @@ abstract class WorkerTask implements Runnable {
 
     public void transitionTo(TargetState state) {
         synchronized (this) {
-            // ignore the state change if we are stopping
-            if (stopping)
+            // Ignore the state change if we are stopping.
+            // This has the consequence that, if we ever transition to the STOPPED target state (which
+            // should never happen since whole point of that state is that it comes with a complete
+            // shutdown of all the tasks for the connector), we will never be able to transition out of it.
+            // Since part of transitioning to the STOPPED state is that we shut down the task and all of
+            // its resources (Kafka clients, SMTs, etc.), this is a reasonable way to do things; otherwise,
+            // we'd have to re-instantiate all of those resources to be able to resume (or even just pause)
+            // the task .
+            if (isStopping()) {
+                log.debug("{} Ignoring request to transition stopped task {} to state {}", this, id, state);
                 return;
+            }
+
+            if (targetState == TargetState.STOPPED)
+                log.warn("{} Received unexpected request to transition task {} to state {}; will shut down in response", this, id, TargetState.STOPPED);
 
             this.targetState = state;
             this.notifyAll();

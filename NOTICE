@@ -5,7 +5,11 @@ Copyright 2023-2024, AutoMQ CO.,LTD.
 Apache Kafka NOTICE
 ---------------------------
 Apache Kafka
+<<<<<<< HEAD
 Copyright 2023 The Apache Software Foundation.
+=======
+Copyright 2024 The Apache Software Foundation.
+>>>>>>> trunk
 
 This product includes software developed at
 The Apache Software Foundation (https://www.apache.org/).
@@ -27,8 +31,11 @@ Some portions of this file Copyright (c) 2004-2006 Intel Corporation and license
 
 This project contains the following code copied from Apache Hive:
 streams/src/main/java/org/apache/kafka/streams/state/internals/Murmur3.java
+<<<<<<< HEAD
 
 This project contains codes copied from, derived from or inspired by Cruise Control (https://github.com/linkedin/cruise-control)
 Copyright 2017, 2018, 2019, 2020, 2021, 2022 LinkedIn Corporation.
 All Rights Reserved.
 License: BSD 2-CLAUSE
+=======
+>>>>>>> trunk

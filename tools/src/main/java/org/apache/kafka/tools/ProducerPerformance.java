@@ -28,8 +28,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.Random;
 import java.util.Arrays;
+import java.util.SplittableRandom;
 
 import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
 import org.apache.kafka.clients.producer.Callback;
@@ -43,8 +43,8 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.utils.Exit;
+import org.apache.kafka.server.util.ThroughputThrottler;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.server.util.ToolsUtils;
 
 public class ProducerPerformance {
 
@@ -93,9 +93,10 @@ public class ProducerPerformance {
             if (recordSize != null) {
                 payload = new byte[recordSize];
             }
-            Random random = new Random(0);
+            // not threadsafe, do not share with other threads
+            SplittableRandom random = new SplittableRandom(0);
             ProducerRecord<byte[], byte[]> record;
-            Stats stats = new Stats(numRecords, 5000);
+            stats = new Stats(numRecords, 5000);
             long startMs = System.currentTimeMillis();
 
             ThroughputThrottler throttler = new ThroughputThrottler(throughput, startMs);
@@ -114,7 +115,7 @@ public class ProducerPerformance {
                 record = new ProducerRecord<>(topicName, payload);
 
                 long sendStartMs = System.currentTimeMillis();
-                Callback cb = stats.nextCompletion(sendStartMs, payload.length, stats);
+                cb = new PerfCallback(sendStartMs, payload.length, stats);
                 producer.send(record, cb);
 
                 currentTransactionSize++;
@@ -165,8 +166,12 @@ public class ProducerPerformance {
         return new KafkaProducer<>(props);
     }
 
+    Callback cb;
+
+    Stats stats;
+
     static byte[] generateRandomPayload(Integer recordSize, List<byte[]> payloadByteList, byte[] payload,
-            Random random) {
+            SplittableRandom random) {
         if (!payloadByteList.isEmpty()) {
             payload = payloadByteList.get(random.nextInt(payloadByteList.size()));
         } else if (recordSize != null) {
@@ -332,10 +337,10 @@ public class ProducerPerformance {
 
     // Visible for testing
     static class Stats {
-        private long start;
-        private long windowStart;
-        private int[] latencies;
-        private long sampling;
+        private final long start;
+        private final int[] latencies;
+        private final long sampling;
+        private final long reportingInterval;
         private long iteration;
         private int index;
         private long count;
@@ -346,7 +351,7 @@ public class ProducerPerformance {
         private int windowMaxLatency;
         private long windowTotalLatency;
         private long windowBytes;
-        private long reportingInterval;
+        private long windowStart;
 
         public Stats(long numRecords, int reportingInterval) {
             this.start = System.currentTimeMillis();
@@ -364,7 +369,7 @@ public class ProducerPerformance {
             this.reportingInterval = reportingInterval;
         }
 
-        public void record(long iter, int latency, int bytes, long time) {
+        public void record(int latency, int bytes, long time) {
             this.count++;
             this.bytes += bytes;
             this.totalLatency += latency;
@@ -373,7 +378,7 @@ public class ProducerPerformance {
             this.windowBytes += bytes;
             this.windowTotalLatency += latency;
             this.windowMaxLatency = Math.max(windowMaxLatency, latency);
-            if (iter % this.sampling == 0) {
+            if (this.iteration % this.sampling == 0) {
                 this.latencies[index] = latency;
                 this.index++;
             }
@@ -384,10 +389,24 @@ public class ProducerPerformance {
             }
         }
 
-        public Callback nextCompletion(long start, int bytes, Stats stats) {
-            Callback cb = new PerfCallback(this.iteration, start, bytes, stats);
-            this.iteration++;
-            return cb;
+        public long totalCount() {
+            return this.count;
+        }
+
+        public long currentWindowCount() {
+            return this.windowCount;
+        }
+
+        public long iteration() {
+            return this.iteration;
+        }
+
+        public long bytes() {
+            return this.bytes;
+        }
+
+        public int index() {
+            return this.index;
         }
 
         public void printWindow() {
@@ -441,23 +460,26 @@ public class ProducerPerformance {
         }
     }
 
-    private static final class PerfCallback implements Callback {
+    static final class PerfCallback implements Callback {
         private final long start;
-        private final long iteration;
         private final int bytes;
         private final Stats stats;
 
-        public PerfCallback(long iter, long start, int bytes, Stats stats) {
+        public PerfCallback(long start, int bytes, Stats stats) {
             this.start = start;
             this.stats = stats;
-            this.iteration = iter;
             this.bytes = bytes;
         }
 
         public void onCompletion(RecordMetadata metadata, Exception exception) {
             long now = System.currentTimeMillis();
             int latency = (int) (now - start);
-            this.stats.record(iteration, latency, bytes, now);
+            // It will only be counted when the sending is successful, otherwise the number of sent records may be
+            // magically printed when the sending fails.
+            if (exception == null) {
+                this.stats.record(latency, bytes, now);
+                this.stats.iteration++;
+            }
             if (exception != null)
                 exception.printStackTrace();
         }

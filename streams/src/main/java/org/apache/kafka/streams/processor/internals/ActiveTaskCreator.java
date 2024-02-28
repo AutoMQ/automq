@@ -44,7 +44,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.apache.kafka.streams.internals.StreamsConfigUtils.ProcessingMode.EXACTLY_ONCE_ALPHA;
-import static org.apache.kafka.streams.internals.StreamsConfigUtils.ProcessingMode.EXACTLY_ONCE_V2;
 import static org.apache.kafka.streams.internals.StreamsConfigUtils.eosEnabled;
 import static org.apache.kafka.streams.internals.StreamsConfigUtils.processingMode;
 import static org.apache.kafka.streams.processor.internals.ClientUtils.getTaskProducerClientId;
@@ -66,6 +65,7 @@ class ActiveTaskCreator {
     private final Map<TaskId, StreamsProducer> taskProducers;
     private final ProcessingMode processingMode;
     private final boolean stateUpdaterEnabled;
+    private final boolean processingThreadsEnabled;
 
     ActiveTaskCreator(final TopologyMetadata topologyMetadata,
                       final StreamsConfig applicationConfig,
@@ -78,7 +78,9 @@ class ActiveTaskCreator {
                       final String threadId,
                       final UUID processId,
                       final Logger log,
-                      final boolean stateUpdaterEnabled) {
+                      final boolean stateUpdaterEnabled,
+                      final boolean processingThreadsEnabled
+                      ) {
         this.topologyMetadata = topologyMetadata;
         this.applicationConfig = applicationConfig;
         this.streamsMetrics = streamsMetrics;
@@ -90,6 +92,7 @@ class ActiveTaskCreator {
         this.threadId = threadId;
         this.log = log;
         this.stateUpdaterEnabled = stateUpdaterEnabled;
+        this.processingThreadsEnabled = processingThreadsEnabled;
 
         createTaskSensor = ThreadMetrics.createTaskSensor(threadId, streamsMetrics);
         processingMode = processingMode(applicationConfig);
@@ -132,8 +135,8 @@ class ActiveTaskCreator {
     }
 
     StreamsProducer threadProducer() {
-        if (processingMode != EXACTLY_ONCE_V2) {
-            throw new IllegalStateException("Expected EXACTLY_ONCE_V2 to be enabled, but the processing mode was " + processingMode);
+        if (processingMode == EXACTLY_ONCE_ALPHA) {
+            throw new IllegalStateException("Expected AT_LEAST_ONCE or EXACTLY_ONCE_V2 to be enabled, but the processing mode was " + processingMode);
         }
         return threadProducer;
     }
@@ -226,7 +229,7 @@ class ActiveTaskCreator {
         }
 
         standbyTask.prepareRecycle();
-        standbyTask.stateMgr.transitionTaskType(Task.TaskType.ACTIVE);
+        standbyTask.stateMgr.transitionTaskType(Task.TaskType.ACTIVE, getLogContext(standbyTask.id));
 
         final RecordCollector recordCollector = createRecordCollector(standbyTask.id, getLogContext(standbyTask.id), standbyTask.topology);
         final StreamTask task = new StreamTask(
@@ -242,7 +245,8 @@ class ActiveTaskCreator {
             standbyTask.stateMgr,
             recordCollector,
             standbyTask.processorContext,
-            standbyTask.logContext
+            standbyTask.logContext,
+            processingThreadsEnabled
         );
 
         log.trace("Created active task {} from recycled standby task with assigned partitions {}", task.id, inputPartitions);
@@ -272,7 +276,8 @@ class ActiveTaskCreator {
             stateManager,
             recordCollector,
             context,
-            logContext
+            logContext,
+            processingThreadsEnabled
         );
 
         log.trace("Created active task {} with assigned partitions {}", taskId, inputPartitions);
@@ -324,7 +329,7 @@ class ActiveTaskCreator {
 
     private LogContext getLogContext(final TaskId taskId) {
         final String threadIdPrefix = String.format("stream-thread [%s] ", Thread.currentThread().getName());
-        final String logPrefix = threadIdPrefix + String.format("%s [%s] ", "task", taskId);
+        final String logPrefix = threadIdPrefix + String.format("%s [%s] ", "stream-task", taskId);
         return new LogContext(logPrefix);
     }
 

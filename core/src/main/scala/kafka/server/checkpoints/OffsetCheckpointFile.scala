@@ -16,13 +16,18 @@
   */
 package kafka.server.checkpoints
 
+<<<<<<< HEAD
 import kafka.log.LogManager.{LogStartOffsetCheckpointFile, RecoveryPointCheckpointFile}
 import kafka.log.streamaspect.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, ElasticLogManager, LogStartOffsetCheckpoint, RawKafkaMeta, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
 import kafka.server.LogDirFailureChannel
 import kafka.server.ReplicaManager.HighWatermarkFilename
 import kafka.server.epoch.EpochEntry
+=======
+>>>>>>> trunk
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.server.common.CheckpointFile.EntryFormatter
+import org.apache.kafka.storage.internals.checkpoint.CheckpointFileWithFailureHandler
+import org.apache.kafka.storage.internals.log.{EpochEntry, LogDirFailureChannel}
 
 import java.io._
 import java.util.Optional
@@ -79,6 +84,7 @@ trait OffsetCheckpoint {
 class OffsetCheckpointFile(val file: File, logDirFailureChannel: LogDirFailureChannel = null) {
   import OffsetCheckpointFile.moveToMetaMap
 
+<<<<<<< HEAD
   private val (checkpoint, elasticCheckpoint) = if (moveToMetaMap.contains(file.getName)) {
     (null, new ElasticCheckoutPointFileWithHandler(moveToMetaMap(file.getName)))
   } else {
@@ -100,6 +106,20 @@ class OffsetCheckpointFile(val file: File, logDirFailureChannel: LogDirFailureCh
     } else {
       checkpoint.read().toMap
     }
+=======
+  def write(offsets: Map[TopicPartition, Long]): Unit = {
+    val list: java.util.List[(TopicPartition, Long)] = new java.util.ArrayList[(TopicPartition, Long)](offsets.size)
+    offsets.foreach(x => list.add(x))
+    checkpoint.write(list, true)
+  }
+
+  def read(): Map[TopicPartition, Long] = {
+    val list = checkpoint.read()
+    val result = mutable.Map.empty[TopicPartition, Long]
+    result.sizeHint(list.size())
+    list.forEach { case (tp, offset) => result(tp) = offset }
+    result
+>>>>>>> trunk
   }
 
 }

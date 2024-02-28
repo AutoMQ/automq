@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.metadata.migration;
 
+<<<<<<< HEAD
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.image.MetadataDelta;
@@ -25,6 +26,13 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.List;
 import java.util.Map;
+=======
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.ProducerIdsBlock;
+
+import java.util.List;
+import java.util.Optional;
+>>>>>>> trunk
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -39,7 +47,11 @@ public interface MigrationClient {
      * Read or initialize the ZK migration leader state in ZK. If the ZNode is absent, the given {@code initialState}
      * will be written and subsequently returned with the zkVersion of the node. If the ZNode is present, it will be
      * read and returned.
+<<<<<<< HEAD
      * @param initialState  An initial, emtpy, state to write to ZooKeeper for the migration state.
+=======
+     * @param initialState  An initial, empty, state to write to ZooKeeper for the migration state.
+>>>>>>> trunk
      * @return  The existing migration state, or the initial state given.
      */
     ZkMigrationLeadershipState getOrCreateMigrationRecoveryState(ZkMigrationLeadershipState initialState);
@@ -74,6 +86,7 @@ public interface MigrationClient {
      */
     ZkMigrationLeadershipState releaseControllerLeadership(ZkMigrationLeadershipState state);
 
+<<<<<<< HEAD
     ZkMigrationLeadershipState createTopic(
         String topicName,
         Uuid topicId,
@@ -97,6 +110,17 @@ public interface MigrationClient {
         Map<String, Double> quotas,
         ZkMigrationLeadershipState state
     );
+=======
+    TopicMigrationClient topicClient();
+
+    ConfigMigrationClient configClient();
+
+    AclMigrationClient aclClient();
+
+    DelegationTokenMigrationClient delegationTokenClient();
+
+    Optional<ProducerIdsBlock> readProducerId();
+>>>>>>> trunk
 
     ZkMigrationLeadershipState writeProducerId(
         long nextProducerId,
@@ -106,6 +130,7 @@ public interface MigrationClient {
     void readAllMetadata(Consumer<List<ApiMessageAndVersion>> batchConsumer, Consumer<Integer> brokerIdConsumer);
 
     Set<Integer> readBrokerIds();
+<<<<<<< HEAD
 
     Set<Integer> readBrokerIdsFromTopicAssignments();
 
@@ -119,4 +144,6 @@ public interface MigrationClient {
     ZkMigrationLeadershipState writeMetadataDeltaToZookeeper(MetadataDelta delta,
                                                              MetadataImage image,
                                                              ZkMigrationLeadershipState state);
+=======
+>>>>>>> trunk
 }

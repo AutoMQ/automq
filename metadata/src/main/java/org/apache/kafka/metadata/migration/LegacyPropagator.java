@@ -18,7 +18,10 @@ package org.apache.kafka.metadata.migration;
 
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
+<<<<<<< HEAD
 import org.apache.kafka.server.common.MetadataVersion;
+=======
+>>>>>>> trunk
 
 public interface LegacyPropagator {
 
@@ -35,6 +38,9 @@ public interface LegacyPropagator {
     void sendRPCsToBrokersFromMetadataImage(MetadataImage image, int zkControllerEpoch);
 
     void clear();
+<<<<<<< HEAD
 
     void setMetadataVersion(MetadataVersion metadataVersion);
+=======
+>>>>>>> trunk
 }

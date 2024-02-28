@@ -47,6 +47,7 @@ import javax.ws.rs.core.Response;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -130,7 +131,7 @@ public class JaasBasicAuthFilterTest {
     }
 
     @Test
-    public void testUnknownCredentialsFile() throws IOException {
+    public void testUnknownCredentialsFile() {
         JaasBasicAuthFilter jaasBasicAuthFilter = setupJaasFilter("KafkaConnect", "/tmp/testcrednetial");
         ContainerRequestContext requestContext = setMock("Basic", "user", "password");
         jaasBasicAuthFilter.filter(requestContext);
@@ -141,7 +142,7 @@ public class JaasBasicAuthFilterTest {
     }
 
     @Test
-    public void testNoFileOption() throws IOException {
+    public void testNoFileOption() {
         JaasBasicAuthFilter jaasBasicAuthFilter = setupJaasFilter("KafkaConnect", null);
         ContainerRequestContext requestContext = setMock("Basic", "user", "password");
         jaasBasicAuthFilter.filter(requestContext);
@@ -230,7 +231,7 @@ public class JaasBasicAuthFilterTest {
         ArgumentCaptor<SecurityContext> capturedContext = ArgumentCaptor.forClass(SecurityContext.class);
         verify(requestContext).setSecurityContext(capturedContext.capture());
         assertEquals("user1", capturedContext.getValue().getUserPrincipal().getName());
-        assertEquals(true, capturedContext.getValue().isSecure());
+        assertTrue(capturedContext.getValue().isSecure());
     }
 
     private String authHeader(String authorization, String username, String password) {

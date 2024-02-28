@@ -21,6 +21,11 @@ import org.apache.kafka.server.common.MetadataVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+<<<<<<< HEAD
+=======
+import java.util.function.Consumer;
+
+>>>>>>> trunk
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -44,9 +49,34 @@ public class ImageWriterOptionsTest {
                     setMetadataVersion(version);
             if (i < MetadataVersion.MINIMUM_BOOTSTRAP_VERSION.ordinal()) {
                 assertEquals(MetadataVersion.MINIMUM_KRAFT_VERSION, options.metadataVersion());
+<<<<<<< HEAD
+=======
+                assertEquals(version, options.requestedMetadataVersion());
+>>>>>>> trunk
             } else {
                 assertEquals(version, options.metadataVersion());
             }
         }
     }
+<<<<<<< HEAD
+=======
+
+    @Test
+    public void testHandleLoss() {
+        String expectedMessage = "stuff";
+
+        for (int i = MetadataVersion.MINIMUM_KRAFT_VERSION.ordinal();
+             i < MetadataVersion.VERSIONS.length;
+             i++) {
+            MetadataVersion version = MetadataVersion.VERSIONS[i];
+            String formattedMessage = String.format("Metadata has been lost because the following could not be represented in metadata version %s: %s", version, expectedMessage);
+            Consumer<UnwritableMetadataException> customLossHandler = e -> assertEquals(formattedMessage, e.getMessage());
+            ImageWriterOptions options = new ImageWriterOptions.Builder()
+                    .setMetadataVersion(version)
+                    .setLossHandler(customLossHandler)
+                    .build();
+            options.handleLoss(expectedMessage);
+        }
+    }
+>>>>>>> trunk
 }

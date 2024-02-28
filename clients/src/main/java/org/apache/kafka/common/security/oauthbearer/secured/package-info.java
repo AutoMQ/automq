@@ -16,6 +16,10 @@
  */
 /**
  * This package is deprecated.
+<<<<<<< HEAD
  * @deprecated See {@link org.apache.kafka.common.security.oauthbearer}
+=======
+ * See {@link org.apache.kafka.common.security.oauthbearer}
+>>>>>>> trunk
  */
 package org.apache.kafka.common.security.oauthbearer.secured;

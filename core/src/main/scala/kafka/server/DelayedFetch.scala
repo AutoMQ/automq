@@ -17,6 +17,7 @@
 
 package kafka.server
 
+<<<<<<< HEAD
 import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import kafka.log.streamaspect.ReadHint
@@ -24,14 +25,25 @@ import kafka.log.streamaspect.ReadHint
 import java.util.concurrent.{ExecutorService, Executors, ThreadPoolExecutor, TimeUnit}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.DelayedFetch.DELAYED_FETCH_EXECUTOR
+=======
+import com.yammer.metrics.core.Meter
+
+import java.util.concurrent.TimeUnit
+>>>>>>> trunk
 import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
+<<<<<<< HEAD
 import org.apache.kafka.common.utils.ThreadUtils
+=======
+import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, FetchPartitionData, LogOffsetMetadata}
+>>>>>>> trunk
 
 import scala.collection._
+import scala.jdk.CollectionConverters._
 
 case class FetchPartitionStatus(startOffsetMetadata: LogOffsetMetadata, fetchInfo: PartitionData) {
 
@@ -92,16 +104,21 @@ class DelayedFetch(
         val fetchOffset = fetchStatus.startOffsetMetadata
         val fetchLeaderEpoch = fetchStatus.fetchInfo.currentLeaderEpoch
         try {
+<<<<<<< HEAD
           if (fetchOffset != LogOffsetMetadata.UnknownOffsetMetadata) {
             // AutoMQ for Kafka inject start
             val partition = replicaManager.getPartitionOrExceptionV2(topicIdPartition.topicPartition)
             // AutoMQ for Kafka inject end
+=======
+          if (fetchOffset != LogOffsetMetadata.UNKNOWN_OFFSET_METADATA) {
+            val partition = replicaManager.getPartitionOrException(topicIdPartition.topicPartition)
+>>>>>>> trunk
             val offsetSnapshot = partition.fetchOffsetSnapshot(fetchLeaderEpoch, params.fetchOnlyLeader)
 
             val endOffset = params.isolation match {
-              case FetchLogEnd => offsetSnapshot.logEndOffset
-              case FetchHighWatermark => offsetSnapshot.highWatermark
-              case FetchTxnCommitted => offsetSnapshot.lastStableOffset
+              case FetchIsolation.LOG_END => offsetSnapshot.logEndOffset
+              case FetchIsolation.HIGH_WATERMARK => offsetSnapshot.highWatermark
+              case FetchIsolation.TXN_COMMITTED => offsetSnapshot.lastStableOffset
             }
 
             // Go directly to the check for Case G if the message offsets are the same. If the log segment
@@ -195,6 +212,7 @@ class DelayedFetch(
       tp -> status.fetchInfo
     }
 
+<<<<<<< HEAD
     // AutoMQ for Kafka inject start
     ReadHint.markReadAll()
     // in delayed fetch, we only try fast read
@@ -217,6 +235,14 @@ class DelayedFetch(
     }
     ReadHint.clear()
     // AutoMQ for Kafka inject end
+=======
+    val logReadResults = replicaManager.readFromLog(
+      params,
+      fetchInfos,
+      quota,
+      readFromPurgatory = true
+    )
+>>>>>>> trunk
 
     val fetchPartitionData = logReadResults.map { case (tp, result) =>
       val isReassignmentFetch = params.isFromFollower &&
@@ -229,8 +255,9 @@ class DelayedFetch(
   }
 }
 
-object DelayedFetchMetrics extends KafkaMetricsGroup {
+object DelayedFetchMetrics {
+  private val metricsGroup = new KafkaMetricsGroup(DelayedFetchMetrics.getClass)
   private val FetcherTypeKey = "fetcherType"
-  val followerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "follower"))
-  val consumerExpiredRequestMeter = newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, tags = Map(FetcherTypeKey -> "consumer"))
+  val followerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "follower").asJava)
+  val consumerExpiredRequestMeter: Meter = metricsGroup.newMeter("ExpiresPerSec", "requests", TimeUnit.SECONDS, Map(FetcherTypeKey -> "consumer").asJava)
 }

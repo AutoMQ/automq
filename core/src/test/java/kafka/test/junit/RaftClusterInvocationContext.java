@@ -26,7 +26,10 @@ import kafka.test.ClusterInstance;
 import kafka.testkit.KafkaClusterTestKit;
 import kafka.testkit.TestKitNodes;
 import kafka.zk.EmbeddedZookeeper;
+<<<<<<< HEAD
 import org.apache.kafka.clients.CommonClientConfigs;
+=======
+>>>>>>> trunk
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.utils.Utils;
@@ -60,21 +63,30 @@ import java.util.stream.Stream;
  * <ul>
  *     <li>ClusterConfig (the same instance passed to the constructor)</li>
  *     <li>ClusterInstance (includes methods to expose underlying SocketServer-s)</li>
- *     <li>IntegrationTestHelper (helper methods)</li>
  * </ul>
  */
 public class RaftClusterInvocationContext implements TestTemplateInvocationContext {
 
+    private final String baseDisplayName;
     private final ClusterConfig clusterConfig;
     private final AtomicReference<KafkaClusterTestKit> clusterReference;
     private final AtomicReference<EmbeddedZookeeper> zkReference;
+<<<<<<< HEAD
     private final boolean isCoResident;
+=======
+    private final boolean isCombined;
+>>>>>>> trunk
 
-    public RaftClusterInvocationContext(ClusterConfig clusterConfig, boolean isCoResident) {
+    public RaftClusterInvocationContext(String baseDisplayName, ClusterConfig clusterConfig, boolean isCombined) {
+        this.baseDisplayName = baseDisplayName;
         this.clusterConfig = clusterConfig;
         this.clusterReference = new AtomicReference<>();
         this.zkReference = new AtomicReference<>();
+<<<<<<< HEAD
         this.isCoResident = isCoResident;
+=======
+        this.isCombined = isCombined;
+>>>>>>> trunk
     }
 
     @Override
@@ -82,7 +94,7 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
         String clusterDesc = clusterConfig.nameTags().entrySet().stream()
             .map(Object::toString)
             .collect(Collectors.joining(", "));
-        return String.format("[%d] Type=Raft-%s, %s", invocationIndex, isCoResident ? "CoReside" : "Distributed", clusterDesc);
+        return String.format("%s [%d] Type=Raft-%s, %s", baseDisplayName, invocationIndex, isCombined ? "Combined" : "Isolated", clusterDesc);
     }
 
     @Override
@@ -92,7 +104,7 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
             (BeforeTestExecutionCallback) context -> {
                 TestKitNodes nodes = new TestKitNodes.Builder().
                         setBootstrapMetadataVersion(clusterConfig.metadataVersion()).
-                        setCoResident(isCoResident).
+                        setCombined(isCombined).
                         setNumBrokerNodes(clusterConfig.numBrokers()).
                         setNumControllerNodes(clusterConfig.numControllers()).build();
                 nodes.brokerNodes().forEach((brokerId, brokerNode) -> {
@@ -105,19 +117,24 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
                     zkReference.set(new EmbeddedZookeeper());
                     builder.setConfigProp("zookeeper.connect", String.format("localhost:%d", zkReference.get().port()));
                 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> trunk
                 // Copy properties into the TestKit builder
                 clusterConfig.serverProperties().forEach((key, value) -> builder.setConfigProp(key.toString(), value.toString()));
                 // KAFKA-12512 need to pass security protocol and listener name here
                 KafkaClusterTestKit cluster = builder.build();
                 clusterReference.set(cluster);
                 cluster.format();
-                cluster.startup();
-                kafka.utils.TestUtils.waitUntilTrue(
-                    () -> cluster.brokers().get(0).brokerState() == BrokerState.RUNNING,
-                    () -> "Broker never made it to RUNNING state.",
-                    org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS,
-                    100L);
+                if (clusterConfig.isAutoStart()) {
+                    cluster.startup();
+                    kafka.utils.TestUtils.waitUntilTrue(
+                        () -> cluster.brokers().get(0).brokerState() == BrokerState.RUNNING,
+                        () -> "Broker never made it to RUNNING state.",
+                        org.apache.kafka.test.TestUtils.DEFAULT_MAX_WAIT_MS,
+                        100L);
+                }
             },
             (AfterTestExecutionCallback) context -> clusterInstance.stop(),
             new ClusterInstanceParameterResolver(clusterInstance),
@@ -142,7 +159,12 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
 
         @Override
         public String bootstrapServers() {
-            return clusterReference.get().clientProperties().getProperty(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG);
+            return clusterReference.get().bootstrapServers();
+        }
+
+        @Override
+        public String bootstrapControllers() {
+            return clusterReference.get().bootstrapControllers();
         }
 
         @Override
@@ -236,7 +258,8 @@ public class RaftClusterInvocationContext implements TestTemplateInvocationConte
 
         @Override
         public Admin createAdminClient(Properties configOverrides) {
-            Admin admin = Admin.create(clusterReference.get().clientProperties(configOverrides));
+            Admin admin = Admin.create(clusterReference.get().
+                newClientPropertiesBuilder(configOverrides).build());
             admins.add(admin);
             return admin;
         }

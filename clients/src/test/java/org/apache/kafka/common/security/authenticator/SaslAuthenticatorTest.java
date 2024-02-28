@@ -355,7 +355,7 @@ public class SaslAuthenticatorTest {
 
         try {
             InvalidScramServerCallbackHandler.sensitiveException =
-                    new IOException("Could not connect to password database locahost:8000");
+                    new IOException("Could not connect to password database localhost:8000");
             createAndCheckClientAuthenticationFailure(securityProtocol, "1", "SCRAM-SHA-256", null);
 
             InvalidScramServerCallbackHandler.sensitiveException =
@@ -1133,6 +1133,7 @@ public class SaslAuthenticatorTest {
                 TestServerCallbackHandler.class);
         saslServerConfigs.put(listener.saslMechanismConfigPrefix("digest-md5") + BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS,
                 DigestServerCallbackHandler.class);
+        server.close();
         server = createEchoServer(securityProtocol);
 
         // Verify that DIGEST-MD5 (currently configured for client) works with `DigestServerCallbackHandler`
@@ -1980,7 +1981,7 @@ public class SaslAuthenticatorTest {
             ScramCredentialUtils.createCache(credentialCache, Arrays.asList(saslMechanism));
 
         Supplier<ApiVersionsResponse> apiVersionSupplier = () -> {
-            ApiVersionsResponse defaultApiVersionResponse = ApiVersionsResponse.defaultApiVersionsResponse(
+            ApiVersionsResponse defaultApiVersionResponse = TestUtils.defaultApiVersionsResponse(
                 ApiMessageType.ListenerType.ZK_BROKER);
             ApiVersionCollection apiVersions = new ApiVersionCollection();
             for (ApiVersion apiVersion : defaultApiVersionResponse.data().apiKeys()) {
@@ -2578,7 +2579,7 @@ public class SaslAuthenticatorTest {
                 DelegationTokenCache tokenCache, Time time) {
             super(mode, jaasContexts, securityProtocol, listenerName, isInterBrokerListener, clientSaslMechanism,
                 handshakeRequestEnable, credentialCache, tokenCache, null, time, new LogContext(),
-                () -> ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.ZK_BROKER));
+                () -> TestUtils.defaultApiVersionsResponse(ApiMessageType.ListenerType.ZK_BROKER));
         }
 
         @Override

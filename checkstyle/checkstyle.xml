@@ -23,6 +23,14 @@
 
   <module name="FileTabCharacter"/>
 
+<<<<<<< HEAD
+=======
+  <!-- header -->
+  <module name="Header">
+    <property name="headerFile" value="${config_loc}/java.header" />
+  </module>
+
+>>>>>>> trunk
   <module name="TreeWalker">
 
     <!-- code cleanup -->
@@ -74,7 +82,7 @@
 
     <!-- dependencies -->
     <module name="ImportControl">
-      <property name="file" value="${importControlFile}"/>
+      <property name="file" value="${config_loc}/${importControlFile}"/>
     </module>
 
     <!-- whitespace -->
@@ -107,7 +115,9 @@
     </module>
 
     <!-- code quality -->
-    <module name="MethodLength"/>
+    <module name="MethodLength">
+      <property name="max" value="170" />
+    </module>
     <module name="ParameterNumber">
       <!-- default is 8 -->
       <property name="max" value="13"/>
@@ -124,7 +134,11 @@
 
     <module name="ClassFanOutComplexity">
       <!-- default is 20 -->
+<<<<<<< HEAD
       <property name="max" value="100"/>
+=======
+      <property name="max" value="52"/>
+>>>>>>> trunk
     </module>
     <module name="CyclomaticComplexity">
       <!-- default is 10-->
@@ -144,7 +158,7 @@
   </module>
 
   <module name="SuppressionFilter">
-    <property name="file" value="${suppressionsFile}"/>
+    <property name="file" value="${config_loc}/suppressions.xml"/>
   </module>
 
   <!-- Allows the use of the @SuppressWarnings annotation in the code -->

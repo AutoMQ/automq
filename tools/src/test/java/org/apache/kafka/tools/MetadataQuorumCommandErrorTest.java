@@ -16,9 +16,21 @@
  */
 package org.apache.kafka.tools;
 
+<<<<<<< HEAD
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+=======
+import org.apache.kafka.common.KafkaException;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+>>>>>>> trunk
 
 public class MetadataQuorumCommandErrorTest {
 
@@ -45,4 +57,19 @@ public class MetadataQuorumCommandErrorTest {
                 MetadataQuorumCommand.mainNoExit("--bootstrap-server", "localhost:9092", "describe", "--status", "--replication")));
     }
 
+<<<<<<< HEAD
+=======
+    @Test
+    public void testRelativeTimeMs() {
+        long validEpochMs = Instant.now().minusSeconds(5).toEpochMilli();
+        assertTrue(MetadataQuorumCommand.relativeTimeMs(validEpochMs, "test") >= 0);
+        long nowMs = Instant.now().toEpochMilli();
+        assertTrue(MetadataQuorumCommand.relativeTimeMs(nowMs, "test") >= 0);
+        long invalidEpochMs = Instant.EPOCH.minus(1, ChronoUnit.DAYS).toEpochMilli();
+        assertThrows(KafkaException.class, () -> MetadataQuorumCommand.relativeTimeMs(invalidEpochMs, "test"));
+        long futureEpochMs = Instant.now().plus(1, ChronoUnit.DAYS).toEpochMilli();
+        assertThrows(KafkaException.class, () -> MetadataQuorumCommand.relativeTimeMs(futureEpochMs, "test"));
+    }
+
+>>>>>>> trunk
 }
