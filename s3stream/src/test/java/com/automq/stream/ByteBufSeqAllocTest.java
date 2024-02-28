@@ -19,13 +19,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class DirectByteBufSeqAllocTest {
+public class ByteBufSeqAllocTest {
 
     @Test
     public void testAlloc() {
-        DirectByteBufSeqAlloc alloc = new DirectByteBufSeqAlloc(0);
+        ByteBufSeqAlloc alloc = new ByteBufSeqAlloc(0, 1);
 
-        AtomicReference<DirectByteBufSeqAlloc.HugeBuf> bufRef = alloc.hugeBufArray[Math.abs(Thread.currentThread().hashCode() % alloc.hugeBufArray.length)];
+        AtomicReference<ByteBufSeqAlloc.HugeBuf> bufRef = alloc.hugeBufArray[Math.abs(Thread.currentThread().hashCode() % alloc.hugeBufArray.length)];
 
         ByteBuf buf1 = alloc.byteBuffer(12);
         buf1.writeLong(1);
@@ -36,7 +36,7 @@ public class DirectByteBufSeqAllocTest {
         buf2.writeInt(4);
         buf2.writeLong(5);
 
-        ByteBuf buf3 = alloc.byteBuffer(DirectByteBufSeqAlloc.HUGE_BUF_SIZE - 12 - 20 - 4);
+        ByteBuf buf3 = alloc.byteBuffer(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12 - 20 - 4);
 
         ByteBuf oldHugeBuf = bufRef.get().buf;
 
@@ -64,7 +64,7 @@ public class DirectByteBufSeqAllocTest {
 
         ByteBuf oldHugeBuf2 = bufRef.get().buf;
 
-        alloc.byteBuffer(DirectByteBufSeqAlloc.HUGE_BUF_SIZE - 12).release();
+        alloc.byteBuffer(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12).release();
         alloc.byteBuffer(12).release();
         assertEquals(0, oldHugeBuf2.refCnt());
     }

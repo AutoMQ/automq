@@ -16,14 +16,15 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class DirectByteBufSeqAlloc {
+public class ByteBufSeqAlloc {
     public static final int HUGE_BUF_SIZE = 8 * 1024 * 1024;
     // why not use ThreadLocal? the partition open has too much threads
-    final AtomicReference<HugeBuf>[] hugeBufArray = new AtomicReference[8];
+    final AtomicReference<HugeBuf>[] hugeBufArray;
     private final int allocType;
 
-    public DirectByteBufSeqAlloc(int allocType) {
+    public ByteBufSeqAlloc(int allocType, int concurrency) {
         this.allocType = allocType;
+        hugeBufArray = new AtomicReference[concurrency];
         for (int i = 0; i < hugeBufArray.length; i++) {
             hugeBufArray[i] = new AtomicReference<>(new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType)));
         }
