@@ -192,8 +192,6 @@ public class TelemetryManager {
     }
 
     private void addJvmMetrics() {
-        // set JVM metrics opt-in to prevent metrics conflict.
-        System.setProperty("otel.semconv-stability.opt-in", "jvm");
         // JVM metrics
         autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
         autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
