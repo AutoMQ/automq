@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.DirectByteBufSeqAlloc;
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import io.netty.buffer.ByteBuf;
 
@@ -26,7 +26,7 @@ public class StreamRecordBatchCodec {
             + 8 // baseOffset
             + 4 // lastOffsetDelta
             + 4; // payload length
-    private static final DirectByteBufSeqAlloc ENCODE_ALLOC = new DirectByteBufSeqAlloc(ENCODE_RECORD);
+    private static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(ENCODE_RECORD, 8);
 
     public static ByteBuf encode(StreamRecordBatch streamRecord) {
         int totalLength = HEADER_SIZE + streamRecord.size(); // payload
