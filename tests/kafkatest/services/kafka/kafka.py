@@ -616,6 +616,17 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         Start the Kafka broker and wait until it registers its ID in ZooKeeper
         Startup will be skipped for any nodes in nodes_to_skip. These nodes can be started later via add_broker
         """
+        try:
+            self.start0(add_principals=add_principals, nodes_to_skip=nodes_to_skip, timeout_sec=timeout_sec, **kwargs)
+        except RemoteCommandError as e:
+            self.logger.error("RemoteCommandError when starting Kafka service: %s", e)
+            raise
+
+    def start0(self, add_principals="", nodes_to_skip=[], timeout_sec=60, **kwargs):
+        """
+        Start the Kafka broker and wait until it registers its ID in ZooKeeper
+        Startup will be skipped for any nodes in nodes_to_skip. These nodes can be started later via add_broker
+        """
         if self.quorum_info.using_zk and self.zk_client_secure and not self.zk.zk_client_secure_port:
             raise Exception("Unable to start Kafka: TLS to Zookeeper requested but Zookeeper secure port not enabled")
 
@@ -863,6 +874,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         node.account.create_file(KafkaService.CONFIG_FILE, prop_file)
         node.account.create_file(self.LOG4J_CONFIG, self.render('log4j.properties', log_dir=KafkaService.OPERATIONAL_LOG_DIR))
         if self.quorum_info.using_kraft:
+            node.account.ssh("feddd -h")
             # format log directories if necessary
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
             cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, config_property.CLUSTER_ID)
