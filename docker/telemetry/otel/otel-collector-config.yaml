@@ -15,7 +15,7 @@ exporters:
     verbosity: basic
   prometheus:
     endpoint: "0.0.0.0:8890"
-    metric_expiration: 10s
+    metric_expiration: 60s
     add_metric_suffixes: true
     resource_to_telemetry_conversion:
       enabled: false
