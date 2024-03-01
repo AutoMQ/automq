@@ -616,6 +616,17 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         Start the Kafka broker and wait until it registers its ID in ZooKeeper
         Startup will be skipped for any nodes in nodes_to_skip. These nodes can be started later via add_broker
         """
+        try:
+            self.start0(add_principals=add_principals, nodes_to_skip=nodes_to_skip, timeout_sec=timeout_sec, **kwargs)
+        except RemoteCommandError as e:
+            self.logger.error("RemoteCommandError when starting Kafka service: %s", e)
+            raise
+
+    def start0(self, add_principals="", nodes_to_skip=[], timeout_sec=60, **kwargs):
+        """
+        Start the Kafka broker and wait until it registers its ID in ZooKeeper
+        Startup will be skipped for any nodes in nodes_to_skip. These nodes can be started later via add_broker
+        """
         if self.quorum_info.using_zk and self.zk_client_secure and not self.zk.zk_client_secure_port:
             raise Exception("Unable to start Kafka: TLS to Zookeeper requested but Zookeeper secure port not enabled")
 
