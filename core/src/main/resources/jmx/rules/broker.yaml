@@ -175,6 +175,10 @@ rules:
         metric: kafka.request.queue.time.99p
         type: gauge
         desc: The 99th percentile time the broker has taken to dequeue requests
+      Max:
+        metric: kafka.request.queue.time.max
+        type: gauge
+        desc: The max time the broker has taken to dequeue requests
 
   - bean: kafka.network:type=RequestMetrics,name=ResponseQueueTimeMs,request=*
     metricAttribute:
@@ -197,6 +201,10 @@ rules:
         metric: kafka.response.queue.time.99p
         type: gauge
         desc: The 99th percentile time the broker has taken to dequeue responses
+      Max:
+        metric: kafka.response.queue.time.max
+        type: gauge
+        desc: The max time the broker has taken to dequeue responses
 
   - bean: kafka.network:type=RequestChannel,name=RequestQueueSize
     mapping:
@@ -249,10 +257,20 @@ rules:
         desc: Log flush count
       50thPercentile:
         metric: kafka.logs.flush.time.50p
+        type: gauge
         desc: Log flush time - 50th percentile
       99thPercentile:
         metric: kafka.logs.flush.time.99p
+        type: gauge
         desc: Log flush time - 99th percentile
+      Mean:
+        metric: kafka.logs.flush.time.mean
+        type: gauge
+        desc: Log flush time - mean
+      Max:
+        metric: kafka.logs.flush.time.max
+        type: gauge
+        desc: Log flush time - max
 
   - bean: kafka.log.streamaspect:type=Log,name=LogEndOffset,topic=*,partition=*
     metricAttribute:
