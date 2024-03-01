@@ -874,7 +874,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         node.account.create_file(KafkaService.CONFIG_FILE, prop_file)
         node.account.create_file(self.LOG4J_CONFIG, self.render('log4j.properties', log_dir=KafkaService.OPERATIONAL_LOG_DIR))
         if self.quorum_info.using_kraft:
-            node.account.ssh("feddd -h")
             # format log directories if necessary
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
             cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, config_property.CLUSTER_ID)
