@@ -45,7 +45,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Network-in"
+              "options": "Bytes In Total"
             },
             "properties": [
               {
@@ -56,27 +56,12 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Network-out"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "semi-dark-blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
           }
         ]
       },
       "gridPos": {
         "h": 10,
-        "w": 5,
+        "w": 2.5,
         "x": 0,
         "y": 0
       },
@@ -105,12 +90,93 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(direction, job) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", topic=\"$topic\", partition=~\"$partition\"}[$__rate_interval]))",
+          "expr": "sum by(job) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", topic=\"$topic\", partition=~\"$partition\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Network-{{direction}}",
+          "legendFormat": "Bytes In Total",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "binBps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bytes Out Total"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 2.5,
+        "x": 2.5,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "sum by(job) (rate(kafka_network_io_bytes_total{job=\"$cluster_id\", topic=\"$topic\", partition=~\"$partition\", direction=\"out\"}[$__rate_interval]))",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Bytes Out Total",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -1099,6 +1165,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 15,
+  "version": 18,
   "weekStart": ""
 }
