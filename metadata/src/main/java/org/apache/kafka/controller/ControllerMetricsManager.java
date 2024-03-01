@@ -288,7 +288,7 @@ final class ControllerMetricsManager {
 
     private void replay(RemoveTopicRecord record) {
         Uuid topicId = record.topicId();
-        Predicate<TopicIdPartition> matchesTopic = tp -> tp.topicId() == topicId;
+        Predicate<TopicIdPartition> matchesTopic = tp -> tp.topicId().equals(topicId);
 
         topicCount--;
         topicPartitions.keySet().removeIf(matchesTopic);
