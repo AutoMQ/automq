@@ -89,6 +89,7 @@
         "y": 0
       },
       "id": 2,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -206,6 +207,7 @@
         "y": 0
       },
       "id": 1,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -270,7 +272,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 38,
   "tags": [],
   "templating": {
@@ -423,6 +425,6 @@
   "timezone": "",
   "title": "Group Metrics",
   "uid": "d90be32f-7d32-488a-b99c-3e21529790e4",
-  "version": 6,
+  "version": 9,
   "weekStart": ""
 }

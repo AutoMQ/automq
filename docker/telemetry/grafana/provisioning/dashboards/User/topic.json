@@ -66,6 +66,7 @@
         "y": 0
       },
       "id": 7,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -147,6 +148,7 @@
         "y": 0
       },
       "id": 10,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -212,6 +214,7 @@
         "y": 0
       },
       "id": 8,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -315,6 +318,7 @@
         "y": 0
       },
       "id": 3,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -415,6 +419,7 @@
         "y": 0
       },
       "id": 9,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -476,6 +481,7 @@
         "y": 5
       },
       "id": 6,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -579,6 +585,7 @@
         "y": 10
       },
       "id": 4,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -679,6 +686,7 @@
         "y": 10
       },
       "id": 1,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -779,6 +787,7 @@
         "y": 10
       },
       "id": 2,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [],
@@ -940,6 +949,7 @@
         "y": 21
       },
       "id": 5,
+      "interval": "30s",
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1040,7 +1050,7 @@
       "type": "table"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 38,
   "tags": [],
   "templating": {
@@ -1165,6 +1175,6 @@
   "timezone": "",
   "title": "Topic Metrics",
   "uid": "b908cc7a-3592-405d-aafb-fc9225219b0a",
-  "version": 18,
+  "version": 21,
   "weekStart": ""
 }

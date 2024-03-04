@@ -54,6 +54,7 @@
         "y": 0
       },
       "id": 1,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -122,6 +123,7 @@
         "y": 0
       },
       "id": 3,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -186,6 +188,7 @@
         "y": 0
       },
       "id": 6,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -257,6 +260,7 @@
         "y": 0
       },
       "id": 13,
+      "interval": "30s",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -397,6 +401,7 @@
         "y": 0
       },
       "id": 5,
+      "interval": "30s",
       "options": {
         "legend": {
           "calcs": [
@@ -419,7 +424,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum(rate(kafka_network_io_bytes_total{job=\"$cluster_id\", direction=\"in\"}[$__rate_interval]))",
+          "expr": "sum(rate(kafka_broker_network_io_bytes_total{job=\"$cluster_id\", direction=\"in\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -435,7 +440,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "-sum(rate(kafka_network_io_bytes_total{job=\"$cluster_id\", direction=\"out\"}[$__rate_interval]))",
+          "expr": "sum(rate(kafka_broker_network_io_bytes_total{job=\"$cluster_id\", direction=\"out\"}[$__rate_interval])) * -1",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -481,6 +486,7 @@
         "y": 6
       },
       "id": 2,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -545,6 +551,7 @@
         "y": 6
       },
       "id": 4,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -609,6 +616,7 @@
         "y": 6
       },
       "id": 7,
+      "interval": "30s",
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -676,6 +684,7 @@
         "y": 12
       },
       "id": 11,
+      "interval": "30s",
       "options": {
         "displayMode": "gradient",
         "minVizHeight": 10,
@@ -907,6 +916,7 @@
         "y": 12
       },
       "id": 12,
+      "interval": "30s",
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1172,6 +1182,7 @@
         "y": 12
       },
       "id": 9,
+      "interval": "30s",
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1581,6 +1592,7 @@
         "y": 25
       },
       "id": 8,
+      "interval": "30s",
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1871,7 +1883,7 @@
       "type": "table"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 38,
   "tags": [],
   "templating": {
@@ -1961,6 +1973,6 @@
   "timezone": "",
   "title": "Cluster Overview",
   "uid": "f719833b-0a35-4fb3-9b84-3815726006e7",
-  "version": 20,
+  "version": 24,
   "weekStart": ""
 }
