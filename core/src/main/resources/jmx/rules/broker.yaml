@@ -13,6 +13,26 @@ rules:
         type: counter
         desc: The number of messages received by the broker
 
+  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec
+    metricAttribute:
+      direction: const(in)
+    mapping:
+      Count:
+        metric: kafka.broker.network.io
+        type: counter
+        desc: The bytes received or sent by the broker
+        unit: By
+
+  - bean: kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
+    metricAttribute:
+      direction: const(out)
+    mapping:
+      Count:
+        metric: kafka.broker.network.io
+        type: counter
+        desc: The bytes received or sent by the broker
+        unit: By
+
   - bean: kafka.server:type=BrokerTopicPartitionMetrics,name=BytesInPerSec,topic=*,partition=*
     metricAttribute:
       topic: param(topic)
@@ -22,7 +42,7 @@ rules:
       Count:
         metric: kafka.network.io
         type: counter
-        desc: The bytes received or sent by the broker
+        desc: The bytes received or sent by the broker per topic partition
         unit: By
 
   - bean: kafka.server:type=BrokerTopicPartitionMetrics,name=BytesOutPerSec,topic=*,partition=*
@@ -34,7 +54,7 @@ rules:
       Count:
         metric: kafka.network.io
         type: counter
-        desc: The bytes received or sent by the broker
+        desc: The bytes received or sent by the broker per topic partition
         unit: By
 
   - bean: kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestsPerSec,topic=*
