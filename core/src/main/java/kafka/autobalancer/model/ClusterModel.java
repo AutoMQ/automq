@@ -302,7 +302,6 @@ public class ClusterModel {
             }
             int oldBrokerId = topicPartitionReplicaMap.get(topicName).getOrDefault(partitionId, -1);
             if (oldBrokerId == brokerId) {
-                logger.warn("Reassign partition {} for topic {} on same broker {}", partitionId, topicName, oldBrokerId);
                 return;
             }
             if (oldBrokerId != -1) {

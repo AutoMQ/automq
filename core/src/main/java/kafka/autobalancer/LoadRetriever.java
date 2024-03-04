@@ -31,6 +31,8 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.message.CreatePartitionsRequestData;
+import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
@@ -273,17 +275,12 @@ public class LoadRetriever implements BrokerStatusListener {
     }
 
     private void checkAndCreateConsumer() {
-        String bootstrapServer = "";
+        String bootstrapServer;
         this.lock.lock();
         try {
             if (!hasAvailableBrokerInUse()) {
-                if (this.consumer != null) {
-                    logger.info("No available broker in use, try to close current consumer");
-                    this.consumer.close(Duration.ofSeconds(5));
-                    this.consumer = null;
-                    this.currentAssignment.clear();
-                    logger.info("Consumer closed");
-                }
+                logger.info("No available broker in use, try to close current consumer");
+                shutdownConsumer();
                 while (!shutdown && !hasAvailableBroker()) {
                     try {
                         this.cond.await();
@@ -294,27 +291,29 @@ public class LoadRetriever implements BrokerStatusListener {
                 if (this.shutdown) {
                     return;
                 }
-                bootstrapServer = buildBootstrapServer();
-                logger.info("Available brokers changed, new bootstrap server {}", bootstrapServer);
             }
+            bootstrapServer = buildBootstrapServer();
         } finally {
             lock.unlock();
         }
         if (this.consumer == null && !bootstrapServer.isEmpty()) {
-            checkAndCreateTopic();
             //TODO: fetch metadata from controller
             this.consumer = createConsumer(bootstrapServer);
             logger.info("Created consumer on {}", bootstrapServer);
         }
     }
 
-    private void checkAndCreateTopic() {
-        //TODO: check with cache
-        if (!leaderEpochInitialized || !isLeader) {
-            return;
+    private void shutdownConsumer() {
+        if (this.consumer != null) {
+            this.consumer.close(Duration.ofSeconds(5));
+            this.consumer = null;
+            this.currentAssignment.clear();
+            logger.info("Consumer closed");
         }
+    }
 
-        if (!hasAvailableBroker()) {
+    private void createTopic() {
+        if (!isValidState()) {
             return;
         }
 
@@ -334,35 +333,83 @@ public class LoadRetriever implements BrokerStatusListener {
                 .setReplicationFactor((short) 1)
                 .setConfigs(configCollection));
         request.setTopics(topicCollection);
-        CompletableFuture<CreateTopicsResponseData> future = this.controller.createTopics(
-                new ControllerRequestContext(null, null, OptionalLong.empty()),
-                request,
-                Collections.emptySet());
+
         try {
+            CompletableFuture<CreateTopicsResponseData> future = this.controller.createTopics(
+                    new ControllerRequestContext(null, null, OptionalLong.empty()),
+                    request,
+                    Collections.emptySet());
             CreateTopicsResponseData rsp = future.get();
             CreateTopicsResponseData.CreatableTopicResult result = rsp.topics().find(metricReporterTopic);
             if (result.errorCode() == Errors.NONE.code()) {
                 logger.info("Create metrics reporter topic {} succeed", metricReporterTopic);
-            }
-            if (result.errorCode() != Errors.NONE.code() && result.errorCode() != Errors.TOPIC_ALREADY_EXISTS.code()) {
+            } else if (result.errorCode() != Errors.NONE.code() && result.errorCode() != Errors.TOPIC_ALREADY_EXISTS.code()) {
                 logger.warn("Create metrics reporter topic {} failed: {}", metricReporterTopic, result.errorMessage());
             }
         } catch (Exception e) {
-            logger.error("Create metrics reporter topic {} exception: {}", metricReporterTopic, e.getMessage());
+            logger.error("Create metrics reporter topic {} exception", metricReporterTopic, e);
         }
+    }
+
+    private void createTopicPartitions() {
+        if (!isValidState()) {
+            return;
+        }
+
+        if (currentAssignment.size() > metricReporterTopicPartition) {
+            logger.info("Current partition number {} exceeds expected {}, skip alter topic partitions",
+                    currentAssignment.size(), metricReporterTopicPartition);
+            return;
+        }
+
+        CreatePartitionsRequestData.CreatePartitionsTopic topic = new CreatePartitionsRequestData.CreatePartitionsTopic()
+                .setName(metricReporterTopic)
+                .setCount(metricReporterTopicPartition)
+                .setAssignments(null);
+        try {
+            CompletableFuture<List<CreatePartitionsResponseData.CreatePartitionsTopicResult>> future =
+                    this.controller.createPartitions(new ControllerRequestContext(null, null, OptionalLong.empty()),
+                    List.of(topic), false);
+            List<CreatePartitionsResponseData.CreatePartitionsTopicResult> result = future.get();
+            for (CreatePartitionsResponseData.CreatePartitionsTopicResult r : result) {
+                if (r.errorCode() == Errors.NONE.code()) {
+                    logger.info("Create metrics reporter topic {} with {} partitions succeed", metricReporterTopic, metricReporterTopicPartition);
+                } else {
+                    logger.warn("Create metrics reporter topic {} with {} partitions failed: {}", metricReporterTopic,
+                            metricReporterTopicPartition, r.errorMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Create metrics reporter topic {} with {} partitions exception", metricReporterTopic,
+                    metricReporterTopicPartition, e);
+        }
+    }
+
+    private boolean isValidState() {
+        if (!leaderEpochInitialized || !isLeader) {
+            return false;
+        }
+
+        return hasAvailableBroker();
     }
 
     public void retrieve() {
         while (!shutdown) {
-            checkAndCreateConsumer();
-            if (shutdown) {
-                break;
-            }
             try {
-                if (!refreshAssignment()) {
-                    checkAndCreateTopic();
+                checkAndCreateConsumer();
+                if (shutdown) {
+                    return;
+                }
+                TopicAction action = refreshAssignment();
+                if (action != TopicAction.NONE) {
+                    if (action == TopicAction.CREATE) {
+                        createTopic();
+                    } else {
+                        createTopicPartitions();
+                    }
+                    shutdownConsumer();
                     this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
-                    break;
+                    return;
                 }
                 ConsumerRecords<String, AutoBalancerMetrics> records = this.consumer.poll(Duration.ofMillis(consumerPollTimeout));
                 for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
@@ -378,27 +425,37 @@ public class LoadRetriever implements BrokerStatusListener {
                     logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
                 }
             } catch (InvalidTopicException e) {
-                checkAndCreateTopic();
+                createTopic();
+                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                return;
             } catch (Exception e) {
-                logger.error("Consumer poll error: {}", e.getMessage());
+                logger.error("Consumer poll error", e);
+                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                return;
             }
         }
     }
 
-    private boolean refreshAssignment() {
+    private TopicAction refreshAssignment() {
         List<PartitionInfo> partitionInfos = this.consumer.partitionsFor(metricReporterTopic);
         if (partitionInfos.isEmpty()) {
-            logger.info("No partitions found for topic {}", metricReporterTopic);
-            return false;
+            logger.info("No partitions found for topic {}, try to create topic", metricReporterTopic);
+            return TopicAction.CREATE;
         }
         if (partitionInfos.size() != currentAssignment.size()) {
+            currentAssignment.clear();
             for (PartitionInfo partitionInfo : partitionInfos) {
                 TopicPartition topicPartition = new TopicPartition(partitionInfo.topic(), partitionInfo.partition());
                 currentAssignment.add(topicPartition);
             }
             this.consumer.assign(currentAssignment);
+            logger.info("Partition changed for {}, assigned to {} partitions", this.metricReporterTopic, currentAssignment.size());
         }
-        return true;
+        if (partitionInfos.size() < metricReporterTopicPartition) {
+            logger.info("Partition num {} less than expected {}, try to alter partition number", partitionInfos.size(), metricReporterTopicPartition);
+            return TopicAction.ALTER;
+        }
+        return TopicAction.NONE;
     }
 
     public void onLeaderChanged(boolean isLeader) {
@@ -418,5 +475,11 @@ public class LoadRetriever implements BrokerStatusListener {
             default:
                 logger.error("Not supported metrics version {}", metrics.metricType());
         }
+    }
+
+    private enum TopicAction {
+        NONE,
+        CREATE,
+        ALTER
     }
 }
