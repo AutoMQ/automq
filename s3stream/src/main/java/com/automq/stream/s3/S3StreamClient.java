@@ -38,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -45,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
+    private static final long STREAM_OBJECT_COMPACTION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
     private final Map<Long, StreamWrapper> openedStreams;
@@ -153,7 +155,8 @@ public class S3StreamClient implements StreamClient {
 
     class StreamWrapper implements Stream {
         private final S3Stream stream;
-        private volatile boolean compacting = false;
+        private final Semaphore trimCompactionSemaphore = new Semaphore(1);
+        private volatile long lastCompactionTimestamp = 0;
 
         public StreamWrapper(S3Stream stream) {
             this.stream = stream;
@@ -198,13 +201,18 @@ public class S3StreamClient implements StreamClient {
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
             return stream.trim(newStartOffset).whenComplete((nil, ex) -> {
-                if (compacting) {
-                    // skip compacting if the stream is compacting
-                    // to avoid streamObjectCompactionScheduler task queue overflow.
+                if (!trimCompactionSemaphore.tryAcquire()) {
+                    // ensure only one compaction task which trim triggers
                     return;
                 }
-                // trigger compaction after trim to clean up the expired stream objects.
-                streamObjectCompactionScheduler.execute(this::cleanupStreamObject);
+                streamObjectCompactionScheduler.execute(() -> {
+                    try {
+                        // trigger compaction after trim to clean up the expired stream objects.
+                        this.cleanupStreamObject();
+                    } finally {
+                        trimCompactionSemaphore.release();
+                    }
+                });
             });
 
         }
@@ -237,18 +245,18 @@ public class S3StreamClient implements StreamClient {
                 // so we need to check if the stream is closed before starting the compaction.
                 return;
             }
-            try {
-                compacting = true;
-                StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
-                    .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
-                if (onlyCleanup) {
-                    task.cleanup();
-                } else {
-                    task.compact();
-                }
-            } finally {
-                compacting = false;
+            if (System.currentTimeMillis() - lastCompactionTimestamp > STREAM_OBJECT_COMPACTION_INTERVAL_MS) {
+                // skip compaction if the last compaction is within the interval.
+                return;
             }
+            StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
+                .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
+            if (onlyCleanup) {
+                task.cleanup();
+            } else {
+                task.compact();
+            }
+            lastCompactionTimestamp = System.currentTimeMillis();
         }
     }
 }
