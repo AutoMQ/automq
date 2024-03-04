@@ -517,6 +517,7 @@ public class CompactionManager {
         List<S3ObjectMetadata> objectsToCompact)
         throws CompletionException {
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+        request.setObjectId(-1L);
 
         Set<Long> compactedObjectIds = new HashSet<>();
         logger.info("{} stream set objects as compact candidates, total compaction size: {}",
