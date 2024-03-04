@@ -13,6 +13,7 @@ package kafka.autobalancer.detector;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.executor.ActionExecutorService;
@@ -21,10 +22,14 @@ import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -121,21 +126,53 @@ public class AnomalyDetector {
             }
         }
 
-        int availableActionNum = maxActionsNumPerExecution;
+        List<Action> totalActions = new ArrayList<>();
         for (Goal goal : goalsByPriority) {
             if (!this.running) {
                 break;
             }
-            List<Action> actions = goal.optimize(snapshot, goalsByPriority);
-            int size = Math.min(availableActionNum, actions.size());
-            this.actionExecutor.execute(actions.subList(0, size));
-            availableActionNum -= size;
-            if (availableActionNum <= 0) {
-                logger.info("No more action can be executed in this round");
-                break;
+            totalActions.addAll(goal.optimize(snapshot, goalsByPriority));
+        }
+        int totalActionSize = totalActions.size();
+        List<Action> actionsToExecute = checkAndMergeActions(totalActions);
+        logger.info("Total actions num: {}, executable num: {}", totalActionSize, actionsToExecute.size());
+        this.actionExecutor.execute(actionsToExecute);
+
+        return actionsToExecute.size() * this.coolDownIntervalPerActionMs + this.detectInterval;
+    }
+
+    List<Action> checkAndMergeActions(List<Action> actions) throws IllegalStateException {
+        actions = actions.subList(0, Math.min(actions.size(), maxActionsNumPerExecution));
+        List<Action> filteredActions = new ArrayList<>();
+        Map<TopicPartition, Action> actionMergeMap = new HashMap<>();
+        for (Action action : actions) {
+            if (action.getType() == ActionType.SWAP) {
+                Action prevAction = actionMergeMap.remove(action.getSrcTopicPartition());
+                if (prevAction != null && prevAction.getDestBrokerId() != action.getSrcBrokerId()) {
+                    throw new IllegalStateException(String.format("Unmatched action chains for %s, prev: %s, next: %s",
+                            action.getSrcTopicPartition(), prevAction, action));
+                }
+                prevAction = actionMergeMap.remove(action.getDestTopicPartition());
+                if (prevAction != null && prevAction.getDestBrokerId() != action.getDestBrokerId()) {
+                    throw new IllegalStateException(String.format("Unmatched action chains for %s, prev: %s, next: %s",
+                            action.getSrcTopicPartition(), prevAction, action));
+                }
+                filteredActions.add(action);
+                continue;
             }
+            Action prevAction = actionMergeMap.get(action.getSrcTopicPartition());
+            if (prevAction == null) {
+                filteredActions.add(action);
+                actionMergeMap.put(action.getSrcTopicPartition(), action);
+                continue;
+            }
+            if (prevAction.getDestBrokerId() != action.getSrcBrokerId()) {
+                throw new IllegalStateException(String.format("Unmatched action chains for %s, prev: %s, next: %s",
+                        action.getSrcTopicPartition(), prevAction, action));
+            }
+            prevAction.setDestBrokerId(action.getDestBrokerId());
         }
 
-        return (maxActionsNumPerExecution - availableActionNum) * this.coolDownIntervalPerActionMs + this.detectInterval;
+        return filteredActions;
     }
 }
