@@ -18,7 +18,7 @@ public class Action {
     private final TopicPartition srcTp;
     private final TopicPartition destTp;
     private final int srcBrokerId;
-    private final int destBrokerId;
+    private int destBrokerId;
 
     private final ActionType type;
 
@@ -44,6 +44,10 @@ public class Action {
 
     public TopicPartition getDestTopicPartition() {
         return destTp;
+    }
+
+    public void setDestBrokerId(int destBrokerId) {
+        this.destBrokerId = destBrokerId;
     }
 
     public int getDestBrokerId() {
