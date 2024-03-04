@@ -57,6 +57,7 @@ public class StreamObjectCompactor {
     private final ObjectManager objectManager;
     private final S3Operator s3Operator;
     private final int dataBlockGroupSizeThreshold;
+    private CompactStreamObjectRequest request;
 
     private StreamObjectCompactor(ObjectManager objectManager, S3Operator s3Operator, Stream stream,
         long maxStreamObjectSize, int dataBlockGroupSizeThreshold) {
@@ -73,7 +74,7 @@ public class StreamObjectCompactor {
         try {
             compact0(false);
         } catch (Throwable e) {
-            handleCompactException(e);
+            handleCompactException(false, e);
         }
     }
 
@@ -84,15 +85,15 @@ public class StreamObjectCompactor {
         try {
             compact0(true);
         } catch (Throwable e) {
-            handleCompactException(e);
+            handleCompactException(true, e);
         }
     }
 
-    private void handleCompactException(Throwable e) {
+    private void handleCompactException(boolean onlyCleanup, Throwable e) {
         if (stream instanceof S3StreamClient.StreamWrapper && ((S3StreamClient.StreamWrapper) stream).isClosed()) {
-            LOGGER.warn("[STREAM_OBJECT_COMPACT_FAIL],[STREAM_CLOSED],{}", stream.streamId(), e);
+            LOGGER.warn("[STREAM_OBJECT_COMPACT_FAIL],[STREAM_CLOSED],{},onlyCleanup={},req={}", stream.streamId(), onlyCleanup, request, e);
         } else {
-            LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{}", stream.streamId(), e);
+            LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{},onlyCleanup={},req={}", stream.streamId(), onlyCleanup, request, e);
         }
     }
 
@@ -114,7 +115,7 @@ public class StreamObjectCompactor {
         // clean up the expired objects
         if (!expiredObjects.isEmpty()) {
             List<Long> compactedObjectIds = expiredObjects.stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList());
-            CompactStreamObjectRequest request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
+            request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
                 streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds);
             objectManager.compactStreamObject(request).get();
             if (s3ObjectLogger.isTraceEnabled()) {
@@ -137,7 +138,7 @@ public class StreamObjectCompactor {
             Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, stream.streamEpoch(),
                 startOffset, objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
             if (requestOpt.isPresent()) {
-                CompactStreamObjectRequest request = requestOpt.get();
+                request = requestOpt.get();
                 objectManager.compactStreamObject(request).get();
                 if (s3ObjectLogger.isTraceEnabled()) {
                     s3ObjectLogger.trace("{}", request);
