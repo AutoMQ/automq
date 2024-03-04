@@ -19,6 +19,7 @@ package kafka.autobalancer.detector;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
@@ -33,6 +34,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,6 +46,78 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 public class AnomalyDetectorTest {
+
+    @Test
+    public void testFilterAndMergeActions() {
+        List<Action> actions = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
+        AnomalyDetector anomalyDetector = new AnomalyDetectorBuilder()
+                .clusterModel(Mockito.mock(ClusterModel.class))
+                .addGoal(Mockito.mock(Goal.class))
+                .executor(new ActionExecutorService() {
+                    @Override
+                    public void start() {
+
+                    }
+
+                    @Override
+                    public void shutdown() {
+
+                    }
+
+                    @Override
+                    public void execute(Action action) {
+
+                    }
+
+                    @Override
+                    public void execute(List<Action> actions) {
+
+                    }
+                })
+                .build();
+        List<Action> filteredActions = anomalyDetector.checkAndMergeActions(actions);
+        Assertions.assertEquals(4, filteredActions.size());
+        List<Action> expectedActions = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 2));
+
+        Assertions.assertEquals(expectedActions, filteredActions);
+
+        List<Action> actions1 = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 999, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 3, new TopicPartition("topic-1", 3)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
+        Assertions.assertThrowsExactly(IllegalStateException.class, () -> anomalyDetector.checkAndMergeActions(actions1));
+
+        List<Action> actions2 = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 8, 3, new TopicPartition("topic-1", 3)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
+        Assertions.assertThrowsExactly(IllegalStateException.class, () -> anomalyDetector.checkAndMergeActions(actions2));
+
+        List<Action> actions3 = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 10, new TopicPartition("topic-1", 0)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
+        Assertions.assertThrowsExactly(IllegalStateException.class, () -> anomalyDetector.checkAndMergeActions(actions3));
+    }
 
     @Test
     public void testSchedulingTimeCost() {
