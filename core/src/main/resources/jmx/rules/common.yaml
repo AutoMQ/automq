@@ -1,0 +1,35 @@
+---
+rules:
+  # Network Metrics
+  - bean: kafka.server:type=socket-server-metrics,listener=*,networkProcessor=*
+    metricAttribute:
+      listener: param(listener)
+      network_processor: param(networkProcessor)
+    mapping:
+      connection-count:
+        metric: kafka.server.connection.count
+        type: gauge
+        desc: Current number of created connections
+      connection-creation-rate:
+        metric: kafka.server.connection.creation.rate
+        type: gauge
+        desc: Number of new connections per second
+
+  - bean: kafka.network:type=SocketServer,name=NetworkProcessorAvgIdlePercent
+    mapping:
+      Value:
+        metric: kafka.network.threads.idle.rate
+        type: gauge
+        desc: The fraction of time the network threads are idle
+
+  - bean: kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
+    mapping:
+      Count:
+        metric: kafka.io.threads.idle.time
+        type: counter
+        desc: The total time the io threads are idle
+        unit: ns
+      OneMinuteRate:
+        metric: kafka.io.threads.idle.rate.1m
+        type: gauge
+        desc: The fraction of time the io threads are idle for the last minute
