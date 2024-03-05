@@ -67,11 +67,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private int numMetricSendFailure = 0;
     private volatile boolean shutdown = false;
     private int metricsReporterCreateRetries;
+    private long lastErrorReportTime = 0;
 
     static String getBootstrapServers(Map<String, ?> configs) {
         Object port = configs.get("port");
         String listeners = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
-        if (!"null".equals(listeners) && listeners.length() != 0) {
+        if (!"null".equals(listeners) && !listeners.isEmpty()) {
             // See https://kafka.apache.org/documentation/#listeners for possible responses. If multiple listeners are configured, this function
             // picks the first listener in the list of listeners. Hence, users of this config must adjust their order accordingly.
             String firstListener = listeners.split("\\s*,\\s*")[0];
@@ -291,6 +292,10 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         producer.send(producerRecord, (recordMetadata, e) -> {
             if (e != null) {
                 numMetricSendFailure++;
+                if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
+                    lastErrorReportTime = System.currentTimeMillis();
+                    LOGGER.error("Failed to send auto balancer metric", e);
+                }
             }
         });
     }
