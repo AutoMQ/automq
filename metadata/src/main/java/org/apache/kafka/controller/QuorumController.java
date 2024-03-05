@@ -711,7 +711,7 @@ public final class QuorumController implements Controller {
         RUNS_IN_PREMIGRATION
     }
 
-    interface ControllerWriteOperation<T> {
+    public interface ControllerWriteOperation<T> {
         /**
          * Generate the metadata records needed to implement this controller write
          * operation.  In general, this operation should not modify the "hard state" of
@@ -954,7 +954,7 @@ public final class QuorumController implements Controller {
         }
     }
 
-    <T> CompletableFuture<T> appendWriteEvent(
+    public <T> CompletableFuture<T> appendWriteEvent(
         String name,
         OptionalLong deadlineNs,
         ControllerWriteOperation<T> op

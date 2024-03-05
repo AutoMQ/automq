@@ -10,7 +10,6 @@
  */
 package kafka.s3shell.util;
 
-import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +29,8 @@ public class KafkaFormatUtil {
             Files.delete(propPath);
         }
 
-        S3PropUtil.persist(props, propFileName);
+        // TODO: uncomment the following line
+//        S3PropUtil.persist(props, propFileName);
         if (!Files.isDirectory(Paths.get(logDirPath)) || !Files.exists(Paths.get(logDirPath, "meta.properties"))) {
             StorageTool.main(new String[] {"auto-format", "-t", clusterId, "-c=" + propFilePath});
         }

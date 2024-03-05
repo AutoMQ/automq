@@ -204,8 +204,10 @@ public class ReplicaVerificationTool {
                 }, "ReplicaVerificationToolShutdownHook"));
 
                 fetcherThreads.forEach(Thread::start);
-                System.out.printf("%s: verification process is started%n",
-                    DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())));
+                synchronized (DATE_FORMAT) {
+                    System.out.printf("%s: verification process is started%n",
+                        DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())));
+                }
             }
         } catch (Throwable e) {
             System.err.println(e.getMessage());
@@ -484,22 +486,26 @@ public class ReplicaVerificationTool {
                                         MessageInfo messageInfoFromFirstReplica = messageInfoFromFirstReplicaOpt.get();
 
                                         if (messageInfoFromFirstReplica.offset != batch.lastOffset()) {
-                                            println.accept(DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())) +
-                                                ": partition " + topicPartition +
-                                                ": replica " + messageInfoFromFirstReplica.replicaId +
-                                                "'s offset " + messageInfoFromFirstReplica.offset +
-                                                " doesn't match replica " + replicaId +
-                                                "'s offset " + batch.lastOffset());
-                                            Exit.exit(1);
+                                            synchronized (DATE_FORMAT) {
+                                                println.accept(DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())) +
+                                                    ": partition " + topicPartition +
+                                                    ": replica " + messageInfoFromFirstReplica.replicaId +
+                                                    "'s offset " + messageInfoFromFirstReplica.offset +
+                                                    " doesn't match replica " + replicaId +
+                                                    "'s offset " + batch.lastOffset());
+                                                Exit.exit(1);
+                                            }
                                         }
 
                                         if (messageInfoFromFirstReplica.checksum != batch.checksum())
-                                            println.accept(DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())) +
-                                                ": partition " + topicPartition +
-                                                " has unmatched checksum at offset " + batch.lastOffset() +
-                                                "; replica " + messageInfoFromFirstReplica.replicaId +
-                                                "'s checksum " + messageInfoFromFirstReplica.checksum +
-                                                "; replica " + replicaId + "'s checksum " + batch.checksum());
+                                            synchronized (DATE_FORMAT) {
+                                                println.accept(DATE_FORMAT.format(new Date(Time.SYSTEM.milliseconds())) +
+                                                    ": partition " + topicPartition +
+                                                    " has unmatched checksum at offset " + batch.lastOffset() +
+                                                    "; replica " + messageInfoFromFirstReplica.replicaId +
+                                                    "'s checksum " + messageInfoFromFirstReplica.checksum +
+                                                    "; replica " + replicaId + "'s checksum " + batch.checksum());
+                                            }
                                     }
                                 }
                             } else {
@@ -531,10 +537,12 @@ public class ReplicaVerificationTool {
 
             long currentTimeMs = Time.SYSTEM.milliseconds();
             if (currentTimeMs - lastReportTime > reportInterval) {
-                println.accept(DATE_FORMAT.format(new Date(currentTimeMs)) +
-                    ": max lag is " + maxLag + " for partition " +
-                    maxLagTopicAndPartition + " at offset " + offsetWithMaxLag +
-                    " among " + recordsCache.size() + " partitions");
+                synchronized (DATE_FORMAT) {
+                    println.accept(DATE_FORMAT.format(new Date(currentTimeMs)) +
+                        ": max lag is " + maxLag + " for partition " +
+                        maxLagTopicAndPartition + " at offset " + offsetWithMaxLag +
+                        " among " + recordsCache.size() + " partitions");
+                }
                 lastReportTime = currentTimeMs;
             }
         }

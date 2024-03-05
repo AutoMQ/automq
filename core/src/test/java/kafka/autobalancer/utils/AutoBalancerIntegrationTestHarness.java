@@ -17,8 +17,10 @@
 
 package kafka.autobalancer.utils;
 
+import java.io.File;
+import java.util.Collections;
+import java.util.Map;
 import kafka.autobalancer.config.AutoBalancerConfig;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.server.KafkaConfig;
 import kafka.testkit.BrokerNode;
@@ -29,10 +31,6 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.metadata.BrokerState;
 import org.apache.kafka.test.TestUtils;
-
-import java.io.File;
-import java.util.Collections;
-import java.util.Map;
 
 
 public abstract class AutoBalancerIntegrationTestHarness {
@@ -67,11 +65,12 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 i++;
             }
             for (ControllerNode controller : nodes.controllerNodes().values()) {
-                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
-                controller.propertyOverrides().putAll(overridingControllerProps());
-                controller.propertyOverrides().putAll(overridingNodeProps());
-                controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
-                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
+        // TODO: uncomment the following line
+//                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
+//                controller.propertyOverrides().putAll(overridingControllerProps());
+//                controller.propertyOverrides().putAll(overridingNodeProps());
+//                controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
+//                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
             }
 
             KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);

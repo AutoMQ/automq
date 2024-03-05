@@ -12,21 +12,8 @@
 package kafka.log.stream.s3.network;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
-import kafka.log.stream.s3.network.request.BatchRequest;
-import kafka.log.stream.s3.network.request.WrapRequest;
-import kafka.server.BrokerServer;
-import kafka.server.BrokerToControllerChannelManager;
-import kafka.server.ControllerRequestCompletionHandler;
-import org.apache.kafka.clients.ClientResponse;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.requests.AbstractRequest.Builder;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -37,12 +24,23 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import kafka.log.stream.s3.network.request.BatchRequest;
+import kafka.log.stream.s3.network.request.WrapRequest;
+import kafka.server.BrokerServer;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.requests.AbstractRequest.Builder;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ControllerRequestSender {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
     private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
     private final RetryPolicyContext retryPolicyContext;
-    private final BrokerToControllerChannelManager channelManager;
+
+        // TODO: uncomment the following line
+//    private final BrokerToControllerChannelManager channelManager;
 
     private final ScheduledExecutorService retryService;
 
@@ -50,14 +48,15 @@ public class ControllerRequestSender {
 
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
-        this.channelManager = brokerServer.newBrokerToControllerChannelManager("s3stream-to-controller", 60000);
-        this.channelManager.start();
+        // TODO: uncomment the following line
+//        this.channelManager = brokerServer.newBrokerToControllerChannelManager("s3stream-to-controller", 60000);
+//        this.channelManager.start();
         this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
         this.requestAccumulatorMap = new ConcurrentHashMap<>();
     }
 
     public void shutdown() {
-        this.channelManager.shutdown();
+//        this.channelManager.shutdown();
     }
 
     public void send(RequestTask task) {
@@ -105,30 +104,30 @@ public class ControllerRequestSender {
     }
 
     private void sendRequest(Builder requestBuilder, RequestCtx ctx) {
-        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
-            @Override
-            public void onTimeout() {
-                // TODO: add timeout retry policy
-                LOGGER.error("Timeout while creating stream");
-                ctx.onError(new TimeoutException("Timeout while creating stream"));
-            }
-
-            @Override
-            public void onComplete(ClientResponse response) {
-                if (response.authenticationException() != null) {
-                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
-                    ctx.onError(response.authenticationException());
-                    return;
-                }
-                if (response.versionMismatch() != null) {
-                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
-                    ctx.onError(response.versionMismatch());
-                    return;
-                }
-                AbstractResponse resp = response.responseBody();
-                ctx.onSuccess(resp);
-            }
-        });
+//        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
+//            @Override
+//            public void onTimeout() {
+//                // TODO: add timeout retry policy
+//                LOGGER.error("Timeout while creating stream");
+//                ctx.onError(new TimeoutException("Timeout while creating stream"));
+//            }
+//
+//            @Override
+//            public void onComplete(ClientResponse response) {
+//                if (response.authenticationException() != null) {
+//                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
+//                    ctx.onError(response.authenticationException());
+//                    return;
+//                }
+//                if (response.versionMismatch() != null) {
+//                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
+//                    ctx.onError(response.versionMismatch());
+//                    return;
+//                }
+//                AbstractResponse resp = response.responseBody();
+//                ctx.onSuccess(resp);
+//            }
+//        });
     }
 
     private void retryTask(RequestTask task) {
@@ -181,14 +180,15 @@ public class ControllerRequestSender {
                 }
 
                 void onSuccess0(AbstractResponse response) {
-                    if (!(response instanceof AbstractBatchResponse)) {
-                        LOGGER.error("Unexpected response type: {} while sending request: {}",
-                                response.getClass().getSimpleName(), builder);
-                        onError(new RuntimeException("Unexpected response type while sending request"));
-                        return;
-                    }
-                    AbstractBatchResponse resp = (AbstractBatchResponse) response;
-                    List subResponses = resp.subResponses();
+//                    if (!(response instanceof AbstractBatchResponse)) {
+//                        LOGGER.error("Unexpected response type: {} while sending request: {}",
+//                                response.getClass().getSimpleName(), builder);
+//                        onError(new RuntimeException("Unexpected response type while sending request"));
+//                        return;
+//                    }
+//                    AbstractBatchResponse resp = (AbstractBatchResponse) response;
+//                    List subResponses = resp.subResponses();
+                    List subResponses = Collections.emptyList();
                     if (subResponses.size() != inflight.size()) {
                         LOGGER.error("Response size: {} not match request size: {}", subResponses.size(), inflight.size());
                         onError(new RuntimeException("Response size not match request size"));

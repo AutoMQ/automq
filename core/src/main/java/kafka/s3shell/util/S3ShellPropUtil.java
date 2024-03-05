@@ -10,9 +10,6 @@
  */
 package kafka.s3shell.util;
 
-import com.automq.s3shell.sdk.constant.ServerConfigKey;
-import com.automq.s3shell.sdk.model.S3Url;
-import com.automq.s3shell.sdk.util.S3PropUtil;
 import java.io.IOException;
 import java.util.List;
 import java.util.Properties;
@@ -41,41 +38,44 @@ public class S3ShellPropUtil {
         if (args.length < 1) {
             throw new FatalExitError(1);
         }
+        // TODO: uncomment the following line
+//        Properties props = new Properties();
+//        switch (processRole) {
+//            case "broker":
+//                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.BROKER_PROPS_PATH));
+//                break;
+//            case "controller":
+//                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.CONTROLLER_PROPS_PATH));
+//                break;
+//            case "broker,controller":
+//            case "controller,broker":
+//                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.SERVER_PROPS_PATH));
+//                break;
+//            default:
+//                throw new IllegalArgumentException("Invalid process role:" + processRole);
+//        }
 
-        Properties props = new Properties();
-        switch (processRole) {
-            case "broker":
-                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.BROKER_PROPS_PATH));
-                break;
-            case "controller":
-                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.CONTROLLER_PROPS_PATH));
-                break;
-            case "broker,controller":
-            case "controller,broker":
-                props.putAll(S3PropUtil.loadTemplateProps(S3PropUtil.SERVER_PROPS_PATH));
-                break;
-            default:
-                throw new IllegalArgumentException("Invalid process role:" + processRole);
-        }
 
         // Handle --override options
-        OptionParser optionParser = acceptOption();
-        OptionSet options = optionParser.parse(args);
-        handleOption(options, props);
+//        OptionParser optionParser = acceptOption();
+//        OptionSet options = optionParser.parse(args);
+//        handleOption(options, props);
 
-        return props;
+//        return props;
+        return null;
     }
 
     private static void handleOption(OptionSet options, Properties props) {
-        S3Url s3Url = null;
-        if (options.has("s3-url")) {
-            String s3UrlStr = (String) options.valueOf("s3-url");
-            s3Url = S3Url.parse(s3UrlStr);
-            props.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
-            props.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
-            props.put(ServerConfigKey.S3_BUCKET.getKeyName(), s3Url.getS3DataBucket());
-            props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), String.valueOf(s3Url.isS3PathStyle()));
-        }
+        // TODO: uncomment the following line
+//        S3Url s3Url = null;
+//        if (options.has("s3-url")) {
+//            String s3UrlStr = (String) options.valueOf("s3-url");
+//            s3Url = S3Url.parse(s3UrlStr);
+//            props.put(ServerConfigKey.S3_ENDPOINT.getKeyName(), s3Url.getEndpointProtocol().getName() + "://" + s3Url.getS3Endpoint());
+//            props.put(ServerConfigKey.S3_REGION.getKeyName(), s3Url.getS3Region());
+//            props.put(ServerConfigKey.S3_BUCKET.getKeyName(), s3Url.getS3DataBucket());
+//            props.put(ServerConfigKey.S3_PATH_STYLE.getKeyName(), String.valueOf(s3Url.isS3PathStyle()));
+//        }
 
         if (options.has("override")) {
             List<?> overrideOptions = options.valuesOf("override");
@@ -90,13 +90,14 @@ public class S3ShellPropUtil {
             }
         }
 
+        // TODO: uncomment the following line
         //format storage
-        if (s3Url != null) {
-            try {
-                KafkaFormatUtil.formatStorage(s3Url.getClusterId(), props);
-            } catch (IOException e) {
-                throw new RuntimeException(String.format("Format storage failed for cluster:%s", s3Url.getClusterId()), e);
-            }
-        }
+//        if (s3Url != null) {
+//            try {
+//                KafkaFormatUtil.formatStorage(s3Url.getClusterId(), props);
+//            } catch (IOException e) {
+//                throw new RuntimeException(String.format("Format storage failed for cluster:%s", s3Url.getClusterId()), e);
+//            }
+//        }
     }
 }

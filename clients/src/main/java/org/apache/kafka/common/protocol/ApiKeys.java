@@ -118,8 +118,23 @@ public enum ApiKeys {
     PUSH_TELEMETRY(ApiMessageType.PUSH_TELEMETRY),
     ASSIGN_REPLICAS_TO_DIRS(ApiMessageType.ASSIGN_REPLICAS_TO_DIRS),
     LIST_CLIENT_METRICS_RESOURCES(ApiMessageType.LIST_CLIENT_METRICS_RESOURCES),
-    DESCRIBE_TOPIC_PARTITIONS(ApiMessageType.DESCRIBE_TOPIC_PARTITIONS);
+    DESCRIBE_TOPIC_PARTITIONS(ApiMessageType.DESCRIBE_TOPIC_PARTITIONS),
 
+    // AutoMQ for Kafka inject start
+    CREATE_STREAMS(ApiMessageType.CREATE_STREAMS, false, true),
+    DELETE_STREAMS(ApiMessageType.DELETE_STREAMS, false, true),
+    OPEN_STREAMS(ApiMessageType.OPEN_STREAMS, false, true),
+    CLOSE_STREAMS(ApiMessageType.CLOSE_STREAMS, false, true),
+    TRIM_STREAMS(ApiMessageType.TRIM_STREAMS, false, true),
+    PREPARE_S3_OBJECT(ApiMessageType.PREPARE_S3_OBJECT, false, true),
+    COMMIT_STREAM_SET_OBJECT(ApiMessageType.COMMIT_STREAM_SET_OBJECT, false, true),
+    COMMIT_STREAM_OBJECT(ApiMessageType.COMMIT_STREAM_OBJECT, false, true),
+    GET_OPENING_STREAMS(ApiMessageType.GET_OPENING_STREAMS, false, true),
+    GET_KVS(ApiMessageType.GET_KVS, false, true),
+    PUT_KVS(ApiMessageType.PUT_KVS, false, true),
+    DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
+    GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true);
+    // AutoMQ for Kafka inject end
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);
 
