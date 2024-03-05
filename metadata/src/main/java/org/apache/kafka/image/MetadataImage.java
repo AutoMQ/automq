@@ -63,6 +63,15 @@ public final class MetadataImage {
 
     private final DelegationTokenImage delegationTokens;
 
+    // AutoMQ for Kafka inject start
+
+    private final S3StreamsMetadataImage streamMetadata = null;
+
+    private final S3ObjectsImage objectsMetadata = null;
+
+    private final KVImage kv = null;
+    // AutoMQ for Kafka inject end
+
     public MetadataImage(
         MetadataProvenance provenance,
         FeaturesImage features,
@@ -146,6 +155,20 @@ public final class MetadataImage {
     public DelegationTokenImage delegationTokens() {
         return delegationTokens;
     }
+
+    // AutoMQ for Kafka inject start
+    public S3StreamsMetadataImage streamsMetadata() {
+        return streamMetadata;
+    }
+
+    public S3ObjectsImage objectsMetadata() {
+        return objectsMetadata;
+    }
+
+    public KVImage kv() {
+        return kv;
+    }
+    // AutoMQ for Kafka inject end
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         // Features should be written out first so we can include the metadata.version at the beginning of the

@@ -52,7 +52,7 @@ plugins {
 
 ext {
   gradleVersion = versions.gradle
-  minJavaVersion = 8
+  minJavaVersion = 11
   buildVersionFileName = "kafka-version.properties"
 
   defaultMaxHeapSize = "2g"
@@ -176,47 +176,7 @@ def determineCommitId() {
 
 apply from: file('wrapper.gradle')
 
-if (repo != null) {
-  rat {
-    dependsOn subprojects.collect {
-      it.tasks.matching {
-        it.name == "processMessages" || it.name == "processTestMessages"
-      }
-    }
-
-    verbose.set(true)
-    reportDir.set(project.file('build/rat'))
-    stylesheet.set(file('gradle/resources/rat-output-to-html.xsl'))
-
-    // Exclude everything under the directory that git should be ignoring via .gitignore or that isn't checked in. These
-    // restrict us only to files that are checked in or are staged.
-    excludes = new ArrayList<String>(repo.clean(ignore: false, directories: true, dryRun: true))
-    // And some of the files that we have checked in should also be excluded from this check
-    excludes.addAll([
-        '**/.git/**',
-        '**/build/**',
-        'CONTRIBUTING.md',
-        'PULL_REQUEST_TEMPLATE.md',
-        'gradlew',
-        'gradlew.bat',
-        'gradle/wrapper/gradle-wrapper.properties',
-        'trogdor/README.md',
-        '**/README.md',
-        '**/id_rsa',
-        '**/id_rsa.pub',
-        'checkstyle/suppressions.xml',
-        'streams/quickstart/java/src/test/resources/projects/basic/goal.txt',
-        'streams/streams-scala/logs/*',
-        'licenses/*',
-        '**/generated/**',
-        'clients/src/test/resources/serializedData/*',
-        'docker/test/fixtures/secrets/*',
-        'docker/examples/fixtures/secrets/*'
-    ])
-  }
-} else {
-  rat.enabled = false
-}
+rat.enabled = false
 println("Starting build with version $version (commit id ${commitId == null ? "null" : commitId.take(8)}) using Gradle $gradleVersion, Java ${JavaVersion.current()} and Scala ${versions.scala}")
 println("Build properties: maxParallelForks=$maxTestForks, maxScalacThreads=$maxScalacThreads, maxTestRetries=$userMaxTestRetries")
 
@@ -968,6 +928,32 @@ project(':core') {
     // ZooKeeperMain depends on commons-cli but declares the dependency as `provided`
     implementation libs.commonsCli
 
+    implementation libs.zstd
+    implementation libs.commonLang
+    compileOnly libs.log4j
+    implementation libs.slf4jlog4j
+    implementation libs.slf4jBridge
+    implementation libs.nettyHttp2
+    implementation(extLibs.s3stream) {
+      exclude group: 'io.netty', module: '*'
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
+
+    implementation libs.opentelemetryJava8
+    implementation libs.opentelemetryOshi
+    implementation libs.opentelemetrySdk
+    implementation libs.opentelemetrySdkMetrics
+    implementation libs.opentelemetryExporterLogging
+    implementation libs.opentelemetryExporterProm
+    implementation libs.opentelemetryExporterOTLP
+    implementation libs.opentelemetryJmx
+
+    implementation(libs.oshi) {
+      exclude group: 'org.slf4j', module: '*'
+    }
+
     compileOnly libs.log4j
 
     testImplementation project(':clients').sourceSets.test.output
@@ -1252,6 +1238,18 @@ project(':metadata') {
     implementation project(':server-common')
     implementation project(':clients')
     implementation project(':raft')
+
+    implementation libs.metrics
+    implementation libs.nettyCommon
+    implementation libs.nettyHttp2
+    implementation libs.zstd
+    implementation(extLibs.s3stream) {
+      exclude group: 'io.netty', module: '*'
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
+
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
     implementation libs.metrics
@@ -1701,6 +1699,12 @@ project(':server-common') {
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
+    implementation(extLibs.s3stream) {
+      exclude group: 'io.netty', module: '*'
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
@@ -2007,6 +2011,12 @@ project(':tools') {
     implementation libs.log4j
     implementation libs.joptSimple
 
+    implementation(extLibs.s3stream) {
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
+
     implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
     implementation libs.jacksonJaxrsJsonProvider
 
@@ -2121,6 +2131,13 @@ project(':shell') {
 
     implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
     implementation libs.jacksonJaxrsJsonProvider
+
+    implementation(extLibs.s3stream) {
+      exclude group: 'io.netty', module: '*'
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output

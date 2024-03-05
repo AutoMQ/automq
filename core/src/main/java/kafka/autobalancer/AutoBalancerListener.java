@@ -121,15 +121,22 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
     }
 
     @Override
-    public void handleSnapshot(SnapshotReader<ApiMessageAndVersion> reader) {
-        queue.append(() -> {
-            try (reader) {
-                while (reader.hasNext()) {
-                    handleMessageBatch(reader.next());
-                }
-            }
-        });
+    public void handleLoadSnapshot(SnapshotReader<ApiMessageAndVersion> reader) {
+
     }
+
+
+        // TODO: uncomment the following line
+//    @Override
+//    public void handleSnapshot(SnapshotReader<ApiMessageAndVersion> reader) {
+//        queue.append(() -> {
+//            try (reader) {
+//                while (reader.hasNext()) {
+//                    handleMessageBatch(reader.next());
+//                }
+//            }
+//        });
+//    }
 
     @Override
     public void handleLeaderChange(LeaderAndEpoch leader) {

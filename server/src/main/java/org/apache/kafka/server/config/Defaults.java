@@ -284,4 +284,21 @@ public class Defaults {
     public static final int QUORUM_LINGER_MS = RaftConfig.DEFAULT_QUORUM_LINGER_MS;
     public static final int QUORUM_REQUEST_TIMEOUT_MS = RaftConfig.DEFAULT_QUORUM_REQUEST_TIMEOUT_MS;
     public static final int QUORUM_RETRY_BACKOFF_MS = RaftConfig.DEFAULT_QUORUM_RETRY_BACKOFF_MS;
+
+    /** ********* Kafka on S3 Configuration *********/
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL = 20; // 20min
+    public static final long S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE = 200 * 1024 * 1024; // 200MB
+    public static final long S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE = 8 * 1024 * 1024; // 8MB
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES = 120; // 120min
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM = 500;
+    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 100000;
+    public static final int S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT = 10000;
+    public static final long S3_OBJECT_DELETE_RETENTION_MINUTES = 10; // 10min
+    public static final long S3_NETWORK_BASELINE_BANDWIDTH = 100 * 1024 * 1024; // 100MB/s
+    public static final int S3_REFILL_PERIOD_MS = 1000; // 1s
+    public static final int S3_METRICS_EXPORTER_REPORT_INTERVAL_MS = 30000; // 30s
+    public static final int S3_SPAN_SCHEDULED_DELAY_MS = 1000; // 1s
+    public static final int S3_SPAN_MAX_QUEUE_SIZE = 5120;
+    public static final int S3_SPAN_MAX_BATCH_SIZE = 1024;
+    public static final String S3_EXPORTER_OTLPPROTOCOL = "grpc";
 }

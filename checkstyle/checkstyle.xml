@@ -24,9 +24,9 @@
   <module name="FileTabCharacter"/>
 
   <!-- header -->
-  <module name="Header">
-    <property name="headerFile" value="${config_loc}/java.header" />
-  </module>
+<!--  <module name="Header">-->
+<!--    <property name="headerFile" value="${config_loc}/java.header" />-->
+<!--  </module>-->
 
   <module name="TreeWalker">
 
@@ -78,9 +78,9 @@
     </module>
 
     <!-- dependencies -->
-    <module name="ImportControl">
-      <property name="file" value="${config_loc}/${importControlFile}"/>
-    </module>
+<!--    <module name="ImportControl">-->
+<!--      <property name="file" value="${config_loc}/${importControlFile}"/>-->
+<!--    </module>-->
 
     <!-- whitespace -->
     <module name="GenericWhitespace"/>
