@@ -12,6 +12,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+plugins {
+    id 'com.gradle.enterprise' version '3.14.1'
+    id 'com.gradle.common-custom-user-data-gradle-plugin' version '1.11.1'
+}
+
 def s3stream_repo = 'https://github.com/AutoMQ/automq-for-rocketmq.git'
 
 sourceControl {
@@ -19,11 +25,6 @@ sourceControl {
         producesModule("com.automq.elasticstream:s3stream")
         rootDir = "s3stream"
     }
-}
-
-plugins {
-    id 'com.gradle.enterprise' version '3.14.1'
-    id 'com.gradle.common-custom-user-data-gradle-plugin' version '1.11.1'
 }
 
 def isGithubActions = System.getenv('GITHUB_ACTIONS') != null
@@ -101,20 +102,14 @@ include 'clients',
     'streams:upgrade-system-tests-31',
     'streams:upgrade-system-tests-32',
     'streams:upgrade-system-tests-33',
-<<<<<<< HEAD
-    'tools',
-    'trogdor',
-    'kshell-sdk'
-
-=======
     'streams:upgrade-system-tests-34',
     'streams:upgrade-system-tests-35',
     'streams:upgrade-system-tests-36',
     'tools',
     'tools:tools-api',
     'transaction-coordinator',
-    'trogdor'
+    'trogdor',
+    'kshell-sdk'
 
 project(":storage:api").name = "storage-api"
 rootProject.name = 'kafka'
->>>>>>> trunk

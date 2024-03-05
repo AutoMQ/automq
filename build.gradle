@@ -52,11 +52,7 @@ plugins {
 
 ext {
   gradleVersion = versions.gradle
-<<<<<<< HEAD
-  minJavaVersion = "11"
-=======
-  minJavaVersion = 8
->>>>>>> trunk
+  minJavaVersion = 11
   buildVersionFileName = "kafka-version.properties"
 
   defaultMaxHeapSize = "2g"
@@ -187,52 +183,8 @@ def determineCommitId() {
 
 apply from: file('wrapper.gradle')
 
-<<<<<<< HEAD
 rat.enabled = false
 
-=======
-if (repo != null) {
-  rat {
-    dependsOn subprojects.collect {
-      it.tasks.matching {
-        it.name == "processMessages" || it.name == "processTestMessages"
-      }
-    }
-
-    verbose.set(true)
-    reportDir.set(project.file('build/rat'))
-    stylesheet.set(file('gradle/resources/rat-output-to-html.xsl'))
-
-    // Exclude everything under the directory that git should be ignoring via .gitignore or that isn't checked in. These
-    // restrict us only to files that are checked in or are staged.
-    excludes = new ArrayList<String>(repo.clean(ignore: false, directories: true, dryRun: true))
-    // And some of the files that we have checked in should also be excluded from this check
-    excludes.addAll([
-        '**/.git/**',
-        '**/build/**',
-        'CONTRIBUTING.md',
-        'PULL_REQUEST_TEMPLATE.md',
-        'gradlew',
-        'gradlew.bat',
-        'gradle/wrapper/gradle-wrapper.properties',
-        'trogdor/README.md',
-        '**/README.md',
-        '**/id_rsa',
-        '**/id_rsa.pub',
-        'checkstyle/suppressions.xml',
-        'streams/quickstart/java/src/test/resources/projects/basic/goal.txt',
-        'streams/streams-scala/logs/*',
-        'licenses/*',
-        '**/generated/**',
-        'clients/src/test/resources/serializedData/*',
-        'docker/test/fixtures/secrets/*',
-        'docker/examples/fixtures/secrets/*'
-    ])
-  }
-} else {
-  rat.enabled = false
-}
->>>>>>> trunk
 println("Starting build with version $version (commit id ${commitId == null ? "null" : commitId.take(8)}) using Gradle $gradleVersion, Java ${JavaVersion.current()} and Scala ${versions.scala}")
 println("Build properties: maxParallelForks=$maxTestForks, maxScalacThreads=$maxScalacThreads, maxTestRetries=$userMaxTestRetries")
 
@@ -983,11 +935,8 @@ project(':core') {
     implementation project(':tools:tools-api')
     implementation project(':raft')
     implementation project(':storage')
-<<<<<<< HEAD
     implementation project(':kshell-sdk')
-=======
     implementation project(':server')
->>>>>>> trunk
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -1073,16 +1022,13 @@ project(':core') {
     testImplementation libs.apachedsJdbmPartition
     testImplementation libs.junitJupiter
     testImplementation libs.slf4jlog4j
-<<<<<<< HEAD
     testImplementation(libs.jfreechart) {
       exclude group: 'junit', module: 'junit'
     }
     testImplementation(libs.commonMath3)
 
-=======
     testImplementation libs.caffeine
     
->>>>>>> trunk
     generator project(':generator')
   }
 
@@ -1224,15 +1170,10 @@ project(':core') {
                                ':streams:genStreamsConfigDocs', 'genConsumerMetricsDocs', 'genProducerMetricsDocs',
                                ':connect:runtime:genConnectMetricsDocs', ':connect:runtime:genConnectOpenAPIDocs',
                                ':connect:mirror:genMirrorSourceConfigDocs', ':connect:mirror:genMirrorCheckpointConfigDocs',
-<<<<<<< HEAD
-                               ':connect:mirror:genMirrorHeartbeatConfigDocs'], type: Tar) {
-    def prefix = project.findProperty('prefix') ?: ''
-    archiveBaseName = "${prefix}kafka"
-
-=======
                                ':connect:mirror:genMirrorHeartbeatConfigDocs', ':connect:mirror:genMirrorConnectorConfigDocs',
                                ':storage:genRemoteLogManagerConfigDoc', ':storage:genRemoteLogMetadataManagerConfigDoc'], type: Tar) {
->>>>>>> trunk
+    def prefix = project.findProperty('prefix') ?: ''
+    archiveBaseName = "${prefix}kafka"                          
     archiveClassifier = 'site-docs'
     compression = Compression.GZIP
     from project.file("$rootDir/docs")
@@ -1810,18 +1751,15 @@ project(':server-common') {
     api project(':clients')
     implementation libs.slf4jApi
     implementation libs.metrics
-<<<<<<< HEAD
     implementation(extLibs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'
       version branchVersions.s3stream
     }
-=======
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
->>>>>>> trunk
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
@@ -2129,7 +2067,6 @@ project(':kshell-sdk') {
 project(':tools') {
   archivesBaseName = "kafka-tools"
   dependencies {
-<<<<<<< HEAD
     implementation (project(':clients')){
       exclude group: 'org.slf4j', module: '*'
     }
@@ -2141,27 +2078,18 @@ project(':tools') {
     }
     implementation project(':kshell-sdk')
 
-=======
-    implementation project(':clients')
     implementation project(':storage')
-    implementation project(':server-common')
     implementation project(':connect:runtime')
-    implementation project(':log4j-appender')
     implementation project(':tools:tools-api')
->>>>>>> trunk
     implementation libs.argparse4j
     implementation libs.slf4jApi
     implementation libs.log4j
-<<<<<<< HEAD
     // for SASL/OAUTHBEARER JWT validation
     implementation (libs.jose4j){
       exclude group: 'org.slf4j', module: '*'
     }
-=======
     implementation libs.joptSimple
 
-    implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
->>>>>>> trunk
     implementation libs.jacksonJaxrsJsonProvider
     implementation(extLibs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
@@ -2170,7 +2098,6 @@ project(':tools') {
     }
     implementation libs.commonio
 
-<<<<<<< HEAD
 
     testImplementation (project(':clients')){
       exclude group: 'org.slf4j', module: '*'
@@ -2185,13 +2112,9 @@ project(':tools') {
     }
 
 
-    testImplementation project(':server-common').sourceSets.test.output
     testImplementation libs.junitJupiter
-    testImplementation libs.mockitoInline // supports mocking static methods, final classes, etc.
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
     testImplementation libs.bcpkix // required by the clients test module, but we have to specify it explicitly as gradle does not include the transitive test dependency automatically
-=======
-    testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
     testImplementation project(':server')
     testImplementation project(':server').sourceSets.test.output
@@ -2210,7 +2133,6 @@ project(':tools') {
     testImplementation(libs.jfreechart) {
       exclude group: 'junit', module: 'junit'
     }
->>>>>>> trunk
     testRuntimeOnly libs.slf4jlog4j
   }
 
@@ -2489,12 +2411,9 @@ project(':streams') {
             ':streams:upgrade-system-tests-31:test',
             ':streams:upgrade-system-tests-32:test',
             ':streams:upgrade-system-tests-33:test',
-<<<<<<< HEAD
-=======
             ':streams:upgrade-system-tests-34:test',
             ':streams:upgrade-system-tests-35:test',
             ':streams:upgrade-system-tests-36:test',
->>>>>>> trunk
             ':streams:examples:test'
     ]
   )
@@ -2888,49 +2807,6 @@ project(':streams:upgrade-system-tests-33') {
   }
 }
 
-<<<<<<< HEAD
-=======
-project(':streams:upgrade-system-tests-34') {
-  archivesBaseName = "kafka-streams-upgrade-system-tests-34"
-
-  dependencies {
-    testImplementation libs.kafkaStreams_34
-    testRuntimeOnly libs.junitJupiter
-  }
-
-  systemTestLibs {
-    dependsOn testJar
-  }
-}
-
-project(':streams:upgrade-system-tests-35') {
-  archivesBaseName = "kafka-streams-upgrade-system-tests-35"
-
-  dependencies {
-    testImplementation libs.kafkaStreams_35
-    testRuntimeOnly libs.junitJupiter
-  }
-
-  systemTestLibs {
-    dependsOn testJar
-  }
-}
-
-
-project(':streams:upgrade-system-tests-36') {
-  archivesBaseName = "kafka-streams-upgrade-system-tests-36"
-
-  dependencies {
-    testImplementation libs.kafkaStreams_36
-    testRuntimeOnly libs.junitJupiter
-  }
-
-  systemTestLibs {
-    dependsOn testJar
-  }
-}
-
->>>>>>> trunk
 project(':jmh-benchmarks') {
 
   apply plugin: 'com.github.johnrengelman.shadow'
