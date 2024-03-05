@@ -1,0 +1,36 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+  zipkin:
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 50
+    spike_limit_percentage: 30
+  batch:
+exporters:
+  debug:
+    verbosity: basic
+  prometheus:
+    endpoint: "0.0.0.0:8890"
+    metric_expiration: 60s
+    add_metric_suffixes: true
+    resource_to_telemetry_conversion:
+      enabled: false
+  otlp:
+    endpoint: host.docker.internal:4320
+    tls:
+      insecure: true
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [prometheus]
+
