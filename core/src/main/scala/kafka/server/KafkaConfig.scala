@@ -445,6 +445,112 @@ object KafkaConfig {
   val PasswordEncoderKeyLengthProp = PasswordEncoderConfigs.KEY_LENGTH
   val PasswordEncoderIterationsProp = PasswordEncoderConfigs.ITERATIONS
 
+  // AutoMQ for Kafka inject start
+  /** ********* Elastic stream config *********/
+  val ElasticStreamEnableProp = "elasticstream.enable"
+  val ElasticStreamEndpointProp = "elasticstream.endpoint"
+  val ElasticStreamNamespaceProp = "elasticstream.namespace"
+
+  val ElasticStreamEnableDoc = "Specifies whether to store events in elastic streams"
+  val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
+    "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
+  val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
+  // AutoMQ for Kafka inject end
+
+  // AutoMQ for Kafka inject start
+  val S3EndpointProp = "s3.endpoint"
+  val S3RegionProp = "s3.region"
+  val S3PathStyleProp = "s3.path.style"
+  val S3BucketProp = "s3.bucket"
+  val S3WALPathProp = "s3.wal.path"
+  val S3WALCapacityProp = "s3.wal.capacity"
+  val S3WALThreadProp = "s3.wal.thread"
+  val S3WALIOPSProp = "s3.wal.iops"
+  val S3WALCacheSizeProp = "s3.wal.cache.size"
+  val S3WALUploadThresholdProp = "s3.wal.upload.threshold"
+  val S3StreamSplitSizeProp = "s3.stream.object.split.size"
+  val S3ObjectBlockSizeProp = "s3.object.block.size"
+  val S3ObjectPartSizeProp = "s3.object.part.size"
+  val S3BlockCacheSizeProp = "s3.block.cache.size"
+  val S3StreamObjectCompactionIntervalMinutesProp = "s3.stream.object.compaction.interval.minutes"
+  val S3StreamObjectCompactionMaxSizeBytesProp = "s3.stream.object.compaction.max.size.bytes"
+  val S3ControllerRequestRetryMaxCountProp = "s3.controller.request.retry.max.count"
+  val S3ControllerRequestRetryBaseDelayMsProp = "s3.controller.request.retry.base.delay.ms"
+  val S3StreamSetObjectCompactionIntervalProp = "s3.stream.set.object.compaction.interval.minutes"
+  val S3StreamSetObjectCompactionCacheSizeProp = "s3.stream.set.object.compaction.cache.size"
+  val S3StreamSetObjectCompactionStreamSplitSizeProp = "s3.stream.set.object.compaction.stream.split.size"
+  val S3StreamSetObjectCompactionForceSplitMinutesProp = "s3.stream.set.object.compaction.force.split.minutes"
+  val S3StreamSetObjectCompactionMaxObjectNumProp = "s3.stream.set.object.compaction.max.num"
+  val S3MaxStreamNumPerStreamSetObjectProp = "s3.max.stream.num.per.stream.set.object"
+  val S3MaxStreamObjectNumPerCommit = "s3.max.stream.object.num.per.commit"
+  val S3MockEnableProp = "s3.mock.enable"
+  val S3ObjectDeleteRetentionMinutes = "s3.object.delete.retention.minutes"
+  val S3ObjectLogEnableProp = "s3.object.log.enable"
+  val S3NetworkBaselineBandwidthProp = "s3.network.baseline.bandwidth"
+  val S3RefillPeriodMsProp = "s3.network.refill.period.ms"
+  val S3MetricsEnableProp = "s3.telemetry.metrics.enable"
+  val S3TracerEnableProp = "s3.telemetry.tracer.enable"
+  val S3ExporterOTLPEndpointProp = "s3.telemetry.exporter.otlp.endpoint"
+  val S3ExporterOTLPProtocolProp = "s3.telemetry.exporter.otlp.protocol"
+  val S3ExporterOTLPCompressionEnableProp = "s3.telemetry.exporter.otlp.compression.enable"
+  val S3TraceExporterOTLPEndpointProp = "s3.telemetry.trace.exporter.otlp.endpoint"
+  val S3ExporterReportIntervalMsProp = "s3.telemetry.exporter.report.interval.ms"
+  val S3MetricsLevelProp = "s3.telemetry.metrics.level"
+  val S3MetricsExporterTypeProp = "s3.telemetry.metrics.exporter.type"
+  val S3MetricsExporterPromHostProp = "s3.metrics.exporter.prom.host"
+  val S3MetricsExporterPromPortProp = "s3.metrics.exporter.prom.port"
+  val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
+  val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
+  val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
+
+  val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
+  val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
+  val S3PathStyleDoc = "The S3 path style, ex. <code>true</code>."
+  val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
+  val S3WALPathDoc = "The S3 WAL path. It could be a block device like /dev/xxx or file path in file system"
+  val S3WALCapacityDoc = "The S3 WAL capacity. The value should be larger than s3.wal.cache.size cause of log storage format may not compact."
+  val S3WALThreadDoc = "The IO thread count for S3 WAL."
+  val S3WALIOPSDoc = "The max iops for S3 WAL."
+  val S3WALCacheSizeDoc = "The S3 storage max WAL cache size. When WAL cache is full, storage will hang the request, \n" +
+    "until WAL cache is free by S3 WAL upload."
+  val S3WALUploadThresholdDoc = "The S3 WAL trigger upload (bytes) threshold."
+  val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload delta WAL or compact stream set object."
+  val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
+  val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
+  val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
+  val S3StreamObjectCompactionIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
+  val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
+  val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
+  val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
+  val S3StreamSetObjectCompactionIntervalDoc = "The execution interval of stream set object compaction in minutes."
+  val S3StreamSetObjectCompactionCacheSizeDoc = "The stream set object compaction cache size in Bytes."
+  val S3StreamSetObjectCompactionStreamSplitSizeDoc = "The stream set object compaction stream split size threshold in Bytes."
+  val S3StreamSetObjectCompactionForceSplitMinutesDoc = "The stream set object compaction force split period in minutes."
+  val S3StreamSetObjectCompactionMaxObjectNumDoc = "The maximum num of stream set objects to be compact at one time"
+  val S3MaxStreamNumPerStreamSetObjectDoc = "The maximum number of streams allowed in single stream set object"
+  val S3MaxStreamObjectNumPerCommitDoc = "The maximum number of stream objects in single commit request"
+  val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
+  val S3ObjectDeleteRetentionMinutesDoc = "The marked-for-deletion S3 object retention time in minutes, default is 10 minutes (600s)."
+  val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
+  val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
+  val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
+  val S3MetricsEnableDoc = "Whether to enable metrics exporter for s3stream."
+  val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
+  val S3MetricsLevelDoc = "The metrics level, supported value: INFO, DEBUG"
+  val S3MetricsExporterTypeDoc = "The enabled S3 metrics exporters type, seperated by comma. Supported type: otlp, prometheus, log"
+  val S3TraceExporterOTLPEndpointDoc = "The endpoint of OTLP collector for traces"
+  val S3ExporterOTLPEndpointDoc = "The endpoint of OTLP collector"
+  val S3ExporterOTLPProtocolDoc = "The protocol of OTLP collector, supported value: grpc or http, default: grpc"
+  val S3ExporterOTLPCompressionEnableDoc = "Whether to enable compression for OTLP exporter, valid only when use http protocol"
+  val S3ExporterReportIntervalMsDoc = "The interval in milliseconds to report telemetry"
+  val S3MetricsExporterPromHostDoc = "The host address of Prometheus http server to expose the metrics"
+  val S3MetricsExporterPromPortDoc = "The port of Prometheus http server to expose the metrics"
+  val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
+  val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
+  val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
+  // AutoMQ for Kafka inject end
+
+
   /** Internal Configurations **/
   val UnstableApiVersionsEnableProp = "unstable.api.versions.enable"
   val UnstableMetadataVersionsEnableProp = "unstable.metadata.versions.enable"
@@ -1311,6 +1417,60 @@ object KafkaConfig {
       .define(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG, INT, Defaults.QUORUM_REQUEST_TIMEOUT_MS, null, MEDIUM, RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_DOC)
       .define(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG, INT, Defaults.QUORUM_RETRY_BACKOFF_MS, null, LOW, RaftConfig.QUORUM_RETRY_BACKOFF_MS_DOC)
 
+      // AutoMQ for Kafka inject start
+      /** ********* Elastic stream Configuration ******** */
+      .define(ElasticStreamEnableProp, BOOLEAN, false, HIGH, ElasticStreamEnableDoc)
+      .define(ElasticStreamEndpointProp, STRING, "s3://", HIGH, ElasticStreamEndpointDoc)
+      .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
+      // AutoMQ for Kafka inject end
+
+      // AutoMQ for Kafka inject start
+      .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
+      .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
+      .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
+      .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
+      .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
+      .define(S3WALCacheSizeProp, LONG, 2147483648L, MEDIUM, S3WALCacheSizeDoc)
+      .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
+      .define(S3WALThreadProp, INT, 8, MEDIUM, S3WALThreadDoc)
+      .define(S3WALIOPSProp, INT, 3000, MEDIUM, S3WALIOPSDoc)
+      .define(S3WALUploadThresholdProp, LONG, 524288000L, MEDIUM, S3WALUploadThresholdDoc)
+      .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
+      .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
+      .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
+      .define(S3BlockCacheSizeProp, LONG, 1073741824L, MEDIUM, S3BlockCacheSizeDoc)
+      .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
+      .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 1073741824L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
+      .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
+      .define(S3ControllerRequestRetryBaseDelayMsProp, LONG, 500, MEDIUM, S3ControllerRequestRetryBaseDelayMsDoc)
+      .define(S3StreamSetObjectCompactionIntervalProp, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL, MEDIUM, S3StreamSetObjectCompactionIntervalDoc)
+      .define(S3StreamSetObjectCompactionCacheSizeProp, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE, MEDIUM, S3StreamSetObjectCompactionCacheSizeDoc)
+      .define(S3StreamSetObjectCompactionStreamSplitSizeProp, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE, MEDIUM, S3StreamSetObjectCompactionStreamSplitSizeDoc)
+      .define(S3StreamSetObjectCompactionForceSplitMinutesProp, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES, MEDIUM, S3StreamSetObjectCompactionForceSplitMinutesDoc)
+      .define(S3StreamSetObjectCompactionMaxObjectNumProp, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM, MEDIUM, S3StreamSetObjectCompactionMaxObjectNumDoc)
+      .define(S3MaxStreamNumPerStreamSetObjectProp, INT, Defaults.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT, MEDIUM, S3MaxStreamNumPerStreamSetObjectDoc)
+      .define(S3MaxStreamObjectNumPerCommit, INT, Defaults.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT, MEDIUM, S3MaxStreamObjectNumPerCommitDoc)
+      .define(S3MockEnableProp, BOOLEAN, false, LOW, S3MockEnableDoc)
+      .define(S3ObjectDeleteRetentionMinutes, LONG, Defaults.S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, S3ObjectDeleteRetentionMinutesDoc)
+      .define(S3ObjectLogEnableProp, BOOLEAN, false, LOW, S3ObjectLogEnableDoc)
+      .define(S3NetworkBaselineBandwidthProp, LONG, Defaults.S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, S3NetworkBaselineBandwidthDoc)
+      .define(S3RefillPeriodMsProp, INT, Defaults.S3_REFILL_PERIOD_MS, MEDIUM, S3RefillPeriodMsDoc)
+      .define(S3MetricsEnableProp, BOOLEAN, true, MEDIUM, S3MetricsEnableDoc)
+      .define(S3TracerEnableProp, BOOLEAN, false, MEDIUM, S3TracerEnableDoc)
+      .define(S3MetricsLevelProp, STRING, "INFO", MEDIUM, S3MetricsLevelDoc)
+      .define(S3MetricsExporterTypeProp, STRING, null, MEDIUM, S3MetricsExporterTypeDoc)
+      .define(S3ExporterOTLPEndpointProp, STRING, null, MEDIUM, S3ExporterOTLPEndpointDoc)
+      .define(S3ExporterOTLPProtocolProp, STRING, Defaults.S3_EXPORTER_OTLPPROTOCOL, MEDIUM, S3ExporterOTLPProtocolDoc)
+      .define(S3ExporterOTLPCompressionEnableProp, BOOLEAN, false, MEDIUM, S3ExporterOTLPCompressionEnableDoc)
+      .define(S3TraceExporterOTLPEndpointProp, STRING, null, MEDIUM, S3TraceExporterOTLPEndpointDoc)
+      .define(S3MetricsExporterPromHostProp, STRING, null, MEDIUM, S3MetricsExporterPromHostDoc)
+      .define(S3MetricsExporterPromPortProp, INT, 0, MEDIUM, S3MetricsExporterPromPortDoc)
+      .define(S3ExporterReportIntervalMsProp, INT, Defaults.S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, S3ExporterReportIntervalMsDoc)
+      .define(S3SpanScheduledDelayMsProp, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, S3SpanScheduledDelayMsDoc)
+      .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, S3SpanMaxQueueSizeDoc)
+      .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, S3SpanMaxBatchSizeDoc)
+    // AutoMQ for Kafka inject end
+
       /** Internal Configurations **/
       // This indicates whether unreleased APIs should be advertised by this node.
       .defineInternal(UnstableApiVersionsEnableProp, BOOLEAN, false, HIGH)
@@ -1911,6 +2071,63 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val quorumLingerMs = getInt(RaftConfig.QUORUM_LINGER_MS_CONFIG)
   val quorumRequestTimeoutMs = getInt(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG)
   val quorumRetryBackoffMs = getInt(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG)
+
+    // AutoMQ for Kafka inject start
+  /** ********* Elastic stream Configuration *********/
+  val elasticStreamEnabled = getBoolean(KafkaConfig.ElasticStreamEnableProp)
+  val elasticStreamEndpoint = getString(KafkaConfig.ElasticStreamEndpointProp)
+  val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
+  // AutoMQ for Kafka inject end
+
+  // AutoMQ for Kafka inject start
+  /** ********* Kafka on S3 Configuration *********/
+  val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
+  val s3Region = getString(KafkaConfig.S3RegionProp)
+  val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
+  val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  val s3WALPath = getString(KafkaConfig.S3WALPathProp)
+  val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+  val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
+  val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
+  val s3WALIOPS = getInt(KafkaConfig.S3WALIOPSProp)
+  val s3WALUploadThreshold = getLong(KafkaConfig.S3WALUploadThresholdProp)
+  val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
+  val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
+  val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
+  val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+  val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
+  val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
+  val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
+  val s3ControllerRequestRetryBaseDelayMs = getLong(KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp)
+  // TODO: ensure incremental epoch => Store epoch in disk, if timestamp flip back, we could use disk epoch to keep the incremental epoch.
+  val nodeEpoch = System.currentTimeMillis()
+  val s3StreamSetObjectCompactionInterval = getInt(KafkaConfig.S3StreamSetObjectCompactionIntervalProp)
+  val s3StreamSetObjectCompactionCacheSize = getLong(KafkaConfig.S3StreamSetObjectCompactionCacheSizeProp)
+  val s3StreamSetObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3StreamSetObjectCompactionStreamSplitSizeProp)
+  val s3StreamSetObjectCompactionForceSplitMinutes = getInt(KafkaConfig.S3StreamSetObjectCompactionForceSplitMinutesProp)
+  val s3StreamSetObjectCompactionMaxObjectNum = getInt(KafkaConfig.S3StreamSetObjectCompactionMaxObjectNumProp)
+  val s3MaxStreamNumPerStreamSetObject = getInt(KafkaConfig.S3MaxStreamNumPerStreamSetObjectProp)
+  val s3MaxStreamObjectNumPerCommit = getInt(KafkaConfig.S3MaxStreamObjectNumPerCommit)
+  val s3MockEnable = getBoolean(KafkaConfig.S3MockEnableProp)
+  val s3ObjectDeleteRetentionTimeInSecond = getLong(KafkaConfig.S3ObjectDeleteRetentionMinutes) * 60
+  val s3ObjectLogEnable = getBoolean(KafkaConfig.S3ObjectLogEnableProp)
+  val s3NetworkBaselineBandwidthProp = getLong(KafkaConfig.S3NetworkBaselineBandwidthProp)
+  val s3RefillPeriodMsProp = getInt(KafkaConfig.S3RefillPeriodMsProp)
+  val s3MetricsEnable = getBoolean(KafkaConfig.S3MetricsEnableProp)
+  val s3TracerEnable = getBoolean(KafkaConfig.S3TracerEnableProp)
+  val s3MetricsLevel = getString(KafkaConfig.S3MetricsLevelProp)
+  val s3MetricsExporterType = getString(KafkaConfig.S3MetricsExporterTypeProp)
+  val s3ExporterOTLPEndpoint = getString(KafkaConfig.S3ExporterOTLPEndpointProp)
+  val s3ExporterOTLPProtocol = getString(KafkaConfig.S3ExporterOTLPProtocolProp)
+  val s3ExporterOTLPCompressionEnable = getBoolean(KafkaConfig.S3ExporterOTLPCompressionEnableProp)
+  val s3TraceExporterOTLPEndpoint = getString(KafkaConfig.S3TraceExporterOTLPEndpointProp)
+  val s3ExporterReportIntervalMs = getInt(KafkaConfig.S3ExporterReportIntervalMsProp)
+  val s3MetricsExporterPromHost = getString(KafkaConfig.S3MetricsExporterPromHostProp)
+  val s3MetricsExporterPromPort = getInt(KafkaConfig.S3MetricsExporterPromPortProp)
+  val s3SpanScheduledDelayMs = getInt(KafkaConfig.S3SpanScheduledDelayMsProp)
+  val s3SpanMaxQueueSize = getInt(KafkaConfig.S3SpanMaxQueueSizeProp)
+  val s3SpanMaxBatchSize = getInt(KafkaConfig.S3SpanMaxBatchSizeProp)
+  // AutoMQ for Kafka inject end
 
   /** Internal Configurations **/
   val unstableApiVersionsEnabled = getBoolean(KafkaConfig.UnstableApiVersionsEnableProp)

@@ -25,7 +25,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 
-class ControllerResult<T> {
+public class ControllerResult<T> {
     private final List<ApiMessageAndVersion> records;
     private final T response;
     private final boolean isAtomic;

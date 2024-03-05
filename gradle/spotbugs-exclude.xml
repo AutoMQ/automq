@@ -25,6 +25,11 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
 <FindBugsFilter>
 
     <Match>
+        <!-- Disable warnings for KafkaConfig -->
+        <Bug pattern="SKIPPED_CLASS_TOO_BIG"/>
+    </Match>
+
+    <Match>
         <!-- Disable warnings about mutable objects and the use of public fields.
             EI_EXPOSE_REP: May expose internal representation by returning reference to mutable object
             EI_EXPOSE_REP2: May expose internal representation by incorporating reference to mutable object

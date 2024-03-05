@@ -11,8 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.s3shell.sdk.auth.CredentialsProviderHolder;
-import com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -84,7 +82,9 @@ public class DefaultS3Client implements Client {
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
                 config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
-        List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
+        // TODO: uncomment the following line
+//        List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
+        List<AwsCredentialsProvider> credentialsProviders = List.of();
         boolean forcePathStyle = this.config.forcePathStyle();
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders)
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
