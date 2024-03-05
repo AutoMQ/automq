@@ -28,9 +28,11 @@ public class HistogramMetric extends ConfigurableMetrics {
         this.longHistogram = longHistogram;
     }
 
-    public void record(MetricsLevel metricsLevel, long value) {
-        if (metricsLevel.isWithin(metricsLevel)) {
+    public boolean record(MetricsLevel metricsLevel, long value) {
+        if (metricsLevel.isWithin(this.metricsLevel)) {
             longHistogram.record(value, attributes);
+            return true;
         }
+        return false;
     }
 }

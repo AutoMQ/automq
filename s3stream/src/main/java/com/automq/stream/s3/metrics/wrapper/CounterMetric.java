@@ -29,9 +29,11 @@ public class CounterMetric extends ConfigurableMetrics {
         this.longCounter = longCounter;
     }
 
-    public void add(MetricsLevel metricsLevel, long value) {
-        if (metricsLevel.isWithin(metricsLevel)) {
+    public boolean add(MetricsLevel metricsLevel, long value) {
+        if (metricsLevel.isWithin(this.metricsLevel)) {
             longCounter.add(value, attributes);
+            return true;
         }
+        return false;
     }
 }
