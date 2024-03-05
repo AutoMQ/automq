@@ -1,0 +1,292 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+package kafka.log.streamaspect;
+
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.RecordBatchWithContext;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import kafka.log.streamaspect.cache.FileCache;
+import org.apache.kafka.common.errors.InvalidOffsetException;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.storage.internals.log.IndexSearchType;
+import org.apache.kafka.storage.internals.log.TimeIndex;
+import org.apache.kafka.storage.internals.log.TimestampOffset;
+
+public class ElasticTimeIndex extends TimeIndex {
+    private final File file;
+    private final FileCache cache;
+    private final StreamSliceSupplier streamSupplier;
+    private ElasticStreamSlice stream;
+
+    private volatile CompletableFuture<?> lastAppend = CompletableFuture.completedFuture(null);
+    private boolean closed = false;
+
+    public ElasticTimeIndex(
+        File file,
+        StreamSliceSupplier sliceSupplier,
+        long baseOffset,
+        int maxIndexSize,
+        TimestampOffset initLastEntry,
+        FileCache cache) throws IOException {
+        super(file, baseOffset, maxIndexSize, true, true);
+        this.file = file;
+        setLastEntry(initLastEntry);
+        this.cache = cache;
+        this.streamSupplier = sliceSupplier;
+        this.stream = sliceSupplier.get();
+    }
+
+    @Override
+    public void sanityCheck() {
+        // noop implementation.
+    }
+
+    @Override
+    public void truncateTo(long offset) {
+        throw new UnsupportedOperationException("truncateTo() is not supported in ElasticTimeIndex");
+    }
+
+    @Override
+    public boolean isFull() {
+        // it's ok to call super method
+        return super.isFull();
+    }
+
+    @Override
+    public TimestampOffset lastEntry() {
+        // it's ok to call super method
+        return super.lastEntry();
+    }
+
+    @Override
+    public TimestampOffset entry(int n) {
+        // it's ok to call super method
+        return super.entry(n);
+    }
+
+    @Override
+    public TimestampOffset lookup(long targetTimestamp) {
+        return maybeLock(lock, () -> {
+            int slot = largestLowerBoundSlotFor(null, targetTimestamp, IndexSearchType.KEY);
+            if (slot == -1)
+                return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
+            else
+                return parseEntry(null, slot);
+        });
+    }
+
+    @Override
+    public void maybeAppend(long timestamp, long offset, boolean skipFullCheck) {
+        lock.lock();
+        try {
+            if (!skipFullCheck && isFull()) {
+                throw new IllegalArgumentException("Attempt to append to a full time index (size = " + entries() + ").");
+            }
+
+            // We do not throw exception when the offset equals to the offset of last entry. That means we are trying
+            // to insert the same time index entry as the last entry.
+            // If the timestamp index entry to be inserted is the same as the last entry, we simply ignore the insertion
+            // because that could happen in the following two scenarios:
+            // 1. A log segment is closed.
+            // 2. LogSegment.onBecomeInactiveSegment() is called when an active log segment is rolled.
+            TimestampOffset lastEntry = lastEntry();
+            if (entries() != 0 && offset < lastEntry.offset)
+                throw new InvalidOffsetException("Attempt to append an offset (" + offset + ") to slot " + entries()
+                    + " no larger than the last offset appended (" + lastEntry.offset + ") to " + file().getAbsolutePath());
+            if (entries() != 0 && timestamp < lastEntry.timestamp)
+                throw new IllegalStateException("Attempt to append a timestamp (" + timestamp + ") to slot " + entries()
+                    + " no larger than the last timestamp appended (" + lastEntry.timestamp + ") to " + file().getAbsolutePath());
+            if (closed)
+                throw new IllegalStateException("Attempt to append to a closed time index " + file.getAbsolutePath());
+            // We only append to the time index when the timestamp is greater than the last inserted timestamp.
+            // If all the messages are in message format v0, the timestamp will always be NoTimestamp. In that case, the time
+            // index will be empty.
+            if (timestamp > lastEntry.timestamp) {
+                if (log.isTraceEnabled()) {
+                    log.trace("Adding index entry {} => {} to {}.", timestamp, offset, file().getAbsolutePath());
+                }
+
+                ByteBuffer buffer = ByteBuffer.allocate(ENTRY_SIZE);
+                buffer.putLong(timestamp);
+                int relatedOffset = relativeOffset(offset);
+                buffer.putInt(relatedOffset);
+                buffer.flip();
+                long position = stream.nextOffset();
+                lastAppend = stream.append(RawPayloadRecordBatch.of(buffer));
+                cache.put(file.getPath(), position, Unpooled.wrappedBuffer(buffer));
+                incrementEntries();
+                setLastEntry(new TimestampOffset(timestamp, offset));
+            }
+
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void reset() throws IOException {
+        // AutoMQ support incremental recovery, so reset is not needed.
+        throw new UnsupportedOperationException("reset() is not supported in ElasticTimeIndex");
+    }
+
+    /**
+     * Note that stream index actually does not need to resize. Here we only change the maxEntries in memory to be
+     * consistent with raw Apache Kafka.
+     */
+    @Override
+    public boolean resize(int newSize) {
+        lock.lock();
+        try {
+            int roundedNewMaxEntries = roundDownToExactMultiple(newSize, ENTRY_SIZE) / ENTRY_SIZE;
+
+            if (maxEntries() == roundedNewMaxEntries) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Index " + file.getAbsolutePath() + " was not resized because it already has maxEntries " + roundedNewMaxEntries);
+                }
+                return false;
+            } else {
+                setMaxEntries(roundedNewMaxEntries);
+                return true;
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void truncate() {
+        throw new UnsupportedOperationException("truncate() is not supported in ElasticTimeIndex");
+    }
+
+    /**
+     * In the case of unclean shutdown, the last entry needs to be recovered from the time index.
+     */
+    public TimestampOffset loadLastEntry() {
+        TimestampOffset lastEntry = lastEntryFromIndexFile();
+        setLastEntry(lastEntry);
+        return lastEntry;
+    }
+
+    @Override
+    public long length() {
+        return (long) maxEntries() * ENTRY_SIZE;
+    }
+
+    @Override
+    public void updateParentDir(File parentDir) {
+        // noop implementation. AutoMQ partition doesn't have a real file.
+    }
+
+    @Override
+    public void renameTo(File f) throws IOException {
+        // noop implementation. AutoMQ partition doesn't have a real file.
+    }
+
+    @Override
+    public void flush() {
+        try {
+            lastAppend.get();
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public boolean deleteIfExists() throws IOException {
+        close();
+        return true;
+    }
+
+    @Override
+    public void trimToValidSize() throws IOException {
+        // it's ok to call super method
+        super.trimToValidSize();
+    }
+
+    @Override
+    public void close() throws IOException {
+        closed = true;
+    }
+
+    @Override
+    public void closeHandler() {
+        // noop implementation.
+    }
+
+    @Override
+    public void forceUnmap() throws IOException {
+        // noop implementation.
+    }
+
+    @Override
+    protected TimestampOffset parseEntry(ByteBuffer buffer, int n) {
+        if (buffer != null) {
+            throw new IllegalStateException("expect empty mmap");
+        }
+        return parseEntry(n);
+    }
+
+    private TimestampOffset tryGetEntryFromCache(int n) {
+        Optional<ByteBuf> rst = cache.get(file.getPath(), (long) n * ENTRY_SIZE, ENTRY_SIZE);
+        if (rst.isPresent()) {
+            ByteBuf buffer = rst.get();
+            return new TimestampOffset(buffer.readLong(), baseOffset() + buffer.readInt());
+        } else {
+            return TimestampOffset.UNKNOWN;
+        }
+    }
+
+    private TimestampOffset parseEntry(int n) {
+        try {
+            return parseEntry0(n);
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private TimestampOffset parseEntry0(int n) throws ExecutionException, InterruptedException {
+        int startOffset = n * ENTRY_SIZE;
+        TimestampOffset timestampOffset = tryGetEntryFromCache(n);
+        if (!TimestampOffset.UNKNOWN.equals(timestampOffset)) {
+            return timestampOffset;
+        }
+        // cache missing, try to read from remote and put it to cache.
+        // the index interval is 1MiB and the segment size is 1GB, so binary search only need 512 entries
+        FetchResult rst = stream.fetch(startOffset, Math.min(entries() * ENTRY_SIZE, startOffset + ENTRY_SIZE * 512)).get();
+        List<RecordBatchWithContext> records = rst.recordBatchList();
+        if (records.isEmpty()) {
+            throw new IllegalStateException("fetch empty from stream " + stream + " at offset " + startOffset);
+        }
+        ByteBuf buf = Unpooled.buffer(records.size() * ENTRY_SIZE);
+        records.forEach(record -> buf.writeBytes(record.rawPayload()));
+        cache.put(file.getPath(), startOffset, buf);
+        ByteBuf indexEntry = Unpooled.wrappedBuffer(records.get(0).rawPayload());
+        timestampOffset = new TimestampOffset(indexEntry.readLong(), baseOffset() + indexEntry.readInt());
+        rst.free();
+        return timestampOffset;
+    }
+
+    private TimestampOffset lastEntryFromIndexFile() {
+        if (entries() == 0) {
+            return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
+        } else {
+            return entry(entries() - 1);
+        }
+    }
+}
