@@ -689,8 +689,7 @@ public class ReplicationControlManager {
                 // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
                 keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
                 // We reuse the passed replicationFactor to config elastic stream settings.
-                // TODO: uncomment the following line
-//                keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
+                keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
 
                 // Then, we force replication factor to 1 here since "replicas" on broker layer can only be 1.
                 if (replicationFactor != 1) {
