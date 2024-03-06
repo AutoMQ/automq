@@ -31,7 +31,7 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 public class ElasticTimeIndex extends TimeIndex {
     private final File file;
     private final FileCache cache;
-    private final ElasticStreamSlice stream;
+    final ElasticStreamSlice stream;
 
     private volatile CompletableFuture<?> lastAppend = CompletableFuture.completedFuture(null);
     private boolean closed = false;
@@ -45,7 +45,7 @@ public class ElasticTimeIndex extends TimeIndex {
         FileCache cache) throws IOException {
         super(file, baseOffset, maxIndexSize, true, true);
         this.file = file;
-        setLastEntry(initLastEntry);
+        lastEntry(initLastEntry);
         this.cache = cache;
         this.stream = sliceSupplier.get();
     }
@@ -129,7 +129,7 @@ public class ElasticTimeIndex extends TimeIndex {
                 lastAppend = stream.append(RawPayloadRecordBatch.of(buffer));
                 cache.put(file.getPath(), position, Unpooled.wrappedBuffer(buffer));
                 incrementEntries();
-                setLastEntry(new TimestampOffset(timestamp, offset));
+                lastEntry(new TimestampOffset(timestamp, offset));
             }
 
         } finally {
@@ -177,7 +177,7 @@ public class ElasticTimeIndex extends TimeIndex {
      */
     public TimestampOffset loadLastEntry() {
         TimestampOffset lastEntry = lastEntryFromIndexFile();
-        setLastEntry(lastEntry);
+        lastEntry(lastEntry);
         return lastEntry;
     }
 
@@ -230,6 +230,10 @@ public class ElasticTimeIndex extends TimeIndex {
     @Override
     public void forceUnmap() throws IOException {
         // noop implementation.
+    }
+
+    public void seal() {
+        stream.seal();
     }
 
     @Override

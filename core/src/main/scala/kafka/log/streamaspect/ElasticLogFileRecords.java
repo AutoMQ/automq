@@ -54,7 +54,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class ElasticLogFileRecords {
+public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     private static final int POOLED_MEMORY_RECORDS = 30;
     static {
