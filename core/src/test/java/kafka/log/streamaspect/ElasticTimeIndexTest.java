@@ -31,8 +31,7 @@ public class ElasticTimeIndexTest {
         for (boolean withCache : List.of(false, true)) {
             FileCache cache = withCache ? new FileCache(TestUtils.tempFile().getPath(), 10 * 1024) : new FileCache(TestUtils.tempFile().getPath(), 0);
             ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1), SliceRange.of(0, Offsets.NOOP_OFFSET));
-            ElasticTimeIndex idx = new ElasticTimeIndex(TestUtils.tempFile(), new IStreamSliceSupplier(slice),
-                baseOffset, maxEntries * 12, TimestampOffset.UNKNOWN, cache);
+            ElasticTimeIndex idx = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12, new IStreamSliceSupplier(slice), TimestampOffset.UNKNOWN, cache);
 
             assertEquals(new TimestampOffset(-1, baseOffset), idx.lookup(100L));
 
