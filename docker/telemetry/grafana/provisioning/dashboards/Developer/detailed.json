@@ -725,7 +725,7 @@
       },
       "gridPos": {
         "h": 11,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 22
       },
@@ -827,8 +827,8 @@
       },
       "gridPos": {
         "h": 11,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 22
       },
       "id": 6,
@@ -853,52 +853,120 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_99p_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
+          "expr": "kafka_request_time_mean_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{type}}_P99",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_50p_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{type}}_P50",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(instance, job, type) (rate(kafka_request_time_mean_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{type}}_Avg",
+          "legendFormat": "Node-{{instance}}#{{type}}",
           "range": true,
           "refId": "C",
           "useBackend": false
         }
       ],
-      "title": "Request Latency",
+      "title": "Request Latency (Avg)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 8,
+        "x": 16,
+        "y": 22
+      },
+      "id": 61,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "kafka_request_time_99p_milliseconds{job=\"$cluster_id\", instance=~\"$node_id\", type=~\"$request_type\"}",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{type}}",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
+        }
+      ],
+      "title": "Request Latency (P99)",
       "type": "timeseries"
     },
     {
@@ -989,14 +1057,14 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (rate(kafka_io_threads_idle_time_nanoseconds_total{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])) / 1000000000",
+          "expr": "kafka_io_threads_idle_rate_1m{job=\"$cluster_id\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
-          "includeNullMetadata": false,
+          "includeNullMetadata": true,
           "instant": false,
           "legendFormat": "Node-{{instance}}",
           "range": true,
-          "refId": "A",
+          "refId": "B",
           "useBackend": false
         }
       ],
@@ -1091,7 +1159,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(instance, job) (kafka_network_threads_idle_rate{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "expr": "kafka_network_threads_idle_rate{job=\"$cluster_id\", instance=~\"$node_id\"}",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -1180,7 +1248,7 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 46
       },
@@ -1206,7 +1274,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, operation_type) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1281,8 +1349,8 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 46
       },
       "id": 13,
@@ -1307,15 +1375,100 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
+          "expr": "kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}_P99",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
           "range": true,
           "refId": "A",
           "useBackend": false
+        }
+      ],
+      "title": "Request Latency (Avg)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
         },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 46
+      },
+      "id": 58,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
@@ -1323,18 +1476,17 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}[$__rate_interval])))",
+          "expr": "kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3stream_request\", operation_type=\"S3Stream\"}",
           "fullMetaSearch": false,
-          "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}_P50",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
           "range": true,
-          "refId": "B",
+          "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Request Latency",
+      "title": "Request Latency (P99)",
       "type": "timeseries"
     },
     {
@@ -1402,7 +1554,7 @@
               },
               {
                 "color": "red",
-                "value": 0
+                "value": 0.1
               }
             ]
           },
@@ -1412,7 +1564,7 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 59
       },
@@ -1439,7 +1591,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(operation_name, instance) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", status=\"failed\"}[$__rate_interval]))",
+          "expr": "sum by(operation_name, instance) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", status=\"failed\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
@@ -1515,8 +1667,8 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 59
       },
       "id": 16,
@@ -1541,7 +1693,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1619,9 +1771,9 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 8,
-        "x": 16,
-        "y": 59
+        "w": 12,
+        "x": 0,
+        "y": 71
       },
       "id": 17,
       "interval": "30s",
@@ -1645,15 +1797,104 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"})",
           "fullMetaSearch": false,
+          "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}_P99",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
           "range": true,
           "refId": "A",
           "useBackend": false
+        }
+      ],
+      "title": "Request Latency (Avg)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
         },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 71
+      },
+      "id": 64,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
@@ -1661,18 +1902,18 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.5, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"$s3request\", operation_type=\"S3Request\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}_P50",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
           "range": true,
-          "refId": "B",
+          "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Request Latency",
+      "title": "Request Latency (P99)",
       "type": "timeseries"
     },
     {
@@ -1681,7 +1922,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 83
       },
       "id": 18,
       "panels": [],
@@ -1752,7 +1993,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 72
+        "y": 84
       },
       "id": 19,
       "interval": "30s",
@@ -1776,7 +2017,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\", stage=\"complete\"}[$__rate_interval]))",
+          "expr": "sum by(instance, operation_name) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal|append_wal_full\", operation_type=\"S3Storage\", stage=\"complete\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -1853,7 +2094,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 72
+        "y": 84
       },
       "id": 20,
       "interval": "30s",
@@ -1877,17 +2118,34 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, stage) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}_Avg",
           "range": true,
           "refId": "A",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, stage) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_wal\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}_P99",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
         }
       ],
-      "title": "Request Latency P99",
+      "title": "Request Latency",
       "type": "timeseries"
     },
     {
@@ -1896,7 +2154,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 96
       },
       "id": 21,
       "panels": [],
@@ -1950,8 +2208,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1965,9 +2222,9 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 85
+        "y": 97
       },
       "id": 22,
       "interval": "30s",
@@ -1991,7 +2248,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache|append_log_cache_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache|append_log_cache_full\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2007,7 +2264,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Storage\", operation_name=\"read_log_cache\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Storage\", operation_name=\"read_log_cache\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -2068,8 +2325,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2083,9 +2339,9 @@
       },
       "gridPos": {
         "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 85
+        "w": 8,
+        "x": 8,
+        "y": 97
       },
       "id": 23,
       "interval": "30s",
@@ -2109,7 +2365,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2125,7 +2381,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": false,
@@ -2136,7 +2392,7 @@
           "useBackend": false
         }
       ],
-      "title": "Request Latency P99",
+      "title": "Request Latency (Avg)",
       "type": "timeseries"
     },
     {
@@ -2186,8 +2442,137 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 16,
+        "y": 97
+      },
+      "id": 67,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
+        }
+      ],
+      "title": "Request Latency (P99)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 109
+      },
+      "id": 70,
+      "panels": [],
+      "title": "Upload WAL",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2203,7 +2588,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 97
+        "y": 110
       },
       "id": 24,
       "interval": "30s",
@@ -2227,7 +2612,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2287,8 +2672,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2304,7 +2688,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 97
+        "y": 110
       },
       "id": 25,
       "interval": "30s",
@@ -2328,17 +2712,34 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, stage) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, stage) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}_Avg",
           "range": true,
           "refId": "A",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, stage) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"upload_wal|force_upload_wal\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{stage}}_P99",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
         }
       ],
-      "title": "Request Latency P99",
+      "title": "Request Latency",
       "type": "timeseries"
     },
     {
@@ -2347,7 +2748,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 109
+        "y": 122
       },
       "id": 26,
       "panels": [],
@@ -2401,8 +2802,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2418,7 +2818,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 110
+        "y": 123
       },
       "id": 27,
       "interval": "30s",
@@ -2442,7 +2842,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2502,8 +2902,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2519,7 +2918,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 110
+        "y": 123
       },
       "id": 28,
       "interval": "30s",
@@ -2543,17 +2942,34 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"read_block_cache\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_block_cache\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}_Avg",
           "range": true,
           "refId": "A",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_block_cache\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}_P99",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
         }
       ],
-      "title": "Request Latency P99",
+      "title": "Request Latency",
       "type": "timeseries"
     },
     {
@@ -2603,8 +3019,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2620,7 +3035,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 122
+        "y": 135
       },
       "id": 29,
       "interval": "30s",
@@ -2644,7 +3059,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2654,7 +3069,7 @@
           "useBackend": false
         }
       ],
-      "title": "Read Ahead Req Throughput",
+      "title": "Read Ahead Request Throughput",
       "type": "timeseries"
     },
     {
@@ -2704,8 +3119,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2721,7 +3135,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 122
+        "y": 135
       },
       "id": 31,
       "interval": "30s",
@@ -2745,7 +3159,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_bytes_sum{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
+          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_sum_bytes{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -2805,8 +3219,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2822,7 +3235,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 122
+        "y": 135
       },
       "id": 30,
       "interval": "30s",
@@ -2846,17 +3259,149 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, status) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}_Avg",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}_P99",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
+        }
+      ],
+      "title": "Read Ahead Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Node-${__field.labels.instance}"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 8,
+        "x": 0,
+        "y": 147
+      },
+      "id": 55,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance) (kafka_stream_read_ahead_size_mean_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Read Ahead Latency P99",
+      "title": "Read Ahead Size Avg",
       "type": "timeseries"
     },
     {
@@ -2906,8 +3451,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2922,8 +3466,8 @@
       "gridPos": {
         "h": 12,
         "w": 8,
-        "x": 0,
-        "y": 134
+        "x": 8,
+        "y": 147
       },
       "id": 32,
       "interval": "30s",
@@ -3008,152 +3552,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "D"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 8,
-        "y": 134
-      },
-      "id": 55,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_bytes_sum{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_bytes_count{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "name": "Expression",
-            "type": "__expr__",
-            "uid": "__expr__"
-          },
-          "expression": "$A / $B",
-          "hide": false,
-          "refId": "D",
-          "type": "math"
-        }
-      ],
-      "title": "Read Ahead Size Avg",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3169,7 +3568,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 134
+        "y": 147
       },
       "id": 33,
       "interval": "30s",
@@ -3193,17 +3592,34 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, le) (rate(kafka_stream_read_ahead_limiter_queue_time_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "avg by(instance) (kafka_stream_read_ahead_limiter_queue_time_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}",
+          "legendFormat": "Node-{{instance}}_Avg",
           "range": true,
           "refId": "A",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance) (kafka_stream_read_ahead_limiter_queue_time_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}_P99",
+          "range": true,
+          "refId": "B",
+          "useBackend": false
         }
       ],
-      "title": "Read Ahead Throttle Time P99",
+      "title": "Read Ahead Throttle Time",
       "type": "timeseries"
     },
     {
@@ -3212,7 +3628,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 146
+        "y": 159
       },
       "id": 34,
       "panels": [],
@@ -3270,8 +3686,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3287,7 +3702,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 147
+        "y": 160
       },
       "id": 35,
       "interval": "30s",
@@ -3392,8 +3807,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3409,7 +3823,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 147
+        "y": 160
       },
       "id": 36,
       "interval": "30s",
@@ -3549,8 +3963,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3566,7 +3979,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 159
+        "y": 172
       },
       "id": 37,
       "interval": "30s",
@@ -3671,8 +4084,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3688,7 +4100,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 159
+        "y": 172
       },
       "id": 38,
       "interval": "30s",
@@ -3712,11 +4124,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_inbound_limiter_queue_time_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "avg by(instance) (kafka_stream_network_inbound_limiter_queue_time_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#In",
+          "legendFormat": "Node-{{instance}}#In_Avg",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -3728,14 +4140,48 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(instance, job, le) (rate(kafka_stream_network_outbound_limiter_queue_time_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval])))",
+          "expr": "avg by(instance) (kafka_stream_network_outbound_limiter_queue_time_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
           "fullMetaSearch": false,
           "hide": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#Out",
+          "legendFormat": "Node-{{instance}}#Out_Avg",
           "range": true,
           "refId": "B",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance) (kafka_stream_network_inbound_limiter_queue_time_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#In_P99",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance) (kafka_stream_network_outbound_limiter_queue_time_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": true,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#Out_P99",
+          "range": true,
+          "refId": "D",
           "useBackend": false
         }
       ],
@@ -3748,7 +4194,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 171
+        "y": 184
       },
       "id": 39,
       "panels": [],
@@ -3802,8 +4248,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3818,7 +4263,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 172
+        "y": 185
       },
       "id": 48,
       "interval": "30s",
@@ -3830,8 +4275,8 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -3902,8 +4347,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3919,7 +4363,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 172
+        "y": 185
       },
       "id": 49,
       "interval": "30s",
@@ -3931,8 +4375,8 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -4003,8 +4447,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4019,7 +4462,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 184
+        "y": 197
       },
       "id": 50,
       "interval": "30s",
@@ -4031,8 +4474,8 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -4103,8 +4546,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4119,7 +4561,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 184
+        "y": 197
       },
       "id": 51,
       "interval": "30s",
@@ -4131,8 +4573,8 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -4167,46 +4609,72 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
           },
-          "mappings": []
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "reqps"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 13,
-        "w": 4,
+        "w": 8,
         "x": 0,
-        "y": 196
+        "y": 209
       },
-      "id": 40,
+      "id": 73,
       "interval": "30s",
       "options": {
-        "displayLabels": [
-          "percent",
-          "name"
-        ],
         "legend": {
+          "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true,
-          "values": []
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "targets": [
@@ -4217,18 +4685,18 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=\"get_object\", job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "expr": "sum by(size, instance) (rate(kafka_stream_operation_latency_count{operation_type=\"S3Request\", operation_name=\"get_object\", job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "Node-{{instance}}#{{size}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Get Object Size Distribution",
-      "type": "piechart"
+      "title": "Get Object Throughput By Size",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -4277,8 +4745,121 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Node-${__field.labels.instance}#${__field.labels.size}"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 8,
+        "x": 8,
+        "y": 209
+      },
+      "id": 56,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, size) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"})",
+          "fullMetaSearch": false,
+          "hide": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Get Object Request Latency Avg",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": 120000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4292,9 +4873,9 @@
       },
       "gridPos": {
         "h": 13,
-        "w": 10,
-        "x": 4,
-        "y": 196
+        "w": 8,
+        "x": 16,
+        "y": 209
       },
       "id": 41,
       "interval": "30s",
@@ -4318,7 +4899,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"}[$__rate_interval])))",
+          "expr": "avg by(instance, operation_name, size) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
@@ -4358,13 +4939,13 @@
             },
             "insertNulls": false,
             "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
             "showPoints": "auto",
-            "spanNulls": 120000,
+            "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
@@ -4378,8 +4959,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4387,30 +4967,17 @@
               }
             ]
           },
-          "unit": "ns"
+          "unit": "reqps"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}#${__field.labels.size}"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 13,
-        "w": 10,
-        "x": 14,
-        "y": 196
+        "w": 8,
+        "x": 0,
+        "y": 222
       },
-      "id": 56,
+      "id": 72,
       "interval": "30s",
       "options": {
         "legend": {
@@ -4432,121 +4999,18 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, size) (rate(kafka_stream_operation_latency_nanoseconds_sum{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, size) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=\"get_object\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "name": "Expression",
-            "type": "__expr__",
-            "uid": "__expr__"
-          },
-          "expression": "$A / $B",
-          "hide": false,
-          "refId": "C",
-          "type": "math"
-        }
-      ],
-      "title": "Get Object Request Latency Avg",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 13,
-        "w": 4,
-        "x": 0,
-        "y": 209
-      },
-      "id": 42,
-      "interval": "30s",
-      "options": {
-        "displayLabels": [
-          "percent",
-          "name"
-        ],
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "values": []
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(size) (kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", job=\"$cluster_id\", instance=~\"$node_id\"})",
+          "expr": "sum by(size, instance) (rate(kafka_stream_operation_latency_count{operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\", job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "Node-{{instance}}#{{size}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Upload Object Size Distribution",
-      "type": "piechart"
+      "title": "Upload Object Throughput By Size",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -4595,8 +5059,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4610,9 +5073,109 @@
       },
       "gridPos": {
         "h": 13,
-        "w": 10,
-        "x": 4,
-        "y": 209
+        "w": 8,
+        "x": 8,
+        "y": 222
+      },
+      "id": 71,
+      "interval": "30s",
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, size) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"})",
+          "fullMetaSearch": false,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{size}}",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Put Object Request Latency Avg",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": 120000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "ns"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 8,
+        "x": 16,
+        "y": 222
       },
       "id": 43,
       "interval": "30s",
@@ -4636,11 +5199,11 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "histogram_quantile(0.99, sum by(job, instance, operation_name, le, size) (rate(kafka_stream_operation_latency_nanoseconds_bucket{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"}[$__rate_interval])))",
+          "expr": "avg by(instance, size) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": false,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
+          "legendFormat": "Node-{{instance}}#{{size}}",
           "range": true,
           "refId": "A",
           "useBackend": false
@@ -4650,155 +5213,12 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": 120000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ns"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}#${__field.labels.size}"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 13,
-        "w": 10,
-        "x": 14,
-        "y": 209
-      },
-      "id": 57,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, size) (rate(kafka_stream_operation_latency_nanoseconds_sum{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, size) (rate(kafka_stream_operation_latency_nanoseconds_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_type=\"S3Request\", operation_name=~\"put_object|upload_part\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{size}}",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "name": "Expression",
-            "type": "__expr__",
-            "uid": "__expr__"
-          },
-          "expression": "$A / $B",
-          "hide": false,
-          "refId": "C",
-          "type": "math"
-        }
-      ],
-      "title": "Put Object Request Latency Avg",
-      "type": "timeseries"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 222
+        "y": 235
       },
       "id": 44,
       "panels": [],
@@ -4852,8 +5272,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -4865,7 +5284,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 223
+        "y": 236
       },
       "id": 45,
       "interval": "30s",
@@ -4925,7 +5344,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 237
+        "y": 250
       },
       "id": 46,
       "panels": [],
@@ -4979,8 +5398,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4996,7 +5414,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 238
+        "y": 251
       },
       "id": 47,
       "interval": "30s",
@@ -5089,10 +5507,10 @@
         "current": {
           "selected": true,
           "text": [
-            "All"
+            "0"
           ],
           "value": [
-            "$__all"
+            "0"
           ]
         },
         "datasource": {
@@ -5121,10 +5539,12 @@
         "current": {
           "selected": true,
           "text": [
-            "Produce"
+            "Produce",
+            "Fetch"
           ],
           "value": [
-            "Produce"
+            "Produce",
+            "Fetch"
           ]
         },
         "datasource": {
@@ -5153,17 +5573,17 @@
         "current": {
           "selected": true,
           "text": [
-            "append"
+            "All"
           ],
           "value": [
-            "append"
+            "$__all"
           ]
         },
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Stream\"},operation_name)",
+        "definition": "label_values(kafka_stream_operation_latency_count{operation_type=\"S3Stream\"},operation_name)",
         "hide": 0,
         "includeAll": true,
         "label": "S3Stream Request",
@@ -5172,7 +5592,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Stream\"},operation_name)",
+          "query": "label_values(kafka_stream_operation_latency_count{operation_type=\"S3Stream\"},operation_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -5185,17 +5605,17 @@
         "current": {
           "selected": true,
           "text": [
-            "put_object"
+            "All"
           ],
           "value": [
-            "put_object"
+            "$__all"
           ]
         },
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\"},operation_name)",
+        "definition": "label_values(kafka_stream_operation_latency_count{operation_type=\"S3Request\"},operation_name)",
         "hide": 0,
         "includeAll": true,
         "label": "S3 Request",
@@ -5204,7 +5624,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(kafka_stream_operation_latency_nanoseconds_count{operation_type=\"S3Request\"},operation_name)",
+          "query": "label_values(kafka_stream_operation_latency_count{operation_type=\"S3Request\"},operation_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -5223,6 +5643,6 @@
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 48,
+  "version": 58,
   "weekStart": ""
 }
