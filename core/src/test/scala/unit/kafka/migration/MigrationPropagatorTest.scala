@@ -40,7 +40,7 @@ class MigrationPropagatorTest {
 
   def brokersToClusterImage(brokers: Seq[BrokerRegistration]): ClusterImage = {
     val brokerMap = brokers.map(broker => Integer.valueOf(broker.id()) -> broker).toMap.asJava
-    new ClusterImage(brokerMap, Collections.emptyMap[Integer, ControllerRegistration])
+    new ClusterImage(brokerMap, Collections.emptyMap[Integer, ControllerRegistration], 0)
   }
 
   @Test

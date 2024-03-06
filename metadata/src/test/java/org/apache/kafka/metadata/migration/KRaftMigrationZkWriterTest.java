@@ -27,10 +27,13 @@ import org.apache.kafka.image.ConfigurationsImage;
 import org.apache.kafka.image.ConfigurationsImageTest;
 import org.apache.kafka.image.DelegationTokenImage;
 import org.apache.kafka.image.FeaturesImage;
+import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
 import org.apache.kafka.image.ProducerIdsImage;
 import org.apache.kafka.image.ProducerIdsImageTest;
+import org.apache.kafka.image.S3ObjectsImage;
+import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.image.ScramImage;
 import org.apache.kafka.image.TopicsImageTest;
 import org.junit.jupiter.api.Test;
@@ -92,8 +95,10 @@ public class KRaftMigrationZkWriterTest {
             ProducerIdsImage.EMPTY,
             AclsImage.EMPTY,
             ScramImage.EMPTY,
-            DelegationTokenImage.EMPTY
-        );
+            DelegationTokenImage.EMPTY,
+            S3StreamsMetadataImage.EMPTY,
+            S3ObjectsImage.EMPTY,
+            KVImage.EMPTY);
 
         writer.handleSnapshot(image, (opType, opLog, operation) -> {
             operation.apply(ZkMigrationLeadershipState.EMPTY);
@@ -132,8 +137,10 @@ public class KRaftMigrationZkWriterTest {
             ProducerIdsImageTest.IMAGE1,
             AclsImageTest.IMAGE1,
             ScramImage.EMPTY,            // TODO KAFKA-15017
-            DelegationTokenImage.EMPTY
-        );
+            DelegationTokenImage.EMPTY,
+            S3StreamsMetadataImage.EMPTY,
+            S3ObjectsImage.EMPTY,
+            KVImage.EMPTY);
 
         Map<String, Integer> opCounts = new HashMap<>();
         KRaftMigrationOperationConsumer consumer = KRaftMigrationDriver.countingOperationConsumer(opCounts,
@@ -191,8 +198,10 @@ public class KRaftMigrationZkWriterTest {
             ProducerIdsImage.EMPTY,
             AclsImage.EMPTY,
             ScramImage.EMPTY,
-            DelegationTokenImage.EMPTY
-        );
+            DelegationTokenImage.EMPTY,
+            S3StreamsMetadataImage.EMPTY,
+            S3ObjectsImage.EMPTY,
+            KVImage.EMPTY);
 
         Map<String, Integer> opCounts = new HashMap<>();
         KRaftMigrationOperationConsumer consumer = KRaftMigrationDriver.countingOperationConsumer(opCounts,

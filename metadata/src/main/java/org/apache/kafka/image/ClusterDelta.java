@@ -24,6 +24,7 @@ import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterControllerRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
@@ -44,6 +45,7 @@ public final class ClusterDelta {
     private final ClusterImage image;
     private final HashMap<Integer, Optional<BrokerRegistration>> changedBrokers = new HashMap<>();
     private final HashMap<Integer, Optional<ControllerRegistration>> changedControllers = new HashMap<>();
+    private Integer nextNodeId = -1;
 
     public ClusterDelta(ClusterImage image) {
         this.image = image;
@@ -94,6 +96,10 @@ public final class ClusterDelta {
     public void replay(RegisterControllerRecord record) {
         ControllerRegistration controller = new ControllerRegistration.Builder(record).build();
         changedControllers.put(controller.id(), Optional.of(controller));
+    }
+
+    public void replay(UpdateNextNodeIdRecord record) {
+        nextNodeId = record.nodeId();
     }
 
     private BrokerRegistration getBrokerOrThrow(int brokerId, long epoch, String action) {
@@ -150,6 +156,7 @@ public final class ClusterDelta {
         }
     }
 
+    @SuppressWarnings("checkstyle:npathcomplexity")
     public ClusterImage apply() {
         Map<Integer, BrokerRegistration> newBrokers = new HashMap<>(image.brokers().size());
         for (Entry<Integer, BrokerRegistration> entry : image.brokers().entrySet()) {
@@ -189,7 +196,8 @@ public final class ClusterDelta {
                 }
             }
         }
-        return new ClusterImage(newBrokers, newControllers);
+        Integer nextNodeId = this.nextNodeId >= 0 ? this.nextNodeId : image.nextNodeId();
+        return new ClusterImage(newBrokers, newControllers, nextNodeId);
     }
 
     @Override
@@ -197,6 +205,7 @@ public final class ClusterDelta {
         return "ClusterDelta(" +
             "changedBrokers=" + changedBrokers +
             ", changedControllers=" + changedControllers +
+            ", nextNodeId=" + nextNodeId +
             ')';
     }
 }

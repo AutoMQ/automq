@@ -32,21 +32,46 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
+import org.apache.kafka.common.message.TrimStreamsRequestData;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -442,4 +467,131 @@ public interface Controller extends AclMutator, AutoCloseable {
      * Blocks until we have shut down and freed all resources.
      */
     void close() throws InterruptedException;
+
+    // AutoMQ for Kafka inject start
+
+    /**
+     * Attempt to get the next available node id.
+     *
+     * @param context       The controller request context.
+     * @param request      The getting next node id request.
+     *
+     * @return             A future yielding the next node id.
+     */
+    CompletableFuture<Integer> getNextNodeId(
+            ControllerRequestContext context,
+            GetNextNodeIdRequestData request
+    );
+
+    /**
+     * Check the lifecycle of the S3 objects.
+     */
+    CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context);
+
+
+    /**
+     * Notify the S3Object is really deleted. Call when S3 object deletion is confirmed.
+     */
+    CompletableFuture<Void> notifyS3ObjectDeleted(
+        ControllerRequestContext context,
+        List<Long/*objectId*/> deletedObjectIds
+    );
+
+
+    /**
+     * Create a stream
+     */
+    CompletableFuture<CreateStreamsResponseData> createStreams(
+        ControllerRequestContext context,
+        CreateStreamsRequestData request
+    );
+
+    /**
+     * Broker trys to open a stream with its epoch
+     */
+    CompletableFuture<OpenStreamsResponseData> openStreams(
+        ControllerRequestContext context,
+        OpenStreamsRequestData request
+    );
+
+    /**
+     * Broker trys to close a stream.
+     */
+    CompletableFuture<CloseStreamsResponseData> closeStreams(
+        ControllerRequestContext context,
+        CloseStreamsRequestData request
+    );
+
+    /**
+     * Broker trys to trim a stream.
+     */
+    CompletableFuture<TrimStreamsResponseData> trimStreams(
+        ControllerRequestContext context,
+        TrimStreamsRequestData request
+    );
+
+    /**
+     * Delete a stream.
+     */
+    CompletableFuture<DeleteStreamsResponseData> deleteStreams(
+        ControllerRequestContext context,
+        DeleteStreamsRequestData request
+    );
+
+    /**
+     * Broker trys to get prepared S3 objects for future upload.
+     */
+    CompletableFuture<PrepareS3ObjectResponseData> prepareObject(
+        ControllerRequestContext context,
+        PrepareS3ObjectRequestData request
+    );
+
+    /**
+     * Broker trys to commit a stream set object.
+     */
+    CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(
+        ControllerRequestContext context,
+        CommitStreamSetObjectRequestData request
+    );
+
+    /**
+     * Broker trys to commit a stream object
+     */
+    CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(
+        ControllerRequestContext context,
+        CommitStreamObjectRequestData request
+    );
+
+    /**
+     * Broker trys to get the offset:<code> [startOffset, endOffset) </code> of the stream.
+     */
+    CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(
+        ControllerRequestContext context,
+        GetOpeningStreamsRequestData request
+    );
+
+    /**
+     * Broker trys to get value from KVs store embedded in controller.
+     */
+    CompletableFuture<GetKVsResponseData> getKVs(
+        ControllerRequestContext context,
+        GetKVsRequestData request
+    );
+
+    /**
+     * Broker trys to put key-value into KVs store embedded in controller.
+     */
+    CompletableFuture<PutKVsResponseData> putKVs(
+        ControllerRequestContext context,
+        PutKVsRequestData request
+    );
+
+    /**
+     * Broker trys to delete key-value from KVs store embedded in controller.
+     */
+    CompletableFuture<DeleteKVsResponseData> deleteKVs(
+        ControllerRequestContext context,
+        DeleteKVsRequestData request
+    );
+    // AutoMQ for Kafka inject end
 }

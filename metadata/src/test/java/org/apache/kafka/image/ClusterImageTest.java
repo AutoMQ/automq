@@ -101,7 +101,7 @@ public class ClusterImageTest {
             setListeners(Collections.singletonMap("PLAINTEXT",
                     new Endpoint("PLAINTEXT", SecurityProtocol.PLAINTEXT, "localhost", 19092))).
             setSupportedFeatures(Collections.emptyMap()).build());
-        IMAGE1 = new ClusterImage(map1, cmap1);
+        IMAGE1 = new ClusterImage(map1, cmap1, 0);
 
         DELTA1_RECORDS = new ArrayList<>();
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new UnfenceBrokerRecord().
@@ -159,7 +159,7 @@ public class ClusterImageTest {
             setListeners(Collections.singletonMap("PLAINTEXT",
                 new Endpoint("PLAINTEXT", SecurityProtocol.PLAINTEXT, "localhost", 19093))).
             setSupportedFeatures(Collections.emptyMap()).build());
-        IMAGE2 = new ClusterImage(map2, cmap2);
+        IMAGE2 = new ClusterImage(map2, cmap2, 0);
     }
 
     @Test
@@ -216,7 +216,8 @@ public class ClusterImageTest {
                 setIncarnationId(Uuid.fromString("9ABu6HEgRuS-hjHLgC4cHw")).
                 setListeners(Collections.singletonMap("PLAINTEXT",
                     new Endpoint("PLAINTEXT", SecurityProtocol.PLAINTEXT, "localhost", 19092))).
-                setSupportedFeatures(Collections.emptyMap()).build()));
+                setSupportedFeatures(Collections.emptyMap()).build()),
+            0);
         RecordListWriter writer = new RecordListWriter();
         final AtomicReference<String> lossString = new AtomicReference<>("");
         testImage.write(writer, new ImageWriterOptions.Builder().
