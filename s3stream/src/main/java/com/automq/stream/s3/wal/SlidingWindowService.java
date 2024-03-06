@@ -12,7 +12,6 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -354,7 +353,7 @@ public class SlidingWindowService {
             walChannel.retryWrite(block.data(), position);
         }
         walChannel.retryFlush();
-        StorageOperationStats.getInstance().appendWALWriteStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendWALWriteStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) {
@@ -533,7 +532,7 @@ public class SlidingWindowService {
 
         @Override
         public void run() {
-            StorageOperationStats.getInstance().appendWALAwaitStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAwaitStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
             try {
                 writeBlock(this.blocks);
             } catch (Exception e) {
@@ -564,7 +563,7 @@ public class SlidingWindowService {
                     return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                 }
             });
-            StorageOperationStats.getInstance().appendWALAfterStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAfterStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
         }
     }
 }

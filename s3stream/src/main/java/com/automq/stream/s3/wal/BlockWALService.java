@@ -13,7 +13,6 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
@@ -375,7 +374,7 @@ public class BlockWALService implements WriteAheadLog {
             return result;
         } catch (OverCapacityException ex) {
             buf.release();
-            StorageOperationStats.getInstance().appendWALFullStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALFullStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             TraceUtils.endSpan(scope, ex);
             throw ex;
         }
@@ -407,8 +406,8 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
-        StorageOperationStats.getInstance().appendWALBeforeStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        StorageOperationStats.getInstance().appendWALBeforeStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         return appendResult;
     }
 
