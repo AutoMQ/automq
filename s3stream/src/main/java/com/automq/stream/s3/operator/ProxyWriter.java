@@ -152,13 +152,13 @@ class ProxyWriter implements Writer {
 
         @Override
         public CompletableFuture<Void> close() {
-            S3ObjectStats.getInstance().objectStageReadyCloseStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             int size = data.readableBytes();
             FutureUtil.propagate(operator.write(path, data, throttleStrategy), cf);
             cf.whenComplete((nil, e) -> {
-                S3ObjectStats.getInstance().objectStageTotalStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
-                S3ObjectStats.getInstance().objectUploadSizeStats.record(MetricsLevel.DEBUG, size);
+                S3ObjectStats.getInstance().objectUploadSizeStats.record(size);
             });
             return cf;
         }

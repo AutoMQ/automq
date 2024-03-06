@@ -67,7 +67,7 @@ public enum S3Operation {
     S3Operation(S3MetricsType type, String name) {
         this.type = type;
         this.name = name;
-        uniqueKey = type + "-" + name;
+        uniqueKey = type.getName() + "-" + name;
     }
 
     public String getName() {

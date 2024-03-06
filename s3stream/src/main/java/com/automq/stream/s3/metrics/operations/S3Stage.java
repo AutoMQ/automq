@@ -50,6 +50,10 @@ public enum S3Stage {
         return name;
     }
 
+    public String getUniqueKey() {
+        return operation.getUniqueKey() + "-" + name;
+    }
+
     @Override
     public String toString() {
         return "S3Stage{" +

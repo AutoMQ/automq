@@ -20,7 +20,6 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
-import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
@@ -83,7 +82,7 @@ public class S3StreamClient implements StreamClient {
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
         TimerUtil timerUtil = new TimerUtil();
         return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            StreamOperationStats.getInstance().createStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            StreamOperationStats.getInstance().createStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return openStream0(streamId, options.epoch());
         }), LOGGER, "createAndOpenStream");
     }
@@ -117,7 +116,7 @@ public class S3StreamClient implements StreamClient {
                     metadata.startOffset(), metadata.endOffset(),
                     storage, streamManager, networkInboundBucket, networkOutboundBucket));
                 openedStreams.put(streamId, stream);
-                StreamOperationStats.getInstance().openStreamStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().openStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return stream;
             });
     }

@@ -11,18 +11,22 @@
 
 package com.automq.stream.s3.metrics.stats;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.yammer.metrics.core.MetricName;
 
 public class NetworkStats {
     private volatile static NetworkStats instance = null;
 
     private final CounterMetric networkInboundUsageStats = S3StreamMetricsManager.buildNetworkInboundUsageMetric();
     private final CounterMetric networkOutboundUsageStats = S3StreamMetricsManager.buildNetworkOutboundUsageMetric();
-    private final HistogramMetric networkInboundLimiterQueueTimeStats = S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric();
-    private final HistogramMetric networkOutboundLimiterQueueTimeStats = S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric();
+    private final YammerHistogramMetric networkInboundLimiterQueueTimeStats = S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(
+        new MetricName(NetworkStats.class, "NetworkInboundLimiterQueueTime"), MetricsLevel.INFO);
+    private final YammerHistogramMetric networkOutboundLimiterQueueTimeStats = S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(
+        new MetricName(NetworkStats.class, "NetworkOutboundLimiterQueueTime"), MetricsLevel.INFO);
 
     private NetworkStats() {
     }
@@ -42,7 +46,7 @@ public class NetworkStats {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageStats : networkOutboundUsageStats;
     }
 
-    public HistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type) {
+    public YammerHistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type) {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundLimiterQueueTimeStats : networkOutboundLimiterQueueTimeStats;
     }
 }

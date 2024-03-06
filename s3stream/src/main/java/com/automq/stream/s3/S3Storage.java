@@ -19,7 +19,6 @@ import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
@@ -334,7 +333,7 @@ public class S3Storage implements Storage {
         append0(context, writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            StorageOperationStats.getInstance().appendStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         });
         return cf;
     }
@@ -354,7 +353,7 @@ public class S3Storage implements Storage {
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
-            StorageOperationStats.getInstance().appendLogCacheFullStats.record(MetricsLevel.INFO, 0L);
+            StorageOperationStats.getInstance().appendLogCacheFullStats.record(0L);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), maxDeltaWALCacheSize);
                 lastLogTimestamp = System.currentTimeMillis();
@@ -437,7 +436,7 @@ public class S3Storage implements Storage {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(MetricsLevel.INFO, timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -515,7 +514,7 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
         forceUploadTicker.tick().whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
@@ -525,7 +524,7 @@ public class S3Storage implements Storage {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -557,7 +556,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
-        StorageOperationStats.getInstance().appendCallbackStats.record(MetricsLevel.DEBUG, timer.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendCallbackStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private Lock getStreamCallbackLock(long streamId) {
@@ -602,7 +601,7 @@ public class S3Storage implements Storage {
         inflightWALUploadTasks.add(context);
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().uploadWALCompleteStats.record(MetricsLevel.INFO, context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().uploadWALCompleteStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             inflightWALUploadTasks.remove(context);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);
@@ -643,11 +642,11 @@ public class S3Storage implements Storage {
 
     private void prepareDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.prepare().thenAcceptAsync(nil -> {
-            StorageOperationStats.getInstance().uploadWALPrepareStats.record(MetricsLevel.DEBUG, context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().uploadWALPrepareStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task and trigger upload.
             DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
             Objects.requireNonNull(peek).task.upload().thenAccept(nil2 -> StorageOperationStats.getInstance()
-                .uploadWALUploadStats.record(MetricsLevel.DEBUG, context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
+                .uploadWALUploadStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();
             walCommitQueue.add(peek);
@@ -664,7 +663,7 @@ public class S3Storage implements Storage {
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.commit().thenAcceptAsync(nil -> {
-            StorageOperationStats.getInstance().uploadWALCommitStats.record(MetricsLevel.DEBUG, context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().uploadWALCommitStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task
             walCommitQueue.poll();
             if (context.cache.confirmOffset() != 0) {
