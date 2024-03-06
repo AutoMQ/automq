@@ -48,10 +48,11 @@ import java.util.function.Supplier;
  */
 public class TransactionIndex implements Closeable {
 
-    private static class AbortedTxnWithPosition {
-        final AbortedTxn txn;
-        final int position;
-        AbortedTxnWithPosition(AbortedTxn txn, int position) {
+    protected static class AbortedTxnWithPosition {
+        public final AbortedTxn txn;
+        public final int position;
+
+        public AbortedTxnWithPosition(AbortedTxn txn, int position) {
             this.txn = txn;
             this.position = position;
         }
@@ -63,7 +64,7 @@ public class TransactionIndex implements Closeable {
 
     // note that the file is not created until we need it
     private Optional<FileChannel> maybeChannel = Optional.empty();
-    private OptionalLong lastOffset = OptionalLong.empty();
+    protected OptionalLong lastOffset = OptionalLong.empty();
 
     public TransactionIndex(long startOffset, File file) throws IOException {
         this.startOffset = startOffset;
@@ -218,7 +219,7 @@ public class TransactionIndex implements Closeable {
         return iterable(() -> ByteBuffer.allocate(AbortedTxn.TOTAL_SIZE));
     }
 
-    private Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
+    protected Iterable<AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
         FileChannel channel = channelOrNull();
         if (channel == null)
             return Collections.emptyList();
