@@ -69,7 +69,7 @@ public class GenerateS3UrlCmd {
             } else {
                 this.s3OpsBucket = s3OpsBucketFromArg;
             }
-            this.s3PathStyle = Boolean.valueOf(res.getString("s3-path-style"));
+            this.s3PathStyle = Boolean.parseBoolean(res.getString("s3-path-style"));
         }
     }
 
@@ -144,12 +144,14 @@ public class GenerateS3UrlCmd {
         System.out.println();
 
         //precheck
-        var context = S3Utils.S3Context.builder()
-            .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
+        String s3Endpoint = parameter.s3Endpoint;
+        var context = S3Utils.S3Context.builder().setEndpoint(
+                s3Endpoint.startsWith("https://") || s3Endpoint.startsWith("http://") ? s3Endpoint :
+                    parameter.endpointProtocol.getName() + "://" + s3Endpoint)
             .setCredentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
             .setBucketName(parameter.s3DataBucket)
             .setRegion(parameter.s3Region)
-            .setForcePathStyle(false)
+            .setForcePathStyle(parameter.s3PathStyle)
             .build();
         S3Utils.checkS3Access(context);
 
