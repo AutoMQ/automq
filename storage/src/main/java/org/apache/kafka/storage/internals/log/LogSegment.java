@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import com.yammer.metrics.core.MetricName;
@@ -61,8 +62,8 @@ import static java.util.Arrays.asList;
  * This class is not thread-safe.
  */
 public class LogSegment implements Closeable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LogSegment.class);
-    private static final Timer LOG_FLUSH_TIMER;
+    protected static final Logger LOGGER = LoggerFactory.getLogger(LogSegment.class);
+    protected static final Timer LOG_FLUSH_TIMER;
 
     static {
         KafkaMetricsGroup logFlushStatsMetricsGroup = new KafkaMetricsGroup(LogSegment.class) {
@@ -81,21 +82,21 @@ public class LogSegment implements Closeable {
     private final LazyIndex<TimeIndex> lazyTimeIndex;
     private final TransactionIndex txnIndex;
     private final long baseOffset;
-    private final int indexIntervalBytes;
-    private final long rollJitterMs;
+    protected final int indexIntervalBytes;
+    protected final long rollJitterMs;
     private final Time time;
 
     // The timestamp we used for time based log rolling and for ensuring max compaction delay
     // volatile for LogCleaner to see the update
-    private volatile OptionalLong rollingBasedTimestamp = OptionalLong.empty();
+    protected volatile OptionalLong rollingBasedTimestamp = OptionalLong.empty();
 
     /* The maximum timestamp and offset we see so far */
-    private volatile TimestampOffset maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
+    protected volatile TimestampOffset maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
 
     private long created;
 
     /* the number of bytes since we last added an entry in the offset index */
-    private int bytesSinceLastIndexEntry = 0;
+    protected int bytesSinceLastIndexEntry = 0;
 
     /**
      * Create a LogSegment with the provided parameters.
@@ -214,7 +215,7 @@ public class LogSegment implements Closeable {
     /**
      * Note that this may result in time index materialization.
      */
-    private long offsetOfMaxTimestampSoFar() throws IOException {
+    protected long offsetOfMaxTimestampSoFar() throws IOException {
         return readMaxTimestampAndOffsetSoFar().offset;
     }
 
@@ -690,7 +691,7 @@ public class LogSegment implements Closeable {
      * If not previously loaded,
      * load the timestamp of the first message into memory.
      */
-    private void loadFirstBatchTimestamp() {
+    protected void loadFirstBatchTimestamp() {
         if (!rollingBasedTimestamp.isPresent()) {
             Iterator<FileChannelRecordBatch> iter = log.batches().iterator();
             if (iter.hasNext())
@@ -886,4 +887,13 @@ public class LogSegment implements Closeable {
         return Files.deleteIfExists(file.toPath());
     }
 
+    // AutoMQ inject start
+    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, long maxPosition, long maxOffset, boolean minOneMessage) {
+        try {
+            return CompletableFuture.completedFuture(read(startOffset, maxSize, maxPosition, minOneMessage));
+        } catch (Throwable e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+    // AutoMQ inject end
 }
