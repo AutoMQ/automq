@@ -44,7 +44,8 @@ public class ClusterImageControllersNodeTest {
                     setSupportedFeatures(Collections.singletonMap(
                             MetadataVersion.FEATURE_NAME, VersionRange.of(1, 4))).
                     setListeners(Collections.emptyMap()).
-                        build()));
+                        build()),
+        0);
 
     private final static ClusterImageControllersNode NODE = new ClusterImageControllersNode(TEST_IMAGE);
 

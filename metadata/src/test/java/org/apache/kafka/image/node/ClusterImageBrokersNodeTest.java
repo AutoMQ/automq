@@ -47,7 +47,8 @@ public class ClusterImageBrokersNodeTest {
                     setFenced(false).
                     setDirectories(Arrays.asList(Uuid.fromString("anCdBWcFTlu8gE1wP6bh3g"), Uuid.fromString("JsnDDNVyTL289kYk6sPzig"))).
                     setInControlledShutdown(false).build()),
-            Collections.emptyMap());
+            Collections.emptyMap(),
+        0);
 
     private final static ClusterImageBrokersNode NODE = new ClusterImageBrokersNode(TEST_IMAGE);
 
