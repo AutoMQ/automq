@@ -41,7 +41,10 @@ public final class MetadataImage {
         ProducerIdsImage.EMPTY,
         AclsImage.EMPTY,
         ScramImage.EMPTY,
-        DelegationTokenImage.EMPTY);
+        DelegationTokenImage.EMPTY,
+        S3StreamsMetadataImage.EMPTY,
+        S3ObjectsImage.EMPTY,
+        KVImage.EMPTY);
 
     private final MetadataProvenance provenance;
 
@@ -65,11 +68,11 @@ public final class MetadataImage {
 
     // AutoMQ for Kafka inject start
 
-    private final S3StreamsMetadataImage streamMetadata = null;
+    private final S3StreamsMetadataImage streamMetadata;
 
-    private final S3ObjectsImage objectsMetadata = null;
+    private final S3ObjectsImage objectsMetadata;
 
-    private final KVImage kv = null;
+    private final KVImage kv;
     // AutoMQ for Kafka inject end
 
     public MetadataImage(
@@ -82,7 +85,10 @@ public final class MetadataImage {
         ProducerIdsImage producerIds,
         AclsImage acls,
         ScramImage scram,
-        DelegationTokenImage delegationTokens
+        DelegationTokenImage delegationTokens,
+        S3StreamsMetadataImage streamMetadata,
+        S3ObjectsImage s3ObjectsImage,
+        KVImage kvImage
     ) {
         this.provenance = provenance;
         this.features = features;
@@ -94,6 +100,9 @@ public final class MetadataImage {
         this.acls = acls;
         this.scram = scram;
         this.delegationTokens = delegationTokens;
+        this.streamMetadata = streamMetadata;
+        this.objectsMetadata = s3ObjectsImage;
+        this.kv = kvImage;
     }
 
     public boolean isEmpty() {
@@ -105,7 +114,10 @@ public final class MetadataImage {
             producerIds.isEmpty() &&
             acls.isEmpty() &&
             scram.isEmpty() &&
-            delegationTokens.isEmpty();
+            delegationTokens.isEmpty() &&
+            streamMetadata.isEmpty() &&
+            objectsMetadata.isEmpty() &&
+            kv.isEmpty();
     }
 
     public MetadataProvenance provenance() {
@@ -182,6 +194,11 @@ public final class MetadataImage {
         acls.write(writer, options);
         scram.write(writer, options);
         delegationTokens.write(writer, options);
+        // AutoMQ for Kafka inject start
+        streamMetadata.write(writer, options);
+        objectsMetadata.write(writer, options);
+        kv.write(writer, options);
+        // AutoMQ for Kafka inject end
         writer.close(true);
     }
 
@@ -198,7 +215,10 @@ public final class MetadataImage {
             producerIds.equals(other.producerIds) &&
             acls.equals(other.acls) &&
             scram.equals(other.scram) &&
-            delegationTokens.equals(other.delegationTokens);
+            delegationTokens.equals(other.delegationTokens) &&
+            streamMetadata.equals(other.streamMetadata) &&
+            objectsMetadata.equals(other.objectsMetadata) &&
+            kv.equals(other.kv);
     }
 
     @Override
@@ -213,7 +233,10 @@ public final class MetadataImage {
             producerIds,
             acls,
             scram,
-            delegationTokens);
+            delegationTokens,
+            streamMetadata,
+            objectsMetadata,
+            kv);
     }
 
     @Override

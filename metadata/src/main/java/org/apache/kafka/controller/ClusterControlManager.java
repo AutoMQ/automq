@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.common.DirectoryId;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
@@ -35,6 +36,7 @@ import org.apache.kafka.common.metadata.RegisterControllerRecord;
 import org.apache.kafka.common.metadata.RegisterControllerRecord.ControllerFeatureCollection;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -49,6 +51,7 @@ import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.placement.UsableBroker;
+import org.apache.kafka.raft.RaftConfig;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -91,6 +94,15 @@ public class ClusterControlManager {
         private ReplicaPlacer replicaPlacer = null;
         private FeatureControlManager featureControl = null;
         private boolean zkMigrationEnabled = false;
+
+        // AutoMQ for Kafka inject start
+        private List<String> quorumVoters;
+
+        Builder setQuorumVoters(List<String> quorumVoters) {
+            this.quorumVoters = quorumVoters;
+            return this;
+        }
+        // AutoMQ for Kafka inject end
 
         Builder setLogContext(LogContext logContext) {
             this.logContext = logContext;
@@ -155,7 +167,8 @@ public class ClusterControlManager {
                 sessionTimeoutNs,
                 replicaPlacer,
                 featureControl,
-                zkMigrationEnabled
+                zkMigrationEnabled,
+                quorumVoters
             );
         }
     }
@@ -257,6 +270,16 @@ public class ClusterControlManager {
      */
     private final TimelineHashMap<Uuid, Integer> directoryToBroker;
 
+    // AutoMQ for Kafka inject start
+    private final int maxControllerId;
+
+    /**
+     * Used to generate the next available node ID. Note that the stored value is the last allocated node ID.
+     * The real next available node id is generally one greater than this value.
+     */
+    private AtomicInteger nextNodeId = new AtomicInteger(-1);
+    // AutoMQ for Kafka inject end
+
     private ClusterControlManager(
         LogContext logContext,
         String clusterId,
@@ -265,7 +288,8 @@ public class ClusterControlManager {
         long sessionTimeoutNs,
         ReplicaPlacer replicaPlacer,
         FeatureControlManager featureControl,
-        boolean zkMigrationEnabled
+        boolean zkMigrationEnabled,
+        List<String> quorumVoters
     ) {
         this.logContext = logContext;
         this.clusterId = clusterId;
@@ -281,6 +305,9 @@ public class ClusterControlManager {
         this.zkMigrationEnabled = zkMigrationEnabled;
         this.controllerRegistrations = new TimelineHashMap<>(snapshotRegistry, 0);
         this.directoryToBroker = new TimelineHashMap<>(snapshotRegistry, 0);
+        // AutoMQ for Kafka inject start
+        this.maxControllerId = RaftConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
+        // AutoMQ for Kafka inject end
     }
 
     ReplicaPlacer replicaPlacer() {
@@ -319,6 +346,19 @@ public class ClusterControlManager {
     boolean zkRegistrationAllowed() {
         return zkMigrationEnabled && featureControl.metadataVersion().isMigrationSupported();
     }
+
+    // AutoMQ for Kafka inject start
+    public ControllerResult<Integer> getNextNodeId() {
+        int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
+        int maxNodeId = Math.max(maxBrokerId, maxControllerId);
+        int nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
+        UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
+
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        records.add(new ApiMessageAndVersion(record, (short) 0));
+        return ControllerResult.atomicOf(records, nextId);
+    }
+    // AutoMQ for Kafka inject end
 
     /**
      * Process an incoming broker registration request.
@@ -470,6 +510,12 @@ public class ClusterControlManager {
         }
         return OptionalLong.empty();
     }
+
+    // AutoMQ for Kafka inject start
+    public void replay(UpdateNextNodeIdRecord record) {
+        nextNodeId.set(record.nodeId());
+    }
+    // AutoMQ for Kafka inject end
 
     public void replay(RegisterBrokerRecord record, long offset) {
         registerBrokerRecordOffsets.put(record.brokerId(), offset);
@@ -665,6 +711,14 @@ public class ClusterControlManager {
         if (registration == null) return false;
         return !registration.inControlledShutdown() && !registration.fenced();
     }
+
+    // AutoMQ for kafka inject start
+    public List<BrokerRegistration> getActiveBrokers() {
+        return brokerRegistrations.values().stream()
+            .filter(broker -> isActive(broker.id()))
+            .collect(Collectors.toList());
+    }
+    // AutoMQ for kafka inject end
 
     BrokerHeartbeatManager heartbeatManager() {
         if (heartbeatManager == null) {

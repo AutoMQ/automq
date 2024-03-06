@@ -17,12 +17,21 @@
 
 package org.apache.kafka.controller;
 
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.Timer;
+import java.util.AbstractMap;
+import java.util.OptionalLong;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.common.DirectoryId;
 import org.apache.kafka.common.ElectionType;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -37,6 +46,7 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicIdException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.es.ElasticStreamSwitch;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.AlterPartitionRequestData;
 import org.apache.kafka.common.message.AlterPartitionRequestData.BrokerState;
@@ -80,6 +90,11 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AlterPartitionRequest;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.es.AutoMQCreateTopicPolicy;
+import org.apache.kafka.controller.es.CreatePartitionPolicy;
+import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
+import org.apache.kafka.controller.es.PartitionLeaderSelector;
+import org.apache.kafka.controller.es.RandomPartitionLeaderSelector;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistration;
@@ -164,6 +179,7 @@ public class ReplicationControlManager {
         private Optional<CreateTopicPolicy> createTopicPolicy = Optional.empty();
         private FeatureControlManager featureControl = null;
         private boolean eligibleLeaderReplicasEnabled = false;
+        private Controller quorumController = null;
 
         Builder setSnapshotRegistry(SnapshotRegistry snapshotRegistry) {
             this.snapshotRegistry = snapshotRegistry;
@@ -220,6 +236,13 @@ public class ReplicationControlManager {
             return this;
         }
 
+        // AutoMQ for Kafka inject start
+        public Builder setQuorumController(Controller quorumController) {
+            this.quorumController = quorumController;
+            return this;
+        }
+        // AutoMQ for Kafka inject end
+
         ReplicationControlManager build() {
             if (configurationControl == null) {
                 throw new IllegalStateException("Configuration control must be set before building");
@@ -241,7 +264,11 @@ public class ReplicationControlManager {
                 configurationControl,
                 clusterControl,
                 createTopicPolicy,
-                featureControl);
+                featureControl,
+                // AutoMQ for Kafka inject start
+                quorumController
+                // AutoMQ for Kafka inject end
+            );
         }
     }
 
@@ -339,6 +366,26 @@ public class ReplicationControlManager {
      */
     private final Optional<CreateTopicPolicy> createTopicPolicy;
 
+
+    // AutoMQ for Kafka inject start
+
+    /**
+     * The policy that must be validated before creating a topic.
+     */
+    private final CreateTopicPolicy autoMQCreateTopicPolicy = new AutoMQCreateTopicPolicy();
+
+    /**
+     * The policy to use to validate that partition assignments are valid, if one is present.
+     */
+    private final Optional<CreatePartitionPolicy> createPartitionPolicy = Optional.of(new ElasticCreatePartitionPolicy());
+
+    /**
+     * The quorum controller
+     */
+    private final Controller quorumController;
+    // AutoMQ for Kafka inject end
+
+
     /**
      * The feature control manager.
      */
@@ -396,6 +443,19 @@ public class ReplicationControlManager {
      */
     final KRaftClusterDescriber clusterDescriber = new KRaftClusterDescriber();
 
+
+    // AutoMQ for Kafka inject start
+    private static final int PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS = 10;
+    /**
+     * Partition reassignment elect timeout for each partition.
+     */
+    private final Map<TopicPartition, Timeout> partitionReElectTimeouts = new ConcurrentHashMap<>();
+    /**
+     * Timer for partition reassignment elect timeout.
+     */
+    private final Timer timer = new HashedWheelTimer(1, TimeUnit.SECONDS);
+    // AutoMQ for Kafka inject end
+
     private ReplicationControlManager(
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
@@ -407,7 +467,8 @@ public class ReplicationControlManager {
         ConfigurationControlManager configurationControl,
         ClusterControlManager clusterControl,
         Optional<CreateTopicPolicy> createTopicPolicy,
-        FeatureControlManager featureControl
+        FeatureControlManager featureControl,
+        Controller quorumController
     ) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(ReplicationControlManager.class);
@@ -427,6 +488,7 @@ public class ReplicationControlManager {
         this.reassigningTopics = new TimelineHashMap<>(snapshotRegistry, 0);
         this.imbalancedPartitions = new TimelineHashSet<>(snapshotRegistry, 0);
         this.directoriesToPartitions = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.quorumController = quorumController;
     }
 
     public void replay(TopicRecord record) {
@@ -616,20 +678,38 @@ public class ReplicationControlManager {
             if (topicErrors.containsKey(topic.name())) continue;
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
-            Map<String, Entry<OpType, String>> keyToOps = configChanges.get(configResource);
-            List<ApiMessageAndVersion> configRecords;
-            if (keyToOps != null) {
-                ControllerResult<ApiError> configResult =
-                    configurationControl.incrementalAlterConfig(configResource, keyToOps, true);
-                if (configResult.response().isFailure()) {
-                    topicErrors.put(topic.name(), configResult.response());
-                    continue;
-                } else {
-                    configRecords = configResult.records();
+
+            // AutoMQ for Kafka inject start
+            Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
+            // First, we pass topic replication factor through log config.
+            int replicationFactor = topic.replicationFactor() == -1 ?
+                defaultReplicationFactor : topic.replicationFactor();
+
+            if (ElasticStreamSwitch.isEnabled()) {
+                // MIN_IN_SYNC_REPLICAS should be forced to 1 since replication factor is 1 (see createTopic method).
+                keyToOps.put(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(1)));
+                // We reuse the passed replicationFactor to config elastic stream settings.
+                // TODO: uncomment the following line
+//                keyToOps.put(TopicConfig.REPLICATION_FACTOR_CONFIG, new AbstractMap.SimpleEntry<>(OpType.SET, String.valueOf(replicationFactor)));
+
+                // Then, we force replication factor to 1 here since "replicas" on broker layer can only be 1.
+                if (replicationFactor != 1) {
+                    topic.setReplicationFactor((short) 1);
+                    log.info("force replication factor to 1 for create topic {}, the real replication factor is decided by elastic stream", topic.name());
                 }
-            } else {
-                configRecords = Collections.emptyList();
             }
+
+            List<ApiMessageAndVersion> configRecords;
+            ControllerResult<ApiError> configResult =
+                configurationControl.incrementalAlterConfig(configResource, keyToOps, true);
+            if (configResult.response().isFailure()) {
+                topicErrors.put(topic.name(), configResult.response());
+                continue;
+            } else {
+                configRecords = configResult.records();
+            }
+            // AutoMQ for Kafka inject end
+
             ApiError error;
             try {
                 error = createTopic(context, topic, records, successes, configRecords, describable.contains(topic.name()));
@@ -836,14 +916,20 @@ public class ReplicationControlManager {
     }
 
     private ApiError maybeCheckCreateTopicPolicy(Supplier<CreateTopicPolicy.RequestMetadata> supplier) {
-        if (createTopicPolicy.isPresent()) {
-            try {
-                createTopicPolicy.get().validate(supplier.get());
-            } catch (PolicyViolationException e) {
-                return new ApiError(Errors.POLICY_VIOLATION, e.getMessage());
-            }
+        // AutoMQ for Kafka inject start
+        try {
+            autoMQCreateTopicPolicy.validate(supplier.get());
+            createTopicPolicy.ifPresent(topicPolicy -> topicPolicy.validate(supplier.get()));
+        } catch (PolicyViolationException e) {
+            return new ApiError(Errors.POLICY_VIOLATION, e.getMessage());
         }
+        // AutoMQ for Kafka inject end
+
         return ApiError.NONE;
+    }
+
+    private void maybeCheckCreatePartitionPolicy(CreatePartitionPolicy.RequestMetadata requestMetadata) throws PolicyViolationException {
+        createPartitionPolicy.ifPresent(policy -> policy.validate(requestMetadata));
     }
 
     static void validateNewTopicNames(Map<String, ApiError> topicErrors,
@@ -1076,11 +1162,25 @@ public class ReplicationControlManager {
                 if (configurationControl.uncleanLeaderElectionEnabledForTopic(topic.name())) {
                     builder.setElection(PartitionChangeBuilder.Election.UNCLEAN);
                 }
+
+                // AutoMQ for Kafka inject start
+                if (ElasticStreamSwitch.isEnabled()) {
+                    List<Integer> newIsr = partitionData.newIsr();
+                    if (newIsr.size() != 1) {
+                        throw new InvalidReplicaAssignmentException("elastic stream not support isr != 1");
+                    }
+                    builder.setTargetNode(newIsr.get(0));
+                } else {
+                    builder.setTargetIsr(partitionData.newIsr());
+                }
+
                 Optional<ApiMessageAndVersion> record = builder
-                    .setTargetIsrWithBrokerStates(partitionData.newIsrWithEpochs())
+//                    .setTargetIsrWithBrokerStates(partitionData.newIsrWithEpochs())
                     .setTargetLeaderRecoveryState(LeaderRecoveryState.of(partitionData.leaderRecoveryState()))
                     .setDefaultDirProvider(clusterDescriber)
                     .build();
+                // AutoMQ for Kafka inject end
+
                 if (record.isPresent()) {
                     records.add(record.get());
                     PartitionChangeRecord change = (PartitionChangeRecord) record.get().message();
@@ -1369,7 +1469,7 @@ public class ReplicationControlManager {
                 (short) 1));
         }
         generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId));
+            brokerId, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId), ElasticStreamSwitch.isEnabled());
     }
 
     /**
@@ -1469,6 +1569,11 @@ public class ReplicationControlManager {
 
     ApiError electLeader(String topic, int partitionId, ElectionType electionType,
                          List<ApiMessageAndVersion> records) {
+        // AutoMQ for Kafka inject start
+        // cancel partition replica reassign leader elect timeout.
+        Optional.ofNullable(partitionReElectTimeouts.remove(new TopicPartition(topic, partitionId))).ifPresent(Timeout::cancel);
+        // AutoMQ for Kafka inject end
+
         Uuid topicId = topicsByName.get(topic);
         if (topicId == null) {
             return new ApiError(UNKNOWN_TOPIC_OR_PARTITION,
@@ -1765,6 +1870,14 @@ public class ReplicationControlManager {
                     "Unable to replicate the partition " + replicationFactor +
                         " time(s): All brokers are currently fenced or in controlled shutdown.");
             }
+
+            // AutoMQ for Kafka inject start
+            // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
+            if (ElasticStreamSwitch.isEnabled()) {
+                maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(partitionAssignment.replicas(), isr));
+            }
+            // AutoMQ for Kafka inject end
+
             records.add(buildPartitionRegistration(partitionAssignment, isr)
                 .toRecord(topicId, partitionId, new ImageWriterOptions.Builder().
                         setMetadataVersion(featureControl.metadataVersion()).
@@ -1777,11 +1890,18 @@ public class ReplicationControlManager {
         PartitionAssignment assignment,
         OptionalInt replicationFactor
     ) {
-        if (assignment.replicas().isEmpty()) {
+        validateManualPartitionAssignment(assignment.replicas(), replicationFactor);
+    }
+
+    void validateManualPartitionAssignment(
+        List<Integer> assignment,
+        OptionalInt replicationFactor
+    ) {
+        if (assignment.isEmpty()) {
             throw new InvalidReplicaAssignmentException("The manual partition " +
                 "assignment includes an empty replica list.");
         }
-        List<Integer> sortedBrokerIds = new ArrayList<>(assignment.replicas());
+        List<Integer> sortedBrokerIds = new ArrayList<>(assignment);
         sortedBrokerIds.sort(Integer::compare);
         Integer prevBrokerId = null;
         for (Integer brokerId : sortedBrokerIds) {
@@ -1823,6 +1943,32 @@ public class ReplicationControlManager {
                                      int brokerToAdd,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
+        generateLeaderAndIsrUpdates(context, brokerToRemove, brokerToAdd, records, iterator, false);
+    }
+
+    /**
+     * Iterate over a sequence of partitions and generate ISR changes and/or leader
+     * changes if necessary.
+     *
+     * @param context           A human-readable context string used in log4j logging.
+     * @param brokerToRemove    NO_LEADER if no broker is being removed; the ID of the
+     *                          broker to remove from the ISR and leadership, otherwise.
+     * @param brokerToAdd       NO_LEADER if no broker is being added; the ID of the
+     *                          broker which is now eligible to be a leader, otherwise.
+     * @param records           A list of records which we will append to.
+     * @param iterator          The iterator containing the partitions to examine.
+     * @param fencing           Whether to fence the provided partitions. That is to say,
+     *                          set their leader to {@link org.apache.kafka.metadata.LeaderConstants#NO_LEADER}
+     *                          temporarily. It aims to ensure that the partitions should be firstly closed and
+     *                          then be re-opened. In case that the original broker is out of communication and
+     *                          then fail to touch re-elections, The partitions are scheduled to be re-elected.
+     */
+    void generateLeaderAndIsrUpdates(String context,
+                                     int brokerToRemove,
+                                     int brokerToAdd,
+                                     List<ApiMessageAndVersion> records,
+                                     Iterator<TopicIdPartition> iterator,
+                                     boolean fencing) {
         int oldSize = records.size();
 
         // If the caller passed a valid broker ID for brokerToAdd, rather than passing
@@ -1837,8 +1983,13 @@ public class ReplicationControlManager {
         // from the target ISR, but we need to exclude it here too, to handle the case
         // where there is an unclean leader election which chooses a leader from outside
         // the ISR.
-        IntPredicate isAcceptableLeader =
+
+        // AutoMQ for Kafka inject start
+        IntPredicate isAcceptableLeader = fencing ? r -> false :
             r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
+
+        PartitionLeaderSelector partitionLeaderSelector = null;
+        // AutoMQ for Kafka inject end
 
         while (iterator.hasNext()) {
             TopicIdPartition topicIdPart = iterator.next();
@@ -1868,6 +2019,30 @@ public class ReplicationControlManager {
 
             // Note: if brokerToRemove was passed as NO_LEADER, this is a no-op (the new
             // target ISR will be the same as the old one).
+
+            // AutoMQ for Kafka inject start
+            if (ElasticStreamSwitch.isEnabled()) {
+                if (brokerToAdd != -1) {
+                    // new broker is unfenced(available), then the broker take no leader partition
+                    builder.setTargetNode(brokerToAdd);
+                } else {
+                    if (partitionLeaderSelector == null) {
+                        partitionLeaderSelector = new RandomPartitionLeaderSelector(clusterControl.getActiveBrokers());
+                    }
+                    partitionLeaderSelector
+                        .select(partition, br -> br.id() != brokerToRemove)
+                        .ifPresent(broker -> builder.setTargetNode(broker.id()));
+                }
+                if (fencing) {
+                    TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
+                    addPartitionToReElectTimeouts(topicPartition);
+                }
+            } else {
+                builder.setTargetIsr(Replicas.toList(
+                    Replicas.copyWithout(partition.isr, brokerToRemove)));
+            }
+            // AutoMQ for Kafka inject end
+
             builder.setTargetIsr(Replicas.toList(
                 Replicas.copyWithout(partition.isr, brokerToRemove)));
 
@@ -1948,8 +2123,10 @@ public class ReplicationControlManager {
         Optional<ApiMessageAndVersion> record;
         if (target.replicas() == null) {
             record = cancelPartitionReassignment(topicName, tp, part);
-        } else {
+        } else if (ElasticStreamSwitch.isEnabled()) {
             record = changePartitionReassignment(tp, part, target);
+        } else {
+            record = changePartitionReassignment0(tp, part, target);
         }
         record.ifPresent(records::add);
     }
@@ -1990,6 +2167,85 @@ public class ReplicationControlManager {
             build();
     }
 
+    // AutoMQ for Kafka inject start
+    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
+                                                               PartitionRegistration part,
+                                                               ReassignablePartition target) {
+
+        if (target.replicas().size() != 1) {
+            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
+        }
+
+        if (!this.clusterControl.isActive(target.replicas().get(0))) {
+            throw new InvalidReplicaAssignmentException("Unable to reassign " +
+                    "partition: " + tp + " to " +
+                    "broker " + target.replicas().get(0) + " because it is not currently active.");
+        }
+
+        // Check that the requested partition assignment is valid.
+        validateManualPartitionAssignment(target.replicas(), OptionalInt.empty());
+
+        List<Integer> currentReplicas = Replicas.toList(part.replicas);
+        // No need to change the assignment if it is already the same.
+        if (Objects.equals(currentReplicas, target.replicas())) {
+            // The requested assignment is the same as the current assignment.
+            return Optional.empty();
+        }
+
+        PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
+                tp.topicId(),
+                tp.partitionId(),
+                // no leader election
+                // clusterControl::isActive,
+                brokerId -> false,
+                featureControl.metadataVersion(),
+                getTopicEffectiveMinIsr(topics.get(tp.topicId()).name.toString())
+        );
+        builder.setTargetNode(target.replicas().get(0));
+        TopicControlInfo topicControlInfo = topics.get(tp.topicId());
+        if (topicControlInfo == null) {
+            log.warn("unknown topicId[{}]", tp.topicId());
+        } else {
+            TopicPartition topicPartition = new TopicPartition(topicControlInfo.name, tp.partitionId());
+            addPartitionToReElectTimeouts(topicPartition);
+        }
+        return builder.build();
+    }
+
+    /**
+     * Add partition to re-elect leader timeout.
+     * Generally, this method is invoked to ensure that the partition leader can be re-elected even if the original broker is out of communication.
+     * @param topicPartition the topic partition that needs to be re-elected
+     */
+    private void addPartitionToReElectTimeouts(TopicPartition topicPartition) {
+        Timeout timeout =  timer.newTimeout(t -> {
+            partitionReElectTimeouts.remove(topicPartition);
+            if (quorumController != null) {
+                tryElectLeader(topicPartition);
+            }
+        }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
+        partitionReElectTimeouts.put(topicPartition, timeout);
+    }
+
+    private void tryElectLeader(TopicPartition topicPartition) {
+        // only use deadlineNs, so it's ok to use null for other params
+        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
+        ElectLeadersRequestData data = new ElectLeadersRequestData();
+        TopicPartitions topicPartitions = new TopicPartitions();
+        topicPartitions.setTopic(topicPartition.topic());
+        topicPartitions.partitions().add(topicPartition.partition());
+        data.setTopicPartitions(new ElectLeadersRequestData.TopicPartitionsCollection(Collections.singletonList(topicPartitions).listIterator()));
+        quorumController.electLeaders(context, data).whenComplete((resp, ex) -> {
+            if (ex != null) {
+                log.warn("force elect partition[{}] leader fail", topicPartition, ex);
+            } else {
+                log.info("force elect partition[{}] leader done, response[{}]", topicPartition, resp);
+            }
+        });
+        log.info("partition[{}] reassignment re-elect leader timeout, force async elect leader again", topicPartition);
+    }
+    // AutoMQ for Kafka inject end
+
     /**
      * Apply a given partition reassignment. In general a partition reassignment goes
      * through several stages:
@@ -2018,7 +2274,7 @@ public class ReplicationControlManager {
      * @return                  The ChangePartitionRecord for the new partition assignment,
      *                          or empty if no change is needed.
      */
-    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
+    Optional<ApiMessageAndVersion> changePartitionReassignment0(TopicIdPartition tp,
                                                                PartitionRegistration part,
                                                                ReassignablePartition target) {
         // Check that the requested partition assignment is valid.

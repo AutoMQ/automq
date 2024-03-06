@@ -36,23 +36,48 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsRequestData.CreatableTopic;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
+import org.apache.kafka.common.message.TrimStreamsRequestData;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.protocol.Errors;
@@ -544,4 +569,86 @@ public class MockController implements Controller {
     public CompletableFuture<AssignReplicasToDirsResponseData> assignReplicasToDirs(ControllerRequestContext context, AssignReplicasToDirsRequestData request) {
         throw new java.lang.UnsupportedOperationException("not implemented");
     }
+
+    // AutoMQ for Kafka inject start
+
+    @Override
+    public CompletableFuture<Integer> getNextNodeId(
+            ControllerRequestContext context,
+            GetNextNodeIdRequestData request
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
+        throw new UnsupportedOperationException();
+    }
+
+    public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
+        List<Long/*objectId*/> deletedObjectIds) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<CreateStreamsResponseData> createStreams(ControllerRequestContext context, CreateStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData response) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<PrepareS3ObjectResponseData> prepareObject(ControllerRequestContext context, PrepareS3ObjectRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(ControllerRequestContext context, CommitStreamSetObjectRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
+        CommitStreamObjectRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(ControllerRequestContext context, GetOpeningStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<PutKVsResponseData> putKVs(ControllerRequestContext context, PutKVsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+    // AutoMQ for Kafka inject end
 }

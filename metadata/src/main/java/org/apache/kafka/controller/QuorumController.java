@@ -17,6 +17,11 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.DefaultS3Operator;
+import com.automq.stream.s3.operator.MemoryS3Operator;
+import com.automq.stream.s3.operator.S3Operator;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
 import org.apache.kafka.common.Uuid;
@@ -41,25 +46,52 @@ import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
+import org.apache.kafka.common.message.CommitStreamObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamObjectResponseData;
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenRequestData;
 import org.apache.kafka.common.message.CreateDelegationTokenResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData.CreatePartitionsTopic;
 import org.apache.kafka.common.message.CreatePartitionsResponseData.CreatePartitionsTopicResult;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
+import org.apache.kafka.common.message.CreateStreamsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.CreateTopicsResponseData;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
+import org.apache.kafka.common.message.DeleteKVsResponseData;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
+import org.apache.kafka.common.message.GetNextNodeIdRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
+import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.OpenStreamsRequestData;
+import org.apache.kafka.common.message.OpenStreamsResponseData;
+import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
+import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
+import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
+import org.apache.kafka.common.message.TrimStreamsRequestData;
+import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.metadata.AbortTransactionRecord;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
+import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.BeginTransactionRecord;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.ClientQuotaRecord;
@@ -68,16 +100,31 @@ import org.apache.kafka.common.metadata.DelegationTokenRecord;
 import org.apache.kafka.common.metadata.EndTransactionRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterControllerRecord;
 import org.apache.kafka.common.metadata.RemoveAccessControlEntryRecord;
 import org.apache.kafka.common.metadata.RemoveDelegationTokenRecord;
+import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
@@ -95,6 +142,9 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.controller.errors.ControllerExceptions;
 import org.apache.kafka.controller.errors.EventHandlerExceptionInfo;
 import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
+import org.apache.kafka.controller.stream.KVControlManager;
+import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -122,6 +172,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.fault.FaultHandler;
 import org.apache.kafka.server.fault.FaultHandlerException;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.CreateTopicPolicy;
 import org.apache.kafka.snapshot.SnapshotReader;
@@ -180,7 +231,7 @@ public final class QuorumController implements Controller {
     /**
      * The maximum records that the controller will write in a single batch.
      */
-    private final static int MAX_RECORDS_PER_BATCH = 10000;
+    private final static int MAX_RECORDS_PER_BATCH = 25000;
 
     /**
      * The maximum records any user-initiated operation is allowed to generate.
@@ -224,6 +275,11 @@ public final class QuorumController implements Controller {
         private long delegationTokenMaxLifeMs;
         private long delegationTokenExpiryTimeMs;
         private long delegationTokenExpiryCheckIntervalMs;
+
+        // AutoMQ for Kafka inject start
+        private Config streamConfig;
+        private List<String> quorumVoters;
+        // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
             this.nodeId = nodeId;
@@ -379,6 +435,18 @@ public final class QuorumController implements Controller {
             return this;
         }
 
+        // AutoMQ for Kafka inject start
+        public Builder setStreamConfig(Config streamConfig) {
+            this.streamConfig = streamConfig;
+            return this;
+        }
+
+        public Builder setQuorumVoters(List<String> quorumVoters) {
+            this.quorumVoters = quorumVoters;
+            return this;
+        }
+        // AutoMQ for Kafka inject end
+
         @SuppressWarnings("unchecked")
         public QuorumController build() throws Exception {
             if (raftClient == null) {
@@ -437,7 +505,9 @@ public final class QuorumController implements Controller {
                     delegationTokenMaxLifeMs,
                     delegationTokenExpiryTimeMs,
                     delegationTokenExpiryCheckIntervalMs,
-                    eligibleLeaderReplicasEnabled
+                    eligibleLeaderReplicasEnabled,
+                    streamConfig,
+                    quorumVoters
                 );
             } catch (Exception e) {
                 Utils.closeQuietly(queue, "event queue");
@@ -654,10 +724,15 @@ public final class QuorumController implements Controller {
         return replicationControl;
     }
 
-    // Visible for testing
-    ClusterControlManager clusterControl() {
+    // AutoMQ for Kafka inject start
+    public ClusterControlManager clusterControl() {
         return clusterControl;
     }
+
+    public SnapshotRegistry snapshotRegistry() {
+        return snapshotRegistry;
+    }
+    // AutoMQ for Kafka inject end
 
     // Visible for testing
     FeatureControlManager featureControl() {
@@ -962,7 +1037,7 @@ public final class QuorumController implements Controller {
         return appendWriteEvent(name, deadlineNs, op, EnumSet.noneOf(ControllerOperationFlag.class));
     }
 
-    <T> CompletableFuture<T> appendWriteEvent(
+    public <T> CompletableFuture<T> appendWriteEvent(
         String name,
         OptionalLong deadlineNs,
         ControllerWriteOperation<T> op,
@@ -1476,6 +1551,7 @@ public final class QuorumController implements Controller {
      * @param snapshotId        The snapshotId if this record is from a snapshot
      * @param offset            The offset of the record
      */
+    @SuppressWarnings("checkstyle:javaNCSS")
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long offset) {
         if (log.isTraceEnabled()) {
             if (snapshotId.isPresent()) {
@@ -1489,6 +1565,9 @@ public final class QuorumController implements Controller {
         }
         logReplayTracker.replay(message);
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
+        // AutoMQ for Kafka inject start
+        boolean extensionMatch = extension.replay(type, message, snapshotId, offset);
+        // AutoMQ for Kafka inject end
         switch (type) {
             case REGISTER_BROKER_RECORD:
                 clusterControl.replay((RegisterBrokerRecord) message, offset);
@@ -1566,8 +1645,64 @@ public final class QuorumController implements Controller {
             case REGISTER_CONTROLLER_RECORD:
                 clusterControl.replay((RegisterControllerRecord) message);
                 break;
+
+            // AutoMQ for Kafka inject start
+            case S3_STREAM_RECORD:
+                streamControlManager.replay((S3StreamRecord) message);
+                break;
+            case REMOVE_S3_STREAM_RECORD:
+                streamControlManager.replay((RemoveS3StreamRecord) message);
+                break;
+            case RANGE_RECORD:
+                streamControlManager.replay((RangeRecord) message);
+                break;
+            case REMOVE_RANGE_RECORD:
+                streamControlManager.replay((RemoveRangeRecord) message);
+                break;
+            case S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamObjectRecord) message);
+                break;
+            case REMOVE_S3_STREAM_OBJECT_RECORD:
+                streamControlManager.replay((RemoveS3StreamObjectRecord) message);
+                break;
+            case S3_STREAM_SET_OBJECT_RECORD:
+                streamControlManager.replay((S3StreamSetObjectRecord) message);
+                break;
+            case REMOVE_STREAM_SET_OBJECT_RECORD:
+                streamControlManager.replay((RemoveStreamSetObjectRecord) message);
+                break;
+            case S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((S3ObjectRecord) message);
+                break;
+            case REMOVE_S3_OBJECT_RECORD:
+                s3ObjectControlManager.replay((RemoveS3ObjectRecord) message);
+                break;
+            case ASSIGNED_STREAM_ID_RECORD:
+                streamControlManager.replay((AssignedStreamIdRecord) message);
+                break;
+            case ASSIGNED_S3_OBJECT_ID_RECORD:
+                s3ObjectControlManager.replay((AssignedS3ObjectIdRecord) message);
+                break;
+            case NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((NodeWALMetadataRecord) message);
+                break;
+            case REMOVE_NODE_WALMETADATA_RECORD:
+                streamControlManager.replay((RemoveNodeWALMetadataRecord) message);
+                break;
+            case KVRECORD:
+                kvControlManager.replay((KVRecord) message);
+                break;
+            case REMOVE_KVRECORD:
+                kvControlManager.replay((RemoveKVRecord) message);
+                break;
+            case UPDATE_NEXT_NODE_ID_RECORD:
+                clusterControl.replay((UpdateNextNodeIdRecord) message);
+                break;
             default:
-                throw new RuntimeException("Unhandled record type " + type);
+                if (!extensionMatch) {
+                    throw new RuntimeException("Unhandled record type " + type);
+                }
+            // AutoMQ for Kafka inject end
         }
     }
 
@@ -1774,6 +1909,32 @@ public final class QuorumController implements Controller {
      */
     private final RecordRedactor recordRedactor;
 
+    // AutoMQ for Kafka inject start
+
+    private final Config streamConfig;
+
+    /**
+     * An object which stores the controller's view of the S3 objects.
+     * This must be accessed only by the event queue thread.
+     */
+    private final S3ObjectControlManager s3ObjectControlManager;
+
+    /**
+     * An object which stores the controller's view of the Streams.
+     * This must be accessed only by the event queue thread.
+     */
+    private final StreamControlManager streamControlManager;
+
+    /**
+     * An object which stores the controller's view of the KV objects.
+     * This must be accessed only by the event queue thread.
+     */
+    private final KVControlManager kvControlManager;
+
+    private QuorumControllerExtension extension = QuorumControllerExtension.NOOP;
+    // AutoMQ for Kafka inject end
+
+
     private QuorumController(
         FaultHandler nonFatalFaultHandler,
         FaultHandler fatalFaultHandler,
@@ -1805,7 +1966,9 @@ public final class QuorumController implements Controller {
         long delegationTokenMaxLifeMs,
         long delegationTokenExpiryTimeMs,
         long delegationTokenExpiryCheckIntervalMs,
-        boolean eligibleLeaderReplicasEnabled
+        boolean eligibleLeaderReplicasEnabled,
+        Config streamConfig,
+        List<String> quorumVoters
     ) {
         this.nonFatalFaultHandler = nonFatalFaultHandler;
         this.fatalFaultHandler = fatalFaultHandler;
@@ -1861,6 +2024,9 @@ public final class QuorumController implements Controller {
             setReplicaPlacer(replicaPlacer).
             setFeatureControlManager(featureControl).
             setZkMigrationEnabled(zkMigrationEnabled).
+            // AutoMQ for Kafka inject start
+            setQuorumVoters(quorumVoters).
+            // AutoMQ for Kafka inject end
             build();
         this.producerIdControlManager = new ProducerIdControlManager.Builder().
             setLogContext(logContext).
@@ -1881,6 +2047,9 @@ public final class QuorumController implements Controller {
             setClusterControl(clusterControl).
             setCreateTopicPolicy(createTopicPolicy).
             setFeatureControl(featureControl).
+            // AutoMQ for Kafka inject start
+            setQuorumController(this).
+            // AutoMQ for Kafka inject end
             build();
         this.scramControlManager = new ScramControlManager.Builder().
             setLogContext(logContext).
@@ -1911,11 +2080,31 @@ public final class QuorumController implements Controller {
         this.recordRedactor = new RecordRedactor(configSchema);
         this.eligibleLeaderReplicasEnabled = eligibleLeaderReplicasEnabled;
 
+        // AutoMQ for Kafka inject start
+        this.streamConfig = streamConfig;
+        S3Operator s3Operator;
+        if (streamConfig.mockEnable()) {
+            // only use for test
+            s3Operator = new MemoryS3Operator();
+        } else {
+            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
+            // TODO: uncomment the following line
+//                    List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()));
+                    List.of());
+        }
+        this.s3ObjectControlManager = new S3ObjectControlManager(
+            this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
+        this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
+                this.s3ObjectControlManager, clusterControl);
+        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
+        // AutoMQ for Kafka inject end
+
         log.info("Creating new QuorumController with clusterId {}.{}{}",
             clusterId, zkMigrationEnabled ? " ZK migration mode is enabled." : "",
             eligibleLeaderReplicasEnabled ? " Eligible leader replicas enabled." : "");
 
         this.raftClient.register(metaLogListener);
+        S3StreamKafkaMetricsManager.setIsActiveSupplier(this::isActive);
     }
 
     @Override
@@ -2172,6 +2361,17 @@ public final class QuorumController implements Controller {
             });
     }
 
+    // AutoMQ for Kafka inject start
+    @Override
+    public CompletableFuture<Integer> getNextNodeId(
+        ControllerRequestContext context,
+        GetNextNodeIdRequestData request) {
+        return appendWriteEvent("getNextNodeId", context.deadlineNs(),
+            clusterControl::getNextNodeId);
+    }
+    // AutoMQ for Kafka inject end
+
+
     @Override
     public CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,
@@ -2338,6 +2538,158 @@ public final class QuorumController implements Controller {
         queue.close();
         controllerMetrics.close();
     }
+
+    // AutoMQ for Kafka inject start
+    @Override
+    public CompletableFuture<Void> checkS3ObjectsLifecycle(ControllerRequestContext context) {
+        return appendWriteEvent("checkS3ObjectsLifecycle", context.deadlineNs(), s3ObjectControlManager::checkS3ObjectsLifecycle);
+    }
+
+
+    @Override
+    public CompletableFuture<Void> notifyS3ObjectDeleted(ControllerRequestContext context,
+        List<Long/*objectId*/> deletedObjectIds) {
+        return appendWriteEvent("notifyS3ObjectDeleted", context.deadlineNs(),
+            () -> s3ObjectControlManager.notifyS3ObjectDeleted(deletedObjectIds));
+    }
+
+
+
+    @Override
+    public CompletableFuture<CreateStreamsResponseData> createStreams(ControllerRequestContext context, CreateStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<CreateStreamsResponseData.CreateStreamResponse>> batchCf = request.createStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new CreateStreamsResponseData().setCreateStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<OpenStreamsResponseData.OpenStreamResponse>> batchCf = request.openStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new OpenStreamsResponseData().setOpenStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<CloseStreamsResponseData.CloseStreamResponse>> batchCf = request.closeStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new CloseStreamsResponseData().setCloseStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<TrimStreamsResponseData.TrimStreamResponse>> batchCf = request.trimStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new TrimStreamsResponseData().setTrimStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
+        int nodeId = request.nodeId();
+        long nodeEpoch = request.nodeEpoch();
+        List<CompletableFuture<DeleteStreamsResponseData.DeleteStreamResponse>> batchCf = request.deleteStreamRequests()
+            .stream()
+            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(nodeId, nodeEpoch, req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new DeleteStreamsResponseData().setDeleteStreamResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<PrepareS3ObjectResponseData> prepareObject(ControllerRequestContext context, PrepareS3ObjectRequestData request) {
+        return appendWriteEvent("prepareObject", context.deadlineNs(),
+            () -> s3ObjectControlManager.prepareObject(request));
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamSetObjectResponseData> commitStreamSetObject(ControllerRequestContext context, CommitStreamSetObjectRequestData request) {
+        return appendWriteEvent("commitStreamSetObject", context.deadlineNs(),
+            () -> streamControlManager.commitStreamSetObject(request));
+    }
+
+    @Override
+    public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
+        CommitStreamObjectRequestData request) {
+        return appendWriteEvent("commitStreamObject", context.deadlineNs(),
+            () -> streamControlManager.commitStreamObject(request));
+    }
+
+    @Override
+    public CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(ControllerRequestContext context, GetOpeningStreamsRequestData request) {
+        return appendWriteEvent("getOpeningStreams", context.deadlineNs(),
+            () -> streamControlManager.getOpeningStreams(request));
+    }
+
+    @Override
+    public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
+        List<CompletableFuture<GetKVsResponseData.GetKVResponse>> batchCf = request.getKeyRequests()
+            .stream()
+            .map(req -> appendReadEvent("getKV", context.deadlineNs(), () -> kvControlManager.getKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new GetKVsResponseData().setGetKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<PutKVsResponseData> putKVs(ControllerRequestContext context, PutKVsRequestData request) {
+        List<CompletableFuture<PutKVsResponseData.PutKVResponse>> batchCf = request.putKVRequests()
+            .stream()
+            .map(req -> appendWriteEvent("putKV", context.deadlineNs(), () -> kvControlManager.putKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new PutKVsResponseData().setPutKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    @Override
+    public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
+        List<CompletableFuture<DeleteKVsResponseData.DeleteKVResponse>> batchCf = request.deleteKVRequests()
+            .stream()
+            .map(req -> appendWriteEvent("deleteKV", context.deadlineNs(), () -> kvControlManager.deleteKV(req)))
+            .collect(Collectors.toList());
+        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
+            new DeleteKVsResponseData().setDeleteKVResponses(
+                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        );
+    }
+
+    public void setExtension(QuorumControllerExtension extension) {
+        this.extension = extension;
+    }
+    // AutoMQ for Kafka inject end
 
     // VisibleForTesting
     Time time() {

@@ -36,18 +36,23 @@ import java.util.Objects;
 public final class ClusterImage {
     public static final ClusterImage EMPTY = new ClusterImage(
             Collections.emptyMap(),
-            Collections.emptyMap());
+            Collections.emptyMap(),
+            -1
+        );
 
     private final Map<Integer, BrokerRegistration> brokers;
 
     private final Map<Integer, ControllerRegistration> controllers;
+    private final Integer nextNodeId;
 
     public ClusterImage(
         Map<Integer, BrokerRegistration> brokers,
-        Map<Integer, ControllerRegistration> controllers
+        Map<Integer, ControllerRegistration> controllers,
+        int nextNodeId
     ) {
         this.brokers = Collections.unmodifiableMap(brokers);
         this.controllers = Collections.unmodifiableMap(controllers);
+        this.nextNodeId = nextNodeId;
     }
 
     public boolean isEmpty() {
@@ -56,6 +61,10 @@ public final class ClusterImage {
 
     public Map<Integer, BrokerRegistration> brokers() {
         return brokers;
+    }
+
+    public Integer nextNodeId() {
+        return nextNodeId;
     }
 
     public BrokerRegistration broker(int nodeId) {

@@ -153,6 +153,15 @@ public class PartitionChangeBuilder {
         return this;
     }
 
+    // AutoMQ for Kafka inject start
+    public PartitionChangeBuilder setTargetNode(int brokerId) {
+        setTargetIsr(Collections.singletonList(brokerId));
+        setTargetReplicas(Collections.singletonList(brokerId));
+        setTargetLeaderRecoveryState(LeaderRecoveryState.RECOVERED);
+        return this;
+    }
+    // AutoMQ for Kafka inject end
+
     public PartitionChangeBuilder setUncleanShutdownReplicas(List<Integer> uncleanShutdownReplicas) {
         this.uncleanShutdownReplicas = uncleanShutdownReplicas;
         return this;
