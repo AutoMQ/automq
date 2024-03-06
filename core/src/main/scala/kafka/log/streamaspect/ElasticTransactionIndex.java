@@ -34,7 +34,7 @@ import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 
 public class ElasticTransactionIndex extends TransactionIndex {
     private StreamSliceSupplier streamSupplier;
-    private ElasticStreamSlice stream;
+    ElasticStreamSlice stream;
     private final FileCache cache;
     private final String path;
     private volatile LastAppend lastAppend;
@@ -57,9 +57,9 @@ public class ElasticTransactionIndex extends TransactionIndex {
     }
 
     @Override
-    public void append(AbortedTxn abortedTxn) throws IOException {
+    public void append(AbortedTxn abortedTxn) {
         if (closed)
-            throw new IOException("Attempt to append to closed transaction index " + path);
+            throw new IllegalStateException("Attempt to append to closed transaction index " + path);
         lastOffset.ifPresent(offset -> {
             if (offset >= abortedTxn.lastOffset())
                 throw new IllegalArgumentException("The last offset of appended transactions must increase sequentially, but "
@@ -144,6 +144,10 @@ public class ElasticTransactionIndex extends TransactionIndex {
                 rst.free();
             }
         }
+    }
+
+    public void seal() {
+        stream.seal();
     }
 
     @Override
