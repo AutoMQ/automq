@@ -21,6 +21,7 @@ import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.operator.S3Operator;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -127,17 +128,16 @@ public class S3ObjectControlManager {
     }
 
     private void triggerCheckEvent() {
-        // TODO: uncomment the following line
-//        if (!quorumController.isActive()) {
-//            return;
-//        }
-//        ControllerRequestContext ctx = new ControllerRequestContext(
-//                null, null, OptionalLong.empty());
-//        this.quorumController.checkS3ObjectsLifecycle(ctx).whenComplete((ignore, exp) -> {
-//            if (exp != null) {
-//                log.error("Failed to check the S3Object's lifecycle", exp);
-//            }
-//        });
+        if (!quorumController.isActive()) {
+            return;
+        }
+        ControllerRequestContext ctx = new ControllerRequestContext(
+                null, null, OptionalLong.empty());
+        this.quorumController.checkS3ObjectsLifecycle(ctx).whenComplete((ignore, exp) -> {
+            if (exp != null) {
+                log.error("Failed to check the S3Object's lifecycle", exp);
+            }
+        });
     }
 
     public void registerListener(S3ObjectLifeCycleListener listener) {
@@ -365,13 +365,12 @@ public class S3ObjectControlManager {
                     // notify the controller an objects deletion event to drive the removal of the objects
                     ControllerRequestContext ctx = new ControllerRequestContext(
                             null, null, OptionalLong.empty());
-        // TODO: uncomment the following line
-//                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
-//                        if (exp != null) {
-//                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
-//                                    Arrays.toString(deletedObjectIds.toArray()), exp);
-//                        }
-//                    });
+                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                        if (exp != null) {
+                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                                    Arrays.toString(deletedObjectIds.toArray()), exp);
+                        }
+                    });
                 }
             });
         }
