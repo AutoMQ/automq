@@ -14,7 +14,6 @@ package com.automq.stream.s3.cache;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -131,7 +130,7 @@ public class StreamReader {
                     completeInflightTask0(key, ex);
                 }
                 context.taskKeySet.clear();
-                StorageOperationStats.getInstance().blockCacheReadAheadStats(true).record(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().blockCacheReadAheadStats(true).record(timer.elapsedAs(TimeUnit.NANOSECONDS));
             });
     }
 
@@ -168,7 +167,7 @@ public class StreamReader {
         CompletableFuture<Void> throttleCf = inflightReadThrottle.acquire(traceContext, uuid, totalReserveSize);
         return throttleCf.thenComposeAsync(nil -> {
             // concurrently read all data blocks
-            StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(MetricsLevel.INFO, throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
             for (int i = 0; i < streamDataBlocksToRead.size(); i++) {
                 Pair<ObjectReader, StreamDataBlock> pair = streamDataBlocksToRead.get(i);
                 ObjectReader objectReader = pair.getLeft();
@@ -296,7 +295,7 @@ public class StreamReader {
                     completeInflightTask0(key, ex);
                 }
                 context.taskKeySet.clear();
-                StorageOperationStats.getInstance().blockCacheReadAheadStats(false).record(MetricsLevel.INFO, timer.elapsedAs(TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().blockCacheReadAheadStats(false).record(timer.elapsedAs(TimeUnit.NANOSECONDS));
             });
     }
 
@@ -364,7 +363,7 @@ public class StreamReader {
             if (reserveResult.reserveSize() > 0) {
                 TimerUtil throttleTimer = new TimerUtil();
                 inflightReadThrottle.acquire(TraceContext.DEFAULT, uuid, reserveResult.reserveSize()).thenAcceptAsync(nil -> {
-                    StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(MetricsLevel.INFO, throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
+                    StorageOperationStats.getInstance().readAheadLimiterQueueTimeStats.record(throttleTimer.elapsedAs(TimeUnit.NANOSECONDS));
                     // read data block
                     if (context.taskKeySet.contains(taskKey)) {
                         setInflightReadAheadStatus(taskKey, DefaultS3BlockCache.ReadBlockCacheStatus.WAIT_FETCH_DATA);

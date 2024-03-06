@@ -48,6 +48,7 @@ dependencies {
     api 'org.aspectj:aspectjrt:1.9.20.1'
     api 'org.aspectj:aspectjweaver:1.9.20.1'
     api 'com.github.jnr:jnr-posix:3.1.19'
+    api 'com.yammer.metrics:metrics-core:2.2.0'
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
     testImplementation 'org.mockito:mockito-core:5.5.0'

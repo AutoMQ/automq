@@ -148,14 +148,14 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3ObjectStats.getInstance().objectStageReadyCloseStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3ObjectStats.getInstance().objectStageTotalStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
-            S3ObjectStats.getInstance().objectUploadSizeStats.record(MetricsLevel.DEBUG, totalWriteSize.get());
+            S3ObjectStats.getInstance().objectUploadSizeStats.record(totalWriteSize.get());
         });
         return closeCf;
     }
@@ -233,7 +233,7 @@ public class MultiPartWriter implements Writer {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(path, uploadId, partNumber, partBuf, throttleStrategy)), partCf);
             partCf.whenComplete((nil, ex) -> {
-                S3ObjectStats.getInstance().objectStageUploadPartStats.record(MetricsLevel.DEBUG, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3ObjectStats.getInstance().objectStageUploadPartStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             });
         }
 

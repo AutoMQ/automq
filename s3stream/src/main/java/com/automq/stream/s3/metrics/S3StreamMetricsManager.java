@@ -17,37 +17,45 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramInstrument;
+import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.core.MetricsRegistry;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
-import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 public class S3StreamMetricsManager {
     private static final List<ConfigListener> BASE_ATTRIBUTES_LISTENERS = new ArrayList<>();
+    public static final MetricsRegistry METRICS_REGISTRY = new MetricsRegistry();
+    public static final List<YammerHistogramMetric> OPERATION_LATENCY_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<YammerHistogramMetric> OBJECT_STAGE_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<YammerHistogramMetric> NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<YammerHistogramMetric> NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<YammerHistogramMetric> READ_AHEAD_SIZE_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<YammerHistogramMetric> READ_AHEAD_LIMITER_QUEUE_TIME_METRICS = new CopyOnWriteArrayList<>();
     private static LongCounter s3DownloadSizeInTotal = new NoopLongCounter();
     private static LongCounter s3UploadSizeInTotal = new NoopLongCounter();
-    private static LongHistogram operationLatency = new NoopLongHistogram();
+    private static HistogramInstrument operationLatency;
     private static LongCounter objectNumInTotal = new NoopLongCounter();
-    private static LongHistogram objectStageCost = new NoopLongHistogram();
-    private static LongHistogram objectUploadSize = new NoopLongHistogram();
-    private static LongHistogram objectDownloadSize = new NoopLongHistogram();
+    private static HistogramInstrument objectStageCost;
     private static LongCounter networkInboundUsageInTotal = new NoopLongCounter();
     private static LongCounter networkOutboundUsageInTotal = new NoopLongCounter();
     private static ObservableLongGauge networkInboundAvailableBandwidth = new NoopObservableLongGauge();
     private static ObservableLongGauge networkOutboundAvailableBandwidth = new NoopObservableLongGauge();
     private static ObservableLongGauge networkInboundLimiterQueueSize = new NoopObservableLongGauge();
     private static ObservableLongGauge networkOutboundLimiterQueueSize = new NoopObservableLongGauge();
-    private static LongHistogram networkInboundLimiterQueueTime = new NoopLongHistogram();
-    private static LongHistogram networkOutboundLimiterQueueTime = new NoopLongHistogram();
-    private static LongHistogram readAheadSize = new NoopLongHistogram();
-    private static LongHistogram readAheadLimierQueueTime = new NoopLongHistogram();
+    private static HistogramInstrument networkInboundLimiterQueueTime;
+    private static HistogramInstrument networkOutboundLimiterQueueTime;
+    private static HistogramInstrument readAheadSize;
+    private static HistogramInstrument readAheadLimierQueueTime;
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalTrimmedOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalCacheSize = new NoopObservableLongGauge();
@@ -102,31 +110,13 @@ public class S3StreamMetricsManager {
             .setDescription("S3 upload size")
             .setUnit("bytes")
             .build();
-        operationLatency = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OPERATION_LATENCY_METRIC_NAME)
-            .setDescription("Operations latency")
-            .setUnit("nanoseconds")
-            .ofLongs()
-            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-            .build();
+        operationLatency = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.OPERATION_LATENCY_METRIC_NAME,
+            "Operation latency", "nanoseconds", () -> OPERATION_LATENCY_METRICS);
         objectNumInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.OBJECT_COUNT_METRIC_NAME)
             .setDescription("Objects count")
             .build();
-        objectStageCost = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_STAGE_COST_METRIC_NAME)
-            .setDescription("Objects stage cost")
-            .setUnit("nanoseconds")
-            .ofLongs()
-            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-            .build();
-        objectUploadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_UPLOAD_SIZE_METRIC_NAME)
-            .setDescription("Objects upload size")
-            .setUnit("bytes")
-            .ofLongs()
-            .build();
-        objectDownloadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.OBJECT_DOWNLOAD_SIZE_METRIC_NAME)
-            .setDescription("Objects download size")
-            .setUnit("bytes")
-            .ofLongs()
-            .build();
+        objectStageCost = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.OBJECT_STAGE_COST_METRIC_NAME,
+            "Objects stage cost", "nanoseconds", () -> OBJECT_STAGE_METRICS);
         networkInboundUsageInTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_USAGE_METRIC_NAME)
             .setDescription("Network inbound usage")
             .setUnit("bytes")
@@ -169,29 +159,14 @@ public class S3StreamMetricsManager {
                     result.record((long) networkOutboundLimiterQueueSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
-        networkInboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
-            .setDescription("Network inbound limiter queue time")
-            .setUnit("nanoseconds")
-            .ofLongs()
-            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-            .build();
-        networkOutboundLimiterQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME)
-            .setDescription("Network outbound limiter queue time")
-            .setUnit("nanoseconds")
-            .ofLongs()
-            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-            .build();
-        readAheadSize = meter.histogramBuilder(prefix + S3StreamMetricsConstant.READ_AHEAD_SIZE_METRIC_NAME)
-            .setDescription("Read ahead size")
-            .setUnit("bytes")
-            .ofLongs()
-            .build();
-        readAheadLimierQueueTime = meter.histogramBuilder(prefix + S3StreamMetricsConstant.READ_AHEAD_QUEUE_TIME_METRIC_NAME)
-            .setDescription("Read ahead limiter queue time")
-            .setUnit("nanoseconds")
-            .ofLongs()
-            .setExplicitBucketBoundariesAdvice(S3StreamMetricsConstant.LATENCY_BOUNDARIES)
-            .build();
+        networkInboundLimiterQueueTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME,
+            "Network inbound limiter queue time", "nanoseconds", () -> NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRICS);
+        networkOutboundLimiterQueueTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME,
+            "Network outbound limiter queue time", "nanoseconds", () -> NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRICS);
+        readAheadSize = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.READ_AHEAD_SIZE_METRIC_NAME,
+            "Read ahead size", "bytes", () -> READ_AHEAD_SIZE_METRICS);
+        readAheadLimierQueueTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.READ_AHEAD_QUEUE_TIME_METRIC_NAME,
+            "Read ahead limiter queue time", "nanoseconds", () -> READ_AHEAD_LIMITER_QUEUE_TIME_METRICS);
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
             .setDescription("Delta WAL start offset")
             .ofLongs()
@@ -353,35 +328,43 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static HistogramMetric buildStageOperationMetric(S3Stage stage) {
+    public static YammerHistogramMetric buildStageOperationMetric(MetricName metricName, MetricsLevel metricsLevel, S3Stage stage) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(stage), operationLatency);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel,
+                metricsConfig, AttributesUtils.buildAttributes(stage));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildOperationMetric(S3Operation operation) {
+    public static YammerHistogramMetric buildOperationMetric(MetricName metricName, MetricsLevel metricsLevel, S3Operation operation) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation), operationLatency);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel,
+                metricsConfig, AttributesUtils.buildAttributes(operation));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildOperationMetric(S3Operation operation, String status, String sizeLabelName) {
+    public static YammerHistogramMetric buildOperationMetric(MetricName metricName, MetricsLevel metricsLevel,
+        S3Operation operation, String status, String sizeLabelName) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation,
-                status, sizeLabelName), operationLatency);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig,
+                AttributesUtils.buildAttributes(operation, status, sizeLabelName));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildOperationMetric(S3Operation operation, String status) {
+    public static YammerHistogramMetric buildOperationMetric(MetricName metricName, MetricsLevel metricsLevel, S3Operation operation, String status) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(operation, status), operationLatency);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig,
+                AttributesUtils.buildAttributes(operation, status));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
@@ -394,26 +377,21 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static HistogramMetric buildObjectStageCostMetric(S3ObjectStage stage) {
+    public static YammerHistogramMetric buildObjectStageCostMetric(MetricName metricName, MetricsLevel metricsLevel, S3ObjectStage stage) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, AttributesUtils.buildAttributes(stage), objectStageCost);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig,
+                AttributesUtils.buildAttributes(stage));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OBJECT_STAGE_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildObjectUploadSizeMetric() {
+    public static YammerHistogramMetric buildObjectUploadSizeMetric(MetricName metricName, MetricsLevel metricsLevel) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, objectUploadSize);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
-            return metric;
-        }
-    }
-
-    public static HistogramMetric buildObjectDownloadSizeMetric() {
-        synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, objectDownloadSize);
-            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OBJECT_STAGE_METRICS.add(metric);
             return metric;
         }
     }
@@ -434,35 +412,39 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static HistogramMetric buildNetworkInboundLimiterQueueTimeMetric() {
+    public static YammerHistogramMetric buildNetworkInboundLimiterQueueTimeMetric(MetricName metricName, MetricsLevel metricsLevel) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, networkInboundLimiterQueueTime);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildNetworkOutboundLimiterQueueTimeMetric() {
+    public static YammerHistogramMetric buildNetworkOutboundLimiterQueueTimeMetric(MetricName metricName, MetricsLevel metricsLevel) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, networkOutboundLimiterQueueTime);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildReadAheadSizeMetric() {
+    public static YammerHistogramMetric buildReadAheadSizeMetric(MetricName metricName, MetricsLevel metricsLevel) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, readAheadSize);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            READ_AHEAD_SIZE_METRICS.add(metric);
             return metric;
         }
 
     }
 
-    public static HistogramMetric buildReadAheadLimiterQueueTimeMetric() {
+    public static YammerHistogramMetric buildReadAheadLimiterQueueTimeMetric(MetricName metricName, MetricsLevel metricsLevel) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            HistogramMetric metric = new HistogramMetric(metricsConfig, readAheadLimierQueueTime);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            READ_AHEAD_LIMITER_QUEUE_TIME_METRICS.add(metric);
             return metric;
         }
     }

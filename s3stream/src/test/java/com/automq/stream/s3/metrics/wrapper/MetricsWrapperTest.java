@@ -19,9 +19,9 @@ package com.automq.stream.s3.metrics.wrapper;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
+import com.yammer.metrics.core.MetricName;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
-import io.opentelemetry.api.metrics.LongHistogram;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -38,13 +38,13 @@ public class MetricsWrapperTest {
         Assertions.assertEquals(MetricsLevel.DEBUG, metric.metricsLevel);
         Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), metric.attributes);
 
-        HistogramMetric histogramMetric = new HistogramMetric(new MetricsConfig(), Attributes.builder().put("extra", "v").build(),
-            Mockito.mock(LongHistogram.class));
-        Assertions.assertEquals(MetricsLevel.INFO, histogramMetric.metricsLevel);
+        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.INFO, new MetricsConfig(),
+            Attributes.builder().put("extra", "v").build());
+        Assertions.assertEquals(MetricsLevel.INFO, yammerHistogramMetric.metricsLevel);
 
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
-        Assertions.assertEquals(MetricsLevel.DEBUG, histogramMetric.metricsLevel);
-        Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), histogramMetric.attributes);
+        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
+        Assertions.assertEquals(MetricsLevel.DEBUG, yammerHistogramMetric.metricsLevel);
+        Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), yammerHistogramMetric.attributes);
     }
 
     @Test
@@ -56,11 +56,15 @@ public class MetricsWrapperTest {
         Assertions.assertTrue(metric.add(MetricsLevel.INFO, 1));
         Assertions.assertTrue(metric.add(MetricsLevel.DEBUG, 1));
 
-        HistogramMetric histogramMetric = new HistogramMetric(new MetricsConfig(MetricsLevel.INFO, null), Mockito.mock(LongHistogram.class));
-        Assertions.assertTrue(histogramMetric.record(MetricsLevel.INFO, 1));
-        Assertions.assertFalse(histogramMetric.record(MetricsLevel.DEBUG, 1));
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
-        Assertions.assertTrue(histogramMetric.record(MetricsLevel.INFO, 1));
-        Assertions.assertTrue(histogramMetric.record(MetricsLevel.DEBUG, 1));
+        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.INFO, new MetricsConfig(),
+            Attributes.builder().put("extra", "v").build());
+        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
+        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
+        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
+        yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.DEBUG, new MetricsConfig(),
+            Attributes.builder().put("extra", "v").build());
+        Assertions.assertFalse(yammerHistogramMetric.shouldRecord());
+        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
+        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
     }
 }

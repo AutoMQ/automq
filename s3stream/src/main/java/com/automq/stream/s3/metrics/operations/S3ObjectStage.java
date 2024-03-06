@@ -28,4 +28,8 @@ public enum S3ObjectStage {
     public String getName() {
         return name;
     }
+
+    public String getUniqueKey() {
+        return "s3_object_stage_" + name;
+    }
 }

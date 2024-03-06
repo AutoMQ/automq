@@ -69,8 +69,6 @@ public class S3StreamMetricsConstant {
     public static final String OPERATION_LATENCY_METRIC_NAME = "operation_latency";
     public static final String OBJECT_COUNT_METRIC_NAME = "object_count";
     public static final String OBJECT_STAGE_COST_METRIC_NAME = "object_stage_cost";
-    public static final String OBJECT_UPLOAD_SIZE_METRIC_NAME = "object_upload_size";
-    public static final String OBJECT_DOWNLOAD_SIZE_METRIC_NAME = "object_download_size";
     public static final String NETWORK_INBOUND_USAGE_METRIC_NAME = "network_inbound_usage";
     public static final String NETWORK_OUTBOUND_USAGE_METRIC_NAME = "network_outbound_usage";
     public static final String NETWORK_INBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME = "network_inbound_available_bandwidth";
@@ -80,6 +78,12 @@ public class S3StreamMetricsConstant {
     public static final String NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_inbound_limiter_queue_time";
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_outbound_limiter_queue_time";
     public static final String READ_AHEAD_SIZE_METRIC_NAME = "read_ahead_size";
+    public static final String SUM_METRIC_NAME_SUFFIX = "_sum";
+    public static final String COUNT_METRIC_NAME_SUFFIX = "_count";
+    public static final String P50_METRIC_NAME_SUFFIX = "_50p";
+    public static final String P99_METRIC_NAME_SUFFIX = "_99p";
+    public static final String MEAN_METRIC_NAME_SUFFIX = "_mean";
+    public static final String MAX_METRIC_NAME_SUFFIX = "_max";
     public static final String WAL_START_OFFSET = "wal_start_offset";
     public static final String WAL_TRIMMED_OFFSET = "wal_trimmed_offset";
     public static final String DELTA_WAL_CACHE_SIZE = "delta_wal_cache_size";

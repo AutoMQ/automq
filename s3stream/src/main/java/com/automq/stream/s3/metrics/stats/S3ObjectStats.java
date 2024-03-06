@@ -11,20 +11,25 @@
 
 package com.automq.stream.s3.metrics.stats;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
+import com.yammer.metrics.core.MetricName;
 
 public class S3ObjectStats {
     private volatile static S3ObjectStats instance = null;
 
     public final CounterMetric objectNumInTotalStats = S3StreamMetricsManager.buildObjectNumMetric();
-    public final HistogramMetric objectStageUploadPartStats = S3StreamMetricsManager.buildObjectStageCostMetric(S3ObjectStage.UPLOAD_PART);
-    public final HistogramMetric objectStageReadyCloseStats = S3StreamMetricsManager.buildObjectStageCostMetric(S3ObjectStage.READY_CLOSE);
-    public final HistogramMetric objectStageTotalStats = S3StreamMetricsManager.buildObjectStageCostMetric(S3ObjectStage.TOTAL);
-    public final HistogramMetric objectUploadSizeStats = S3StreamMetricsManager.buildObjectUploadSizeMetric();
-    public final HistogramMetric objectDownloadSizeStats = S3StreamMetricsManager.buildObjectDownloadSizeMetric();
+    public final YammerHistogramMetric objectStageUploadPartStats = S3StreamMetricsManager.buildObjectStageCostMetric(
+        new MetricName(S3ObjectStats.class, S3ObjectStage.UPLOAD_PART.getUniqueKey()), MetricsLevel.DEBUG, S3ObjectStage.UPLOAD_PART);
+    public final YammerHistogramMetric objectStageReadyCloseStats = S3StreamMetricsManager.buildObjectStageCostMetric(
+        new MetricName(S3ObjectStats.class, S3ObjectStage.READY_CLOSE.getUniqueKey()), MetricsLevel.DEBUG, S3ObjectStage.READY_CLOSE);
+    public final YammerHistogramMetric objectStageTotalStats = S3StreamMetricsManager.buildObjectStageCostMetric(
+        new MetricName(S3ObjectStats.class, S3ObjectStage.TOTAL.getUniqueKey()), MetricsLevel.DEBUG, S3ObjectStage.TOTAL);
+    public final YammerHistogramMetric objectUploadSizeStats = S3StreamMetricsManager.buildObjectUploadSizeMetric(
+        new MetricName(S3ObjectStats.class, "ObjectUploadSize"), MetricsLevel.DEBUG);
 
     private S3ObjectStats() {
     }

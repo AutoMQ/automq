@@ -133,6 +133,11 @@
             <artifactId>jnr-posix</artifactId>
             <version>3.1.19</version>
         </dependency>
+        <dependency>
+            <groupId>com.yammer.metrics</groupId>
+            <artifactId>metrics-core</artifactId>
+            <version>2.2.0</version>
+        </dependency>
     </dependencies>
 
     <build>
