@@ -31,7 +31,7 @@ import java.io.IOException;
  *
  * @param <T> Type parameter of the log entry
  */
-interface LogInputStream<T extends RecordBatch> {
+public interface LogInputStream<T extends RecordBatch> {
 
     /**
      * Get the next record batch from the underlying input stream.

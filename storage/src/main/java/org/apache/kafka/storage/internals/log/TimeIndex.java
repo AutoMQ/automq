@@ -51,8 +51,8 @@ import java.nio.MappedByteBuffer;
  *
  */
 public class TimeIndex extends AbstractIndex {
-    private static final Logger log = LoggerFactory.getLogger(TimeIndex.class);
-    private static final int ENTRY_SIZE = 12;
+    protected static final Logger log = LoggerFactory.getLogger(TimeIndex.class);
+    protected static final int ENTRY_SIZE = 12;
 
     private volatile TimestampOffset lastEntry;
 
@@ -60,14 +60,22 @@ public class TimeIndex extends AbstractIndex {
         this(file, baseOffset, maxIndexSize, true);
     }
 
-    @SuppressWarnings("this-escape")
     public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
-        super(file, baseOffset, maxIndexSize, writable);
+        this(file, baseOffset, maxIndexSize, writable, false);
+    }
 
-        this.lastEntry = lastEntryFromIndexFile();
 
-        log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-            file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, mmap().position());
+    @SuppressWarnings("this-escape")
+    public TimeIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean noopFile) throws IOException {
+        super(file, baseOffset, maxIndexSize, writable, noopFile);
+
+        // AutoMQ inject start
+        if (!noopFile) {
+            this.lastEntry = lastEntryFromIndexFile();
+            log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
+                file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, mmap().position());
+        }
+        // AutoMQ inject end
     }
 
     @Override
@@ -284,4 +292,10 @@ public class TimeIndex extends AbstractIndex {
             lock.unlock();
         }
     }
+
+    // AutoMQ inject start
+    final protected void setLastEntry(TimestampOffset lastEntry) {
+        this.lastEntry = lastEntry;
+    }
+    // AutoMQ inject end
 }
