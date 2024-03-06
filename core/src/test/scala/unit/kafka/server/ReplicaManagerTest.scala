@@ -6211,7 +6211,10 @@ class ReplicaManagerTest {
       ProducerIdsImage.EMPTY,
       AclsImage.EMPTY,
       ScramImage.EMPTY,
-      DelegationTokenImage.EMPTY
+      DelegationTokenImage.EMPTY,
+      S3StreamsMetadataImage.EMPTY,
+      S3ObjectsImage.EMPTY,
+      KVImage.EMPTY
     )
   }
 
