@@ -72,17 +72,27 @@ public abstract class AbstractIndex implements Closeable {
      * @param baseOffset the base offset of the segment that this index is corresponding to.
      * @param maxIndexSize The maximum index size in bytes.
      */
-    @SuppressWarnings("this-escape")
     public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable) throws IOException {
+        this(file, baseOffset, maxIndexSize, writable, false);
+    }
+    @SuppressWarnings("this-escape")
+    public AbstractIndex(File file, long baseOffset, int maxIndexSize, boolean writable, boolean noopFile) throws IOException {
         Objects.requireNonNull(file);
         this.file = file;
         this.baseOffset = baseOffset;
         this.maxIndexSize = maxIndexSize;
         this.writable = writable;
 
-        createAndAssignMmap();
-        this.maxEntries = mmap.limit() / entrySize();
-        this.entries = mmap.position() / entrySize();
+        // AutoMQ inject start
+        if (noopFile) {
+            this.maxEntries = maxIndexSize / entrySize();
+            this.entries = 0;
+        } else {
+            createAndAssignMmap();
+            this.maxEntries = mmap.limit() / entrySize();
+            this.entries = mmap.position() / entrySize();
+        }
+        // AutoMQ inject end
     }
 
     private void createAndAssignMmap() throws IOException {
@@ -456,7 +466,7 @@ public abstract class AbstractIndex implements Closeable {
      * Round a number to the greatest exact multiple of the given factor less than the given number.
      * E.g. roundDownToExactMultiple(67, 8) == 64
      */
-    private static int roundDownToExactMultiple(int number, int factor) {
+    protected static int roundDownToExactMultiple(int number, int factor) {
         return factor * (number / factor);
     }
 
@@ -558,5 +568,15 @@ public abstract class AbstractIndex implements Closeable {
         else
             return OptionalInt.of((int) relativeOffset);
     }
+
+    // AutoMQ inject start
+    protected void setEntries(int entries) {
+        this.entries = entries;
+    }
+
+    protected void setMaxEntries(int maxEntries) {
+        this.maxEntries = maxEntries;
+    }
+    // AutoMQ inject end
 
 }
