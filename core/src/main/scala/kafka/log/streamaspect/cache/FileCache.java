@@ -14,7 +14,6 @@ package kafka.log.streamaspect.cache;
 import com.automq.stream.s3.cache.LRUCache;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -36,6 +35,16 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class FileCache {
     private static final int BLOCK_SIZE = 4 * 1024;
+    public static final FileCache NOOP;
+
+    static {
+        try {
+            NOOP = new FileCache("", 0, BLOCK_SIZE);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private final int maxSize;
     private final int blockSize;
     private final BitSet freeBlocks;
@@ -56,13 +65,18 @@ public class FileCache {
         this.freeBlocks = new BitSet(blockCount);
         this.freeBlocks.set(0, blockCount, true);
         this.freeBlockCount = blockCount;
-        File file = new File(path);
-        do {
-            Files.deleteIfExists(file.toPath());
-        } while (!file.createNewFile());
-        try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-            raf.setLength(size);
-            this.cacheByteBuffer = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, size);
+        if (size > 0) {
+            File file = new File(path);
+            do {
+                Files.deleteIfExists(file.toPath());
+            }
+            while (!file.createNewFile());
+            try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+                raf.setLength(size);
+                this.cacheByteBuffer = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, size);
+            }
+        } else {
+            this.cacheByteBuffer = null;
         }
     }
 
@@ -239,8 +253,10 @@ public class FileCache {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
             Key key = (Key) o;
             return position == key.position && Objects.equals(path, key.path);
         }
@@ -249,7 +265,6 @@ public class FileCache {
         public int hashCode() {
             return Objects.hash(path, position);
         }
-
 
         @Override
         public int compareTo(Key o) {
