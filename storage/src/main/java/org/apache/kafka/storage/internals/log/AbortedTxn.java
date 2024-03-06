@@ -32,13 +32,13 @@ public class AbortedTxn {
     static final int LAST_OFFSET_SIZE = 8;
     static final int LAST_STABLE_OFFSET_OFFSET = LAST_OFFSET_OFFSET + LAST_OFFSET_SIZE;
     static final int LAST_STABLE_OFFSET_SIZE = 8;
-    static final int TOTAL_SIZE = LAST_STABLE_OFFSET_OFFSET + LAST_STABLE_OFFSET_SIZE;
+    public static final int TOTAL_SIZE = LAST_STABLE_OFFSET_OFFSET + LAST_STABLE_OFFSET_SIZE;
 
     public static final short CURRENT_VERSION = 0;
 
     final ByteBuffer buffer;
 
-    AbortedTxn(ByteBuffer buffer) {
+    public AbortedTxn(ByteBuffer buffer) {
         Objects.requireNonNull(buffer);
         this.buffer = buffer;
     }
@@ -113,5 +113,11 @@ public class AbortedTxn {
             + ", lastStableOffset=" + lastStableOffset()
             + ")";
     }
+
+    // AutoMQ inject start
+    public ByteBuffer buffer() {
+        return buffer;
+    }
+    // AutoMQ inject end
 
 }

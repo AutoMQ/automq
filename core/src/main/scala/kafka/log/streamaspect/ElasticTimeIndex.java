@@ -31,24 +31,22 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 public class ElasticTimeIndex extends TimeIndex {
     private final File file;
     private final FileCache cache;
-    private final StreamSliceSupplier streamSupplier;
-    private ElasticStreamSlice stream;
+    private final ElasticStreamSlice stream;
 
     private volatile CompletableFuture<?> lastAppend = CompletableFuture.completedFuture(null);
     private boolean closed = false;
 
     public ElasticTimeIndex(
         File file,
-        StreamSliceSupplier sliceSupplier,
         long baseOffset,
         int maxIndexSize,
+        StreamSliceSupplier sliceSupplier,
         TimestampOffset initLastEntry,
         FileCache cache) throws IOException {
         super(file, baseOffset, maxIndexSize, true, true);
         this.file = file;
         setLastEntry(initLastEntry);
         this.cache = cache;
-        this.streamSupplier = sliceSupplier;
         this.stream = sliceSupplier.get();
     }
 
