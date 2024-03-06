@@ -666,8 +666,8 @@ public class DefaultS3Operator implements S3Operator {
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
-        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(1))
-            .apiCallAttemptTimeout(Duration.ofSeconds(30)));
+        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(2))
+            .apiCallAttemptTimeout(Duration.ofSeconds(60)));
         return builder.build();
     }
 
