@@ -36,6 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.mockito.Mockito;
 
+import static com.automq.stream.s3.ByteBufAllocPolicy.POOLED_DIRECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
@@ -62,6 +63,7 @@ public class CompactionTestBase {
     protected S3Operator s3Operator;
 
     public void setUp() throws Exception {
+        ByteBufAlloc.setPolicy(POOLED_DIRECT);
         streamManager = Mockito.mock(MemoryMetadataManager.class);
         when(streamManager.getStreams(Mockito.anyList())).thenReturn(CompletableFuture.completedFuture(
             List.of(new StreamMetadata(STREAM_0, 0, 0, 20, StreamState.OPENED),
