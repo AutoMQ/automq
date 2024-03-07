@@ -28,11 +28,8 @@ import org.slf4j.LoggerFactory;
 
 public class ByteBufAlloc {
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
-    public static final boolean ALLOCATOR_USAGE_UNPOOLED = Boolean.parseBoolean(System.getenv("AUTOMQ_ALLOCATOR_USAGE_UNPOOLED"));
-    public static final boolean BUFFER_USAGE_HEAPED = Boolean.parseBoolean(System.getenv("AUTOMQ_BUFFER_USAGE_HEAPED"));
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
-    private static final AbstractByteBufAllocator ALLOC = ALLOCATOR_USAGE_UNPOOLED ? UnpooledByteBufAllocator.DEFAULT : PooledByteBufAllocator.DEFAULT;
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
     private static long lastMetricLogTime = System.currentTimeMillis();
     private static final Map<Integer, String> ALLOC_TYPE = new HashMap<>();
@@ -50,6 +47,15 @@ public class ByteBufAlloc {
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
+    /**
+     * The policy used to allocate memory.
+     */
+    private static ByteBufAllocPolicy policy = ByteBufAllocPolicy.UNPOOLED_HEAP;
+    /**
+     * The allocator used to allocate memory. It should be updated when {@link #policy} is updated.
+     */
+    private static AbstractByteBufAllocator allocator = getAllocatorByPolicy(policy);
+
     static {
         registerAllocType(DEFAULT, "default");
         registerAllocType(ENCODE_RECORD, "write_record");
@@ -65,8 +71,17 @@ public class ByteBufAlloc {
 
     }
 
+    /**
+     * Set the policy used to allocate memory.
+     */
+    public static void setPolicy(ByteBufAllocPolicy policy) {
+        LOGGER.info("Set alloc policy to {}", policy);
+        ByteBufAlloc.policy = policy;
+        ByteBufAlloc.allocator = getAllocatorByPolicy(policy);
+    }
+
     public static CompositeByteBuf compositeByteBuffer() {
-        return ALLOC.compositeDirectBuffer(Integer.MAX_VALUE);
+        return allocator.compositeDirectBuffer(Integer.MAX_VALUE);
     }
 
     public static ByteBuf byteBuffer(int initCapacity) {
@@ -90,9 +105,9 @@ public class ByteBufAlloc {
                     ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
                     LOGGER.info("Buffer usage: {}", ByteBufAlloc.byteBufAllocMetric);
                 }
-                return new WrappedByteBuf(BUFFER_USAGE_HEAPED ? ALLOC.heapBuffer(initCapacity) : ALLOC.directBuffer(initCapacity), () -> usage.add(-initCapacity));
+                return new WrappedByteBuf(policy.isDirect() ? allocator.directBuffer(initCapacity) : allocator.heapBuffer(initCapacity), () -> usage.add(-initCapacity));
             } else {
-                return BUFFER_USAGE_HEAPED ? ALLOC.heapBuffer(initCapacity) : ALLOC.directBuffer(initCapacity);
+                return policy.isDirect() ? allocator.directBuffer(initCapacity) : allocator.heapBuffer(initCapacity);
             }
         } catch (OutOfMemoryError e) {
             if (MEMORY_USAGE_DETECT) {
@@ -114,6 +129,13 @@ public class ByteBufAlloc {
         ALLOC_TYPE.put(type, name);
     }
 
+    private static AbstractByteBufAllocator getAllocatorByPolicy(ByteBufAllocPolicy policy) {
+        if (policy.isPooled()) {
+            return PooledByteBufAllocator.DEFAULT;
+        }
+        return UnpooledByteBufAllocator.DEFAULT;
+    }
+
     public static class ByteBufAllocMetric {
         private final long usedMemory;
         private final long allocatedMemory;
@@ -123,8 +145,8 @@ public class ByteBufAlloc {
             USAGE_STATS.forEach((k, v) -> {
                 detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
             });
-            ByteBufAllocatorMetric metric = ((ByteBufAllocatorMetricProvider) ALLOC).metric();
-            this.usedMemory = BUFFER_USAGE_HEAPED ? metric.usedHeapMemory() : metric.usedDirectMemory();
+            ByteBufAllocatorMetric metric = ((ByteBufAllocatorMetricProvider) allocator).metric();
+            this.usedMemory = policy.isDirect() ? metric.usedDirectMemory() : metric.usedHeapMemory();
             this.allocatedMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
         }
 
@@ -147,9 +169,9 @@ public class ByteBufAlloc {
                 sb.append(entry.getKey()).append("=").append(entry.getValue()).append(",");
             }
             sb.append(", pooled=");
-            sb.append(!ALLOCATOR_USAGE_UNPOOLED);
+            sb.append(policy.isPooled());
             sb.append(", direct=");
-            sb.append(!BUFFER_USAGE_HEAPED);
+            sb.append(policy.isDirect());
             sb.append("}");
             return sb.toString();
         }
