@@ -43,14 +43,14 @@ import java.util.OptionalLong;
  */
 public class ProducerAppendInfo {
     private static final Logger log = LoggerFactory.getLogger(ProducerAppendInfo.class);
-    private final TopicPartition topicPartition;
+    protected final TopicPartition topicPartition;
     private final long producerId;
-    private final ProducerStateEntry currentEntry;
+    protected final ProducerStateEntry currentEntry;
     private final AppendOrigin origin;
     private final VerificationStateEntry verificationStateEntry;
 
     private final List<TxnMetadata> transactions = new ArrayList<>();
-    private final ProducerStateEntry updatedEntry;
+    protected final ProducerStateEntry updatedEntry;
 
     /**
      * Creates a new instance with the provided parameters.
@@ -108,7 +108,7 @@ public class ProducerAppendInfo {
         }
     }
 
-    private void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
+    protected void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
         if (verificationStateEntry != null && appendFirstSeq > verificationStateEntry.lowestSequence()) {
             throw new OutOfOrderSequenceException("Out of order sequence number for producer " + producerId + " at " +
                     "offset " + offset + " in partition " + topicPartition + ": " + appendFirstSeq +

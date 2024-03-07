@@ -47,7 +47,7 @@ import org.apache.kafka.storage.internals.log.TransactionIndex;
 import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 import org.slf4j.event.Level;
 
-public class ElasticLogSegment extends LogSegment {
+public class ElasticLogSegment extends LogSegment implements Comparable<ElasticLogSegment> {
     private static FileCache timeCache = FileCache.NOOP;
     private static FileCache txnCache = FileCache.NOOP;
 
@@ -390,6 +390,13 @@ public class ElasticLogSegment extends LogSegment {
     }
 
     @Override
+    protected void closeHandlers() {
+        Utils.swallow(LOGGER, Level.WARN, "timeIndex", () -> timeIndex.closeHandler());
+        Utils.swallow(LOGGER, Level.WARN, "log", () -> log.closeHandlers());
+        Utils.closeQuietly(txnIndex, "txnIndex", LOGGER);
+    }
+
+    @Override
     public void deleteIfExists() throws IOException {
         logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_DELETE);
     }
@@ -430,6 +437,14 @@ public class ElasticLogSegment extends LogSegment {
     @Override
     public void setLastModified(long ms) {
         meta.lastModifiedTimestamp(ms);
+    }
+
+    public long appendedOffset() {
+        return log.appendedOffset();
+    }
+
+    public CompletableFuture<Void> asyncLogFlush() {
+        return log.asyncFlush();
     }
 
     private void updateProducerState(ProducerStateManager producerStateManager, RecordBatch batch,
@@ -494,5 +509,10 @@ public class ElasticLogSegment extends LogSegment {
         // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
         timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar(), true);
         return 0;
+    }
+
+    @Override
+    public int compareTo(ElasticLogSegment o) {
+        return Long.compare(baseOffset, o.baseOffset);
     }
 }

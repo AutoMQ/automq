@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.storage.internals.log;
 
+import java.util.NavigableMap;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
@@ -106,12 +107,12 @@ public class ProducerStateManager {
 
     private final Logger log;
 
-    private final TopicPartition topicPartition;
+    protected final TopicPartition topicPartition;
     private final int maxTransactionTimeoutMs;
     private final ProducerStateManagerConfig producerStateManagerConfig;
     private final Time time;
 
-    private final Map<Long, ProducerStateEntry> producers = new HashMap<>();
+    protected final Map<Long, ProducerStateEntry> producers = new HashMap<>();
 
     private final Map<Long, VerificationStateEntry> verificationStates = new HashMap<>();
 
@@ -121,7 +122,7 @@ public class ProducerStateManager {
     // completed transactions whose markers are at offsets above the high watermark
     private final TreeMap<Long, TxnMetadata> unreplicatedTxns = new TreeMap<>();
 
-    private volatile File logDir;
+    protected volatile File logDir;
 
     // The same as producers.size, but for lock-free access.
     private volatile int producerIdCount = 0;
@@ -131,9 +132,15 @@ public class ProducerStateManager {
     // We make the field volatile so that it can be safely accessed without a lock.
     private volatile long oldestTxnLastTimestamp = -1L;
 
-    private ConcurrentSkipListMap<Long, SnapshotFile> snapshots;
-    private long lastMapOffset = 0L;
-    private long lastSnapOffset = 0L;
+    protected ConcurrentSkipListMap<Long, SnapshotFile> snapshots;
+    protected long lastMapOffset = 0L;
+    protected long lastSnapOffset = 0L;
+
+    // AutoMQ inject start
+    // initial snapshotsMap here to surround spot bug
+    protected NavigableMap<Long, ByteBuffer> snapshotsMap = new ConcurrentSkipListMap<>();
+    // AutoMQ inject end
+
 
     public ProducerStateManager(TopicPartition topicPartition, File logDir, int maxTransactionTimeoutMs, ProducerStateManagerConfig producerStateManagerConfig, Time time) throws IOException {
         this.topicPartition = topicPartition;
@@ -215,7 +222,7 @@ public class ProducerStateManager {
     /**
      * Load producer state snapshots by scanning the logDir.
      */
-    private ConcurrentSkipListMap<Long, SnapshotFile> loadSnapshots() throws IOException {
+    protected ConcurrentSkipListMap<Long, SnapshotFile> loadSnapshots() throws IOException {
         ConcurrentSkipListMap<Long, SnapshotFile> offsetToSnapshots = new ConcurrentSkipListMap<>();
         List<SnapshotFile> snapshotFiles = listSnapshotFiles(logDir);
         for (SnapshotFile snapshotFile : snapshotFiles) {
@@ -477,8 +484,10 @@ public class ProducerStateManager {
             SnapshotFile snapshotFile = new SnapshotFile(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset));
             long start = time.hiResClockMs();
             writeSnapshot(snapshotFile.file(), producers, sync);
-            log.info("Wrote producer snapshot at offset {} with {} producer ids in {} ms.", lastMapOffset,
+            if (log.isDebugEnabled()) {
+                log.debug("Wrote producer snapshot at offset {} with {} producer ids in {} ms.", lastMapOffset,
                     producers.size(), time.hiResClockMs() - start);
+            }
 
             snapshots.put(snapshotFile.offset, snapshotFile);
 
@@ -620,7 +629,7 @@ public class ProducerStateManager {
      * Removes the producer state snapshot file metadata corresponding to the provided offset if it exists from this
      * ProducerStateManager, and deletes the backing snapshot file.
      */
-    private void removeAndDeleteSnapshot(long snapshotOffset) throws IOException {
+    protected void removeAndDeleteSnapshot(long snapshotOffset) throws IOException {
         SnapshotFile snapshotFile = snapshots.remove(snapshotOffset);
         if (snapshotFile != null) snapshotFile.deleteIfExists();
     }
@@ -654,9 +663,13 @@ public class ProducerStateManager {
         return Optional.empty();
     }
 
-    public static List<ProducerStateEntry> readSnapshot(File file) throws IOException {
+    public static List<ProducerStateEntry> readSnapshot0(File file, byte[] buffer) throws IOException {
         try {
-            byte[] buffer = Files.readAllBytes(file.toPath());
+            // AutoMQ inject start
+            if (buffer == null) {
+                buffer = Files.readAllBytes(file.toPath());
+            }
+            // AutoMQ inject end
             Struct struct = PID_SNAPSHOT_MAP_SCHEMA.read(ByteBuffer.wrap(buffer));
 
             Short version = struct.getShort(VERSION_FIELD);
@@ -694,7 +707,7 @@ public class ProducerStateManager {
         }
     }
 
-    private static void writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync) throws IOException {
+    protected static ByteBuffer writeSnapshot(File file, Map<Long, ProducerStateEntry> entries, boolean sync) throws IOException {
         Struct struct = new Struct(PID_SNAPSHOT_MAP_SCHEMA);
         struct.set(VERSION_FIELD, PRODUCER_SNAPSHOT_VERSION);
         struct.set(CRC_FIELD, 0L); // we'll fill this after writing the entries
@@ -724,12 +737,17 @@ public class ProducerStateManager {
         long crc = Crc32C.compute(buffer, PRODUCER_ENTRIES_OFFSET, buffer.limit() - PRODUCER_ENTRIES_OFFSET);
         ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, crc);
 
-        try (FileChannel fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-            fileChannel.write(buffer);
-            if (sync) {
-                fileChannel.force(true);
+        // AutoMQ inject start
+        if (file != null) {
+            try (FileChannel fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                fileChannel.write(buffer.duplicate());
+                if (sync) {
+                    fileChannel.force(true);
+                }
             }
         }
+        return buffer;
+        // AutoMQ inject end
     }
 
     private static boolean isSnapshotFile(Path path) {
@@ -747,5 +765,11 @@ public class ProducerStateManager {
             return Collections.emptyList();
         }
     }
+
+    // AutoMQ inject start
+    protected List<ProducerStateEntry> readSnapshot(File file) throws IOException {
+        return ProducerStateManager.readSnapshot0(file, null);
+    }
+    // AutoMQ inject end
 
 }
