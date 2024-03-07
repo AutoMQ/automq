@@ -44,7 +44,7 @@ public class LeaderEpochCheckpointFile implements LeaderEpochCheckpoint {
 
     private static final String LEADER_EPOCH_CHECKPOINT_FILENAME = "leader-epoch-checkpoint";
     private static final Pattern WHITE_SPACES_PATTERN = Pattern.compile("\\s+");
-    private static final int CURRENT_VERSION = 0;
+    public static final int CURRENT_VERSION = 0;
 
     private final CheckpointFileWithFailureHandler<EpochEntry> checkpoint;
 
