@@ -393,6 +393,7 @@ public class Selector implements Selectable, AutoCloseable {
         if (closingChannels.containsKey(connectionId)) {
             // ensure notification via `disconnected`, leave channel in the state in which closing was triggered
             this.failedSends.add(connectionId);
+            send.release();
         } else {
             try {
                 channel.setSend(send);

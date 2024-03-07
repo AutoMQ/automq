@@ -14,34 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.common.network;
 
-import java.io.IOException;
+package org.apache.kafka.clients.admin;
 
-/**
- * This interface models the in-progress sending of data.
- */
-public interface Send {
+public class GetNextNodeIdOptions extends AbstractOptions<GetNextNodeIdOptions> {
+    private boolean includeAuthorizedOperations;
 
-    /**
-     * Is this send complete?
-     */
-    boolean completed();
+    public GetNextNodeIdOptions timeoutMs(Integer timeoutMs) {
+        this.timeoutMs = timeoutMs;
+        return this;
+    }
 
-    /**
-     * Write some as-yet unwritten bytes from this send to the provided channel. It may take multiple calls for the send
-     * to be completely written
-     * @param channel The Channel to write to
-     * @return The number of bytes written
-     * @throws IOException If the write fails
-     */
-    long writeTo(TransferableChannel channel) throws IOException;
+    public GetNextNodeIdOptions includeAuthorizedOperations(boolean includeAuthorizedOperations) {
+        this.includeAuthorizedOperations = includeAuthorizedOperations;
+        return this;
+    }
 
-    /**
-     * Size of the send
-     */
-    long size();
-
-    default void release() {}
-
+    public boolean includeAuthorizedOperations() {
+        return includeAuthorizedOperations;
+    }
 }

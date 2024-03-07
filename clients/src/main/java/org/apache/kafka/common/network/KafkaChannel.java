@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.common.network;
 
+import java.util.LinkedList;
+import java.util.Queue;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.memory.MemoryPool;
@@ -125,6 +127,8 @@ public class KafkaChannel implements AutoCloseable {
     private final ChannelMetadataRegistry metadataRegistry;
     private NetworkReceive receive;
     private NetworkSend send;
+    private final Queue<NetworkSend> waitingSend = new LinkedList<>();
+
     // Track connection and mute state of channels to enable outstanding requests on channels to be
     // processed after the channel is disconnected.
     private boolean disconnected;
@@ -198,12 +202,20 @@ public class KafkaChannel implements AutoCloseable {
     }
 
     public void disconnect() {
+        release();
         disconnected = true;
         if (state == ChannelState.NOT_CONNECTED && remoteAddress != null) {
             //if we captured the remote address we can provide more information
             state = new ChannelState(ChannelState.State.NOT_CONNECTED, remoteAddress.toString());
         }
         transportLayer.disconnect();
+    }
+
+    private void release() {
+        if (send != null) {
+            send.release();
+        }
+        waitingSend.forEach(NetworkSend::release);
     }
 
     public void state(ChannelState state) {
@@ -387,21 +399,34 @@ public class KafkaChannel implements AutoCloseable {
     }
 
     public void setSend(NetworkSend send) {
-        if (this.send != null)
-            throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress, connection id is " + id);
+        if (this.send != null) {
+            this.waitingSend.add(send);
+            return;
+        }
         this.send = send;
         this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
 
     public NetworkSend maybeCompleteSend() {
         if (send != null && send.completed()) {
+            send.release();
             midWrite = false;
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
             NetworkSend result = send;
             send = null;
+            trySendWaitingSend();
             return result;
         }
         return null;
+    }
+
+    private void trySendWaitingSend() {
+        NetworkSend send = waitingSend.poll();
+        if (send == null) {
+            return;
+        }
+        this.send = send;
+        this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
 
     public long read() throws IOException {

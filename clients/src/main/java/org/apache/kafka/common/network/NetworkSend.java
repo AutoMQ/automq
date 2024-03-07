@@ -50,4 +50,9 @@ public class NetworkSend implements Send {
         return send.size();
     }
 
+    @Override
+    public void release() {
+        send.release();
+    }
+
 }
