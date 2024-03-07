@@ -120,3 +120,12 @@ groups:
         annotations:
           summary: "High group consumer lag {{ printf \"%0.f\" $value }} for consumer group {{ $labels.consumer_group }} in cluster {{ $labels.job }} on topic {{ $labels.topic }}."
           description: "The consumer lag of consumer group {{ $labels.consumer_group }} in cluster {{ $labels.job }} on topic {{ $labels.topic }} is exceeding threshold."
+
+      - alert: KafkaHighS3RequestErrorRate
+        expr: sum(rate(kafka_stream_operation_latency_count{operation_type="S3Request", status="failed"}[1m])) by (job, operation_name) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Kafka S3 request {{ $labels.operation_name }} error rate {{ printf \"%0.2f\" $value }} req/s for cluster {{ $labels.job }}"
+          description: "The S3 request {{ $labels.operation_name }} error rate of Kafka cluster {{ $labels.job }} is exceeding threshold."
