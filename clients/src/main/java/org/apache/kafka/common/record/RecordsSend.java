@@ -81,4 +81,10 @@ public abstract class RecordsSend<T extends BaseRecords> implements Send {
      * @throws IOException For any IO errors
      */
     protected abstract int writeTo(TransferableChannel channel, int previouslyWritten, int remaining) throws IOException;
+
+    public void release() {
+        if (records instanceof PooledResource) {
+            ((PooledResource) records).release();
+        }
+    }
 }

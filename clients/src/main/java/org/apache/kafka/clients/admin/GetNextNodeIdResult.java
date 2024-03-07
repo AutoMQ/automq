@@ -14,34 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.common.network;
 
-import java.io.IOException;
+package org.apache.kafka.clients.admin;
 
-/**
- * This interface models the in-progress sending of data.
- */
-public interface Send {
 
-    /**
-     * Is this send complete?
-     */
-    boolean completed();
+import org.apache.kafka.common.KafkaFuture;
 
-    /**
-     * Write some as-yet unwritten bytes from this send to the provided channel. It may take multiple calls for the send
-     * to be completely written
-     * @param channel The Channel to write to
-     * @return The number of bytes written
-     * @throws IOException If the write fails
-     */
-    long writeTo(TransferableChannel channel) throws IOException;
+public class GetNextNodeIdResult {
+    private final KafkaFuture<Integer> nodeId;
 
-    /**
-     * Size of the send
-     */
-    long size();
+    public GetNextNodeIdResult(KafkaFuture<Integer> nodeId) {
+        this.nodeId = nodeId;
+    }
 
-    default void release() {}
-
+    public KafkaFuture<Integer> nodeId() {
+        return nodeId;
+    }
 }

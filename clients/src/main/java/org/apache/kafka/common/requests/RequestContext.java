@@ -44,6 +44,7 @@ public class RequestContext implements AuthorizableRequestContext {
     public final ClientInformation clientInformation;
     public final boolean fromPrivilegedListener;
     public final Optional<KafkaPrincipalSerde> principalSerde;
+    private RequestHeader originHeader;
 
     public RequestContext(RequestHeader header,
                           String connectionId,
@@ -199,6 +200,14 @@ public class RequestContext implements AuthorizableRequestContext {
     @Override
     public int correlationId() {
         return header.correlationId();
+    }
+
+    public RequestHeader originHeader() {
+        return originHeader;
+    }
+
+    public void originHeader(RequestHeader originHeader) {
+        this.originHeader = originHeader;
     }
 
     @Override

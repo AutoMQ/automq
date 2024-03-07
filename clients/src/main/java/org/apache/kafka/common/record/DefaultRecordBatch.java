@@ -240,6 +240,12 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
         outputStream.write(this.buffer.duplicate());
     }
 
+    // AutoMQ for Kafka inject start
+    public ByteBuffer buffer() {
+        return this.buffer.duplicate();
+    }
+    // AutoMQ for Kafka inject end
+
     @Override
     public boolean isTransactional() {
         return (attributes() & TRANSACTIONAL_FLAG_MASK) > 0;
