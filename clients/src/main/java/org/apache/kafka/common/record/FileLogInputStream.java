@@ -119,6 +119,16 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             this.batchSize = batchSize;
         }
 
+        // AutoMQ for Kafka inject start
+        public FileChannelRecordBatch() {
+            this.offset = -1;
+            this.magic = -1;
+            this.fileRecords = null;
+            this.position = -1;
+            this.batchSize = -1;
+        }
+        // AutoMQ for Kafka inject end
+
         @Override
         public CompressionType compressionType() {
             return loadBatchHeader().compressionType();

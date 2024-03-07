@@ -82,6 +82,13 @@ public class ForwardingAdmin implements Admin {
         return delegate.describeCluster(options);
     }
 
+    // AutoMQ for Kafka inject start
+    @Override
+    public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
+        return delegate.getNextNodeId(options);
+    }
+    // AutoMQ for Kafka inject end
+
     @Override
     public DescribeAclsResult describeAcls(AclBindingFilter filter, DescribeAclsOptions options) {
         return delegate.describeAcls(filter, options);
