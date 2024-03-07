@@ -151,6 +151,15 @@ public class TransactionalMessageCopier {
                 .dest("transactionalId")
                 .help("The transactionalId to assign to the producer");
 
+        parser.addArgument("--producer-block-timeout-ms")
+                .action(store())
+                .required(false)
+                .setDefault(60000)
+                .type(Integer.class)
+                .metavar("PRODUCER-BLOCK-TIMEOUT-MS")
+                .dest("producerBlockTimeoutMs")
+                .help("The maximum time in milliseconds the producer will block for during a send request.");
+
         parser.addArgument("--enable-random-aborts")
                 .action(storeTrue())
                 .type(Boolean.class)
@@ -172,6 +181,15 @@ public class TransactionalMessageCopier {
                 .metavar("USE-GROUP-METADATA")
                 .dest("useGroupMetadata")
                 .help("Whether to use the new transactional commit API with group metadata");
+
+        parser.addArgument("--consumer-default-api-timeout-ms")
+                .action(store())
+                .required(false)
+                .setDefault(60000)
+                .type(Integer.class)
+                .metavar("CONSUMER-DEFAULT-API-TIMEOUT-MS")
+                .dest("consumerDefaultApiTimeoutMs")
+                .help("The default API timeout in milliseconds for the consumer.");
 
         return parser;
     }
