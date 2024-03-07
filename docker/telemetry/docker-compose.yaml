@@ -29,9 +29,22 @@ services:
       - "--enable-feature=otlp-write-receiver"
     volumes:
       - ./prometheus/prometheus.yml:/prometheus/prometheus.yml
+      - ./prometheus/rules:/prometheus/rules
       - ${DATA_PATH}/prometheus/data:/prometheus
     depends_on:
       - otel-collector
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  alertmanager:
+    image: prom/alertmanager
+    ports:
+      - "9087:9087"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ${DATA_PATH}/alertmanager/data:/etc/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.listen-address=:9087"
     extra_hosts:
       - "host.docker.internal:host-gateway"
   otel-collector:
