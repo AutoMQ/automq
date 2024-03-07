@@ -45,7 +45,7 @@ public class GenerateStartCmdCmd {
         final boolean controllerOnlyMode;
 
         Parameter(Namespace res) {
-            this.s3Url = res.getString("s3-url");
+            this.s3Url = res.getString("s3-url").replace("http://", "").replace("https://", "");
             this.brokerList = res.getString("broker-list");
             this.controllerList = res.getString("controller-list");
             this.networkBaselineBandwidthMB = res.getString("network-baseline-bandwidth-mb");
