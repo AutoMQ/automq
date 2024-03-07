@@ -403,6 +403,18 @@ public class ProduceBenchWorker implements TaskWorker {
         public int p99LatencyMs() {
             return p99LatencyMs;
         }
+
+        @Override
+        public String toString() {
+            return "StatusData{" +
+                    "totalSent=" + totalSent +
+                    ", averageLatencyMs=" + averageLatencyMs +
+                    ", p50LatencyMs=" + p50LatencyMs +
+                    ", p95LatencyMs=" + p95LatencyMs +
+                    ", p99LatencyMs=" + p99LatencyMs +
+                    ", transactionsCommitted=" + transactionsCommitted +
+                    '}';
+        }
     }
 
     @Override
