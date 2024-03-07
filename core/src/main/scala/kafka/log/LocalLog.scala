@@ -29,6 +29,7 @@ import org.apache.kafka.storage.internals.log.{AbortedTxn, FetchDataInfo, LogCon
 import java.io.{File, IOException}
 import java.nio.file.Files
 import java.util
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 import java.util.{Collections, Optional}
@@ -62,15 +63,15 @@ case class SplitSegmentResult(deletedSegments: Iterable[LogSegment], newSegments
  * @param topicPartition The topic partition associated with this log
  * @param logDirFailureChannel The LogDirFailureChannel instance to asynchronously handle Log dir failure
  */
-class LocalLog(@volatile private var _dir: File,
+class LocalLog(@volatile protected var _dir: File,
                @volatile private[log] var config: LogConfig,
                private[log] val segments: LogSegments,
                @volatile private[log] var recoveryPoint: Long,
-               @volatile private var nextOffsetMetadata: LogOffsetMetadata,
+               @volatile protected var nextOffsetMetadata: LogOffsetMetadata,
                private[log] val scheduler: Scheduler,
                private[log] val time: Time,
                private[log] val topicPartition: TopicPartition,
-               private[log] val logDirFailureChannel: LogDirFailureChannel) extends Logging {
+               protected [log] val logDirFailureChannel: LogDirFailureChannel) extends Logging {
 
   import kafka.log.LocalLog._
 
@@ -96,7 +97,7 @@ class LocalLog(@volatile private var _dir: File,
 
   private[log] def isFuture: Boolean = dir.getName.endsWith(LocalLog.FutureDirSuffix)
 
-  private def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+  protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, parentDir, msg) {
       fun
     }
@@ -222,11 +223,14 @@ class LocalLog(@volatile private var _dir: File,
   /**
    * Closes the segments of the log.
    */
-  private[log] def close(): Unit = {
+  private[log] def close(): CompletableFuture[Void] = {
     maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()
       segments.close()
     }
+    // AutoMQ inject start
+    CompletableFuture.completedFuture(null)
+    // AutoMQ inject end
   }
 
   /**
@@ -305,7 +309,7 @@ class LocalLog(@volatile private var _dir: File,
    * @param asyncDelete Whether the segment files should be deleted asynchronously
    * @param reason The reason for the segment deletion
    */
-  private[log] def createAndDeleteSegment(newOffset: Long,
+  def createAndDeleteSegment(newOffset: Long,
                                           segmentToDelete: LogSegment,
                                           asyncDelete: Boolean,
                                           reason: SegmentDeletionReason): LogSegment = {
@@ -411,7 +415,7 @@ class LocalLog(@volatile private var _dir: File,
     updateLogEndOffset(lastOffset + 1)
   }
 
-  private def addAbortedTransactions(startOffset: Long, segment: LogSegment,
+  protected def addAbortedTransactions(startOffset: Long, segment: LogSegment,
                                      fetchInfo: FetchDataInfo): FetchDataInfo = {
     val fetchSize = fetchInfo.records.sizeInBytes
     val startOffsetPosition = new OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
@@ -429,7 +433,7 @@ class LocalLog(@volatile private var _dir: File,
       Optional.of(abortedTransactions.toList.asJava))
   }
 
-  private def collectAbortedTransactions(startOffset: Long, upperBoundOffset: Long,
+  def collectAbortedTransactions(startOffset: Long, upperBoundOffset: Long,
                                          startingSegment: LogSegment,
                                          accumulator: Seq[AbortedTxn] => Unit): Unit = {
     val higherSegments = segments.higherSegments(startingSegment.baseOffset).iterator
@@ -460,7 +464,7 @@ class LocalLog(@volatile private var _dir: File,
    *
    * @return The newly rolled segment
    */
-  private[log] def roll(expectedNextOffset: Option[Long] = None): LogSegment = {
+  def roll(expectedNextOffset: Option[Long] = None): LogSegment = {
     maybeHandleIOException(s"Error while rolling log segment for $topicPartition in dir ${dir.getParent}") {
       val start = time.hiResClockMs()
       checkIfMemoryMappedBufferClosed()
@@ -699,9 +703,10 @@ object LocalLog extends Logging {
    * @param fun The function to be executed.
    * @return The value returned by the function after a successful invocation
    */
-  private[log] def maybeHandleIOException[T](logDirFailureChannel: LogDirFailureChannel,
+  def maybeHandleIOException[T](logDirFailureChannel: LogDirFailureChannel,
                                              logDir: String,
                                              errorMsg: => String)(fun: => T): T = {
+    // TODO: wrapper extends the logDirFailureChannel to only fail the partition
     if (logDirFailureChannel.hasOfflineLogDir(logDir)) {
       throw new KafkaStorageException(s"The log dir $logDir is already offline due to a previous IO exception.")
     }

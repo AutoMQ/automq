@@ -774,7 +774,7 @@ public class LogSegment implements Closeable {
     /**
      * Close file handlers used by the log segment but don't write to disk. This is used when the disk may have failed
      */
-    void closeHandlers() {
+    protected void closeHandlers() {
         Utils.swallow(LOGGER, Level.WARN, "offsetIndex", () -> lazyOffsetIndex.closeHandler());
         Utils.swallow(LOGGER, Level.WARN, "timeIndex", () -> lazyTimeIndex.closeHandler());
         Utils.swallow(LOGGER, Level.WARN, "log", () -> log.closeHandlers());
