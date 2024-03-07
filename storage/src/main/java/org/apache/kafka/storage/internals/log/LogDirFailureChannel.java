@@ -74,4 +74,11 @@ public class LogDirFailureChannel {
     public String takeNextOfflineLogDir() throws InterruptedException {
         return offlineLogDirQueue.take();
     }
+
+    // AutoMQ inject start
+    public void clearOfflineLogDirRecord(String logDir) {
+        offlineLogDirs.remove(logDir);
+    }
+    // AutoMQ inject end
+
 }
