@@ -933,6 +933,7 @@ project(':core') {
     implementation project(':raft')
     implementation project(':storage')
     implementation project(':server')
+    implementation project(':kshell-sdk')
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -988,6 +989,10 @@ project(':core') {
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
     }
+
+    // https://github.com/netty/netty-tcnative/issues/716
+    // After 2.0.48, gradle project need explicitly declare the tcnative dependencies with classifiers
+    implementation 'io.netty:netty-tcnative-boringssl-static:2.0.48.Final'
 
     compileOnly libs.log4j
 
@@ -1161,19 +1166,27 @@ project(':core') {
                                ':connect:mirror:genMirrorSourceConfigDocs', ':connect:mirror:genMirrorCheckpointConfigDocs',
                                ':connect:mirror:genMirrorHeartbeatConfigDocs', ':connect:mirror:genMirrorConnectorConfigDocs',
                                ':storage:genRemoteLogManagerConfigDoc', ':storage:genRemoteLogMetadataManagerConfigDoc'], type: Tar) {
+    def prefix = project.findProperty('prefix') ?: ''
+    archiveBaseName = "${prefix}kafka"
+
     archiveClassifier = 'site-docs'
     compression = Compression.GZIP
     from project.file("$rootDir/docs")
-    into 'site-docs'
+    into "${prefix}kafka-${archiveVersion.get()}-site-docs"
     duplicatesStrategy 'exclude'
   }
 
   tasks.create(name: "releaseTarGz", dependsOn: configurations.archives.artifacts, type: Tar) {
-    into "kafka_${versions.baseScala}-${archiveVersion.get()}"
+    def prefix = project.findProperty('prefix') ?: ''
+    archiveBaseName = "${prefix}kafka"
+
+    into "${prefix}kafka-${archiveVersion.get()}"
     compression = Compression.GZIP
     from(project.file("$rootDir/bin")) { into "bin/" }
     from(project.file("$rootDir/config")) { into "config/" }
     from(project.file("$rootDir/licenses")) { into "licenses/" }
+    from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
+    from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
     from "$rootDir/LICENSE-binary" rename {String filename -> filename.replace("-binary", "")}
     from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
     from(configurations.runtimeClasspath) { into("libs/") }
@@ -1183,6 +1196,8 @@ project(':core') {
     from(project(':tools').configurations.runtimeClasspath) { into("libs/") }
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':kshell-sdk').jar) { into("libs/") }
+    from(project(':kshell-sdk').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
@@ -1273,6 +1288,7 @@ project(':metadata') {
     implementation project(':server-common')
     implementation project(':clients')
     implementation project(':raft')
+    implementation project(':kshell-sdk')
 
     implementation libs.metrics
     implementation libs.nettyCommon
@@ -1977,6 +1993,18 @@ project(':storage') {
   }
 }
 
+project(':kshell-sdk') {
+  archivesBaseName = "kshell-sdk"
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-automq.xml")
+  }
+
+  dependencies {
+    compileOnly libs.awsSdkAuth
+  }
+}
+
 project(':tools:tools-api') {
   archivesBaseName = "kafka-tools-api"
 
@@ -2035,16 +2063,50 @@ project(':tools:tools-api') {
 project(':tools') {
   archivesBaseName = "kafka-tools"
   dependencies {
-    implementation project(':clients')
+    implementation (project(':clients')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation (project(':server-common')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation (project(':log4j-appender')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation project(':kshell-sdk')
+
     implementation project(':storage')
-    implementation project(':server-common')
     implementation project(':connect:runtime')
-    implementation project(':log4j-appender')
     implementation project(':tools:tools-api')
     implementation libs.argparse4j
     implementation libs.slf4jApi
     implementation libs.log4j
     implementation libs.joptSimple
+
+    // for SASL/OAUTHBEARER JWT validation
+    implementation (libs.jose4j){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    implementation libs.jacksonJaxrsJsonProvider
+    implementation(extLibs.s3stream) {
+      exclude group: 'org.slf4j', module: '*'
+      exclude group: 'net.sourceforge.argparse4j', module: '*'
+      version branchVersions.s3stream
+    }
+    implementation libs.commonio
+
+
+    testImplementation (project(':clients')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    testImplementation project(':clients').sourceSets.test.output
+    testImplementation (project(':core')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+    testImplementation project(':core').sourceSets.test.output
+    testImplementation (project(':server-common')){
+      exclude group: 'org.slf4j', module: '*'
+    }
+
 
     implementation(extLibs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
