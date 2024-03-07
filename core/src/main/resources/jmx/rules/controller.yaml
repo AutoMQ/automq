@@ -41,3 +41,51 @@ rules:
         metric: kafka.partition.offline.count
         type: gauge
         desc: The number of partitions offline
+
+  - bean: kafka.controller:type=ControllerEventManager,name=EventQueueTimeMs
+    unit: ms
+    mapping:
+      Count:
+        metric: kafka.event.queue.time
+        type: counter
+        desc: The total time the event waits in the queue
+      Mean:
+        metric: kafka.event.queue.time.mean
+        type: gauge
+        desc: The mean time the event waits in the queue
+      50thPercentile:
+        metric: kafka.event.queue.time.50p
+        type: gauge
+        desc: The 50th percentile time the event waits in the queue
+      99thPercentile:
+        metric: kafka.event.queue.time.99p
+        type: gauge
+        desc: The 99th percentile time the event waits in the queue
+      Max:
+        metric: kafka.event.queue.time.max
+        type: gauge
+        desc: The max time the event waits in the queue
+
+  - bean: kafka.controller:type=ControllerEventManager,name=EventQueueProcessingTimeMs
+    unit: ms
+    mapping:
+      Count:
+        metric: kafka.event.queue.processing.time
+        type: counter
+        desc: The total time used to process the event in the event queue
+      Mean:
+        metric: kafka.event.queue.processing.time.mean
+        type: gauge
+        desc: The mean time used to process the event in the event queue
+      50thPercentile:
+        metric: kafka.event.queue.processing.time.50p
+        type: gauge
+        desc: The 50th percentile time used to process the event in the event queue
+      99thPercentile:
+        metric: kafka.event.queue.processing.time.99p
+        type: gauge
+        desc: The 99th percentile time used to process the event in the event queue
+      Max:
+        metric: kafka.event.queue.processing.time.max
+        type: gauge
+        desc: The max time used to process the event in the event queue
