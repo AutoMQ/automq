@@ -517,3 +517,42 @@ tests:
             exp_annotations:
               summary: "High group consumer lag 12000 for consumer group test-group in cluster cluster_1 on topic test-topic."
               description: "The consumer lag of consumer group test-group in cluster cluster_1 on topic test-topic is exceeding threshold."
+  # Test KafkaHighS3RequestErrorRate
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="get_object", operation_type="S3Request", status="failed"}'
+        values: '0 5 60 180 0 0'
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="get_object", operation_type="S3Request", status="success"}'
+        values: '0 100 200 300 400 500'
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="append", operation_type="S3Stream"}'
+        values: '0 100 200 300 400 500'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+              operation_name: get_object
+            exp_annotations:
+              summary: "High Kafka S3 request get_object error rate 2.00 req/s for cluster cluster_1"
+              description: "The S3 request get_object error rate of Kafka cluster cluster_1 is exceeding threshold."
