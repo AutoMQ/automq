@@ -60,8 +60,14 @@ public class GenerateS3UrlCmd {
             this.s3SecretKey = res.getString("s3-secret-key");
             this.s3Region = res.getString("s3-region");
             String endpointProtocolStr = res.get("s3-endpoint-protocol");
+            String currentEndpoint = res.getString("s3-endpoint");
+            if (currentEndpoint.startsWith("http://") || currentEndpoint.startsWith("https://")) {
+                this.s3Endpoint = currentEndpoint.replace("http://", "").replace("https://", "");
+                endpointProtocolStr = currentEndpoint.substring(0, currentEndpoint.indexOf("://"));
+            } else {
+                this.s3Endpoint = currentEndpoint;
+            }
             this.endpointProtocol = EndpointProtocol.getByName(endpointProtocolStr);
-            this.s3Endpoint = res.getString("s3-endpoint");
             this.s3DataBucket = res.getString("s3-data-bucket");
             String s3OpsBucketFromArg = res.getString("s3-ops-bucket");
             if (s3OpsBucketFromArg == null) {
@@ -144,10 +150,8 @@ public class GenerateS3UrlCmd {
         System.out.println();
 
         //precheck
-        String s3Endpoint = parameter.s3Endpoint;
-        var context = S3Utils.S3Context.builder().setEndpoint(
-                s3Endpoint.startsWith("https://") || s3Endpoint.startsWith("http://") ? s3Endpoint :
-                    parameter.endpointProtocol.getName() + "://" + s3Endpoint)
+        var context = S3Utils.S3Context.builder()
+            .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
             .setCredentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
             .setBucketName(parameter.s3DataBucket)
             .setRegion(parameter.s3Region)
