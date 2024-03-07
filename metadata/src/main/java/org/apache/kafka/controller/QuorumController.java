@@ -17,6 +17,8 @@
 
 package org.apache.kafka.controller;
 
+import com.automq.s3shell.sdk.auth.CredentialsProviderHolder;
+import com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.MemoryS3Operator;
@@ -2088,9 +2090,7 @@ public final class QuorumController implements Controller {
             s3Operator = new MemoryS3Operator();
         } else {
             s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
-            // TODO: uncomment the following line
-//                    List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()));
-                    List.of());
+                List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()));
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
