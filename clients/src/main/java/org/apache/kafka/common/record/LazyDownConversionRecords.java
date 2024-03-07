@@ -28,7 +28,7 @@ import java.util.Objects;
  * Encapsulation for holding records that require down-conversion in a lazy, chunked manner (KIP-283). See
  * {@link LazyDownConversionRecordsSend} for the actual chunked send implementation.
  */
-public class LazyDownConversionRecords implements BaseRecords {
+public class LazyDownConversionRecords implements BaseRecords, PooledResource {
     private final TopicPartition topicPartition;
     private final Records records;
     private final byte toMagic;
@@ -122,6 +122,13 @@ public class LazyDownConversionRecords implements BaseRecords {
         ConvertedRecords firstBatch = firstConvertedBatch;
         firstConvertedBatch = null;
         return new Iterator(records, maximumReadSize, firstBatch);
+    }
+
+    @Override
+    public void release() {
+        if (records instanceof PooledResource) {
+            ((PooledResource) records).release();
+        }
     }
 
     /**

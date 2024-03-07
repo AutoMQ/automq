@@ -26,6 +26,19 @@ import org.apache.kafka.common.protocol.SendBuilder;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
+import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
+import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
+import org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest;
+import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
+import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
+import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
+import org.apache.kafka.common.requests.s3.GetKVsRequest;
+import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
+import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
+import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
+import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
+import org.apache.kafka.common.requests.s3.PutKVsRequest;
+import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
@@ -326,6 +339,35 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return ListClientMetricsResourcesRequest.parse(buffer, apiVersion);
             case DESCRIBE_TOPIC_PARTITIONS:
                 return DescribeTopicPartitionsRequest.parse(buffer, apiVersion);
+
+            // AutoMQ for Kafka inject start
+            case CREATE_STREAMS:
+                return CreateStreamsRequest.parse(buffer, apiVersion);
+            case OPEN_STREAMS:
+                return OpenStreamsRequest.parse(buffer, apiVersion);
+            case CLOSE_STREAMS:
+                return CloseStreamsRequest.parse(buffer, apiVersion);
+            case DELETE_STREAMS:
+                return DeleteStreamsRequest.parse(buffer, apiVersion);
+            case TRIM_STREAMS:
+                return TrimStreamsRequest.parse(buffer, apiVersion);
+            case PREPARE_S3_OBJECT:
+                return PrepareS3ObjectRequest.parse(buffer, apiVersion);
+            case COMMIT_STREAM_SET_OBJECT:
+                return CommitStreamSetObjectRequest.parse(buffer, apiVersion);
+            case COMMIT_STREAM_OBJECT:
+                return CommitStreamObjectRequest.parse(buffer, apiVersion);
+            case GET_OPENING_STREAMS:
+                return GetOpeningStreamsRequest.parse(buffer, apiVersion);
+            case GET_KVS:
+                return GetKVsRequest.parse(buffer, apiVersion);
+            case PUT_KVS:
+                return PutKVsRequest.parse(buffer, apiVersion);
+            case DELETE_KVS:
+                return DeleteKVsRequest.parse(buffer, apiVersion);
+            case GET_NEXT_NODE_ID:
+                return GetNextNodeIdRequest.parse(buffer, apiVersion);
+            // AutoMQ for Kafka inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
                         "code should be updated to do so.", apiKey));
