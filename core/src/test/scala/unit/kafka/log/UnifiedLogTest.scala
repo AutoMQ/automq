@@ -4134,7 +4134,7 @@ class UnifiedLogTest {
     log.appendAsFollower(records)
   }
 
-  private def createLog(dir: File,
+  def createLog(dir: File,
                         config: LogConfig,
                         brokerTopicStats: BrokerTopicStats = brokerTopicStats,
                         logStartOffset: Long = 0L,

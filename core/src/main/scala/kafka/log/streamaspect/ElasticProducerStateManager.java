@@ -189,6 +189,10 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         CompletableFuture<Void> persist(MetaKeyValue kv);
     }
 
+    NavigableMap<Long, ByteBuffer> snapshotsMap() {
+        return snapshotsMap;
+    }
+
     class MockSnapshotFile extends SnapshotFile {
 
         public MockSnapshotFile(File file, long offset) {
