@@ -567,6 +567,11 @@ class LocalLog(@volatile protected var _dir: File,
   def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
     LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset)
   }
+
+  def replaceSegments(newSegments: collection.Seq[LogSegment],
+      oldSegments: collection.Seq[LogSegment]): Iterable[LogSegment] = {
+    LocalLog.replaceSegments(segments, newSegments, oldSegments, dir, topicPartition, config, scheduler, logDirFailureChannel, logIdent, false)
+  }
   // AutoMQ inject end
 
 }
