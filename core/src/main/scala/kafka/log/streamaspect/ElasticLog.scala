@@ -409,7 +409,7 @@ class ElasticLog(val metaStream: MetaStream,
     /**
      * ref. LocalLog#replcaseSegments
      */
-    private[log] def replaceSegments(newSegments: collection.Seq[LogSegment],
+    override def replaceSegments(newSegments: collection.Seq[LogSegment],
         oldSegments: collection.Seq[LogSegment]): Iterable[LogSegment] = {
         val existingSegments = segments
         val sortedNewSegments = newSegments.sortBy(_.baseOffset)
@@ -446,10 +446,6 @@ class ElasticLog(val metaStream: MetaStream,
         newSegment
     }
 
-    // TODO: replaceSegments and check other static segment operation
-
-
-
     override private[log] def close(): CompletableFuture[Void] = {
         // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
         partitionMeta.setCleanedShutdown(true)
@@ -473,7 +469,7 @@ class ElasticLog(val metaStream: MetaStream,
         CompletableFuture.allOf(streamManager.close(), metaStream.close())
     }
 
-    private[log] def updateLogStartOffset(offset: Long): Unit = {
+    def updateLogStartOffset(offset: Long): Unit = {
         logStartOffset = offset
     }
 
