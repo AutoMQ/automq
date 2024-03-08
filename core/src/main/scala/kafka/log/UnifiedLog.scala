@@ -21,6 +21,7 @@ import com.yammer.metrics.core.MetricName
 import kafka.common.{OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.LocalLog.nextOption
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticLog
 import kafka.server.{BrokerTopicMetrics, BrokerTopicStats, RequestLocal}
 import kafka.utils._
 import org.apache.kafka.common.errors._
@@ -46,7 +47,7 @@ import org.apache.kafka.storage.internals.log.{AbortedTxn, AppendOrigin, BatchMe
 import java.io.{File, IOException}
 import java.nio.file.{Files, Path}
 import java.util
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ScheduledFuture}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap, ScheduledFuture}
 import java.util.stream.Collectors
 import java.util.{Collections, Optional, OptionalInt, OptionalLong}
 import scala.annotation.nowarn
@@ -98,7 +99,7 @@ import scala.jdk.CollectionConverters._
  */
 @threadsafe
 class UnifiedLog(@volatile var logStartOffset: Long,
-                 private val localLog: LocalLog,
+                 protected val localLog: LocalLog,
                  val brokerTopicStats: BrokerTopicStats,
                  val producerIdExpirationCheckIntervalMs: Int,
                  @volatile var leaderEpochCache: Option[LeaderEpochFileCache],
@@ -120,7 +121,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   this.logIdent = s"[UnifiedLog partition=$topicPartition, dir=$parentDir] "
 
   /* A lock that guards all modifications to the log */
-  private val lock = new Object
+  protected val lock = new Object
   private val validatorMetricsRecorder = newValidatorMetricsRecorder(brokerTopicStats.allTopicsStats)
 
   /* The earliest offset which is part of an incomplete transaction. This is used to compute the
@@ -202,7 +203,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    *     set _topicId and write to the partition metadata file.
    *   - Otherwise set _topicId to None
    */
-  private def initializeTopicId(): Unit =  {
+  protected def initializeTopicId(): Unit =  {
     val partMetadataFile = partitionMetadataFile.getOrElse(
       throw new KafkaException("The partitionMetadataFile should have been initialized"))
 
@@ -353,7 +354,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * Get the offset and metadata for the current high watermark. If offset metadata is not
    * known, this will do a lookup in the index and cache the result.
    */
-  private def fetchHighWatermarkMetadata: LogOffsetMetadata = {
+  protected def fetchHighWatermarkMetadata: LogOffsetMetadata = {
     localLog.checkIfMemoryMappedBufferClosed()
 
     val offsetMetadata = highWatermarkMetadata
@@ -393,7 +394,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    */
   private[log] def firstUnstableOffset: Option[Long] = firstUnstableOffsetMetadata.map(_.messageOffset)
 
-  private def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
+  protected def fetchLastStableOffsetMetadata: LogOffsetMetadata = {
     localLog.checkIfMemoryMappedBufferClosed()
 
     // cache the current high watermark to avoid a concurrent update invalidating the range check
@@ -484,12 +485,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   private def recordVersion: RecordVersion = config.recordVersion
 
-  private def initializePartitionMetadata(): Unit = lock synchronized {
+  protected def initializePartitionMetadata(): Unit = lock synchronized {
     val partitionMetadata = PartitionMetadataFile.newFile(dir)
     partitionMetadataFile = Some(new PartitionMetadataFile(partitionMetadata, logDirFailureChannel))
   }
 
-  private def maybeFlushMetadataFile(): Unit = {
+  protected def maybeFlushMetadataFile(): Unit = {
     partitionMetadataFile.foreach(_.maybeFlush())
   }
 
@@ -530,7 +531,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     }
   }
 
-  private def updateLogStartOffset(offset: Long): Unit = {
+  protected def updateLogStartOffset(offset: Long): Unit = {
     logStartOffset = offset
 
     if (highWatermark < offset) {
@@ -929,7 +930,12 @@ class UnifiedLog(@volatile var logStartOffset: Long,
                 s"next offset: ${localLog.logEndOffset}, " +
                 s"and messages: $validRecords")
 
-              if (localLog.unflushedMessages >= config.flushInterval) flush(false)
+              // AutoMQ inject start
+              // AutoMQ will async callback after RecordBatch is flushed to disk
+              if (!localLog.isInstanceOf[ElasticLog]) {
+                if (localLog.unflushedMessages >= config.flushInterval) flush(false)
+              }
+            // AutoMQ inject end
           }
           appendInfo
         }
@@ -1215,7 +1221,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     }
   }
 
-  private def checkLogStartOffset(offset: Long): Unit = {
+  protected def checkLogStartOffset(offset: Long): Unit = {
     if (offset < logStartOffset)
       throw new OffsetOutOfRangeException(s"Received request for offset $offset for partition $topicPartition, " +
         s"but we only have log segments starting from offset: $logStartOffset.")
@@ -1622,7 +1628,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
     if (segment.shouldRoll(new RollParams(config.maxSegmentMs, config.segmentSize, appendInfo.maxTimestamp, appendInfo.lastOffset, messagesSize, now))) {
       debug(s"Rolling new log segment (log_size = ${segment.size}/${config.segmentSize}}, " +
-        s"offset_index_size = ${segment.offsetIndex.entries}/${segment.offsetIndex.maxEntries}, " +
+//        s"offset_index_size = ${segment.offsetIndex.entries}/${segment.offsetIndex.maxEntries}, " +
         s"time_index_size = ${segment.timeIndex.entries}/${segment.timeIndex.maxEntries}, " +
         s"inactive_time_ms = ${segment.timeWaitedForRoll(now, maxTimestampInMessages)}/${config.segmentMs - segment.rollJitterMs}).")
 
@@ -1905,7 +1911,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   @threadsafe
   private[log] def addSegment(segment: LogSegment): LogSegment = localLog.segments.add(segment)
 
-  private def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
+  protected def maybeHandleIOException[T](msg: => String)(fun: => T): T = {
     LocalLog.maybeHandleIOException(logDirFailureChannel, parentDir, msg) {
       fun
     }
@@ -1925,6 +1931,24 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
     UnifiedLog.createNewCleanedSegment(dir, logConfig, baseOffset)
   }
+
+  /**
+   * Asynchronously read messages from the log.
+   *
+   * @param startOffset   The offset to begin reading at
+   * @param maxLength     The maximum number of bytes to read
+   * @param isolation     The fetch isolation, which controls the maximum offset we are allowed to read
+   * @param minOneMessage If this is true, the first message will be returned even if it exceeds `maxLength` (if one exists)
+   * @return The fetch data information including fetch starting offset metadata and messages read.
+   */
+  def readAsync(startOffset: Long,
+      maxLength: Int,
+      isolation: FetchIsolation,
+      minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
+    CompletableFuture.completedFuture(read(startOffset, maxLength, isolation, minOneMessage))
+  }
+
+
   // AutoMQ inject end
 
 }
