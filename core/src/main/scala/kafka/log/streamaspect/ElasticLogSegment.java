@@ -48,8 +48,8 @@ import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 import org.slf4j.event.Level;
 
 public class ElasticLogSegment extends LogSegment implements Comparable<ElasticLogSegment> {
-    private static FileCache timeCache = FileCache.NOOP;
-    private static FileCache txnCache = FileCache.NOOP;
+    public static FileCache timeCache = FileCache.NOOP;
+    public static FileCache txnCache = FileCache.NOOP;
 
     private final ElasticStreamSegmentMeta meta;
     private final long baseOffset;
