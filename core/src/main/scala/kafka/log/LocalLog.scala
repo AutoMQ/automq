@@ -562,6 +562,13 @@ class LocalLog(@volatile protected var _dir: File,
     updateLogEndOffset(targetOffset)
     deletableSegments
   }
+
+  // AutoMQ inject start
+  def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
+    LocalLog.createNewCleanedSegment(dir, logConfig, baseOffset)
+  }
+  // AutoMQ inject end
+
 }
 
 /**
@@ -944,7 +951,7 @@ object LocalLog extends Logging {
       abortedTransactions)
   }
 
-  private[log] def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
+  def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
     LogSegment.deleteIfExists(dir, baseOffset, CleanedFileSuffix)
     LogSegment.open(dir, baseOffset, logConfig, Time.SYSTEM, false, logConfig.initFileSize, logConfig.preallocate, CleanedFileSuffix)
   }

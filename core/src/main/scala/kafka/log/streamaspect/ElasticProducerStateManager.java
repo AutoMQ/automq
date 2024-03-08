@@ -14,6 +14,7 @@ package kafka.log.streamaspect;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +23,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.CorruptSnapshotException;
@@ -34,10 +34,8 @@ import org.apache.kafka.storage.internals.log.ProducerStateManagerConfig;
 import org.apache.kafka.storage.internals.log.SnapshotFile;
 import org.apache.kafka.storage.internals.log.VerificationStateEntry;
 
-// TODO: apply diff to ProducerStateManager
 public class ElasticProducerStateManager extends ProducerStateManager {
     private final PersistSnapshots persistSnapshots;
-    private final long createTimestamp = System.currentTimeMillis();
 
     public ElasticProducerStateManager(
         TopicPartition topicPartition,
@@ -54,7 +52,7 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         this.persistSnapshots = persistSnapshots;
         // ProducerStateManager will loadSnapshots in constructor, but at that moment, snapshotsMap is null.
         // So we need to call loadSnapshots again to load snapshots from snapshotsMap
-        loadSnapshots();
+        this.snapshots = loadSnapshots();
     }
 
     @Override
@@ -116,7 +114,24 @@ public class ElasticProducerStateManager extends ProducerStateManager {
 
     @Override
     public void takeSnapshot() throws IOException {
-        takeSnapshot0();
+        try {
+            takeSnapshot0().get();
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Optional<File> takeSnapshot(boolean sync) throws IOException {
+        try {
+            CompletableFuture<Void> cf = takeSnapshot0();
+            if (sync) {
+                cf.get();
+            }
+            return Optional.empty();
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 
     CompletableFuture<Void> takeSnapshot0() {
@@ -131,6 +146,22 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         } else {
             return CompletableFuture.completedFuture(null);
         }
+    }
+
+
+    /**
+     * Only keep the last snapshot which offset less than or equals to the recoveryPointCheckpoint
+     */
+    public CompletableFuture<Void> takeSnapshotAndRemoveExpired(long recoveryPointCheckpoint) {
+        Long lastSnapshotOffset = snapshotsMap.floorKey(recoveryPointCheckpoint);
+        if (lastSnapshotOffset != null) {
+            List<Long> expiredSnapshotOffsets = new ArrayList<>(snapshotsMap.headMap(lastSnapshotOffset, false).keySet());
+            expiredSnapshotOffsets.forEach(offset -> {
+                snapshotsMap.remove(offset);
+                snapshots.remove(offset);
+            });
+        }
+        return takeSnapshot0();
     }
 
     private CompletableFuture<Void> writeSnapshot(long offset, Map<Long, ProducerStateEntry> entries) {
@@ -181,7 +212,7 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         }
     }
 
-    class ProducerAppendInfoExt extends ProducerAppendInfo {
+    static class ProducerAppendInfoExt extends ProducerAppendInfo {
         public ProducerAppendInfoExt(TopicPartition topicPartition, long producerId, ProducerStateEntry currentEntry,
             AppendOrigin origin, VerificationStateEntry verificationStateEntry) {
             super(topicPartition, producerId, currentEntry, origin, verificationStateEntry);
@@ -189,11 +220,6 @@ public class ElasticProducerStateManager extends ProducerStateManager {
 
         @Override
         protected void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
-            if (currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0 && System.currentTimeMillis() - createTimestamp < 10000) {
-                throw new OutOfOrderSequenceException("Invalid sequence number for new created log, producer " + producerId() + " " +
-                    "at offset " + offset + " in partition " + topicPartition + ": " + producerEpoch + " (request epoch), " + appendFirstSeq + " (seq. number), " +
-                    updatedEntry.producerEpoch() + " (current producer epoch)");
-            }
             super.checkSequence(producerEpoch, appendFirstSeq, offset);
         }
     }

@@ -650,7 +650,7 @@ private[log] class Cleaner(val id: Int,
                                  transactionMetadata: CleanedTransactionMetadata,
                                  legacyDeleteHorizonMs: Long): Unit = {
     // create a new segment with a suffix appended to the name of the log and indexes
-    val cleaned = UnifiedLog.createNewCleanedSegment(log.dir, log.config, segments.head.baseOffset)
+    val cleaned = log.createNewCleanedSegment(log.dir, log.config, segments.head.baseOffset)
     transactionMetadata.cleanedIndex = Some(cleaned.txnIndex)
 
     try {
