@@ -18,10 +18,11 @@
 package kafka.network
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.node.{BooleanNode, DoubleNode, JsonNodeFactory, LongNode, ObjectNode, TextNode}
+import com.fasterxml.jackson.databind.node._
 import org.apache.kafka.common.message._
 import org.apache.kafka.common.network.ClientInformation
 import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.s3._
 import org.apache.kafka.network.Session
 
 object RequestConvertToJson {
@@ -103,6 +104,21 @@ object RequestConvertToJson {
       case req: UpdateMetadataRequest => UpdateMetadataRequestDataJsonConverter.write(req.data, request.version)
       case req: VoteRequest => VoteRequestDataJsonConverter.write(req.data, request.version)
       case req: WriteTxnMarkersRequest => WriteTxnMarkersRequestDataJsonConverter.write(req.data, request.version)
+      // AutoMQ for Kafka inject start
+      case req: CreateStreamsRequest => CreateStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteStreamsRequest => DeleteStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: OpenStreamsRequest => OpenStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: CloseStreamsRequest => CloseStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: TrimStreamsRequest => TrimStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: PrepareS3ObjectRequest => PrepareS3ObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: CommitStreamSetObjectRequest => CommitStreamSetObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: CommitStreamObjectRequest => CommitStreamObjectRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetOpeningStreamsRequest => GetOpeningStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetKVsRequest => GetKVsRequestDataJsonConverter.write(req.data, request.version)
+      case req: PutKVsRequest => PutKVsRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteKVsRequest => DeleteKVsRequestDataJsonConverter.write(req.data, request.version)
+      case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
+      // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.");
     }
@@ -186,6 +202,21 @@ object RequestConvertToJson {
       case res: UpdateMetadataResponse => UpdateMetadataResponseDataJsonConverter.write(res.data, version)
       case res: VoteResponse => VoteResponseDataJsonConverter.write(res.data, version)
       case res: WriteTxnMarkersResponse => WriteTxnMarkersResponseDataJsonConverter.write(res.data, version)
+      // AutoMQ for Kafka inject start
+      case res: CreateStreamsResponse => CreateStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteStreamsResponse => DeleteStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: OpenStreamsResponse => OpenStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: CloseStreamsResponse => CloseStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: TrimStreamsResponse => TrimStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: PrepareS3ObjectResponse => PrepareS3ObjectResponseDataJsonConverter.write(res.data, version)
+      case res: CommitStreamSetObjectResponse => CommitStreamSetObjectResponseDataJsonConverter.write(res.data, version)
+      case res: CommitStreamObjectResponse => CommitStreamObjectResponseDataJsonConverter.write(res.data, version)
+      case res: GetOpeningStreamsResponse => GetOpeningStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: GetKVsResponse => GetKVsResponseDataJsonConverter.write(res.data, version)
+      case res: PutKVsResponse => PutKVsResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteKVsResponse => DeleteKVsResponseDataJsonConverter.write(res.data, version)
+      case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
+      // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.");
     }
