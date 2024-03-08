@@ -17,19 +17,20 @@
 
 package kafka.server
 
-import kafka.network._
-import kafka.utils._
-import kafka.server.KafkaRequestHandler.{threadCurrentRequest, threadRequestChannel}
-
-import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, TimeUnit}
-import java.util.concurrent.atomic.AtomicInteger
 import com.yammer.metrics.core.{Gauge, Meter}
+import kafka.network.RequestChannel.BaseRequest
+import kafka.network._
+import kafka.server.KafkaRequestHandler.{threadCurrentRequest, threadRequestChannel}
+import kafka.utils._
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.utils.{KafkaThread, Time}
 import org.apache.kafka.server.log.remote.storage.RemoteStorageMetrics
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{BlockingQueue, ConcurrentHashMap, CountDownLatch, TimeUnit}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -95,6 +96,7 @@ class KafkaRequestHandler(
   val requestChannel: RequestChannel,
   apis: ApiRequestHandler,
   time: Time,
+  val requestQueue: BlockingQueue[BaseRequest],
   nodeName: String = "broker"
 ) extends Runnable with Logging {
   this.logIdent = s"[Kafka Request Handler $id on ${nodeName.capitalize} $brokerId], "
@@ -111,7 +113,7 @@ class KafkaRequestHandler(
       // time should be discounted by # threads.
       val startSelectTime = time.nanoseconds
 
-      val req = requestChannel.receiveRequest(300)
+      val req = requestQueue.poll(300, TimeUnit.MILLISECONDS)
       val endTime = time.nanoseconds
       val idleTime = endTime - startSelectTime
       aggregateIdleMeter.mark(idleTime / totalHandlerThreads.get)
@@ -212,28 +214,32 @@ class KafkaRequestHandlerPool(
 
   this.logIdent = "[" + logAndThreadNamePrefix + " Kafka Request Handler on Broker " + brokerId + "], "
   val runnables = new mutable.ArrayBuffer[KafkaRequestHandler](numThreads)
+
+  var multiRequestQueue = requestChannel.registerNRequestHandler(numThreads)
+
   for (i <- 0 until numThreads) {
-    createHandler(i)
+    createHandler(i, multiRequestQueue.get(i))
   }
 
-  def createHandler(id: Int): Unit = synchronized {
-    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, nodeName)
+  def createHandler(id: Int, requestQueue: BlockingQueue[BaseRequest]): Unit = synchronized {
+    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, requestQueue, nodeName)
     KafkaThread.daemon(logAndThreadNamePrefix + "-kafka-request-handler-" + id, runnables(id)).start()
   }
 
   def resizeThreadPool(newSize: Int): Unit = synchronized {
-    val currentSize = threadPoolSize.get
-    info(s"Resizing request handler thread pool size from $currentSize to $newSize")
-    if (newSize > currentSize) {
-      for (i <- currentSize until newSize) {
-        createHandler(i)
-      }
-    } else if (newSize < currentSize) {
-      for (i <- 1 to (currentSize - newSize)) {
-        runnables.remove(currentSize - i).stop()
-      }
-    }
-    threadPoolSize.set(newSize)
+    // TODO: resize the thread pool and keep the request order for per connection.
+//    val currentSize = threadPoolSize.get
+//    info(s"Resizing request handler thread pool size from $currentSize to $newSize")
+//    if (newSize > currentSize) {
+//      for (i <- currentSize until newSize) {
+//        createHandler(i)
+//      }
+//    } else if (newSize < currentSize) {
+//      for (i <- 1 to (currentSize - newSize)) {
+//        runnables.remove(currentSize - i).stop()
+//      }
+//    }
+//    threadPoolSize.set(newSize)
   }
 
   def shutdown(): Unit = synchronized {
@@ -249,7 +255,7 @@ class KafkaRequestHandlerPool(
 class BrokerTopicMetrics(name: Option[String], configOpt: java.util.Optional[KafkaConfig]) {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
-  val tags: java.util.Map[String, String] = name match {
+  lazy val tags: java.util.Map[String, String] = name match {
     case None => Collections.emptyMap()
     case Some(topic) => Map("topic" -> topic).asJava
   }
@@ -501,6 +507,10 @@ class AggregatedMetric {
   def close(): Unit = metricValues.clear()
 }
 
+class BrokerTopicPartitionMetrics(tp: TopicPartition, configOpt: java.util.Optional[KafkaConfig]) extends BrokerTopicMetrics(Some(tp.topic()), configOpt) {
+  override lazy val tags: java.util.Map[String, String] = Map("topic" -> tp.topic(), "partition" -> tp.partition().toString).asJava
+}
+
 object BrokerTopicStats {
   val MessagesInPerSec = "MessagesInPerSec"
   val BytesInPerSec = "BytesInPerSec"
@@ -526,7 +536,10 @@ object BrokerTopicStats {
 class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Optional.empty()) extends Logging {
 
   private val valueFactory = (k: String) => new BrokerTopicMetrics(Some(k), configOpt)
+  private val partitionValueFactory = (k: TopicPartition) => new BrokerTopicPartitionMetrics(k, configOpt)
+
   private val stats = new Pool[String, BrokerTopicMetrics](Some(valueFactory))
+  private val partitionStats = new Pool[TopicPartition, BrokerTopicPartitionMetrics](Some(partitionValueFactory))
   val allTopicsStats = new BrokerTopicMetrics(None, configOpt)
 
   def isTopicStatsExisted(topic: String): Boolean =
@@ -534,6 +547,10 @@ class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Op
 
   def topicStats(topic: String): BrokerTopicMetrics =
     stats.getAndMaybePut(topic)
+
+  def topicPartitionStats(topicPartition: TopicPartition): BrokerTopicPartitionMetrics = {
+    partitionStats.getAndMaybePut(topicPartition)
+  }
 
   def updateReplicationBytesIn(value: Long): Unit = {
     allTopicsStats.replicationBytesInRate.foreach { metric =>
@@ -603,8 +620,18 @@ class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Op
 
   def removeMetrics(topic: String): Unit = {
     val metrics = stats.remove(topic)
-    if (metrics != null)
+    if (metrics != null) {
       metrics.close()
+    }
+    val tpToRemove = partitionStats.keys.filter(_.topic() == topic)
+    tpToRemove.foreach(removeMetrics)
+  }
+
+  def removeMetrics(topicPartition: TopicPartition) :Unit = {
+    val metrics = partitionStats.remove(topicPartition)
+    if (metrics != null) {
+      metrics.close()
+    }
   }
 
   def updateBytesOut(topic: String, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
@@ -614,6 +641,18 @@ class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Op
       updateReplicationBytesOut(value)
     } else {
       topicStats(topic).bytesOutRate.mark(value)
+      allTopicsStats.bytesOutRate.mark(value)
+    }
+  }
+
+  def updateBytesOut(topicIdPartition: TopicPartition, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
+    if (isFollower) {
+      if (isReassignment)
+        updateReassignmentBytesOut(value)
+      updateReplicationBytesOut(value)
+    } else {
+      topicPartitionStats(topicIdPartition).bytesOutRate.mark(value)
+      topicStats(topicIdPartition.topic()).bytesOutRate.mark(value)
       allTopicsStats.bytesOutRate.mark(value)
     }
   }
