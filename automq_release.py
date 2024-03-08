@@ -140,17 +140,19 @@ def get_project_path():
 
 def do_release(tag, s3stream_tag):
     new_branch = f"release-{tag}-{int(time.time())}"
-    cmd(f"Checking out to release branch", f'git checkout -b {new_branch}')
+    cmd(f"Checking out to release branch", f'git checkout --quiet -b {new_branch}')
 
     print("Updating docker compose")
     regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", f"image: automqinc/kafka:{tag}")
     replace("gradle/dependencies.gradle", '    branch = "main"', f'    require "{s3stream_tag}"')
 
     cmd("Committing changes", ["git", "commit", "--all", "--gpg-sign", "--signoff", "--message", f"ci: bump version to {tag}"])
-    cmd("Pushing changes", ["git", "push", "origin", new_branch])
+    cmd("Pushing changes", ["git", "push", "--quiet", "origin", new_branch])
 
     cmd("Tagging %s" % tag, ["git", "tag", "--sign", "--annotate", tag, "--message", f"release {tag}"])
-    cmd("Pushing tag %s" % tag, ["git", "push", "origin", tag])
+    cmd("Pushing tag %s" % tag, ["git", "push", "--quiet", "origin", tag])
+
+    return new_branch
 
 
 def check_before_started(tag, s3stream_tag):
@@ -161,8 +163,8 @@ def check_before_started(tag, s3stream_tag):
     if starting_branch != main_branch:
         fail(f"You must run this script on the {main_branch} branch. current: {starting_branch}")
     cmd(f"Checking branch {main_branch} up-to-date", f'git diff origin/{main_branch}...{main_branch} --quiet')
-    cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --exit-code --tags git@github.com:AutoMQ/automq-for-rocketmq.git {s3stream_tag}')
-    cmd(f"Checking tag {tag} not exits", f'! git ls-remote --exit-code --tags origin {tag}', shell=True)
+    cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --quiet --exit-code --tags git@github.com:AutoMQ/automq-for-rocketmq.git {s3stream_tag}')
+    cmd(f"Checking tag {tag} not exits", f'! git ls-remote --quiet --exit-code --tags origin {tag}', shell=True)
 
 
 if __name__ == '__main__':
@@ -183,6 +185,7 @@ if __name__ == '__main__':
     if not is_valid_s3stream_tag(s3stream_tag):
         fail(f"Invalid s3stream tag {s3stream_tag}")
     check_before_started(tag, s3stream_tag)
-    do_release(tag, s3stream_tag)
+    branch = do_release(tag, s3stream_tag)
     print(f"=== release {tag} done ===")
-    print(f"=== please create a PR to merge release branch to {main_branch} ===")
+    print(f"Please create a PR to merge release branch to {main_branch} visiting:")
+    print(f"    https://github.com/AutoMQ/automq-for-kafka/pull/new/{main_branch}...{branch}")
