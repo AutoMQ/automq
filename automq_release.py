@@ -119,13 +119,16 @@ def check_tools(tools):
             raise Exception("%s is not installed" % tool)
 
 
-def is_tag_valid(tag):
-    """Check whether tag is valid"""
-    pattern = r'^\d+\.\d+\.\d+(-rc)?[0-9]*$'
-    if re.match(pattern, tag):
-        return True
-    else:
-        return False
+def is_valid_kafka_tag(tag):
+    """Check whether the tag is a valid kafka tag"""
+    pattern = r'^\d+\.\d+\.\d+(-rc\d+)?$'
+    return re.match(pattern, tag) is not None
+
+
+def is_valid_s3stream_tag(tag):
+    """Check whether the tag is a valid s3stream tag"""
+    pattern = r'^\d+\.\d+\.\d+-s3stream(-rc\d+)?$'
+    return re.match(pattern, tag) is not None
 
 
 def get_project_path():
@@ -135,57 +138,51 @@ def get_project_path():
     return current_file.parent
 
 
-def do_release(tag_version):
-    new_branch = "release-%s" % tag_version
-    cmd("Checking out to release branch", 'git checkout -b %s' % new_branch)
-    print("Updating version numbers")
-    release_version = tag_version.split("-")[0]
+def do_release(tag, s3stream_tag):
+    new_branch = f"release-{tag}-{int(time.time())}"
+    cmd(f"Checking out to release branch", f'git checkout -b {new_branch}')
 
-    print("updating docker compose")
-    regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", "image: automqinc/kafka:%s" % tag_version)
+    print("Updating docker compose")
+    regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", f"image: automqinc/kafka:{tag}")
+    replace("gradle/dependencies.gradle", '    branch = "main"', f'    require "{s3stream_tag}"')
 
-    cmd("Committing changes", ["git", "commit", "-a", "-m", "ci: Bump version to %s" % tag_version], allow_failure=True)
-    cmd("Pushing changes", ["git", "push", "origin", new_branch], allow_failure=True)
+    cmd("Committing changes", ["git", "commit", "--all", "--gpg-sign", "--signoff", "--message", f"ci: bump version to {tag}"])
+    cmd("Pushing changes", ["git", "push", "origin", new_branch])
 
-    cmd("Tagging %s" % tag_version, ["git", "tag", "-a", tag_version, "-m", "release %s" % tag_version, "-s"])
-    cmd("Pushing tag %s" % tag_version, ["git", "push", "origin", tag_version])
-
-
-def clean_local_tags():
-    tags = cmd_output('git tag -l').split()
-    cmd("Cleaning local tags", ['git', 'tag', '-d'] + tags)
+    cmd("Tagging %s" % tag, ["git", "tag", "--sign", "--annotate", tag, "--message", f"release {tag}"])
+    cmd("Pushing tag %s" % tag, ["git", "push", "origin", tag])
 
 
-def check_before_started(tag_version):
+def check_before_started(tag, s3stream_tag):
     check_tools(["git"])
-    cmd("Verifying that you have no unstaged git changes", 'git diff --exit-code --quiet')
-    cmd("Verifying that you have no staged git changes", 'git diff --cached --exit-code --quiet')
+    cmd("Fetching latest code", 'git fetch origin')
+    cmd("Checking workspace clean", 'git diff-index --quiet HEAD --')
     starting_branch = cmd_output('git rev-parse --abbrev-ref HEAD').strip()
     if starting_branch != main_branch:
-        fail("You must run this script from the %s branch. current: %s" % (main_branch, starting_branch))
-    cmd("Pull latest code", 'git pull --rebase origin %s' % main_branch)
-
-    # Validate that the release doesn't already exist
-    clean_local_tags()
-    cmd("Fetching tags from upstream", 'git fetch --tags')
-    tags = cmd_output('git tag').split()
-
-    if tag_version in tags:
-        fail("The specified version has already been tagged and released.")
+        fail(f"You must run this script on the {main_branch} branch. current: {starting_branch}")
+    cmd(f"Checking branch {main_branch} up-to-date", f'git diff origin/{main_branch}...{main_branch} --quiet')
+    cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --exit-code --tags git@github.com:AutoMQ/automq-for-rocketmq.git {s3stream_tag}')
+    cmd(f"Checking tag {tag} not exits", f'! git ls-remote --exit-code --tags origin {tag}', shell=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='release AutoMQ Kafka')
-    parser.add_argument("--tag", required=True, type=str,
-                        help="release tag, which should be in the format of 'x.y.z' or 'x.y.z-rcN'")
+    parser.add_argument("--kafka-tag", required=True, type=str,
+                        help="release tag, which should be in the format of 'x.y.z' or 'x.y.z-rcN', e.g., 1.2.3 or 11.22.33-rc44")
+    parser.add_argument("--s3stream-tag", required=True, type=str,
+                        help="related s3stream tag, which should have been pushed to the AutoMQ/automq-for-rocketmq repository,\
+                            and should be in the format of 'x.y.z-s3stream' or 'x.y.z-s3stream-rcN', e.g., 1.2.3-s3stream or 11.22.33-s3stream-rc44")
 
     # get tag from command line
     args = parser.parse_args()
-    tag = args.tag
-    print("=== try to release %s ===" % tag)
-    if not is_tag_valid(tag):
-        fail("Invalid tag")
-    check_before_started(tag)
-    do_release(tag)
-    print("=== release %s done ===" % tag)
-    print("=== please create a PR to merge release branch to %s ===" % main_branch)
+    tag = args.kafka_tag
+    s3stream_tag = args.s3stream_tag
+    print(f"=== try to release {tag} ===")
+    if not is_valid_kafka_tag(tag):
+        fail(f"Invalid tag {tag}")
+    if not is_valid_s3stream_tag(s3stream_tag):
+        fail(f"Invalid s3stream tag {s3stream_tag}")
+    check_before_started(tag, s3stream_tag)
+    do_release(tag, s3stream_tag)
+    print(f"=== release {tag} done ===")
+    print(f"=== please create a PR to merge release branch to {main_branch} ===")
