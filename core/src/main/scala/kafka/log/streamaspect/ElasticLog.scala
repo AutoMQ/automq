@@ -13,6 +13,7 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import io.netty.buffer.Unpooled
+import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
 import kafka.metrics.KafkaMetricsUtil
@@ -402,7 +403,7 @@ class ElasticLog(val metaStream: MetaStream,
     override protected def addAbortedTransactions(startOffset: Long,
         segment: LogSegment,
         fetchInfo: FetchDataInfo): FetchDataInfo = {
-        addAbortedTransactions(startOffset, segment, fetchInfo, None)
+        addAbortedTransactions(startOffset, segment, fetchInfo, Option.empty)
     }
 
     /**
@@ -438,6 +439,16 @@ class ElasticLog(val metaStream: MetaStream,
         persistLogMeta()
         deletedNotReplaced
     }
+
+    override def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
+        val (newSegment, newSegmentCf) = createAndSaveSegment(logSegmentManager, CleanedFileSuffix, logIdent)(baseOffset, _dir, config, streamSliceManager, time)
+        newSegmentCf.get()
+        newSegment
+    }
+
+    // TODO: replaceSegments and check other static segment operation
+
+
 
     override private[log] def close(): CompletableFuture[Void] = {
         // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
