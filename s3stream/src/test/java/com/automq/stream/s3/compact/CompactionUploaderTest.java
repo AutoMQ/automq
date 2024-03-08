@@ -45,7 +45,6 @@ public class CompactionUploaderTest extends CompactionTestBase {
 
     @BeforeEach
     public void setUp() throws Exception {
-        super.setUp();
         s3Operator = new MemoryS3Operator();
         objectManager = new MemoryMetadataManager();
         config = mock(Config.class);
