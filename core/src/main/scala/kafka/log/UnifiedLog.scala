@@ -1920,6 +1920,13 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private[log] def deleteProducerSnapshots(segments: Iterable[LogSegment], asyncDelete: Boolean): Unit = {
     UnifiedLog.deleteProducerSnapshots(segments, producerStateManager, asyncDelete, scheduler, config, logDirFailureChannel, parentDir, topicPartition)
   }
+
+  // AutoMQ inject start
+  def createNewCleanedSegment(dir: File, logConfig: LogConfig, baseOffset: Long): LogSegment = {
+    UnifiedLog.createNewCleanedSegment(dir, logConfig, baseOffset)
+  }
+  // AutoMQ inject end
+
 }
 
 object UnifiedLog extends Logging {
