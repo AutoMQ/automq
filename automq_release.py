@@ -155,6 +155,11 @@ def do_release(tag, s3stream_tag):
     return new_branch
 
 
+def tag_exists(tag):
+    maybe_tag = cmd_output(f'git tag --list {tag}').strip()
+    return len(maybe_tag) > 0
+
+
 def check_before_started(tag, s3stream_tag):
     check_tools(["git"])
     cmd("Fetching latest code", 'git fetch origin')
@@ -164,7 +169,10 @@ def check_before_started(tag, s3stream_tag):
         fail(f"You must run this script on the {main_branch} branch. current: {starting_branch}")
     cmd(f"Checking branch {main_branch} up-to-date", f'git diff origin/{main_branch}...{main_branch} --quiet')
     cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --quiet --exit-code --tags git@github.com:AutoMQ/automq-for-rocketmq.git {s3stream_tag}')
-    cmd(f"Checking tag {tag} not exits", f'! git ls-remote --quiet --exit-code --tags origin {tag}', shell=True)
+    cmd(f"Checking tag {tag} not exists in remote", f'! git ls-remote --quiet --exit-code --tags origin {tag}', shell=True)
+    print(f"Checking tag {tag} not exists in local")
+    if tag_exists(tag):
+        fail(f"Tag {tag} already exists. Please delete it before running this script.")
 
 
 if __name__ == '__main__':
