@@ -33,7 +33,7 @@ import org.apache.kafka.storage.internals.log.TransactionIndex;
 import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 
 public class ElasticTransactionIndex extends TransactionIndex {
-    private StreamSliceSupplier streamSupplier;
+    private final StreamSliceSupplier streamSupplier;
     ElasticStreamSlice stream;
     private final FileCache cache;
     private final String path;
