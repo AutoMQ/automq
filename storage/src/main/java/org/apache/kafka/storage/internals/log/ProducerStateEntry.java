@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.storage.internals.log;
 
-import org.apache.kafka.common.record.RecordBatch;
-
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,6 +23,7 @@ import java.util.Deque;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.stream.Stream;
+import org.apache.kafka.common.record.RecordBatch;
 
 /**
  * This class represents the state of a specific producer-id.
