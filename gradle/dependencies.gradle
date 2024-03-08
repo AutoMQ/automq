@@ -248,6 +248,6 @@ extLibs += [
 ]
 branchVersions += [
   s3stream: {
-    branch = "main"
+    require "1.0.1-s3stream"
   }
 ]
