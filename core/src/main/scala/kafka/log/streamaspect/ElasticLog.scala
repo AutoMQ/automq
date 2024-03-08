@@ -97,7 +97,7 @@ class ElasticLog(val metaStream: MetaStream,
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
-    private var logStartOffset = _initStartOffset
+    var logStartOffset = _initStartOffset
 
     // persist log meta when lazy stream real create
     streamManager.setListener((_, event) => {
