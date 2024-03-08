@@ -17,15 +17,13 @@
 
 package kafka.network
 
-import java.nio.ByteBuffer
-import java.util.concurrent._
 import com.fasterxml.jackson.databind.JsonNode
 import com.typesafe.scalalogging.Logger
 import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.network
 import kafka.server.{KafkaConfig, RequestLocal}
-import kafka.utils.{Logging, NotNothing, Pool}
 import kafka.utils.Implicits._
+import kafka.utils.{Logging, NotNothing, Pool}
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -37,7 +35,10 @@ import org.apache.kafka.common.utils.Time
 import org.apache.kafka.network.Session
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
+import java.nio.ByteBuffer
 import java.util
+import java.util.Collections
+import java.util.concurrent._
 import scala.annotation.nowarn
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -355,12 +356,20 @@ class RequestChannel(val queueSize: Int,
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
   private val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  private val multiRequestQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
+
   private val processors = new ConcurrentHashMap[Int, Processor]()
   private val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   private val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
   private val callbackQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
 
-  metricsGroup.newGauge(requestQueueSizeMetricName, () => requestQueue.size)
+  metricsGroup.newGauge(requestQueueSizeMetricName, () => {
+    if (multiRequestQueue.size() != 0) {
+      multiRequestQueue.stream().mapToInt(q => q.size()).sum()
+    } else {
+      requestQueue.size()
+    }
+  })
 
   metricsGroup.newGauge(responseQueueSizeMetricName, () => {
     processors.values.asScala.foldLeft(0) {(total, processor) =>
@@ -376,6 +385,15 @@ class RequestChannel(val queueSize: Int,
       Map(ProcessorMetricTag -> processor.id.toString).asJava)
   }
 
+  def registerNRequestHandler(count: Int): util.List[BlockingQueue[BaseRequest]] = {
+    val queueSize = math.max(this.queueSize / count, 1)
+    for (i <- 0 until count) {
+      val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+      multiRequestQueue.add(requestQueue)
+    }
+    Collections.unmodifiableList(multiRequestQueue)
+  }
+
   def removeProcessor(processorId: Int): Unit = {
     processors.remove(processorId)
     metricsGroup.removeMetric(responseQueueSizeMetricName, Map(ProcessorMetricTag -> processorId.toString).asJava)
@@ -383,7 +401,12 @@ class RequestChannel(val queueSize: Int,
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request): Unit = {
-    requestQueue.put(request)
+    if (multiRequestQueue.size() != 0) {
+      val requestQueue = multiRequestQueue.get(math.abs(request.context.connectionId.hashCode % multiRequestQueue.size()))
+      requestQueue.put(request)
+    } else {
+      requestQueue.put(request)
+    }
   }
 
   def closeConnection(
@@ -467,6 +490,7 @@ class RequestChannel(val queueSize: Int,
   /** Get the next request or block until specified time has elapsed 
    *  Check the callback queue and execute first if present since these
    *  requests have already waited in line. */
+  @Deprecated
   def receiveRequest(timeout: Long): RequestChannel.BaseRequest = {
     val callbackRequest = callbackQueue.poll()
     if (callbackRequest != null)
@@ -481,6 +505,7 @@ class RequestChannel(val queueSize: Int,
   }
 
   /** Get the next request or block until there is one */
+  @Deprecated
   def receiveRequest(): RequestChannel.BaseRequest =
     requestQueue.take()
 
@@ -493,6 +518,7 @@ class RequestChannel(val queueSize: Int,
   def clear(): Unit = {
     requestQueue.clear()
     callbackQueue.clear()
+    multiRequestQueue.forEach(q => q.clear())
   }
 
   def shutdown(): Unit = {
@@ -500,7 +526,10 @@ class RequestChannel(val queueSize: Int,
     metrics.close()
   }
 
-  def sendShutdownRequest(): Unit = requestQueue.put(ShutdownRequest)
+  def sendShutdownRequest(): Unit = {
+    requestQueue.put(ShutdownRequest)
+    multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+  }
 
   def sendCallbackRequest(request: CallbackRequest): Unit = {
     callbackQueue.put(request)
