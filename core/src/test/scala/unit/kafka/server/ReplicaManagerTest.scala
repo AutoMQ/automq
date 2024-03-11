@@ -2863,7 +2863,7 @@ class ReplicaManagerTest {
     val topicPartitionObj = new TopicPartition(topic, topicPartition)
     val mockLogMgr: LogManager = mock(classOf[LogManager])
     when(mockLogMgr.liveLogDirs).thenReturn(config.logDirs.map(new File(_).getAbsoluteFile))
-    when(mockLogMgr.getOrCreateLog(ArgumentMatchers.eq(topicPartitionObj), ArgumentMatchers.eq(false), ArgumentMatchers.eq(false), any(), any())).thenReturn(mockLog)
+    when(mockLogMgr.getOrCreateLog(ArgumentMatchers.eq(topicPartitionObj), ArgumentMatchers.eq(false), ArgumentMatchers.eq(false), any(), any(), any())).thenReturn(mockLog)
     when(mockLogMgr.getLog(topicPartitionObj, isFuture = false)).thenReturn(Some(mockLog))
     when(mockLogMgr.getLog(topicPartitionObj, isFuture = true)).thenReturn(None)
     val allLogs = new Pool[TopicPartition, UnifiedLog]()
